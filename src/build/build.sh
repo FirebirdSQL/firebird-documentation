@@ -26,4 +26,5 @@ _CP_=$_CP_:../../lib
 
 _CP_=$_CP_:$JAVA_HOME/lib/tools.jar
 
-"$JAVA_HOME/bin/java" -Xmx100000000 -showversion -classpath $_CP_ org.apache.tools.ant.Main $*
+"$JAVA_HOME/bin/java" -Xmx100000000 -showversion -classpath "$_CP_" org.apache.tools.ant.Main $*
+
