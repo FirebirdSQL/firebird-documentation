@@ -948,4 +948,15 @@ set       toc,title
   </xsl:template>
 
 
+  <!-- only refer to index in toc if index is really gonna be there -->
+  <xsl:template match="index" mode="toc">
+    <xsl:param name="toc-context" select="."/>
+    <xsl:if test="count(indexentry) > 0 or $generate.index != 0">
+      <!-- original first test used to be *, causing index toc entry to be
+           generated if empty index had title! -->
+      <xsl:call-template name="toc.line"/>
+    </xsl:if>
+  </xsl:template>
+
+
 </xsl:stylesheet>

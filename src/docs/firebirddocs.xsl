@@ -84,17 +84,42 @@
   
         <xsl:call-template name="index.titlepage"/>
         <xsl:apply-templates/>
-  
+
         <xsl:if test="count(indexentry) = 0 and count(indexdiv) = 0">
           <xsl:call-template name="generate-index">
             <xsl:with-param name="scope" select="(ancestor::book|ancestor::article|/)[last()]"/>
           </xsl:call-template>
         </xsl:if>
-  
+
         <xsl:if test="not(parent::article)">
           <xsl:call-template name="process.footnotes"/>
         </xsl:if>
       </div>
+    </xsl:if>
+  </xsl:template>
+
+
+  <!-- only refer to setindex in toc if setindex is really gonna be there -->
+  <xsl:template match="setindex" mode="toc">
+    <xsl:param name="toc-context" select="."/>
+    <xsl:if test="count(indexentry) > 0 or $generate.index != 0">
+      <!-- original first test used to be *, causing setindex toc entry to be
+           generated if empty setindex had title! -->
+      <xsl:call-template name="subtoc">
+        <xsl:with-param name="toc-context" select="$toc-context"/>
+      </xsl:call-template>
+    </xsl:if>
+  </xsl:template>
+
+  <!-- only refer to index in toc if index is really gonna be there -->
+  <xsl:template match="index" mode="toc">
+    <xsl:param name="toc-context" select="."/>
+    <xsl:if test="count(indexentry) > 0 or $generate.index != 0">
+      <!-- original first test used to be *, causing index toc entry to be
+           generated if empty index had title! -->
+      <xsl:call-template name="subtoc">
+        <xsl:with-param name="toc-context" select="$toc-context"/>
+      </xsl:call-template>
     </xsl:if>
   </xsl:template>
 
