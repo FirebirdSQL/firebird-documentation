@@ -26,6 +26,9 @@
   <xsl:param name="paper.type" select="'A4'"/>
   <!-- This currently breaks the fo2pdf stage: -->
   <!--  <xsl:param name="double.sided" select="1"/>  -->
+
+  <xsl:param name="body.font.master">11</xsl:param>
+
   <xsl:param name="title.margin.left">0pc</xsl:param>
   <xsl:param name="variablelist.as.blocks" select="1"/>
   <xsl:param name="segmentedlist.as.table" select="1"/>
@@ -33,18 +36,14 @@
   <xsl:param name="admon.textlabel" select="1"/>
   
   <xsl:param name="generate.index" select="1"/>
-  <xsl:param name="make.index.markup" select="1"/>
-
-
-<!-- pakt in deze vorm ook screen en literallayout mee; wil alleen programlisting: -->
-<!--  <xsl:param name="shade.verbatim" select="1"/> -->
+  <xsl:param name="make.index.markup" select="0"/>
 
 
   <!-- Our own params: -->
 
-  <xsl:param name="highlevel.title.color" select="'#FB2400'"/>  <!-- set, book -->
-  <xsl:param name="midlevel.title.color" select="'green'"/>     <!-- part, chapter, article... TODO: preface !!! -->
-  <xsl:param name="lowlevel.title.color" select="'green'"/>     <!-- section, sectN -->
+  <xsl:param name="highlevel.title.color" select="'#FB2400'"/>  <!-- set, book -->   <!-- also nice:  #E03000 -->
+  <xsl:param name="midlevel.title.color" select="'darkblue'"/>  <!-- part, chapter, article... TODO: preface !!! -->
+  <xsl:param name="lowlevel.title.color" select="'darkblue'"/>  <!-- section, sectN -->
 
 <!--
   Do something with this?
@@ -64,6 +63,26 @@
   <xsl:param name="shade.verbatim" select="0"/>
      <!-- see also shade.verbatim.style (under attribute sets) -->
 
+<xsl:param name="generate.toc">
+/appendix toc,title
+article/appendix  nop
+/article   toc,title
+article   toc
+book      toc,title,figure,table,example,equation
+/chapter  toc,title
+part      toc,title
+/preface  toc,title
+qandadiv  toc
+qandaset  toc
+reference toc,title
+/sect1    toc
+/sect2    toc
+/sect3    toc
+/sect4    toc
+/sect5    toc
+/section  toc
+set       toc,title
+</xsl:param>
 
 
   <!-- ATTRIBUTE SETS: -->
@@ -73,7 +92,7 @@
     <xsl:attribute name="font-family">
       <xsl:value-of select="$monospace.font.family"/>
     </xsl:attribute>
-    <xsl:attribute name="font-size">0.9em</xsl:attribute>
+    <xsl:attribute name="font-size">0.95em</xsl:attribute>
   </xsl:attribute-set>
 
   <xsl:attribute-set name="shade.verbatim.style">
@@ -192,6 +211,23 @@
   </xsl:attribute-set>
 
 
+  <!-- Admonitions' titles in normal font size: -->
+
+  <xsl:attribute-set name="admonition.title.properties">
+    <xsl:attribute name="font-size">
+      <xsl:value-of select="$body.font.master"/>
+      <xsl:text>pt</xsl:text>
+    </xsl:attribute>
+  </xsl:attribute-set>
+
+  <!-- Admonitions' text in small font: -->
+
+  <xsl:attribute-set name="admonition.properties">
+    <xsl:attribute name="font-size">
+      <xsl:value-of select="0.9*$body.font.master"/>
+      <xsl:text>pt</xsl:text>
+    </xsl:attribute>
+  </xsl:attribute-set>
 
 
 
@@ -206,6 +242,7 @@
        If this ever bites us, we must remove this line or comment
        it out: -->
   <xsl:output method="xml" indent="yes"/>
+
 
 
 
@@ -281,7 +318,6 @@
       </xsl:call-template>
     </fo:block>
   </xsl:template>
-
 
 
 
@@ -760,54 +796,61 @@
       <xsl:call-template name="object.id"/>
     </xsl:variable>
 
-    <xsl:variable name="color">
+    <xsl:variable name="bgcolor">
       <xsl:choose>
-        <xsl:when test="name()='note'">F0FFFF</xsl:when>
+        <xsl:when test="name()='note'">F0F8FF</xsl:when>
         <xsl:when test="name()='warning'">FFE4E1</xsl:when>
         <xsl:when test="name()='caution'">FFE4E1</xsl:when>
-        <xsl:when test="name()='tip'">F0FFFF</xsl:when>
+        <xsl:when test="name()='tip'">F0F8FF</xsl:when>
         <xsl:when test="name()='important'">FFE4E1</xsl:when>
+      </xsl:choose>
+    </xsl:variable>
+
+<!--
+    <xsl:variable name="bgcolor">F0F0F0</xsl:variable>
+-->
+
+    <xsl:variable name="bordercolor">
+      <xsl:choose>
+        <xsl:when test="name()='note'">blue</xsl:when>
+        <xsl:when test="name()='warning'">red</xsl:when>
+        <xsl:when test="name()='caution'">red</xsl:when>
+        <xsl:when test="name()='tip'">blue</xsl:when>
+        <xsl:when test="name()='important'">red</xsl:when>
       </xsl:choose>
     </xsl:variable>
 
     <fo:block space-before.minimum="0.8em"
               space-before.optimum="1em"
               space-before.maximum="1.2em"
-              background-color="#{$color}"
               id="{$id}">
       <fo:table>
+        <fo:table-column column-width="40pt"/>
         <fo:table-column/>
         <fo:table-body>
           <fo:table-row keep-together="always">
             <fo:table-cell padding="6pt">
-
+            </fo:table-cell>
+            <fo:table-cell padding="6pt"
+                           border-width="0.50pt"
+                           border-style="solid"
+                           border-color="{$bordercolor}"
+                           background-color="#{$bgcolor}">
               <xsl:if test="$admon.textlabel != 0 or title">
                 <fo:block keep-with-next='always'
                           xsl:use-attribute-sets="admonition.title.properties">
                    <xsl:apply-templates select="." mode="object.title.markup"/>
                 </fo:block>
               </xsl:if>
-
               <fo:block xsl:use-attribute-sets="admonition.properties">
                 <xsl:apply-templates/>
               </fo:block>
-
             </fo:table-cell>
           </fo:table-row>
         </fo:table-body>
       </fo:table>
     </fo:block>
   </xsl:template>
-
-
-  <!-- Admonitions' titles in normal font size: -->
-
-  <xsl:attribute-set name="admonition.title.properties">
-    <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master"/>
-      <xsl:text>pt</xsl:text>
-    </xsl:attribute>
-  </xsl:attribute-set>
 
 
 
@@ -870,6 +913,38 @@
         </xsl:otherwise>
       </xsl:choose>
     </xsl:if>
+  </xsl:template>
+
+
+  <!-- Allow index also at <article> level; index on fresh page -->
+
+  <xsl:template match="index">
+    <xsl:variable name="id">
+      <xsl:call-template name="object.id"/>
+    </xsl:variable>
+
+    <xsl:if test="$generate.index != 0">
+    <xsl:choose>
+      <xsl:when test="$make.index.markup != 0">
+        <fo:block>
+          <xsl:call-template name="generate-index-markup">
+            <xsl:with-param name="scope" select="(ancestor::article|ancestor::book|/)[last()]"/>
+          </xsl:call-template>
+        </fo:block>
+      </xsl:when>
+      <xsl:otherwise>
+        <fo:block id="{$id}" break-before="page">
+          <xsl:call-template name="index.titlepage"/>
+        </fo:block>
+        <xsl:apply-templates/>
+        <xsl:if test="count(indexentry) = 0 and count(indexdiv) = 0">
+          <xsl:call-template name="generate-index">
+            <xsl:with-param name="scope" select="(ancestor::article|ancestor::book|/)[last()]"/>
+          </xsl:call-template>
+        </xsl:if>
+      </xsl:otherwise>
+    </xsl:choose>
+   </xsl:if>
   </xsl:template>
 
 
