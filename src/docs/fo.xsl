@@ -35,6 +35,32 @@
   <xsl:output method="xml" indent="yes"/>
 
 
+  <!-- Fix by Carlos Guzman Alvarez to generate the correct
+       number of fo:table-column tags from segmentedlists:  -->
+
+  <xsl:template match="segmentedlist" mode="seglist-table">
+    <xsl:apply-templates select="title" mode="list.title.mode" />
+    <fo:table>
+      <xsl:apply-templates select="segtitle" mode="seglist-column"/>
+      <fo:table-header>
+        <fo:table-row>
+          <xsl:apply-templates select="segtitle" mode="seglist-table"/>
+        </fo:table-row>
+      </fo:table-header>
+      <fo:table-body>
+        <xsl:apply-templates select="seglistitem" mode="seglist-table"/>
+      </fo:table-body>
+    </fo:table>
+  </xsl:template>
+
+  <xsl:template match="segtitle" mode="seglist-column">
+    <xsl:variable name="segtitlenum"
+                select="count(preceding-sibling::segtitle)+1"/>
+    <fo:table-column column-number="{$segtitlenum}"
+                      column-width="proportional-column-width(1)"/>
+  </xsl:template>
+
+
   <!-- Print seglist headers bold when displayed as table: -->
 
   <xsl:template match="segtitle" mode="seglist-table">
