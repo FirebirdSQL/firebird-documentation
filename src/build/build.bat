@@ -6,11 +6,14 @@ goto exit
 
 :gotJavaHome
 set _CP_=
+
 rem ----- ant libraries ------
 set _CP_=..\..\lib\ant.jar
 set _CP_=%_CP_%;..\..\lib\optional.jar
+
 rem ----- saxon libraries ------
 set _CP_=%_CP_%;..\..\lib\saxon.jar
+
 rem ----- fop libraries ------
 set _CP_=%_CP_%;..\..\lib\fop.jar
 set _CP_=%_CP_%;..\..\lib\batik.jar
