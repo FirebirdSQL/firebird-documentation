@@ -22,9 +22,14 @@ _CP_=$_CP_:../../lib/fop.jar
 _CP_=$_CP_:../../lib/batik.jar
 _CP_=$_CP_:../../lib/avalon-framework.jar
 
+# ----- graphics libraries used by FOP ------
+_CP_=$_CP_:../../lib/jimi_1.0.jar
+_CP_=$_CP_:../../lib/jai_core.jar
+_CP_=$_CP_:../../lib/jai_codec.jar
+
 _CP_=$_CP_:../../lib
 
-_CP_=$_CP_:$JAVA_HOME/lib/tools.jar
+_CP_=$_CP_:$JAVA_HOME/lib/tools.jar:$CLASSPATH
 
 "$JAVA_HOME/bin/java" -Xmx100000000 -showversion -classpath "$_CP_" org.apache.tools.ant.Main $*
 

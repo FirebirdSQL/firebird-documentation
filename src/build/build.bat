@@ -22,12 +22,17 @@ set _CP_=%_CP_%;..\..\lib\fop.jar
 set _CP_=%_CP_%;..\..\lib\batik.jar
 set _CP_=%_CP_%;..\..\lib\avalon-framework.jar
 
+rem ----- graphics libraries used by FOP ------
+set _CP_=%_CP_%;..\..\lib\jimi_1.0.jar
+set _CP_=%_CP_%;..\..\lib\jai_core.jar
+set _CP_=%_CP_%;..\..\lib\jai_codec.jar
+
 set _CP_=%_CP_%;..\..\lib
 
-set _CP_=%_CP_%;%JAVA_HOME%\lib\tools.jar
+set _CP_=%_CP_%;%JAVA_HOME%\lib\tools.jar;%CLASSPATH%
 
 
-"%JAVA_HOME%\bin\java.exe" -showversion -Xmx100000000 -classpath "%_CP_%;%CLASSPATH%" org.apache.tools.ant.Main %1 %2 %3 %4 %5
+"%JAVA_HOME%\bin\java.exe" -showversion -Xmx100000000 -classpath "%_CP_%" org.apache.tools.ant.Main %1 %2 %3 %4 %5
 
 
 :exit
