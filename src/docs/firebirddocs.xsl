@@ -9,12 +9,30 @@
 	extension-element-prefixes="saxon xalanredirect lxslt">
 
 	<xsl:import href="docbook/html/chunk.xsl"/>
-	<xsl:param name="html.stylesheet">firebirddocs.css</xsl:param>
+
+
+	<!-- STYLESHEET PARAMETERS: -->
+
+	<!-- TOC params -->
 	<xsl:param name="toc.section.depth">1</xsl:param>
-	<xsl:param name="generate.component.toc">1</xsl:param>
+	<xsl:param name="generate.section.toc.level">1</xsl:param>
+	<xsl:param name="generate.component.toc">1</xsl:param> <!-- obsolete param??? -->
+
+	<!-- admonitions params -->
+	<xsl:param name="admon.graphics">0</xsl:param>
+	<xsl:param name="admon.style"></xsl:param> 
+	  <!-- override default margins, as they can't be overridden in 
+	       the CSS; if we want margins we'll put them in the CSS -->
+
+        <!-- misc params -->
+	<xsl:param name="spacing.paras">1</xsl:param>
+	<xsl:param name="chunker.output.indent">yes</xsl:param>
+	<xsl:param name="use.id.as.filename">1</xsl:param>
 	<xsl:param name="chapter.autolabel" select="1"/>
+	<xsl:param name="html.stylesheet">firebirddocs.css</xsl:param>
 	<!-- Override the callout images location -->
 	<xsl:param name="callout.graphics.path" select="'images/callouts/'"/>
+
 
 	<!-- Override the graphics.xsl imageobjectco to correctly process the calloutlist child element -->
 	<xsl:template match="imageobjectco">
