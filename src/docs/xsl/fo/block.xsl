@@ -4,6 +4,79 @@
                 version='1.0'>
 
 
+
+<!-- implement blockquote using a blind table.
+     otherwise tables in blockquotes outdent back to the original margins,
+     and nested blockquotes are all on the same indentation level -->
+
+<xsl:variable name="blockquote-indent" select="'24pt'"/>
+
+<xsl:template match="blockquote">
+  <fo:table xsl:use-attribute-sets="blockquote.properties"
+            table-layout="fixed" width="100%"
+            start-indent="0pt" end-indent="0pt"> 
+            <!-- override start-indent and end-indent from attrset! -->
+    <fo:table-column column-number="1" column-width="{$blockquote-indent}"/>
+    <fo:table-column column-number="2"/>
+    <fo:table-column column-number="3" column-width="{$blockquote-indent}"/>
+
+    <fo:table-body>
+      <fo:table-row>
+        <fo:table-cell/>
+        <fo:table-cell>
+
+          <xsl:call-template name="anchor"/>
+          <fo:block>
+            <xsl:if test="title">
+              <fo:block xsl:use-attribute-sets="formal.title.properties">
+                <xsl:apply-templates select="." mode="object.title.markup"/>
+              </fo:block>
+            </xsl:if>
+            <xsl:apply-templates select="*[local-name(.) != 'title'
+                                         and local-name(.) != 'attribution']"/>
+          </fo:block>
+          <xsl:if test="attribution">
+            <fo:block text-align="right">
+              <!-- mdash -->
+              <xsl:text>&#x2014;</xsl:text>
+              <xsl:apply-templates select="attribution"/>
+            </fo:block>
+          </xsl:if>
+
+        </fo:table-cell>
+        <fo:table-cell/>
+      </fo:table-row>
+    </fo:table-body>
+  </fo:table>
+</xsl:template>
+
+<!--
+<xsl:template match="blockquote">
+  <fo:block xsl:use-attribute-sets="blockquote.properties">
+    <xsl:call-template name="anchor"/>
+    <fo:block>
+      <xsl:if test="title">
+        <fo:block xsl:use-attribute-sets="formal.title.properties">
+          <xsl:apply-templates select="." mode="object.title.markup"/>
+        </fo:block>
+      </xsl:if>
+      <xsl:apply-templates select="*[local-name(.) != 'title'
+                                   and local-name(.) != 'attribution']"/>
+    </fo:block>
+    <xsl:if test="attribution">
+      <fo:block text-align="right">
+-->        <!-- mdash --> <!--
+        <xsl:text>&#x2014;</xsl:text>
+        <xsl:apply-templates select="attribution"/>
+      </fo:block>
+    </xsl:if>
+  </fo:block>
+</xsl:template>
+-->
+
+
+
+
 <xsl:template match="revhistory">
 
   <xsl:variable name="explicit.table.width">

@@ -11,6 +11,16 @@
   <xsl:param name="fop.extensions" select="1"/>
     <!-- otherwise broken URLs, and no bookmarks! -->
 
+  <!-- This connects to that URL everytime it is mentioned in the draft pagemasters!
+    <xsl:param name="draft.watermark.image"
+               select="'http://docbook.sourceforge.net/release/images/draft.png'"/>  
+    so we change it to: -->
+  <xsl:param name="draft.watermark.image" select="''"/>
+
+  <!-- Let's get rid of that draft pagemaster FO bloat anyhow: -->
+  <xsl:param name="draft.mode" select="'no'"/> <!-- default is 'maybe' -->
+
+
   <xsl:param name="paper.type" select="'A4'"/>
 
   <!-- Wit FOP 0.20.5, this doesn't break the fo2pdf stage anymore.

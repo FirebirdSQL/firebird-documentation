@@ -49,8 +49,7 @@
         <fo:table-column/>
         <fo:table-body>
           <fo:table-row keep-together="always">
-            <fo:table-cell padding="6pt">
-            </fo:table-cell>
+            <fo:table-cell padding="6pt"/>
             <fo:table-cell padding="6pt"
                            border-width="0.50pt"
                            border-style="solid"
