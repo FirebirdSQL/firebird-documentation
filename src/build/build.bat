@@ -1,27 +1,24 @@
 @echo off
 rem ----- Verify and Set Required Environment Variables -----------------------
-
 if not "%JAVA_HOME%" == "" goto gotJavaHome
-echo You must set JAVA_HOME to point at your Java Development Kit distribution
-goto cleanup
+echo You must set JAVA_HOME to point at your JDK or JRE distribution
+goto exit
 
 :gotJavaHome
-
+set _CP_=
+rem ----- ant libraries ------
 set _CP_=..\..\lib\ant.jar
 set _CP_=%_CP_%;..\..\lib\optional.jar
-set _CP_=%_CP_%;..\..\lib\NetComponents.jar
-set _CP_=%_CP_%;..\..\lib\parser.jar
-set _CP_=%_CP_%;..\..\lib\jaxp.jar
-set _CP_=%_CP_%;..\..\lib\xalan.jar
-set _CP_=%_CP_%;..\..\lib\xerces.jar
-set _CP_=%_CP_%;..\..\lib\bsf.jar
+rem ----- saxon libraries ------
+set _CP_=%_CP_%;..\..\lib\saxon.jar
+rem ----- fop libraries ------
 set _CP_=%_CP_%;..\..\lib\fop.jar
-set _CP_=%_CP_%;..\..\lib\w3c.jar
+set _CP_=%_CP_%;..\..\lib\batik.jar
+set _CP_=%_CP_%;..\..\lib\avalon-framework-cvs-20020315.jar
+
 set _CP_=%_CP_%;..\..\lib
 
-set FIREBIRD_HOME=..\..\..\client\java\src\
+%JAVA_HOME%\bin\java.exe -showversion -Xmx100000000 -classpath "%JAVA_HOME%\lib\tools.jar;%_CP_%;%CLASSPATH%" org.apache.tools.ant.Main %1 %2 %3
+rem -Xbootclasspath/p:d:/Work/Firebird/manual/lib
 
-%JAVA_HOME%\bin\java.exe -Xmx100000000 -classpath "%JAVA_HOME%\lib\tools.jar;%_CP_%;%CLASSPATH%" -Dfirebird.home=%FIREBIRD_HOME% org.apache.tools.ant.Main %1 %2 %3 %4 %5
-
-
-:cleanup
+:exit
