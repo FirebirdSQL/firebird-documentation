@@ -32,7 +32,7 @@
   <!-- Header/footer logo and navigation stuff, merged into one
        template now or we'll have a maintenance nightmare later: -->
 
-  <!-- Our addition. No stylesheet by that name in riginal stylesheets: -->
+  <!-- Our addition. No template by that name in original stylesheets: -->
   <xsl:template name="header-footer.navigation">
 
     <xsl:param name="kind" select="'footer'"/>
@@ -114,6 +114,26 @@
               <xsl:otherwise>&#160;</xsl:otherwise>
             </xsl:choose>
 
+            <!--
+              We must change the following - and the "prev" link too - 
+              in such a way that next/prev links no longer step 
+              forward/back across a <book> boundary. Maybe not even 
+              across an <article> boundary. We'll have to be careful 
+              though, because usually the context node is a level 1 
+              <sect*>, but for the first HTML page of an article/chapter 
+              it may be the article/chapter node itself. Also test how
+              this is for a <book>'s first HTML page. And it depends
+              on the config. The stylesheet should be aware of this
+              and test accordingly.
+
+              Something along the lines of not(count(following-sibling::*)=0)
+              should be used, or something with position() = last() ?
+              And test the parent too. Maybe compare the context
+              node's parent with that of $next. Also compare the
+              context node itself with $next's parent, and vice versa.
+
+              This looks like it's gonna be pretty hairy... ;-)
+            -->
             <xsl:if test="count($next)>0">
               <a>
                 <xsl:attribute name="href">

@@ -7,7 +7,7 @@
     Driver stylesheet for the chunked (= multi-file) HTML generation.
 
     This one is a little more complicated than the fo and monohtml drivers.
-    If you want to know why, read the comment in ../docbook/chunk.xsl
+    If you want to know why, read the comment in ../docbook/html/chunk.xsl
 
     IMPORTANT:
     - Files containing templates overriding chunking behaviour must

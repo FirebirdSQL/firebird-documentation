@@ -29,6 +29,8 @@
   <xsl:include href="fo/param.xsl"/>
   <xsl:include href="fo/pagesetup.xsl"/>
   <xsl:include href="fo/lists.xsl"/>
+  <xsl:include href="fo/block.xsl"/>
+  <xsl:include href="fo/titlepage.xsl"/>
   <xsl:include href="fo/titlepage.templates.xsl"/>
   <xsl:include href="fo/admon.xsl"/>
   <xsl:include href="fo/index.xsl"/>

@@ -13,7 +13,7 @@
     Base stylesheet for the chunked (= multi-file) HTML generation.
 
     This stylesheet is imported by our driver stylesheet html.xsl
-    If you want to know why, read the comment in ../docbook/chunk.xsl
+    If you want to know why, read the comment in ../docbook/html/chunk.xsl
 
     IMPORTANT:
     - Files containing templates overriding chunking behaviour must be
@@ -34,6 +34,9 @@
   <xsl:include href="html/graphics.xsl"/>
   <xsl:include href="html/index.xsl"/>
   <xsl:include href="html/autotoc.xsl"/>
+  <xsl:include href="html/block.xsl"/>
+  <xsl:include href="html/titlepage.xsl"/>
+  <xsl:include href="html/titlepage.templates.xsl"/>
 
 
 </xsl:stylesheet>

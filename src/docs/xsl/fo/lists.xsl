@@ -104,6 +104,20 @@
       </xsl:call-template>
     </xsl:variable>
 
+    <!-- paulvink: Our addition:
+         more distance needed between label start and body start if
+         enclosing list's numbers are inherited: -->
+    <xsl:variable name="prov-dist">
+      <xsl:choose>
+        <xsl:when test="$label-width != ''">
+          <xsl:value-of select="$label-width"/>
+        </xsl:when>
+        <!-- Could refine the following further: how many inheritnum levels? -->
+        <xsl:when test="@inheritnum='inherit' and ancestor::listitem[parent::orderedlist]">3em</xsl:when>
+        <xsl:otherwise>2em</xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+
     <xsl:if test="title">
       <xsl:apply-templates select="title" mode="list.title.mode"/>
     </xsl:if>
@@ -116,18 +130,11 @@
                 |comment()[not(preceding-sibling::listitem)]
                 |processing-instruction()[not(preceding-sibling::listitem)]"/>
 
-
     <xsl:choose>
       <xsl:when test="$effspacing='compact' and ancestor::*[@spacing][1]/@spacing = 'compact'">
-        <fo:list-block id="{$id}" provisional-label-separation="0.2em">
-          <xsl:attribute name="provisional-distance-between-starts">
-            <xsl:choose>
-              <xsl:when test="$label-width != ''">
-                <xsl:value-of select="$label-width"/>
-              </xsl:when>
-              <xsl:otherwise>2em</xsl:otherwise>
-            </xsl:choose>
-          </xsl:attribute>
+        <fo:list-block id="{$id}"
+                       provisional-label-separation="0.2em"
+                       provisional-distance-between-starts="{$prov-dist}">
           <xsl:apply-templates
                 select="listitem
                         |comment()[preceding-sibling::listitem]
@@ -135,16 +142,10 @@
         </fo:list-block>
       </xsl:when>
       <xsl:otherwise>
-        <fo:list-block id="{$id}" xsl:use-attribute-sets="list.block.spacing"
-                       provisional-label-separation="0.2em">
-          <xsl:attribute name="provisional-distance-between-starts">
-            <xsl:choose>
-              <xsl:when test="$label-width != ''">
-                <xsl:value-of select="$label-width"/>
-              </xsl:when>
-              <xsl:otherwise>2em</xsl:otherwise>
-            </xsl:choose>
-          </xsl:attribute>
+        <fo:list-block id="{$id}"
+                       xsl:use-attribute-sets="list.block.spacing"
+                       provisional-label-separation="0.2em"
+                       provisional-distance-between-starts="{$prov-dist}">
           <xsl:apply-templates
                 select="listitem
                         |comment()[preceding-sibling::listitem]

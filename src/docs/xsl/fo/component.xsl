@@ -33,11 +33,12 @@
                   select="title|subtitle|titleabbrev|artheader|articleinfo"/>
 
     <xsl:variable name="content"
-                  select="*[not(self::title or self::subtitle
-                              or self::titleabbrev
-                              or self::articleinfo
-                              or self::articleinfo
-                              or self::index)]"/>
+                  select="*[not(self::title
+                             or self::subtitle
+                             or self::titleabbrev
+                             or self::artheader
+                             or self::articleinfo
+                             or self::index)]"/>
 
     <xsl:variable name="titlepage-master-reference">
       <xsl:call-template name="select.pagemaster">
@@ -173,7 +174,7 @@
     </xsl:if>
 
 
-    <!-- copied from default article template (but removed article.titlepage
+    <!-- copied from default article template, but removed article.titlepage
          and toc stuff, changed apply-templates to apply-templates select="$content",
          and leave initial-page-number to auto (implicitly) if double.sided is false:
     -->
@@ -322,6 +323,8 @@
 
   </xsl:template>
 
+
+
   <!-- By default, appendices have their own page-sequence.
        This is not the case for article/appendix.
        But at least we want it to start on a fresh page! -->
@@ -332,7 +335,12 @@
     </xsl:variable>
 
     <xsl:variable name="title">
-      <xsl:apply-templates select="." mode="title.markup"/>
+      <xsl:apply-templates select="." mode="title.markup">
+        <xsl:with-param name="allow-anchors" select="1"/>
+          <!-- allow-anchors 1 is our addition. Without it, 
+          indexterms within article/appendix/title will lead to
+          broken index entries -->
+      </xsl:apply-templates>
     </xsl:variable>
 
     <xsl:variable name="titleabbrev">
@@ -375,5 +383,7 @@
       <xsl:apply-templates/>
     </fo:block>
   </xsl:template>
+
+
 
 </xsl:stylesheet>
