@@ -16,29 +16,19 @@
 
 <xsl:template match="bibliography">
   <div class="{name(.)}">
-    <xsl:call-template name="component.separator"/>
-    <xsl:choose>
-      <xsl:when test="./title">
-        <xsl:apply-templates select="./title" mode="component.title.mode"/>
-      </xsl:when>
-      <xsl:otherwise>
-        <h2 class="title">
-          <a>
-            <xsl:attribute name="name">
-              <xsl:call-template name="object.id"/>
-            </xsl:attribute>
-            <xsl:call-template name="gentext.element.name"/>
-          </a>
-        </h2>
-      </xsl:otherwise>
-    </xsl:choose>
-
-    <xsl:if test="./subtitle">
-      <xsl:apply-templates select="./subtitle" mode="component.title.mode"/>
+    <xsl:if test="$generate.id.attributes != 0">
+      <xsl:attribute name="id">
+        <xsl:call-template name="object.id"/>
+      </xsl:attribute>
     </xsl:if>
 
+    <xsl:call-template name="bibliography.titlepage"/>
+
     <xsl:apply-templates/>
-    <xsl:call-template name="process.footnotes"/>
+
+    <xsl:if test="not(parent::article)">
+      <xsl:call-template name="process.footnotes"/>
+    </xsl:if>
   </div>
 </xsl:template>
 
@@ -48,15 +38,11 @@
 <xsl:template match="bibliography/titleabbrev"></xsl:template>
 
 <xsl:template match="bibliography/title" mode="component.title.mode">
-  <xsl:variable name="id">
-    <xsl:call-template name="object.id">
-      <xsl:with-param name="object" select=".."/>
-    </xsl:call-template>
-  </xsl:variable>
   <h2 class="title">
-    <a name="{$id}">
-      <xsl:apply-templates/>
-    </a>
+    <xsl:call-template name="anchor">
+      <xsl:with-param name="node" select=".."/>
+    </xsl:call-template>
+    <xsl:apply-templates/>
   </h2>
 </xsl:template>
 
@@ -75,46 +61,133 @@
 </xsl:template>
 
 <xsl:template match="bibliodiv/title">
-  <xsl:variable name="id">
-    <xsl:call-template name="object.id">
-      <xsl:with-param name="object" select=".."/>
-    </xsl:call-template>
-  </xsl:variable>
   <h3 class="{name(.)}">
-    <a name="{$id}">
-      <xsl:apply-templates/>
-    </a>
+    <xsl:call-template name="anchor">
+      <xsl:with-param name="node" select=".."/>
+    </xsl:call-template>
+    <xsl:apply-templates/>
   </h3>
 </xsl:template>
 
 <!-- ==================================================================== -->
 
 <xsl:template match="biblioentry">
-  <xsl:variable name="id"><xsl:call-template name="object.id"/></xsl:variable>
-  <div id="{$id}" class="{name(.)}">
-    <a name="{$id}"/>
-    <p>
-      <xsl:apply-templates mode="bibliography.mode"/>
-    </p>
-  </div>
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id"/>
+  </xsl:variable>
+
+  <xsl:choose>
+    <xsl:when test="string(.) = ''">
+      <xsl:variable name="bib" select="document($bibliography.collection)"/>
+      <xsl:variable name="entry" select="$bib/bibliography/*[@id=$id][1]"/>
+      <xsl:choose>
+        <xsl:when test="$entry">
+          <xsl:apply-templates select="$entry"/>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:message>
+            <xsl:text>No bibliography entry: </xsl:text>
+            <xsl:value-of select="$id"/>
+            <xsl:text> found in </xsl:text>
+            <xsl:value-of select="$bibliography.collection"/>
+          </xsl:message>
+          <div class="{name(.)}">
+            <xsl:call-template name="anchor"/>
+            <p>
+              <xsl:call-template name="biblioentry.label"/>
+              <xsl:text>Error: no bibliography entry: </xsl:text>
+              <xsl:value-of select="$id"/>
+              <xsl:text> found in </xsl:text>
+              <xsl:value-of select="$bibliography.collection"/>
+            </p>
+          </div>
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:when>
+    <xsl:otherwise>
+      <div class="{name(.)}">
+        <xsl:call-template name="anchor"/>
+        <p>
+          <xsl:call-template name="biblioentry.label"/>
+          <xsl:apply-templates mode="bibliography.mode"/>
+        </p>
+      </div>
+    </xsl:otherwise>
+  </xsl:choose>
 </xsl:template>
 
 <xsl:template match="bibliomixed">
-  <xsl:variable name="id"><xsl:call-template name="object.id"/></xsl:variable>
-  <div id="{$id}" class="{name(.)}">
-    <a name="{$id}"/>
-    <p>
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id"/>
+  </xsl:variable>
+
+  <xsl:choose>
+    <xsl:when test="string(.) = ''">
+      <xsl:variable name="bib" select="document($bibliography.collection)"/>
+      <xsl:variable name="entry" select="$bib/bibliography/*[@id=$id][1]"/>
       <xsl:choose>
-	<xsl:when test="local-name(*[1]) = 'abbrev'">
-	  <xsl:apply-templates select="*[position()>1]|text()"
-                               mode="bibliomixed.mode"/>
-	</xsl:when>
-	<xsl:otherwise>
-	  <xsl:apply-templates mode="bibliomixed.mode"/>
-	</xsl:otherwise>
+        <xsl:when test="$entry">
+          <xsl:apply-templates select="$entry"/>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:message>
+            <xsl:text>No bibliography entry: </xsl:text>
+            <xsl:value-of select="$id"/>
+            <xsl:text> found in </xsl:text>
+            <xsl:value-of select="$bibliography.collection"/>
+          </xsl:message>
+          <div class="{name(.)}">
+            <xsl:call-template name="anchor"/>
+            <p>
+              <xsl:call-template name="biblioentry.label"/>
+              <xsl:text>Error: no bibliography entry: </xsl:text>
+              <xsl:value-of select="$id"/>
+              <xsl:text> found in </xsl:text>
+              <xsl:value-of select="$bibliography.collection"/>
+            </p>
+          </div>
+        </xsl:otherwise>
       </xsl:choose>
-    </p>
-  </div>
+    </xsl:when>
+    <xsl:otherwise>
+      <div class="{name(.)}">
+        <xsl:call-template name="anchor"/>
+        <p class="{name(.)}">
+          <xsl:call-template name="biblioentry.label"/>
+          <xsl:apply-templates mode="bibliomixed.mode"/>
+        </p>
+      </div>
+    </xsl:otherwise>
+  </xsl:choose>
+</xsl:template>
+
+<xsl:template name="biblioentry.label">
+  <xsl:param name="node" select="."/>
+
+  <xsl:choose>
+    <xsl:when test="$bibliography.numbered != 0">
+      <xsl:text>[</xsl:text>
+      <xsl:number from="bibliography" count="biblioentry|bibliomixed"
+                  level="any" format="1"/>
+      <xsl:text>] </xsl:text>
+    </xsl:when>
+    <xsl:when test="local-name($node/child::*[1]) = 'abbrev'">
+      <xsl:text>[</xsl:text>
+      <xsl:apply-templates select="$node/abbrev[1]"/>
+      <xsl:text>] </xsl:text>
+    </xsl:when>
+    <xsl:when test="$node/@xreflabel">
+      <xsl:text>[</xsl:text>
+      <xsl:value-of select="$node/@xreflabel"/>
+      <xsl:text>] </xsl:text>
+    </xsl:when>
+    <xsl:when test="$node/@id">
+      <xsl:text>[</xsl:text>
+      <xsl:value-of select="$node/@id"/>
+      <xsl:text>] </xsl:text>
+    </xsl:when>
+    <xsl:otherwise><!-- nop --></xsl:otherwise>
+  </xsl:choose>
 </xsl:template>
 
 <!-- ==================================================================== -->
@@ -124,11 +197,9 @@
 </xsl:template>
 
 <xsl:template match="abbrev" mode="bibliography.mode">
-  <span class="{name(.)}">
-    <xsl:text>[</xsl:text>
+  <xsl:if test="preceding-sibling::*">
     <xsl:apply-templates mode="bibliography.mode"/>
-    <xsl:text>] </xsl:text>
-  </span>
+  </xsl:if>
 </xsl:template>
 
 <xsl:template match="abstract" mode="bibliography.mode">
@@ -228,17 +299,13 @@
               mode="bibliography.mode">
   <xsl:variable name="relation" select="../@relation"/>
   <xsl:choose>
-    <xsl:when test="$relation='article'">
-      <xsl:call-template name="dingbat">
-        <xsl:with-param name="dingbat">ldquo</xsl:with-param>
-      </xsl:call-template>
+    <xsl:when test="$relation='article' or @pubwork='article'">
+      <xsl:call-template name="gentext.startquote"/>
       <xsl:apply-templates/>
-      <xsl:call-template name="dingbat">
-        <xsl:with-param name="dingbat">rdquo</xsl:with-param>
-      </xsl:call-template>
+      <xsl:call-template name="gentext.endquote"/>
     </xsl:when>
     <xsl:otherwise>
-      <I><xsl:apply-templates/></I>
+      <i><xsl:apply-templates/></i>
     </xsl:otherwise>
   </xsl:choose>
   <xsl:value-of select="$biblioentry.item.separator"/>
@@ -255,7 +322,16 @@
 
 <xsl:template match="citetitle" mode="bibliography.mode">
   <span class="{name(.)}">
-    <i><xsl:apply-templates mode="bibliography.mode"/></i>
+    <xsl:choose>
+      <xsl:when test="@pubwork = 'article'">
+        <xsl:call-template name="gentext.startquote"/>
+        <xsl:call-template name="inline.charseq"/>
+        <xsl:call-template name="gentext.endquote"/>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:call-template name="inline.italicseq"/>
+      </xsl:otherwise>
+    </xsl:choose>
     <xsl:value-of select="$biblioentry.item.separator"/>
   </span>
 </xsl:template>
@@ -334,7 +410,9 @@
 
 <xsl:template match="copyright" mode="bibliography.mode">
   <span class="{name(.)}">
-    <xsl:call-template name="gentext.element.name"/>
+    <xsl:call-template name="gentext">
+      <xsl:with-param name="key" select="'Copyright'"/>
+    </xsl:call-template>
     <xsl:call-template name="gentext.space"/>
     <xsl:call-template name="dingbat">
       <xsl:with-param name="dingbat">copyright</xsl:with-param>
@@ -434,6 +512,13 @@
 </xsl:template>
 
 <xsl:template match="issn" mode="bibliography.mode">
+  <span class="{name(.)}">
+    <xsl:apply-templates mode="bibliography.mode"/>
+    <xsl:value-of select="$biblioentry.item.separator"/>
+  </span>
+</xsl:template>
+
+<xsl:template match="biblioid" mode="bibliography.mode">
   <span class="{name(.)}">
     <xsl:apply-templates mode="bibliography.mode"/>
     <xsl:value-of select="$biblioentry.item.separator"/>
@@ -542,10 +627,7 @@
 </xsl:template>
 
 <xsl:template match="revhistory" mode="bibliography.mode">
-  <span class="{name(.)}">
-    <xsl:apply-templates mode="bibliography.mode"/>
-    <xsl:value-of select="$biblioentry.item.separator"/>
-  </span>
+  <!-- suppressed; how could this be represented? -->
 </xsl:template>
 
 <xsl:template match="seriesinfo" mode="bibliography.mode">
@@ -577,7 +659,7 @@
 
 <xsl:template match="title" mode="bibliography.mode">
   <span class="{name(.)}">
-    <I><xsl:apply-templates mode="bibliography.mode"/></I>
+    <i><xsl:apply-templates mode="bibliography.mode"/></i>
     <xsl:value-of select="$biblioentry.item.separator"/>
   </span>
 </xsl:template>
@@ -596,6 +678,14 @@
   </span>
 </xsl:template>
 
+<xsl:template match="bibliocoverage|biblioid|bibliorelation|bibliosource"
+              mode="bibliography.mode">
+  <span class="{name(.)}">
+    <xsl:apply-templates mode="bibliography.mode"/>
+    <xsl:value-of select="$biblioentry.item.separator"/>
+  </span>
+</xsl:template>
+
 <!-- ==================================================================== -->
 
 <xsl:template match="*" mode="bibliomixed.mode">
@@ -603,9 +693,9 @@
 </xsl:template>
 
 <xsl:template match="abbrev" mode="bibliomixed.mode">
-  <span class="{name(.)}">
+  <xsl:if test="preceding-sibling::*">
     <xsl:apply-templates mode="bibliomixed.mode"/>
-  </span>
+  </xsl:if>
 </xsl:template>
 
 <xsl:template match="abstract" mode="bibliomixed.mode">
@@ -686,17 +776,13 @@
               mode="bibliomixed.mode">
   <xsl:variable name="relation" select="../@relation"/>
   <xsl:choose>
-    <xsl:when test="$relation='article'">
-      <xsl:call-template name="dingbat">
-        <xsl:with-param name="dingbat">ldquo</xsl:with-param>
-      </xsl:call-template>
+    <xsl:when test="$relation='article' or @pubwork='article'">
+      <xsl:call-template name="gentext.startquote"/>
       <xsl:apply-templates/>
-      <xsl:call-template name="dingbat">
-        <xsl:with-param name="dingbat">rdquo</xsl:with-param>
-      </xsl:call-template>
+      <xsl:call-template name="gentext.endquote"/>
     </xsl:when>
     <xsl:otherwise>
-      <I><xsl:apply-templates/></I>
+      <i><xsl:apply-templates/></i>
     </xsl:otherwise>
   </xsl:choose>
 </xsl:template>
@@ -711,9 +797,19 @@
 
 <xsl:template match="citetitle" mode="bibliomixed.mode">
   <span class="{name(.)}">
-    <i><xsl:apply-templates mode="bibliomixed.mode"/></i>
+    <xsl:choose>
+      <xsl:when test="@pubwork = 'article'">
+        <xsl:call-template name="gentext.startquote"/>
+        <xsl:call-template name="inline.charseq"/>
+        <xsl:call-template name="gentext.endquote"/>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:call-template name="inline.italicseq"/>
+      </xsl:otherwise>
+    </xsl:choose>
   </span>
 </xsl:template>
+
 
 <xsl:template match="collab" mode="bibliomixed.mode">
   <span class="{name(.)}">
@@ -817,6 +913,12 @@
   </span>
 </xsl:template>
 
+<xsl:template match="biblioid" mode="bibliomixed.mode">
+  <span class="{name(.)}">
+    <xsl:apply-templates mode="bibliomixed.mode"/>
+  </span>
+</xsl:template>
+
 <xsl:template match="issuenum" mode="bibliomixed.mode">
   <span class="{name(.)}">
     <xsl:apply-templates mode="bibliomixed.mode"/>
@@ -902,9 +1004,7 @@
 </xsl:template>
 
 <xsl:template match="revhistory" mode="bibliomixed.mode">
-  <span class="{name(.)}">
-    <xsl:apply-templates mode="bibliomixed.mode"/>
-  </span>
+  <!-- suppressed; how could this be represented? -->
 </xsl:template>
 
 <xsl:template match="seriesvolnums" mode="bibliomixed.mode">
@@ -938,6 +1038,13 @@
 </xsl:template>
 
 <xsl:template match="volumenum" mode="bibliomixed.mode">
+  <span class="{name(.)}">
+    <xsl:apply-templates mode="bibliomixed.mode"/>
+  </span>
+</xsl:template>
+
+<xsl:template match="bibliocoverage|biblioid|bibliorelation|bibliosource"
+              mode="bibliomixed.mode">
   <span class="{name(.)}">
     <xsl:apply-templates mode="bibliomixed.mode"/>
   </span>

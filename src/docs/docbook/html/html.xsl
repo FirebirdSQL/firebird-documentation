@@ -12,18 +12,42 @@
 
      ******************************************************************** -->
 
+<xsl:template name="anchor">
+  <xsl:param name="node" select="."/>
+  <xsl:param name="conditional" select="1"/>
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id">
+      <xsl:with-param name="object" select="$node"/>
+    </xsl:call-template>
+  </xsl:variable>
+  <xsl:if test="$conditional = 0 or $node/@id">
+    <a name="{$id}"/>
+  </xsl:if>
+</xsl:template>
+
+<xsl:template name="href.target.uri">
+  <xsl:param name="context" select="."/>
+  <xsl:param name="object" select="."/>
+  <xsl:text>#</xsl:text>
+  <xsl:call-template name="object.id">
+    <xsl:with-param name="object" select="$object"/>
+  </xsl:call-template>
+</xsl:template>
+
+<xsl:template name="href.target">
+  <xsl:param name="context" select="."/>
+  <xsl:param name="object" select="."/>
+  <xsl:text>#</xsl:text>
+  <xsl:call-template name="object.id">
+    <xsl:with-param name="object" select="$object"/>
+  </xsl:call-template>
+</xsl:template>
+
 <xsl:template name="dingbat">
   <xsl:param name="dingbat">bullet</xsl:param>
-  <xsl:choose>
-    <xsl:when test="false() and $using.chunker != 0">
-      <dingbat name="{$dingbat}"/>
-    </xsl:when>
-    <xsl:otherwise>
-      <xsl:call-template name="dingbat.characters">
-        <xsl:with-param name="dingbat" select="$dingbat"/>
-      </xsl:call-template>
-    </xsl:otherwise>
-  </xsl:choose>
+  <xsl:call-template name="dingbat.characters">
+    <xsl:with-param name="dingbat" select="$dingbat"/>
+  </xsl:call-template>
 </xsl:template>
 
 <xsl:template name="dingbat.characters">

@@ -12,6 +12,11 @@
 
      ******************************************************************** -->
 
+<xsl:template name="admon.graphic.width">
+  <xsl:param name="node" select="."/>
+  <xsl:text>25</xsl:text>
+</xsl:template>
+
 <xsl:template match="note|important|warning|caution|tip">
   <xsl:choose>
     <xsl:when test="$admon.graphics != 0">
@@ -23,94 +28,86 @@
   </xsl:choose>
 </xsl:template>
 
-<xsl:template name="admon.graphic.width">
-  <xsl:param name="node" select="."/>
-  <xsl:text>25</xsl:text>
-</xsl:template>
-
 <xsl:template name="admon.graphic">
   <xsl:param name="node" select="."/>
   <xsl:value-of select="$admon.graphics.path"/>
   <xsl:choose>
-    <xsl:when test="name($node)='note'">note</xsl:when>
-    <xsl:when test="name($node)='warning'">warning</xsl:when>
-    <xsl:when test="name($node)='caution'">caution</xsl:when>
-    <xsl:when test="name($node)='tip'">tip</xsl:when>
-    <xsl:when test="name($node)='important'">important</xsl:when>
+    <xsl:when test="local-name($node)='note'">note</xsl:when>
+    <xsl:when test="local-name($node)='warning'">warning</xsl:when>
+    <xsl:when test="local-name($node)='caution'">caution</xsl:when>
+    <xsl:when test="local-name($node)='tip'">tip</xsl:when>
+    <xsl:when test="local-name($node)='important'">important</xsl:when>
     <xsl:otherwise>note</xsl:otherwise>
   </xsl:choose>
   <xsl:value-of select="$admon.graphics.extension"/>
 </xsl:template>
 
 <xsl:template name="graphical.admonition">
+  <xsl:variable name="admon.type">
+    <xsl:choose>
+      <xsl:when test="local-name(.)='note'">Note</xsl:when>
+      <xsl:when test="local-name(.)='warning'">Warning</xsl:when>
+      <xsl:when test="local-name(.)='caution'">Caution</xsl:when>
+      <xsl:when test="local-name(.)='tip'">Tip</xsl:when>
+      <xsl:when test="local-name(.)='important'">Important</xsl:when>
+      <xsl:otherwise>Note</xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+
   <div class="{name(.)}">
-  <xsl:if test="$admon.style">
-    <xsl:attribute name="style">
-      <xsl:value-of select="$admon.style"/>
-    </xsl:attribute>
-  </xsl:if>
-  <table border="0">
-    <tr>
-      <td rowspan="2" align="center" valign="top">
-        <xsl:attribute name="width">
-          <xsl:call-template name="admon.graphic.width"/>
-        </xsl:attribute>
-        <img>
-          <xsl:attribute name="src">
-            <xsl:call-template name="admon.graphic"/>
+    <xsl:if test="$admon.style != ''">
+      <xsl:attribute name="style">
+        <xsl:value-of select="$admon.style"/>
+      </xsl:attribute>
+    </xsl:if>
+
+    <table border="0">
+      <xsl:attribute name="summary">
+        <xsl:value-of select="$admon.type"/>
+        <xsl:if test="title">
+          <xsl:text>: </xsl:text>
+          <xsl:value-of select="title"/>
+        </xsl:if>
+      </xsl:attribute>
+      <tr>
+        <td rowspan="2" align="center" valign="top">
+          <xsl:attribute name="width">
+            <xsl:call-template name="admon.graphic.width"/>
           </xsl:attribute>
-        </img>
-      </td>
-      <th>
-        <xsl:choose>
-          <xsl:when test="./title">
-            <xsl:apply-templates select="./title" 
-                                 mode="graphic.admonition.title.mode"/>
-          </xsl:when>
-          <xsl:otherwise>
-            <a>
-              <xsl:attribute name="name">
-                <xsl:call-template name="object.id"/>
-              </xsl:attribute>
-              <xsl:call-template name="gentext.element.name"/>
-            </a>
-          </xsl:otherwise>
-        </xsl:choose>
-      </th>
-    </tr>
-    <tr>
-      <td colspan="2" align="left" valign="top">
-        <xsl:apply-templates/>
-      </td>
-    </tr>
-  </table>
+          <img alt="[{$admon.type}]">
+            <xsl:attribute name="src">
+              <xsl:call-template name="admon.graphic"/>
+            </xsl:attribute>
+          </img>
+        </td>
+        <th align="left">
+          <xsl:call-template name="anchor"/>
+          <xsl:apply-templates select="." mode="object.title.markup"/>
+        </th>
+      </tr>
+      <tr>
+        <td colspan="2" align="left" valign="top">
+          <xsl:apply-templates/>
+        </td>
+      </tr>
+    </table>
   </div>
 </xsl:template>
 
 <xsl:template name="nongraphical.admonition">
   <div class="{name(.)}">
-  <xsl:if test="$admon.style">
-    <xsl:attribute name="style">
-      <xsl:value-of select="$admon.style"/>
-    </xsl:attribute>
-  </xsl:if>
-  <xsl:choose>
-    <xsl:when test="./title">
-      <xsl:apply-templates select="./title" mode="admonition.title.mode"/>
-    </xsl:when>
-    <xsl:otherwise>
-      <h3 class="title">
-        <a>
-          <xsl:attribute name="name">
-            <xsl:call-template name="object.id"/>
-          </xsl:attribute>
-          <xsl:call-template name="gentext.element.name"/>
-        </a>
-      </h3>
-    </xsl:otherwise>
-  </xsl:choose>
+    <xsl:if test="$admon.style">
+      <xsl:attribute name="style">
+        <xsl:value-of select="$admon.style"/>
+      </xsl:attribute>
+    </xsl:if>
 
-  <xsl:apply-templates/>
+    <h3 class="title">
+      <xsl:call-template name="anchor"/>
+      <xsl:apply-templates select="." mode="object.title.markup"/>
+    </h3>
+
+    <xsl:apply-templates/>
   </div>
 </xsl:template>
 
@@ -119,31 +116,5 @@
 <xsl:template match="warning/title"></xsl:template>
 <xsl:template match="caution/title"></xsl:template>
 <xsl:template match="tip/title"></xsl:template>
-
-<xsl:template match="title" mode="admonition.title.mode">
-  <xsl:variable name="id">
-    <xsl:call-template name="object.id">
-      <xsl:with-param name="object" select=".."/>
-    </xsl:call-template>
-  </xsl:variable>
-  <h3 class="title">
-    <a name="{$id}">
-      <xsl:apply-templates/>
-    </a>
-  </h3>
-</xsl:template>
-
-<xsl:template match="title" mode="graphic.admonition.title.mode">
-  <xsl:variable name="id">
-    <xsl:call-template name="object.id">
-      <xsl:with-param name="object" select=".."/>
-    </xsl:call-template>
-  </xsl:variable>
-  <b class="title">
-    <a name="{$id}">
-      <xsl:apply-templates/>
-    </a>
-  </b>
-</xsl:template>
 
 </xsl:stylesheet>

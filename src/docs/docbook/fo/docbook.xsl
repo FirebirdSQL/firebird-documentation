@@ -5,8 +5,10 @@
                 exclude-result-prefixes="doc"
                 version='1.0'>
 
-<xsl:output method="xml"
-            indent="yes"/>
+<!-- It is important to use indent="no" here, otherwise verbatim -->
+<!-- environments get broken by indented tags...at least when the -->
+<!-- callout extension is used...at least with some processors -->
+<xsl:output method="xml" indent="no"/>
 
 <!-- ********************************************************************
      $Id$
@@ -21,11 +23,16 @@
 <!-- ==================================================================== -->
 
 <xsl:include href="../VERSION"/>
+<xsl:include href="param.xsl"/>
 <xsl:include href="../lib/lib.xsl"/>
 <xsl:include href="../common/l10n.xsl"/>
 <xsl:include href="../common/common.xsl"/>
-<xsl:include href="param.xsl"/>
+<xsl:include href="../common/labels.xsl"/>
+<xsl:include href="../common/titles.xsl"/>
+<xsl:include href="../common/subtitles.xsl"/>
+<xsl:include href="../common/gentext.xsl"/>
 <xsl:include href="autotoc.xsl"/>
+<xsl:include href="autoidx.xsl"/>
 <xsl:include href="lists.xsl"/>
 <xsl:include href="callout.xsl"/>
 <xsl:include href="verbatim.xsl"/>
@@ -37,6 +44,7 @@
 <xsl:include href="inline.xsl"/>
 <xsl:include href="footnote.xsl"/>
 <xsl:include href="fo.xsl"/>
+<xsl:include href="fo-rtf.xsl"/>
 <xsl:include href="info.xsl"/>
 <xsl:include href="keywords.xsl"/>
 <xsl:include href="division.xsl"/>
@@ -55,10 +63,30 @@
 <xsl:include href="titlepage.templates.xsl"/>
 <xsl:include href="pagesetup.xsl"/>
 <xsl:include href="pi.xsl"/>
+<xsl:include href="ebnf.xsl"/>
+
+<xsl:include href="fop.xsl"/>
+<xsl:include href="passivetex.xsl"/>
+<xsl:include href="xep.xsl"/>
+
+<xsl:param name="stylesheet.result.type" select="'fo'"/>
+
+<!-- ==================================================================== -->
+
+<xsl:key name="id" match="*" use="@id"/>
 
 <!-- ==================================================================== -->
 
 <xsl:template match="*">
+  <xsl:message>
+    <xsl:value-of select="name(.)"/>
+    <xsl:text> encountered</xsl:text>
+    <xsl:if test="parent::*">
+      <xsl:text> in </xsl:text>
+      <xsl:value-of select="name(parent::*)"/>
+    </xsl:if>
+    <xsl:text>, but no template matches.</xsl:text>
+  </xsl:message>
   <fo:block color="red">
     <xsl:text>&lt;</xsl:text>
     <xsl:value-of select="name(.)"/>
@@ -70,11 +98,87 @@
   </fo:block>
 </xsl:template>
 
-<xsl:template match="text()">
-  <xsl:value-of select="."/> 
+<xsl:template match="/">
+  <xsl:call-template name="root.messages"/>
+
+  <xsl:variable name="document.element" select="*[1]"/>
+
+  <xsl:variable name="title">
+    <xsl:choose>
+      <xsl:when test="$document.element/title[1]">
+        <xsl:value-of select="$document.element/title[1]"/>
+      </xsl:when>
+      <xsl:otherwise>[could not find document title]</xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+
+  <fo:root font-family="{$body.font.family}"
+           font-size="{$body.font.size}"
+           text-align="{$alignment}"
+           line-height="{$line-height}">
+    <xsl:attribute name="language">
+      <xsl:call-template name="l10n.language">
+        <xsl:with-param name="target" select="/*[1]"/>
+      </xsl:call-template>
+    </xsl:attribute>
+
+    <xsl:if test="$xep.extensions != 0">
+      <xsl:call-template name="xep-document-information"/>
+    </xsl:if>
+    <xsl:call-template name="setup.pagemasters"/>
+    <xsl:choose>
+      <xsl:when test="$rootid != ''">
+        <xsl:choose>
+          <xsl:when test="count(key('id',$rootid)) = 0">
+            <xsl:message terminate="yes">
+              <xsl:text>ID '</xsl:text>
+              <xsl:value-of select="$rootid"/>
+              <xsl:text>' not found in document.</xsl:text>
+            </xsl:message>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:if test="$fop.extensions != 0">
+              <xsl:apply-templates select="key('id',$rootid)" mode="fop.outline"/>
+            </xsl:if>
+            <xsl:if test="$xep.extensions != 0">
+              <xsl:variable name="bookmarks">
+                <xsl:apply-templates select="key('id',$rootid)" mode="xep.outline"/>
+              </xsl:variable>
+              <xsl:if test="string($bookmarks) != ''">
+                <rx:outline xmlns:rx="http://www.renderx.com/XSL/Extensions">
+                  <xsl:copy-of select="$bookmarks"/>
+                </rx:outline>
+              </xsl:if>
+            </xsl:if>
+            <xsl:apply-templates select="key('id',$rootid)"/>
+          </xsl:otherwise>
+        </xsl:choose>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:if test="$fop.extensions != 0">
+          <xsl:apply-templates mode="fop.outline"/>
+        </xsl:if>
+        <xsl:if test="$xep.extensions != 0">
+          <xsl:variable name="bookmarks">
+            <xsl:apply-templates mode="xep.outline"/>
+          </xsl:variable>
+          <xsl:if test="string($bookmarks) != ''">
+            <rx:outline xmlns:rx="http://www.renderx.com/XSL/Extensions">
+              <xsl:copy-of select="$bookmarks"/>
+            </rx:outline>
+          </xsl:if>
+        </xsl:if>
+        <xsl:apply-templates/>
+      </xsl:otherwise>
+    </xsl:choose>
+
+  </fo:root>
 </xsl:template>
 
-<xsl:template match="/">
+
+<xsl:template name="root.messages">
+  <!-- redefine this any way you'd like to output messages -->
+  <!-- DO NOT OUTPUT ANYTHING FROM THIS TEMPLATE -->
   <xsl:message>
     <xsl:text>Making </xsl:text>
     <xsl:value-of select="$page.orientation"/>
@@ -86,47 +190,6 @@
     <xsl:value-of select="$page.height"/>
     <xsl:text>)</xsl:text>
   </xsl:message>
-
-  <xsl:variable name="document.element" select="*[1]"/>
-  <xsl:variable name="title">
-    <xsl:choose>
-      <xsl:when test="$document.element/title[1]">
-        <xsl:value-of select="$document.element/title[1]"/>
-      </xsl:when>
-      <xsl:otherwise>[could not find document title]</xsl:otherwise>
-    </xsl:choose>
-  </xsl:variable>
-  <xsl:variable name="docinfo" 
-                select="*[1]/artheader
-                        |*[1]/articleinfo
-                        |*[1]/sectioninfo
-                        |*[1]/sect1info"/>
-
-  <fo:root font-family="Times Roman"
-           font-size="12pt"
-           text-align="justify">
-    <xsl:call-template name="setup.pagemasters"/>
-    <xsl:choose>
-      <xsl:when test="$rootid != ''">
-        <xsl:choose>
-          <xsl:when test="count(id($rootid)) = 0">
-            <xsl:message terminate="yes">
-              <xsl:text>ID '</xsl:text>
-              <xsl:value-of select="$rootid"/>
-              <xsl:text>' not found in document.</xsl:text>
-            </xsl:message>
-          </xsl:when>
-          <xsl:otherwise>
-            <xsl:apply-templates select="id($rootid)"/>
-          </xsl:otherwise>
-        </xsl:choose>
-      </xsl:when>
-      <xsl:otherwise>
-        <xsl:apply-templates/>
-      </xsl:otherwise>
-    </xsl:choose>
-
-  </fo:root>
 </xsl:template>
 
 <!-- ==================================================================== -->

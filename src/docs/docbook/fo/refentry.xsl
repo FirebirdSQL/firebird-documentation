@@ -20,25 +20,28 @@
     <xsl:variable name="id">
       <xsl:call-template name="object.id"/>
     </xsl:variable>
-    <xsl:variable name="master-name">
+    <xsl:variable name="master-reference">
       <xsl:call-template name="select.pagemaster"/>
     </xsl:variable>
 
     <fo:page-sequence id="{$id}"
                       hyphenate="{$hyphenate}"
-                      master-name="{$master-name}">
+                      master-reference="{$master-reference}">
       <xsl:attribute name="language">
         <xsl:call-template name="l10n.language"/>
       </xsl:attribute>
+      <xsl:attribute name="format">
+        <xsl:call-template name="page.number.format"/>
+      </xsl:attribute>
       <xsl:if test="$double.sided != 0">
-        <xsl:attribute name="force-page-count">end-on-even</xsl:attribute>
+        <xsl:attribute name="initial-page-number">auto-odd</xsl:attribute>
       </xsl:if>
 
       <xsl:apply-templates select="." mode="running.head.mode">
-        <xsl:with-param name="master-name" select="$master-name"/>
+        <xsl:with-param name="master-reference" select="$master-reference"/>
       </xsl:apply-templates>
       <xsl:apply-templates select="." mode="running.foot.mode">
-        <xsl:with-param name="master-name" select="$master-name"/>
+        <xsl:with-param name="master-reference" select="$master-reference"/>
       </xsl:apply-templates>
 
       <fo:flow flow-name="xsl-region-body">
@@ -59,25 +62,28 @@
       <xsl:with-param name="object" select="ancestor::reference"/>
     </xsl:call-template>
   </xsl:variable>
-  <xsl:variable name="master-name">
+  <xsl:variable name="master-reference">
     <xsl:call-template name="select.pagemaster"/>
   </xsl:variable>
 
   <fo:page-sequence id="{$id}"
                     hyphenate="{$hyphenate}"
-                    master-name="{$master-name}">
+                    master-reference="{$master-reference}">
     <xsl:attribute name="language">
       <xsl:call-template name="l10n.language"/>
     </xsl:attribute>
+    <xsl:attribute name="format">
+      <xsl:call-template name="page.number.format"/>
+    </xsl:attribute>
     <xsl:if test="$double.sided != 0">
-      <xsl:attribute name="force-page-count">end-on-even</xsl:attribute>
+      <xsl:attribute name="initial-page-number">auto-odd</xsl:attribute>
     </xsl:if>
 
     <xsl:apply-templates select="." mode="running.head.mode">
-      <xsl:with-param name="master-name" select="$master-name"/>
+      <xsl:with-param name="master-reference" select="$master-reference"/>
     </xsl:apply-templates>
     <xsl:apply-templates select="." mode="running.foot.mode">
-      <xsl:with-param name="master-name" select="$master-name"/>
+      <xsl:with-param name="master-reference" select="$master-reference"/>
     </xsl:apply-templates>
 
     <fo:flow flow-name="xsl-region-body">
@@ -90,7 +96,7 @@
   </fo:page-sequence>
 </xsl:template>
 
-<xsl:template match="reference/docinfo"></xsl:template>
+<xsl:template match="reference/docinfo|refentry/refentryinfo"></xsl:template>
 <xsl:template match="reference/title"></xsl:template>
 <xsl:template match="reference/subtitle"></xsl:template>
 
@@ -98,38 +104,52 @@
 
 <xsl:template match="refentry">
   <xsl:variable name="id">
-    <xsl:call-template name="object.id">
-      <xsl:with-param name="object" select="ancestor::reference"/>
-    </xsl:call-template>
+    <xsl:call-template name="object.id"/>
   </xsl:variable>
-  <xsl:variable name="master-name">
+
+  <xsl:variable name="master-reference">
     <xsl:call-template name="select.pagemaster"/>
   </xsl:variable>
 
-  <fo:page-sequence id="{$id}"
-                    hyphenate="{$hyphenate}"
-                    master-name="{$master-name}">
-    <xsl:attribute name="language">
-      <xsl:call-template name="l10n.language"/>
-    </xsl:attribute>
-    <xsl:if test="$double.sided != 0">
-      <xsl:attribute name="force-page-count">end-on-even</xsl:attribute>
-    </xsl:if>
-
-    <xsl:apply-templates select="." mode="running.head.mode">
-      <xsl:with-param name="master-name" select="$master-name"/>
-    </xsl:apply-templates>
-    <xsl:apply-templates select="." mode="running.foot.mode">
-      <xsl:with-param name="master-name" select="$master-name"/>
-    </xsl:apply-templates>
-
-    <fo:flow flow-name="xsl-region-body">
-      <fo:block font-size="20pt" font-weight="bold">
-        <xsl:text>What about the title?</xsl:text>
-      </fo:block>
+  <xsl:variable name="refentry.content">
+    <fo:block id="{$id}">
       <xsl:apply-templates/>
-    </fo:flow>
-  </fo:page-sequence>
+    </fo:block>
+  </xsl:variable>
+
+  <xsl:choose>
+    <xsl:when test="not(parent::*) or parent::reference or parent::part">
+      <!-- make a page sequence -->
+      <fo:page-sequence hyphenate="{$hyphenate}"
+                        master-reference="{$master-reference}">
+        <xsl:attribute name="language">
+          <xsl:call-template name="l10n.language"/>
+        </xsl:attribute>
+        <xsl:attribute name="format">
+          <xsl:call-template name="page.number.format"/>
+        </xsl:attribute>
+        <xsl:if test="$double.sided != 0">
+          <xsl:attribute name="initial-page-number">auto-odd</xsl:attribute>
+        </xsl:if>
+
+        <xsl:apply-templates select="." mode="running.head.mode">
+          <xsl:with-param name="master-reference" select="$master-reference"/>
+        </xsl:apply-templates>
+        <xsl:apply-templates select="." mode="running.foot.mode">
+          <xsl:with-param name="master-reference" select="$master-reference"/>
+        </xsl:apply-templates>
+
+        <fo:flow flow-name="xsl-region-body">
+          <xsl:copy-of select="$refentry.content"/>
+        </fo:flow>
+      </fo:page-sequence>
+    </xsl:when>
+    <xsl:otherwise>
+      <fo:block break-before="page">
+        <xsl:copy-of select="$refentry.content"/>
+      </fo:block>
+    </xsl:otherwise>
+  </xsl:choose>
 </xsl:template>
 
 <xsl:template match="refmeta">
@@ -151,19 +171,55 @@
 </xsl:template>
 
 <xsl:template match="refnamediv">
-  <xsl:call-template name="block.object"/>
+  <fo:block>
+    <xsl:choose>
+      <xsl:when test="$refentry.generate.name != 0">
+        <fo:block xsl:use-attribute-sets="refentry.title.properties">
+          <xsl:call-template name="gentext">
+            <xsl:with-param name="key" select="'RefName'"/>
+          </xsl:call-template>
+        </fo:block>
+      </xsl:when>
+
+      <xsl:when test="$refentry.generate.title != 0">
+        <fo:block xsl:use-attribute-sets="refentry.title.properties">
+          <xsl:choose>
+            <xsl:when test="../refmeta/refentrytitle">
+              <xsl:apply-templates select="../refmeta/refentrytitle"/>
+            </xsl:when>
+            <xsl:otherwise>
+              <xsl:apply-templates select="refname[1]"/>
+            </xsl:otherwise>
+          </xsl:choose>
+        </fo:block>
+      </xsl:when>
+    </xsl:choose>
+
+    <fo:block space-after="1em">
+      <xsl:choose>
+        <xsl:when test="../refmeta/refentrytitle">
+          <xsl:apply-templates select="../refmeta/refentrytitle"/>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:apply-templates select="refname[1]"/>
+        </xsl:otherwise>
+      </xsl:choose>
+      <xsl:apply-templates select="refpurpose"/>
+    </fo:block>
+
+    <fo:block>
+      <xsl:for-each select="refname">
+        <xsl:apply-templates select="."/>
+        <xsl:if test="following-sibling::refname">
+          <xsl:text>, </xsl:text>
+        </xsl:if>
+      </xsl:for-each>
+    </fo:block>
+  </fo:block>
 </xsl:template>
 
 <xsl:template match="refname">
-  <xsl:if test="$refentry.generate.name != 0">
-    <fo:block font-size="18pt" font-weight="bold">
-      <xsl:call-template name="gentext.element.name"/>
-     </fo:block>
-  </xsl:if>
   <xsl:apply-templates/>
-  <xsl:if test="following-sibling::refname">
-    <xsl:text>, </xsl:text>
-  </xsl:if>
 </xsl:template>
 
 <xsl:template match="refpurpose">
@@ -190,36 +246,107 @@
 </xsl:template>
 
 <xsl:template match="refsynopsisdiv">
-  <fo:block>
-    <fo:block font-size="18pt" font-weight="bold">
-      <xsl:text>Synopsis (what about the title?)</xsl:text>
-    </fo:block>
-    <xsl:apply-templates/>
-  </fo:block>
-</xsl:template>
- 
-<xsl:template match="refsynopsisdiv/title">
-</xsl:template>
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id"/>
+  </xsl:variable>
 
-<xsl:template match="refsect1|refsect2|refsect3">
-  <xsl:call-template name="block.object"/>
-</xsl:template>
-
-<xsl:template match="refsect1/title">
-  <fo:block font-size="18pt" font-weight="bold">
+  <fo:block id="{$id}">
+    <xsl:call-template name="refsynopsisdiv.titlepage"/>
     <xsl:apply-templates/>
   </fo:block>
 </xsl:template>
 
-<xsl:template match="refsect2/title">
-  <fo:block font-size="16pt" font-weight="bold">
+<xsl:template match="refsection">
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id"/>
+  </xsl:variable>
+
+  <fo:block id="{$id}">
+    <xsl:call-template name="refsection.titlepage"/>
     <xsl:apply-templates/>
   </fo:block>
 </xsl:template>
 
-<xsl:template match="refsect3/title">
-  <fo:block font-size="14pt" font-weight="bold">
+<xsl:template match="refsect1">
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id"/>
+  </xsl:variable>
+
+  <fo:block id="{$id}">
+    <xsl:call-template name="refsect1.titlepage"/>
     <xsl:apply-templates/>
+  </fo:block>
+</xsl:template>
+
+<xsl:template match="refsect2">
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id"/>
+  </xsl:variable>
+
+  <fo:block id="{$id}">
+    <xsl:call-template name="refsect2.titlepage"/>
+    <xsl:apply-templates/>
+  </fo:block>
+</xsl:template>
+
+<xsl:template match="refsect3">
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id"/>
+  </xsl:variable>
+
+  <fo:block id="{$id}">
+    <xsl:call-template name="refsect3.titlepage"/>
+    <xsl:apply-templates/>
+  </fo:block>
+</xsl:template>
+
+<xsl:template match="refsynopsisdiv/title
+                     |refsection/title
+                     |refsect1/title
+                     |refsect2/title
+                     |refsect3/title">
+  <!-- nop; titlepage.mode instead -->
+</xsl:template>
+
+<xsl:template match="refsynopsisdiv/title
+                     |refsection/title
+                     |refsect1/title
+                     |refsect2/title
+                     |refsect3/title"
+              mode="titlepage.mode"
+              priority="2">
+  <xsl:variable name="section" select="parent::*"/>
+  <fo:block keep-with-next.within-column="always">
+    <xsl:variable name="id">
+      <xsl:call-template name="object.id">
+        <xsl:with-param name="object" select="$section"/>
+      </xsl:call-template>
+    </xsl:variable>
+
+    <xsl:variable name="level">
+      <xsl:call-template name="section.level">
+        <xsl:with-param name="node" select="$section"/>
+      </xsl:call-template>
+    </xsl:variable>
+
+    <xsl:variable name="title">
+      <xsl:apply-templates select="$section" mode="object.title.markup">
+        <xsl:with-param name="allow-anchors" select="1"/>
+      </xsl:apply-templates>
+    </xsl:variable>
+
+    <xsl:if test="$passivetex.extensions != 0">
+      <fotex:bookmark xmlns:fotex="http://www.tug.org/fotex" 
+                      fotex-bookmark-level="{$level + 2}" 
+                      fotex-bookmark-label="{$id}">
+        <xsl:value-of select="$title"/>
+      </fotex:bookmark>
+    </xsl:if>
+
+    <xsl:call-template name="section.heading">
+      <xsl:with-param name="level" select="$level"/>
+      <xsl:with-param name="title" select="$title"/>
+    </xsl:call-template>
   </fo:block>
 </xsl:template>
 

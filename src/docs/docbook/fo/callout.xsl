@@ -55,12 +55,8 @@
                         and $linenumbering.extension != '0'">
           <xsl:call-template name="number.rtf.lines">
             <xsl:with-param name="rtf" select="$rtf-with-callouts"/>
-            <xsl:with-param name="linenumbering.everyNth"
-                            select="$linenumbering.everyNth"/>
-            <xsl:with-param name="linenumbering.width"
-                            select="$linenumbering.width"/>
-            <xsl:with-param name="linenumbering.separator"
-                            select="$linenumbering.separator"/>
+            <xsl:with-param name="pi.context"
+                            select="programlisting|screen"/>
           </xsl:call-template>
           <xsl:apply-templates select="calloutlist"/>
         </xsl:when>
@@ -105,35 +101,96 @@
   <xsl:param name="conum" select='1'/>
 
   <xsl:choose>
-    <xsl:when test="$callout.unicode != '0'">
+    <!-- Draw callouts as images -->
+    <xsl:when test="$callout.graphics != '0'
+                    and $conum &lt;= $callout.graphics.number.limit">
+      <xsl:variable name="filename"
+                    select="concat($callout.graphics.path,$conum,$callout.graphics.extension)"/>
+
+      <fo:external-graphic>
+        <xsl:attribute name="src">
+          <xsl:choose>
+            <xsl:when test="$passivetex.extensions != 0
+                            or $fop.extensions != 0
+                            or $arbortext.extensions != 0">
+              <xsl:value-of select="$filename"/>
+            </xsl:when>
+            <xsl:otherwise>
+              <xsl:text>url(</xsl:text>
+              <xsl:value-of select="$filename"/>
+              <xsl:text>)</xsl:text>
+            </xsl:otherwise>
+          </xsl:choose>
+        </xsl:attribute>
+      </fo:external-graphic>
+    </xsl:when>
+
+    <xsl:when test="$callout.unicode != 0
+                    and $conum &lt;= $callout.unicode.number.limit">
+      <xsl:variable name="comarkup">
+        <xsl:choose>
+          <xsl:when test="$callout.unicode.start.character = 10102">
+            <xsl:choose>
+              <xsl:when test="$conum = 1">&#10102;</xsl:when>
+              <xsl:when test="$conum = 2">&#10103;</xsl:when>
+              <xsl:when test="$conum = 3">&#10104;</xsl:when>
+              <xsl:when test="$conum = 4">&#10105;</xsl:when>
+              <xsl:when test="$conum = 5">&#10106;</xsl:when>
+              <xsl:when test="$conum = 6">&#10107;</xsl:when>
+              <xsl:when test="$conum = 7">&#10108;</xsl:when>
+              <xsl:when test="$conum = 8">&#10109;</xsl:when>
+              <xsl:when test="$conum = 9">&#10110;</xsl:when>
+              <xsl:when test="$conum = 10">&#10111;</xsl:when>
+            </xsl:choose>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:message>
+              <xsl:text>Don't know how to generate Unicode callouts </xsl:text>
+              <xsl:text>when $callout.unicode.start.character is </xsl:text>
+              <xsl:value-of select="$callout.unicode.start.character"/>
+            </xsl:message>
+            <fo:inline background-color="#404040"
+                       color="white"
+                       padding-top="0.1em"
+                       padding-bottom="0.1em"
+                       padding-start="0.2em"
+                       padding-end="0.2em"
+                       baseline-shift="0.1em"
+                       font-family="{$body.font.family}"
+                       font-weight="bold"
+                       font-size="75%">
+              <xsl:value-of select="$conum"/>
+            </fo:inline>
+          </xsl:otherwise>
+        </xsl:choose>
+      </xsl:variable>
+
       <xsl:choose>
-        <xsl:when test="$conum = 1">&#x2776;</xsl:when>
-        <xsl:when test="$conum = 2">&#x2777;</xsl:when>
-        <xsl:when test="$conum = 3">&#x2778;</xsl:when>
-        <xsl:when test="$conum = 4">&#x2779;</xsl:when>
-        <xsl:when test="$conum = 5">&#x277A;</xsl:when>
-        <xsl:when test="$conum = 6">&#x277B;</xsl:when>
-        <xsl:when test="$conum = 7">&#x277C;</xsl:when>
-        <xsl:when test="$conum = 8">&#x277D;</xsl:when>
-        <xsl:when test="$conum = 9">&#x277E;</xsl:when>
-        <xsl:when test="$conum = 10">&#x277F;</xsl:when>
+        <xsl:when test="$callout.unicode.font != ''">
+          <fo:inline font-family="{$callout.unicode.font}">
+            <xsl:copy-of select="$comarkup"/>
+          </fo:inline>
+        </xsl:when>
         <xsl:otherwise>
-          <xsl:text>(</xsl:text>
-          <xsl:value-of select="$conum"/>
-          <xsl:text>)</xsl:text>
+          <xsl:copy-of select="$comarkup"/>
         </xsl:otherwise>
       </xsl:choose>
     </xsl:when>
-    <xsl:when test="$callout.graphics = '0'
-                    or $conum > $callout.graphics.number.limit">
 
-      <xsl:text>(</xsl:text>
-      <xsl:value-of select="$conum"/>
-      <xsl:text>)</xsl:text>
-    </xsl:when>
+    <!-- Most safe: draw a dark gray square with a white number inside -->
     <xsl:otherwise>
-      <fo:external-graphic
-          src="{$callout.graphics.path}{$conum}{$callout.graphics.extension}"/>
+      <fo:inline background-color="#404040"
+                 color="white"
+                 padding-top="0.1em"
+                 padding-bottom="0.1em"
+                 padding-start="0.2em"
+                 padding-end="0.2em"
+                 baseline-shift="0.1em"
+                 font-family="{$body.font.family}"
+                 font-weight="bold"
+                 font-size="75%">
+        <xsl:value-of select="$conum"/>
+      </fo:inline>
     </xsl:otherwise>
   </xsl:choose>
 </xsl:template>
