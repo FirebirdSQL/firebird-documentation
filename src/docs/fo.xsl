@@ -31,6 +31,13 @@
   <xsl:param name="segmentedlist.as.table" select="1"/>
   <xsl:param name="ulink.show" select="0"/>
   <xsl:param name="admon.textlabel" select="1"/>
+  
+  <xsl:param name="generate.index" select="1"/>
+  <xsl:param name="make.index.markup" select="1"/>
+
+
+<!-- pakt in deze vorm ook screen en literallayout mee; wil alleen programlisting: -->
+<!--  <xsl:param name="shade.verbatim" select="1"/> -->
 
 
   <!-- Our own params: -->
@@ -54,6 +61,10 @@
   <!-- Hmmmm... somehow those soft buggers don't make it into the .fo.
        Nor does anything else you specify here. -->
 
+  <xsl:param name="shade.verbatim" select="0"/>
+     <!-- see also shade.verbatim.style (under attribute sets) -->
+
+
 
   <!-- ATTRIBUTE SETS: -->
 
@@ -63,6 +74,27 @@
       <xsl:value-of select="$monospace.font.family"/>
     </xsl:attribute>
     <xsl:attribute name="font-size">0.9em</xsl:attribute>
+  </xsl:attribute-set>
+
+  <xsl:attribute-set name="shade.verbatim.style">
+    <xsl:attribute name="background-color">#E0E0E0</xsl:attribute>
+  </xsl:attribute-set>
+
+  <xsl:attribute-set name="verbatim.properties">
+    <xsl:attribute name="space-before.minimum">0.8em</xsl:attribute>
+    <xsl:attribute name="space-before.optimum">1em</xsl:attribute>
+    <xsl:attribute name="space-before.maximum">1.2em</xsl:attribute>
+    <!-- Removed space-after. But this CAN pose a problem if a text node follows... -->
+    <xsl:attribute name="space-after.minimum">0em</xsl:attribute>
+    <xsl:attribute name="space-after.optimum">0em</xsl:attribute>
+    <xsl:attribute name="space-after.maximum">0.2em</xsl:attribute>
+  </xsl:attribute-set>
+
+  <xsl:attribute-set name="table.cell.padding">
+    <xsl:attribute name="padding-left">4pt</xsl:attribute>
+    <xsl:attribute name="padding-right">4pt</xsl:attribute>
+    <xsl:attribute name="padding-top">4pt</xsl:attribute>
+    <xsl:attribute name="padding-bottom">4pt</xsl:attribute>
   </xsl:attribute-set>
 
 
@@ -131,6 +163,36 @@
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
   </xsl:attribute-set>
+
+
+  <!--
+    Brought space-after back to zero for lists and blockquotes.
+    This *could* pose a problem if the list is followed by a node
+    without leading space, e.g. in the case of a para/listitem
+    followed by text. However, it solves the bigger problem that
+    we have now: too much vertical space below lists etc.
+
+    Also see the various listitem/step overrides further below
+    (paulvink)
+  -->
+
+  <xsl:attribute-set name="blockquote.properties">
+    <xsl:attribute name="space-after.minimum">0em</xsl:attribute>
+    <xsl:attribute name="space-after.optimum">0em</xsl:attribute>
+    <xsl:attribute name="space-after.maximum">1em</xsl:attribute>
+  </xsl:attribute-set>
+
+  <xsl:attribute-set name="list.block.spacing">
+    <xsl:attribute name="space-before.optimum">1em</xsl:attribute>
+    <xsl:attribute name="space-before.minimum">0.8em</xsl:attribute>
+    <xsl:attribute name="space-before.maximum">1.2em</xsl:attribute>
+    <xsl:attribute name="space-after.optimum">0em</xsl:attribute>
+    <xsl:attribute name="space-after.minimum">0em</xsl:attribute>
+    <xsl:attribute name="space-after.maximum">0.2em</xsl:attribute>
+  </xsl:attribute-set>
+
+
+
 
 
 
@@ -307,6 +369,342 @@
 
 
 
+  <!-- OVERRIDES IN VARIOUS LISTS: NO VERTICAL SPACE BEFORE FIRST LISTITEM: -->
+
+  <!-- IMPROVE: Must be able to select an attribute set as a variable. But how?
+                Now we get lots of duplicated blocks :-(                    -->
+
+  <!-- in itemizedlist: -->
+  <xsl:template match="itemizedlist/listitem">
+    <xsl:variable name="id"><xsl:call-template name="object.id"/></xsl:variable>
+
+    <xsl:variable name="itemsymbol">
+      <xsl:call-template name="list.itemsymbol">
+        <xsl:with-param name="node" select="parent::itemizedlist"/>
+      </xsl:call-template>
+    </xsl:variable>
+
+    <xsl:variable name="item.contents">
+      <fo:list-item-label end-indent="label-end()">
+        <fo:block>
+          <xsl:choose>
+            <xsl:when test="$itemsymbol='disc'">&#x2022;</xsl:when>
+            <xsl:when test="$itemsymbol='bullet'">&#x2022;</xsl:when>
+            <!-- why do these symbols not work? -->
+            <!--
+            <xsl:when test="$itemsymbol='circle'">&#x2218;</xsl:when>
+            <xsl:when test="$itemsymbol='round'">&#x2218;</xsl:when>
+            <xsl:when test="$itemsymbol='square'">&#x2610;</xsl:when>
+            <xsl:when test="$itemsymbol='box'">&#x2610;</xsl:when>
+            -->
+            <xsl:otherwise>&#x2022;</xsl:otherwise>
+          </xsl:choose>
+        </fo:block>
+      </fo:list-item-label>
+      <fo:list-item-body start-indent="body-start()">
+        <fo:block>
+  	<xsl:apply-templates/>
+        </fo:block>
+      </fo:list-item-body>
+    </xsl:variable>
+
+    <!-- override: no vertical space before FIRST listitem: -->
+    <xsl:choose>
+      <xsl:when test="position()=1">
+        <fo:list-item id="{$id}">
+          <xsl:copy-of select="$item.contents"/>
+        </fo:list-item>
+      </xsl:when>
+      <xsl:when test="parent::*/@spacing = 'compact'">
+        <fo:list-item id="{$id}" xsl:use-attribute-sets="compact.list.item.spacing">
+          <xsl:copy-of select="$item.contents"/>
+        </fo:list-item>
+      </xsl:when>
+      <xsl:otherwise>
+        <fo:list-item id="{$id}" xsl:use-attribute-sets="list.item.spacing">
+          <xsl:copy-of select="$item.contents"/>
+        </fo:list-item>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  <!-- end itemizedlist/listitem -->
+
+
+  <!-- in orderedlist: -->
+  <xsl:template match="orderedlist/listitem">
+    <xsl:variable name="id"><xsl:call-template name="object.id"/></xsl:variable>
+
+    <xsl:variable name="item.contents">
+      <fo:list-item-label end-indent="label-end()">
+        <fo:block>
+          <xsl:apply-templates select="." mode="item-number"/>
+        </fo:block>
+      </fo:list-item-label>
+      <fo:list-item-body start-indent="body-start()">
+        <fo:block>
+  	<xsl:apply-templates/>
+        </fo:block>
+      </fo:list-item-body>
+    </xsl:variable>
+
+    <!-- override: no vertical space before FIRST listitem: -->
+    <xsl:choose>
+      <xsl:when test="position()=1">
+        <fo:list-item id="{$id}">
+          <xsl:copy-of select="$item.contents"/>
+        </fo:list-item>
+      </xsl:when>
+      <xsl:when test="parent::*/@spacing = 'compact'">
+        <fo:list-item id="{$id}" xsl:use-attribute-sets="compact.list.item.spacing">
+          <xsl:copy-of select="$item.contents"/>
+        </fo:list-item>
+      </xsl:when>
+      <xsl:otherwise>
+        <fo:list-item id="{$id}" xsl:use-attribute-sets="list.item.spacing">
+          <xsl:copy-of select="$item.contents"/>
+        </fo:list-item>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  <!-- end orderedlist/listitem -->
+
+
+  <!-- in variablelist-as-list: -->
+  <xsl:template match="varlistentry" mode="vl.as.list">
+    <xsl:variable name="id"><xsl:call-template name="object.id"/></xsl:variable>
+
+    <!-- override: no vertical space before FIRST varlistentry: -->
+    <xsl:choose>
+      <xsl:when test="position()=1">
+        <fo:list-item id="{$id}">
+          <fo:list-item-label end-indent="label-end()" text-align="start">
+            <fo:block>
+              <xsl:apply-templates select="term"/>
+            </fo:block>
+          </fo:list-item-label>
+          <fo:list-item-body start-indent="body-start()">
+            <fo:block>
+      	<xsl:apply-templates select="listitem"/>
+            </fo:block>
+          </fo:list-item-body>
+        </fo:list-item>
+      </xsl:when>
+
+      <xsl:otherwise>
+        <fo:list-item id="{$id}" xsl:use-attribute-sets="list.item.spacing">
+          <fo:list-item-label end-indent="label-end()" text-align="start">
+            <fo:block>
+              <xsl:apply-templates select="term"/>
+            </fo:block>
+          </fo:list-item-label>
+          <fo:list-item-body start-indent="body-start()">
+            <fo:block>
+      	<xsl:apply-templates select="listitem"/>
+            </fo:block>
+          </fo:list-item-body>
+        </fo:list-item>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  <!-- end variablelist-as-list/varlistentry -->
+
+
+  <!-- in variablelist-as-block: -->
+  <xsl:template match="varlistentry" mode="vl.as.blocks">
+    <xsl:variable name="id"><xsl:call-template name="object.id"/></xsl:variable>
+
+    <!-- override: no vertical space before FIRST varlistentry: -->
+    <xsl:choose>
+      <xsl:when test="position()=1">
+        <fo:block id="{$id}" keep-together.within-column="always"
+                             keep-with-next.within-column="always">
+          <xsl:apply-templates select="term"/>
+        </fo:block>
+      </xsl:when>
+      <xsl:otherwise>
+        <fo:block id="{$id}" xsl:use-attribute-sets="list.item.spacing"
+                             keep-together.within-column="always"
+                             keep-with-next.within-column="always">
+          <xsl:apply-templates select="term"/>
+        </fo:block>
+      </xsl:otherwise>
+    </xsl:choose>
+
+    <fo:block margin-left="0.25in">
+      <xsl:apply-templates select="listitem"/>
+    </fo:block>
+  </xsl:template>
+  <!-- end variablelist-as-block/varlistentry -->
+
+
+  <!-- in procedure steps: -->
+  <xsl:template match="procedure/step|substeps/step">
+    <xsl:variable name="id">
+      <xsl:call-template name="object.id"/>
+    </xsl:variable>
+
+    <!-- override: no vertical space before FIRST step: -->
+    <xsl:choose>
+      <xsl:when test="position()=1">
+        <fo:list-item>
+          <fo:list-item-label end-indent="label-end()">
+            <fo:block id="{$id}">
+              <!-- dwc: fix for one step procedures. Use a bullet if there's no step 2 -->
+              <xsl:choose>
+                <xsl:when test="count(../step) = 1">
+                  <xsl:text>&#x2022;</xsl:text>
+                </xsl:when>
+                <xsl:otherwise>
+                  <xsl:apply-templates select="." mode="number">
+                    <xsl:with-param name="recursive" select="0"/>
+                  </xsl:apply-templates>.
+                </xsl:otherwise>
+              </xsl:choose>
+            </fo:block>
+          </fo:list-item-label>
+          <fo:list-item-body start-indent="body-start()">
+            <fo:block>
+              <xsl:apply-templates/>
+            </fo:block>
+          </fo:list-item-body>
+        </fo:list-item>
+      </xsl:when>
+
+      <xsl:otherwise>
+        <fo:list-item xsl:use-attribute-sets="list.item.spacing">
+          <fo:list-item-label end-indent="label-end()">
+            <fo:block id="{$id}">
+              <!-- dwc: fix for one step procedures. Use a bullet if there's no step 2 -->
+              <xsl:choose>
+                <xsl:when test="count(../step) = 1">
+                  <xsl:text>&#x2022;</xsl:text>
+                </xsl:when>
+                <xsl:otherwise>
+                  <xsl:apply-templates select="." mode="number">
+                    <xsl:with-param name="recursive" select="0"/>
+                  </xsl:apply-templates>.
+                </xsl:otherwise>
+              </xsl:choose>
+            </fo:block>
+          </fo:list-item-label>
+          <fo:list-item-body start-indent="body-start()">
+            <fo:block>
+              <xsl:apply-templates/>
+            </fo:block>
+          </fo:list-item-body>
+        </fo:list-item>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  <!-- end procedure steps: -->
+
+
+  <!-- in stepalternatives steps: -->
+  <xsl:template match="stepalternatives/step">
+    <xsl:variable name="id">
+      <xsl:call-template name="object.id"/>
+    </xsl:variable>
+
+    <!-- override: no vertical space before FIRST step: -->
+    <xsl:choose>
+      <xsl:when test="position()=1">
+        <fo:list-item>
+          <fo:list-item-label end-indent="label-end()">
+            <fo:block id="{$id}">
+      	<xsl:text>&#x2022;</xsl:text>
+            </fo:block>
+          </fo:list-item-label>
+          <fo:list-item-body start-indent="body-start()">
+            <fo:block>
+      	<xsl:apply-templates/>
+            </fo:block>
+          </fo:list-item-body>
+        </fo:list-item>
+      </xsl:when>
+
+      <xsl:otherwise>
+        <fo:list-item xsl:use-attribute-sets="list.item.spacing">
+          <fo:list-item-label end-indent="label-end()">
+            <fo:block id="{$id}">
+      	<xsl:text>&#x2022;</xsl:text>
+            </fo:block>
+          </fo:list-item-label>
+          <fo:list-item-body start-indent="body-start()">
+            <fo:block>
+      	<xsl:apply-templates/>
+            </fo:block>
+          </fo:list-item-body>
+        </fo:list-item>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  <!-- end stepalternatives steps: -->
+
+
+  <!-- No double lead-in space for procedures -->
+  <xsl:template match="procedure">
+    <xsl:variable name="id">
+      <xsl:call-template name="object.id"/>
+    </xsl:variable>
+  
+    <xsl:variable name="param.placement"
+                  select="substring-after(normalize-space($formal.title.placement),
+                                          concat(local-name(.), ' '))"/>
+  
+    <xsl:variable name="placement">
+      <xsl:choose>
+        <xsl:when test="contains($param.placement, ' ')">
+          <xsl:value-of select="substring-before($param.placement, ' ')"/>
+        </xsl:when>
+        <xsl:when test="$param.placement = ''">before</xsl:when>
+        <xsl:otherwise>
+          <xsl:value-of select="$param.placement"/>
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+  
+    <!-- Preserve order of PIs and comments -->
+    <xsl:variable name="preamble"
+          select="*[not(self::step
+                    or self::title
+                    or self::titleabbrev)]
+                  |comment()[not(preceding-sibling::step)]
+                  |processing-instruction()[not(preceding-sibling::step)]"/>
+  
+    <xsl:variable name="steps" 
+                  select="step
+                          |comment()[preceding-sibling::step]
+                          |processing-instruction()[preceding-sibling::step]"/>
+  
+    <!-- override: don't apply list.block.spacing to outer block: -->
+    <fo:block id="{$id}">
+      <xsl:if test="./title and $placement = 'before'">
+        <!-- n.b. gentext code tests for $formal.procedures and may make an "informal" -->
+        <!-- heading even though we called formal.object.heading. odd but true. -->
+        <xsl:call-template name="formal.object.heading"/>
+      </xsl:if>
+  
+      <xsl:apply-templates select="$preamble"/>
+  
+      <fo:list-block xsl:use-attribute-sets="list.block.spacing"
+                     provisional-distance-between-starts="2em"
+                     provisional-label-separation="0.2em">
+        <xsl:apply-templates select="$steps"/>
+      </fo:list-block>
+  
+      <xsl:if test="./title and $placement != 'before'">
+        <!-- n.b. gentext code tests for $formal.procedures and may make an "informal" -->
+        <!-- heading even though we called formal.object.heading. odd but true. -->
+        <xsl:call-template name="formal.object.heading"/>
+      </xsl:if>
+    </fo:block>
+  </xsl:template>
+  <!-- end procedure -->
+
+
+
+
+
   <!-- Fix by Carlos Guzman Alvarez to generate the correct
        number of fo:table-column tags from segmentedlists:  -->
 
@@ -380,7 +778,7 @@
       <fo:table>
         <fo:table-column/>
         <fo:table-body>
-          <fo:table-row>
+          <fo:table-row keep-together="always">
             <fo:table-cell padding="6pt">
 
               <xsl:if test="$admon.textlabel != 0 or title">
@@ -412,6 +810,13 @@
   </xsl:attribute-set>
 
 
+
+  <xsl:attribute-set name="xref.properties">
+    <xsl:attribute name="color"><xsl:value-of select="'darkblue'"/></xsl:attribute>
+<!--    <xsl:attribute name="text-decoration"><xsl:value-of select="'overline'"/></xsl:attribute> -->
+  </xsl:attribute-set>
+
+
   <!-- ulink appearance.  TODO: Parameterize color etc.  -->
 
   <xsl:template match="ulink" name="ulink">
@@ -429,7 +834,7 @@
           </xsl:call-template>
         </xsl:when>
         <xsl:otherwise>
-  	<xsl:apply-templates/>
+  	  <xsl:apply-templates/>
         </xsl:otherwise>
       </xsl:choose>
     </fo:basic-link>

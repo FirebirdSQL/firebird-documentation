@@ -25,6 +25,8 @@
          the CSS; if we want margins we'll put them in the CSS -->
 
   <!-- misc params -->
+  <xsl:param name="generate.index" select="1"/>
+  <xsl:param name="make.index.markup" select="1"/>
   <xsl:param name="segmentedlist.as.table" select="1"/>
   <xsl:param name="spacing.paras">1</xsl:param>
   <xsl:param name="chunker.output.indent">yes</xsl:param>
@@ -43,7 +45,7 @@
 
 
 
-  <!-- Header/footer logo and navigation stuff, merged into one 
+  <!-- Header/footer logo and navigation stuff, merged into one
        template now or we'll have a maintenance nightmare later: -->
 
   <xsl:template name="header-footer.navigation">
@@ -52,62 +54,40 @@
       <!-- default to footer because that's the "lightest" variant -->
     <xsl:param name="prev" select="/foo"/>
     <xsl:param name="next" select="/foo"/>
+
     <xsl:variable name="home" select="/*[1]"/>
     <xsl:variable name="up" select="parent::*"/>
 
     <xsl:if test="$suppress.navigation = '0'">
-      <table border="0" cellpadding="0" cellspacing="0" height="65">
-        <tr height="65">
+      <table width="100%" border="0" cellpadding="0" cellspacing="0">
+        <tr height="64">
 
           <xsl:choose>
             <xsl:when test="$kind='header'">
               <!-- header-specific: -->
-              <td rowspan="2">
+              <td valign="top">
                 <a href="http://www.firebirdsql.org/">
                   <img src="images/firebirdlogo.png"
 		       alt="Firebird home"
 		       border="0" width="85" height="84"/>
+		</a>
+              </td>
+              <td width="100%">
+                <a href="http://www.firebirdsql.org/">
                   <img src="images/titleblackgill.gif"
-		       alt="Firebird home"
-		       border="0" width="215" height="40"
-		       align="center"/>
+		       alt="Firebird home" align="top"
+		       border="0" width="215" height="40"/>
 		</a>
               </td>
             </xsl:when>
 	    <xsl:otherwise>
               <!-- footer-specific: -->
-              <td rowspan="2" width="100%" align="right" valign="center">
+              <td align="right" valign="center">
               </td>
 	    </xsl:otherwise>
           </xsl:choose>
 
-          <td rowspan="2" width="100%" align="right" valign="center">
-            <a>
-              <xsl:attribute name="href">
-                <xsl:call-template name="href.target">
-                  <xsl:with-param name="object" select="$home"/>
-                </xsl:call-template>
-              </xsl:attribute>
-              <img src="images/top.gif"
-	           alt="Overall table of contents"
-		   width="30" height="30" border="0"/>
-            </a>
-
-            <xsl:choose>
-              <xsl:when test="count($up)>0">
-                <a>
-                  <xsl:attribute name="href">
-                    <xsl:call-template name="href.target">
-                      <xsl:with-param name="object" select="$up"/>
-                    </xsl:call-template>
-                  </xsl:attribute>
-                  <img src="images/toc.gif"
-		       alt="Up one level"
-		       width="30" height="30" border="0"/>
-                </a>
-              </xsl:when>
-              <xsl:otherwise>&#160;</xsl:otherwise>
-            </xsl:choose>
+          <td colspan="2" align="right">
 
             <xsl:if test="count($prev)>0">
               <a>
@@ -121,6 +101,33 @@
 		     width="30" height="30" border="0"/>
               </a>
             </xsl:if>
+
+            <a>
+              <xsl:attribute name="href">
+                <xsl:call-template name="href.target">
+                  <xsl:with-param name="object" select="$home"/>
+                </xsl:call-template>
+              </xsl:attribute>
+              <img src="images/toc.gif"
+	           alt="Overall table of contents"
+		   width="30" height="30" border="0"/>
+            </a>
+
+            <xsl:choose>
+              <xsl:when test="count($up)>0">
+                <a>
+                  <xsl:attribute name="href">
+                    <xsl:call-template name="href.target">
+                      <xsl:with-param name="object" select="$up"/>
+                    </xsl:call-template>
+                  </xsl:attribute>
+                  <img src="images/top.gif"
+		       alt="Up one level"
+		       width="30" height="30" border="0"/>
+                </a>
+              </xsl:when>
+              <xsl:otherwise>&#160;</xsl:otherwise>
+            </xsl:choose>
 
             <xsl:if test="count($next)>0">
               <a>
@@ -137,7 +144,6 @@
 
           </td>
         </tr>
-        <tr/>
       </table>
     </xsl:if>
 
