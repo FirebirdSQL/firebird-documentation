@@ -31,17 +31,11 @@
 			<table border="0" cellpadding="0" cellspacing="0" height="65">
 				<tr height="65">
 					<td rowspan="2">
-						<img src="images/firebird_header2.png" width="443" height="127"/>
+						<img src="images/firebirdlogo.png" width="85" height="84"/>
+						<img src="images/titleblackgill.gif" width="215" height="40" align="center"/>
 					</td>
-					<!--td rowspan="2"  width="100%" align="right" valign="top"-->
-					<!--td rowspan="2"  width="100%" align="left" valign="center"> 
-                                          <img src="images/titlegill.gif" width="215" height="40"/> 
-                                        </td-->
-					<td rowspan="2"   width="100%" align="right" valign="center">
-						
-				
-
- 						<a>
+					<td rowspan="2" 	width="100%" align="right" valign="center">
+						<a>
 							<xsl:attribute name="href"><xsl:call-template name="href.target"><xsl:with-param name="object" select="$home"/></xsl:call-template></xsl:attribute>
 							<img src="images/top.gif" width="30" height="30" border="0"/>
 						</a>
@@ -80,8 +74,8 @@
 		<xsl:if test="$suppress.navigation = '0'">
 			<table border="0" cellpadding="0" cellspacing="0" height="65">
 				<tr height="65">
-					<td rowspan="2"   width="100%" align="right" valign="center">
-						
+					<td rowspan="2" 	width="100%" align="right" valign="center">
+
 					</td>
 					<td rowspan="2"  width="100%" align="right" valign="center">
 						<a>
