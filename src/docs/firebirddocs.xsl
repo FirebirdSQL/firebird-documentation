@@ -88,7 +88,7 @@
                 </xsl:call-template>
               </xsl:attribute>
               <img src="images/top.gif"
-	           alt="Topmost table of contents"
+	           alt="Overall table of contents"
 		   width="30" height="30" border="0"/>
             </a>
 
