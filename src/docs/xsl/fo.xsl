@@ -26,6 +26,7 @@
 
   <!-- then include our own customizations: -->
   <xsl:include href="common/l10n.xsl"/>
+  <xsl:include href="common/titles.xsl"/>
   <xsl:include href="fo/param.xsl"/>
   <xsl:include href="fo/pagesetup.xsl"/>
   <xsl:include href="fo/verbatim.xsl"/>

@@ -30,6 +30,8 @@
   <!-- ...and include our own overrides/additions
        EXCEPT THOSE THAT CONTROL CHUNKING BEHAVIOUR: -->
 
+  <xsl:include href="common/l10n.xsl"/>
+  <xsl:include href="common/titles.xsl"/>
   <xsl:include href="html/param.xsl"/>
   <xsl:include href="html/graphics.xsl"/>
   <xsl:include href="html/index.xsl"/>

@@ -11,6 +11,8 @@
 
 
   <!-- ...and override stuff: -->
+  <xsl:include href="common/l10n.xsl"/>
+  <xsl:include href="common/titles.xsl"/>
   <xsl:param name="segmentedlist.as.table" select="1"/>
 
 </xsl:stylesheet>

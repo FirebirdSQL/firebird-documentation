@@ -10,11 +10,28 @@
                        |refentry
                        |sect1|sect2|sect3|sect4|sect5|section"
                 mode="fop.outline">
+
     <xsl:variable name="id">
       <xsl:call-template name="object.id"/>
     </xsl:variable>
+
+    <xsl:variable name="istop">
+      <xsl:choose>
+        <xsl:when test="not(parent::*) or $id=$rootid">1</xsl:when>
+        <xsl:otherwise>0</xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+
     <xsl:variable name="bookmark-label">
-      <xsl:apply-templates select="." mode="object.title.markup"/>
+      <!-- topmost element gets full title; others titleabbrev: -->
+      <xsl:choose>
+        <xsl:when test="$istop=1">
+          <xsl:apply-templates select="." mode="object.title.markup"/>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:apply-templates select="." mode="object.titleabbrev.markup"/>
+        </xsl:otherwise>
+      </xsl:choose>
     </xsl:variable>
 
     <!-- Put the root element bookmark at the same level as its children.
@@ -22,7 +39,7 @@
          the current build, ie the top of what winds up in this PDF file -->
 
     <xsl:choose>
-      <xsl:when test="not(parent::*) or $id=$rootid">
+      <xsl:when test="$istop=1">
         <fox:outline internal-destination="{$id}">
           <fox:label>
             <xsl:value-of select="normalize-space(translate($bookmark-label, $a-dia, $a-asc))"/>
