@@ -48,8 +48,8 @@
       <xsl:otherwise>
         <!-- can't do this one step: attributes are unordered! -->
         <xsl:variable name="lang-scope"
-                      select="(ancestor-or-self::*[@lang]
-                               |ancestor-or-self::*[@xml:lang])[last()]"/>
+                      select="($target/ancestor-or-self::*[@lang]
+                           |$target/ancestor-or-self::*[@xml:lang])[last()]"/>
         <xsl:variable name="lang-attr"
                       select="($lang-scope/@lang | $lang-scope/@xml:lang)[1]"/>
 
@@ -153,17 +153,6 @@
 
   <xsl:variable name="l10n.gentext"
                 select="($l10n.xml/l:i18n/l:l10n[@language=$lang]/l:gentext[@key=$key])[1]"/>
-
-  <xsl:variable name="l10n.name">
-    <xsl:choose>
-      <xsl:when test="$local.l10n.gentext">
-        <xsl:value-of select="$local.l10n.gentext/@text"/>
-      </xsl:when>
-      <xsl:otherwise>
-        <xsl:value-of select="$l10n.gentext/@text"/>
-      </xsl:otherwise>
-    </xsl:choose>
-  </xsl:variable>
 
   <xsl:choose>
     <xsl:when test="count($local.l10n.gentext) &gt; 0">

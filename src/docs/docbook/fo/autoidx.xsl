@@ -13,6 +13,8 @@
 ]>
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:fo="http://www.w3.org/1999/XSL/Format"
+                xmlns:rx="http://www.renderx.com/XSL/Extensions"
+                xmlns:axf="http://www.antennahouse.com/names/XSL/Extensions"
                 version="1.0">
 
 <!-- ********************************************************************
@@ -152,34 +154,60 @@
   <xsl:variable name="key" select="&primary;"/>
   <xsl:variable name="refs" select="key('primary', $key)[&scope;]"/>
   <fo:block>
+    <xsl:if test="$axf.extensions != 0">
+      <xsl:attribute name="axf:suppress-duplicate-page-number">true</xsl:attribute>
+    </xsl:if>
     <xsl:value-of select="primary"/>
 
-    <xsl:variable name="page-number-citations">
-      <xsl:for-each select="$refs[not(see) and not(seealso)]">
-        <xsl:apply-templates select="." mode="reference">
-          <xsl:with-param name="scope" select="$scope"/>
-        </xsl:apply-templates>
-      </xsl:for-each>
-
-      <xsl:if test="$refs[not(secondary)]/*[self::see]">
-        <xsl:apply-templates select="$refs[generate-id() = generate-id(key('see', concat(&primary;, &sep;, &sep;, &sep;, see))[&scope;][1])]"
-                             mode="index-see">
-           <xsl:with-param name="scope" select="$scope"/>
-           <xsl:sort select="translate(see, &lowercase;, &uppercase;)"/>
-        </xsl:apply-templates>
-      </xsl:if>
-    </xsl:variable>
-
     <xsl:choose>
-      <xsl:when test="$passivetex.extensions != '0'">
-        <fotex:sort xmlns:fotex="http://www.tug.org/fotex">
-          <xsl:copy-of select="$page-number-citations"/>
-        </fotex:sort>
+      <xsl:when test="$xep.extensions != 0">
+        <xsl:if test="$refs[not(see) and not(seealso) and not(secondary)]">
+          <xsl:text>, </xsl:text>
+          <xsl:variable name="primary" select="primary"/>
+          <xsl:variable name="primary.significant" select="concat(primary, $significant.flag)"/>
+          <rx:page-index>
+            <xsl:if test="$refs[@significance='preferred'][not(see) and not(seealso) and not(secondary)]">
+              <rx:index-item xsl:use-attribute-sets="index.preferred.page.properties xep.index.item.properties"
+                ref-key="{$primary.significant}"/>
+            </xsl:if>
+            <xsl:if test="$refs[not(@significance) or @significance!='preferred'][not(see) and not(seealso) and not(secondary)]">
+              <rx:index-item xsl:use-attribute-sets="xep.index.item.properties"
+                ref-key="{$primary}"/>
+            </xsl:if>
+          </rx:page-index>        
+        </xsl:if>
       </xsl:when>
       <xsl:otherwise>
-        <xsl:copy-of select="$page-number-citations"/>
+        <xsl:variable name="page-number-citations">
+          <xsl:for-each select="$refs[not(see) and not(seealso)
+                                and not(secondary)]">
+            <xsl:apply-templates select="." mode="reference">
+              <xsl:with-param name="scope" select="$scope"/>
+            </xsl:apply-templates>
+          </xsl:for-each>
+        </xsl:variable>
+
+        <xsl:choose>
+          <xsl:when test="$passivetex.extensions != '0'">
+            <fotex:sort xmlns:fotex="http://www.tug.org/fotex">
+              <xsl:copy-of select="$page-number-citations"/>
+            </fotex:sort>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:copy-of select="$page-number-citations"/>
+          </xsl:otherwise>
+        </xsl:choose>
       </xsl:otherwise>
     </xsl:choose>
+
+    <xsl:if test="$refs[not(secondary)]/*[self::see]">
+      <xsl:apply-templates select="$refs[generate-id() = generate-id(key('see', concat(&primary;, &sep;, &sep;, &sep;, see))[&scope;][1])]"
+                           mode="index-see">
+         <xsl:with-param name="scope" select="$scope"/>
+         <xsl:sort select="translate(see, &lowercase;, &uppercase;)"/>
+      </xsl:apply-templates>
+    </xsl:if>
+
   </fo:block>
 
   <xsl:if test="$refs/secondary or $refs[not(secondary)]/*[self::seealso]">
@@ -204,34 +232,71 @@
   <xsl:variable name="key" select="concat(&primary;, &sep;, &secondary;)"/>
   <xsl:variable name="refs" select="key('secondary', $key)[&scope;]"/>
   <fo:block>
+    <xsl:if test="$axf.extensions != 0">
+      <xsl:attribute name="axf:suppress-duplicate-page-number">true</xsl:attribute>
+    </xsl:if>
     <xsl:value-of select="secondary"/>
 
-    <xsl:variable name="page-number-citations">
-      <xsl:for-each select="$refs[not(see) and not(seealso)]">
-        <xsl:apply-templates select="." mode="reference">
-          <xsl:with-param name="scope" select="$scope"/>
-        </xsl:apply-templates>
-      </xsl:for-each>
-
-      <xsl:if test="$refs[not(tertiary)]/*[self::see]">
-        <xsl:apply-templates select="$refs[generate-id() = generate-id(key('see', concat(&primary;, &sep;, &secondary;, &sep;, &sep;, see))[&scope;][1])]"
-                             mode="index-see">
-          <xsl:with-param name="scope" select="$scope"/>
-          <xsl:sort select="translate(see, &lowercase;, &uppercase;)"/>
-        </xsl:apply-templates>
-      </xsl:if>
-    </xsl:variable>
-
     <xsl:choose>
-      <xsl:when test="$passivetex.extensions != '0'">
-        <fotex:sort xmlns:fotex="http://www.tug.org/fotex">
-          <xsl:copy-of select="$page-number-citations"/>
-        </fotex:sort>
+      <xsl:when test="$xep.extensions != 0">
+        <xsl:if test="$refs[not(see) and not(seealso) and not(tertiary)]">
+          <xsl:text>, </xsl:text>
+          <xsl:variable name="primary" select="primary"/>
+          <xsl:variable name="secondary" select="secondary"/>
+          <xsl:variable name="primary.significant" select="concat(primary, $significant.flag)"/>
+          <rx:page-index>
+            <xsl:if test="$refs[@significance='preferred'][not(see) and not(seealso) and not(tertiary)]">
+              <rx:index-item xsl:use-attribute-sets="index.preferred.page.properties xep.index.item.properties">
+                <xsl:attribute name="ref-key">
+                  <xsl:value-of select="$primary.significant"/>
+                  <xsl:text>, </xsl:text>
+                  <xsl:value-of select="$secondary"/>
+                </xsl:attribute>
+              </rx:index-item>
+            </xsl:if>
+            <xsl:if test="$refs[not(@significance) or @significance!='preferred'][not(see) and not(seealso) and not(tertiary)]">
+              <rx:index-item xsl:use-attribute-sets="xep.index.item.properties">
+                <xsl:attribute name="ref-key">
+                  <xsl:value-of select="$primary"/>
+                  <xsl:text>, </xsl:text>
+                  <xsl:value-of select="$secondary"/>
+                </xsl:attribute>
+              </rx:index-item>
+            </xsl:if>
+          </rx:page-index>
+        </xsl:if>
       </xsl:when>
       <xsl:otherwise>
-        <xsl:copy-of select="$page-number-citations"/>
+        <xsl:variable name="page-number-citations">
+          <xsl:for-each select="$refs[not(see) and not(seealso)
+                                and not(tertiary)]">
+            <xsl:apply-templates select="." mode="reference">
+              <xsl:with-param name="scope" select="$scope"/>
+            </xsl:apply-templates>
+          </xsl:for-each>
+        </xsl:variable>
+
+        <xsl:choose>
+          <xsl:when test="$passivetex.extensions != '0'">
+            <fotex:sort xmlns:fotex="http://www.tug.org/fotex">
+              <xsl:copy-of select="$page-number-citations"/>
+            </fotex:sort>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:copy-of select="$page-number-citations"/>
+          </xsl:otherwise>
+        </xsl:choose>
       </xsl:otherwise>
     </xsl:choose>
+
+    <xsl:if test="$refs[not(tertiary)]/*[self::see]">
+      <xsl:apply-templates select="$refs[generate-id() = generate-id(key('see', concat(&primary;, &sep;, &secondary;, &sep;, &sep;, see))[&scope;][1])]"
+                           mode="index-see">
+        <xsl:with-param name="scope" select="$scope"/>
+        <xsl:sort select="translate(see, &lowercase;, &uppercase;)"/>
+      </xsl:apply-templates>
+    </xsl:if>
+
   </fo:block>
 
   <xsl:if test="$refs/tertiary or $refs[not(tertiary)]/*[self::seealso]">
@@ -255,34 +320,75 @@
   <xsl:variable name="key" select="concat(&primary;, &sep;, &secondary;, &sep;, &tertiary;)"/>
   <xsl:variable name="refs" select="key('tertiary', $key)[&scope;]"/>
   <fo:block>
+    <xsl:if test="$axf.extensions != 0">
+      <xsl:attribute name="axf:suppress-duplicate-page-number">true</xsl:attribute>
+    </xsl:if>
     <xsl:value-of select="tertiary"/>
 
-    <xsl:variable name="page-number-citations">
-      <xsl:for-each select="$refs[not(see) and not(seealso)]">
-        <xsl:apply-templates select="." mode="reference">
-          <xsl:with-param name="scope" select="$scope"/>
-        </xsl:apply-templates>
-      </xsl:for-each>
-
-      <xsl:if test="$refs/see">
-        <xsl:apply-templates select="$refs[generate-id() = generate-id(key('see', concat(&primary;, &sep;, &secondary;, &sep;, &tertiary;, &sep;, see))[&scope;][1])]"
-                             mode="index-see">
-          <xsl:with-param name="scope" select="$scope"/>
-          <xsl:sort select="translate(see, &lowercase;, &uppercase;)"/>
-        </xsl:apply-templates>
-      </xsl:if>
-    </xsl:variable>
-
     <xsl:choose>
-      <xsl:when test="$passivetex.extensions != '0'">
-        <fotex:sort xmlns:fotex="http://www.tug.org/fotex">
-          <xsl:copy-of select="$page-number-citations"/>
-        </fotex:sort>
+      <xsl:when test="$xep.extensions != 0">
+        <xsl:if test="$refs[not(see) and not(seealso)]">
+          <xsl:text>, </xsl:text>
+          <xsl:variable name="primary" select="primary"/>
+          <xsl:variable name="secondary" select="secondary"/>
+          <xsl:variable name="tertiary" select="tertiary"/>
+          <xsl:variable name="primary.significant" select="concat(primary, $significant.flag)"/>
+          <rx:page-index>
+            <xsl:if test="$refs[@significance='preferred'][not(see) and not(seealso)]">
+              <rx:index-item xsl:use-attribute-sets="index.preferred.page.properties xep.index.item.properties">
+                <xsl:attribute name="ref-key">
+                  <xsl:value-of select="$primary.significant"/>
+                  <xsl:text>, </xsl:text>
+                  <xsl:value-of select="$secondary"/>
+                  <xsl:text>, </xsl:text>
+                  <xsl:value-of select="$tertiary"/>
+                </xsl:attribute>
+              </rx:index-item>
+            </xsl:if>
+            <xsl:if test="$refs[not(@significance) or @significance!='preferred'][not(see) and not(seealso)]">
+              <rx:index-item xsl:use-attribute-sets="xep.index.item.properties">
+                <xsl:attribute name="ref-key">
+                  <xsl:value-of select="$primary"/>
+                  <xsl:text>, </xsl:text>
+                  <xsl:value-of select="$secondary"/>
+                  <xsl:text>, </xsl:text>
+                  <xsl:value-of select="$tertiary"/>
+                </xsl:attribute>
+              </rx:index-item>
+            </xsl:if>
+          </rx:page-index>
+        </xsl:if>
       </xsl:when>
       <xsl:otherwise>
-        <xsl:copy-of select="$page-number-citations"/>
+        <xsl:variable name="page-number-citations">
+          <xsl:for-each select="$refs[not(see) and not(seealso)]">
+            <xsl:apply-templates select="." mode="reference">
+              <xsl:with-param name="scope" select="$scope"/>
+            </xsl:apply-templates>
+          </xsl:for-each>
+        </xsl:variable>
+
+        <xsl:choose>
+          <xsl:when test="$passivetex.extensions != '0'">
+            <fotex:sort xmlns:fotex="http://www.tug.org/fotex">
+              <xsl:copy-of select="$page-number-citations"/>
+            </fotex:sort>
+          </xsl:when>
+          <xsl:otherwise>
+            <xsl:copy-of select="$page-number-citations"/>
+          </xsl:otherwise>
+        </xsl:choose>
       </xsl:otherwise>
     </xsl:choose>
+
+    <xsl:if test="$refs/see">
+      <xsl:apply-templates select="$refs[generate-id() = generate-id(key('see', concat(&primary;, &sep;, &secondary;, &sep;, &tertiary;, &sep;, see))[&scope;][1])]"
+                           mode="index-see">
+        <xsl:with-param name="scope" select="$scope"/>
+        <xsl:sort select="translate(see, &lowercase;, &uppercase;)"/>
+      </xsl:apply-templates>
+    </xsl:if>
+
   </fo:block>
 
   <xsl:if test="$refs/seealso">

@@ -234,7 +234,7 @@
   </xsl:choose>
 </xsl:template>
 
-<xsl:template match="abstract|authorblurb|bibliodiv|bibliomset
+<xsl:template match="abstract|authorblurb|personblurb|bibliodiv|bibliomset
                      |biblioset|blockquote|calloutlist|caution|colophon
                      |constraintdef|formalpara|glossdiv|important|indexdiv
                      |itemizedlist|legalnotice|lot|msg|msgexplan|msgmain
@@ -334,7 +334,7 @@
   <!-- handles both biblioentry and bibliomixed -->
   <xsl:choose>
     <xsl:when test="string(.) = ''">
-      <xsl:variable name="bib" select="document($bibliography.collection)"/>
+      <xsl:variable name="bib" select="document($bibliography.collection,.)"/>
       <xsl:variable name="id" select="@id"/>
       <xsl:variable name="entry" select="$bib/bibliography/*[@id=$id][1]"/>
       <xsl:choose>
@@ -437,7 +437,7 @@
 
 <xsl:template match="section|simplesect
                      |sect1|sect2|sect3|sect4|sect5
-                     |refsect1|refsect2|refsect3" mode="xref-to">
+                     |refsect1|refsect2|refsect3|refsection" mode="xref-to">
   <xsl:param name="referrer"/>
   <xsl:param name="xrefstyle"/>
 

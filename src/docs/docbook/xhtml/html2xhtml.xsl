@@ -1,5 +1,7 @@
 <?xml version="1.0"?>
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns:exsl="http://exslt.org/common"
+                exclude-result-prefixes="exsl"
                 version="1.0">
 
 <xsl:output method="xml" encoding="US-ASCII"/>
@@ -13,6 +15,17 @@
   <xsl:text>&#10;</xsl:text>
   <xsl:apply-templates/>
   <xsl:text>&#10;</xsl:text>
+</xsl:template>
+
+<xsl:template match="xsl:stylesheet" >
+  <xsl:variable name="a">
+      <xsl:element name="dummy" namespace="http://www.w3.org/1999/xhtml"/>
+  </xsl:variable>
+    <xsl:copy>
+      <xsl:copy-of select="exsl:node-set($a)//namespace::*"/>
+      <xsl:copy-of select="@*"/>
+      <xsl:apply-templates/>
+   </xsl:copy>
 </xsl:template>
 
 <!-- Make sure we override some templates and parameters appropriately for XHTML -->
@@ -51,6 +64,27 @@
   <xsl:copy>
     <xsl:copy-of select="@*"/>
     <xsl:attribute name="select">'xml'</xsl:attribute>
+  </xsl:copy>
+</xsl:template>
+
+<xsl:template match="xsl:param[@name='chunker.output.encoding']">
+  <xsl:copy>
+    <xsl:copy-of select="@*"/>
+    <xsl:attribute name="select">'UTF-8'</xsl:attribute>
+  </xsl:copy>
+</xsl:template>
+
+<xsl:template match="xsl:param[@name='chunker.output.doctype-public']">
+  <xsl:copy>
+    <xsl:copy-of select="@*"/>
+    <xsl:attribute name="select">'-//W3C//DTD XHTML 1.0 Transitional//EN'</xsl:attribute>
+  </xsl:copy>
+</xsl:template>
+
+<xsl:template match="xsl:param[@name='chunker.output.doctype-system']">
+  <xsl:copy>
+    <xsl:copy-of select="@*"/>
+    <xsl:attribute name="select">'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'</xsl:attribute>
   </xsl:copy>
 </xsl:template>
 

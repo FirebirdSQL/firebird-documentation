@@ -33,7 +33,7 @@
       <xsl:text> PNG PDF JPG JPEG linespecific </xsl:text>
     </xsl:when>
     <xsl:when test="$fop.extensions != 0">
-      <xsl:text> SVG PNG PDF JPG JPEG linespecific </xsl:text>
+      <xsl:text> BMP GIF TIFF SVG PNG PDF JPG JPEG linespecific </xsl:text>
     </xsl:when>
     <xsl:when test="$arbortext.extensions != 0">
       <xsl:text> PNG PDF JPG JPEG linespecific GIF GIF87a GIF89a TIFF BMP </xsl:text>
@@ -59,7 +59,7 @@
       <xsl:text> png pdf jpg jpeg </xsl:text>
     </xsl:when>
     <xsl:when test="$fop.extensions != 0">
-      <xsl:text> svg png pdf jpg jpeg </xsl:text>
+      <xsl:text> gif svg png pdf jpg jpeg </xsl:text>
     </xsl:when>
     <xsl:when test="$arbortext.extensions != 0">
       <xsl:text> png pdf jpg jpeg gif tif tiff bmp </xsl:text>
@@ -202,6 +202,7 @@
           <xsl:value-of select="$scale * 100"/>
           <xsl:text>%</xsl:text>
         </xsl:when>
+        <xsl:when test="$scalefit = 1">scale-to-fit</xsl:when>
         <xsl:otherwise>auto</xsl:otherwise>
       </xsl:choose>
     </xsl:attribute>
@@ -255,7 +256,7 @@
 
 <xsl:template match="graphic">
   <xsl:choose>
-    <xsl:when test="../inlineequation">
+    <xsl:when test="parent::inlineequation">
       <xsl:call-template name="process.image"/>
     </xsl:when>
     <xsl:otherwise>

@@ -19,6 +19,7 @@
 <xsl:param name="admon.style">
   <xsl:text>margin-left: 0.5in; margin-right: 0.5in;</xsl:text>
 </xsl:param>
+<xsl:param name="admon.textlabel" select="1"/>
 <xsl:param name="annotate.toc" select="1"/>
 <xsl:param name="appendix.autolabel" select="1"/>
 <xsl:param name="author.othername.in.middle" select="1"/>
@@ -51,9 +52,20 @@
 <xsl:param name="default.float.class" select="'before'"/>
 <xsl:param name="default.image.width" select="''"/>
 <xsl:param name="default.table.width" select="''"/>
+<xsl:param name="draft.mode" select="'maybe'"/>
 <xsl:param name="draft.watermark.image" select="'http://docbook.sourceforge.net/release/images/draft.png'"/>
 <xsl:param name="ebnf.table.bgcolor" select="'#F5DCB3'"/>
 <xsl:param name="ebnf.table.border" select="1"/>
+<xsl:param name="ebnf.assignment">
+<tt>::=</tt>
+</xsl:param>
+
+<xsl:param name="ebnf.statement.terminator"/>
+
+<xsl:param name="eclipse.autolabel" select="0"/>
+<xsl:param name="eclipse.plugin.name">DocBook Online Help Sample</xsl:param>
+<xsl:param name="eclipse.plugin.id">com.example.help</xsl:param>
+<xsl:param name="eclipse.plugin.provider">Example provider</xsl:param>
 <xsl:param name="emphasis.propagates.style" select="1"/>
 <xsl:param name="entry.propagates.style" select="1"/>
 <xsl:param name="firstterm.only.link" select="0"/>
@@ -67,6 +79,7 @@ example before
 equation before
 table before
 procedure before
+task before
 </xsl:param>
 <xsl:param name="funcsynopsis.decoration" select="1"/>
 <xsl:param name="funcsynopsis.style">kr</xsl:param>
@@ -100,7 +113,7 @@ set       toc,title
 
 <xsl:param name="glossary.collection" select="''"/>
 <xsl:param name="glossentry.show.acronym" select="'no'"/>
-<xsl:param name="glossterm.auto.link" select="'0'"/>
+<xsl:param name="glossterm.auto.link" select="0"/>
 <xsl:param name="graphic.default.extension"/>
 <xsl:param name="graphicsize.extension" select="1"/>
 <xsl:param name="header.rule" select="1"/>
@@ -137,7 +150,9 @@ set       toc,title
 <xsl:param name="htmlhelp.button.zoom" select="0"/>
 <xsl:param name="htmlhelp.chm" select="'htmlhelp.chm'"/>
 <xsl:param name="htmlhelp.default.topic" select="''"/>
+<xsl:param name="htmlhelp.display.progress" select="1"/>
 <xsl:param name="htmlhelp.encoding" select="'iso-8859-1'"/>
+<xsl:param name="htmlhelp.enhanced.decompilation" select="0"/>
 <xsl:param name="htmlhelp.enumerate.images" select="0"/>
 <xsl:param name="htmlhelp.force.map.and.alias" select="0"/>
 <xsl:param name="htmlhelp.hhc.binary" select="1"/>
@@ -145,17 +160,22 @@ set       toc,title
 <xsl:param name="htmlhelp.hhc" select="'toc.hhc'"/>
 <xsl:param name="htmlhelp.hhc.section.depth" select="5"/>
 <xsl:param name="htmlhelp.hhc.show.root" select="1"/>
+<xsl:param name="htmlhelp.hhc.width"/>
 <xsl:param name="htmlhelp.hhk" select="'index.hhk'"/>
 <xsl:param name="htmlhelp.hhp" select="'htmlhelp.hhp'"/>
 <xsl:param name="htmlhelp.hhp.tail"/>
 <xsl:param name="htmlhelp.hhp.window" select="'Main'"/>
+<xsl:param name="htmlhelp.hhp.windows"/>
 <xsl:param name="htmlhelp.map.file" select="'context.h'"/>
 <xsl:param name="htmlhelp.only" select="0"/>
+<xsl:param name="htmlhelp.remember.window.position" select="0"/>
 <xsl:param name="htmlhelp.show.advanced.search" select="0"/>
 <xsl:param name="htmlhelp.show.favorities" select="0"/>
 <xsl:param name="htmlhelp.show.menu" select="0"/>
+<xsl:param name="htmlhelp.show.toolbar.text" select="1"/>
 <xsl:param name="htmlhelp.title" select="''"/>
 <xsl:param name="htmlhelp.use.hhk" select="0"/>
+<xsl:param name="htmlhelp.window.geometry"/>
 <xsl:param name="ignore.image.scaling" select="0"/>
 <xsl:param name="inherit.keywords" select="'1'"/>
 <xsl:param name="l10n.gentext.default.language" select="'en'"/>
@@ -172,6 +192,7 @@ set       toc,title
 <xsl:param name="make.valid.html" select="0"/>
 <xsl:param name="make.year.ranges" select="0"/>
 <xsl:param name="manifest" select="'HTML.manifest'"/>
+<xsl:param name="manifest.in.base.dir" select="0"/>
 <xsl:param name="manual.toc" select="''"/>
 <xsl:param name="menuchoice.menu.separator" select="'-&gt;'"/>
 <xsl:param name="menuchoice.separator" select="'+'"/>
@@ -259,6 +280,7 @@ set       toc,title
 <xsl:param name="textinsert.extension" select="'1'"/>
 <xsl:param name="toc.list.type">dl</xsl:param>
 <xsl:param name="toc.section.depth">2</xsl:param>
+<xsl:param name="toc.max.depth">8</xsl:param>
 <xsl:param name="ulink.target" select="'_top'"/>
 <xsl:param name="use.embed.for.svg" select="0"/>
 <xsl:param name="use.extensions" select="'0'"/>
@@ -269,5 +291,9 @@ set       toc,title
 <xsl:param name="use.svg" select="1"/>
 <xsl:param name="variablelist.as.table" select="0"/>
 <xsl:param name="xref.with.number.and.title" select="1"/>
+<xsl:param name="xref.label-title.separator">: </xsl:param>
+<xsl:param name="xref.label-page.separator"><xsl:text> </xsl:text></xsl:param>
+<xsl:param name="xref.title-page.separator"><xsl:text> </xsl:text></xsl:param>
+<xsl:param name="insert.xref.page.number">no</xsl:param>
 
 </xsl:stylesheet>

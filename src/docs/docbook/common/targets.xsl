@@ -4,7 +4,18 @@
                 exclude-result-prefixes="doc"
                 version='1.0'>
 
-<!-- ============================================================ -->
+<!-- ********************************************************************
+     $Id$
+     ********************************************************************
+
+     This file is part of the XSL DocBook Stylesheet distribution.
+     See ../README or http://nwalsh.com/docbook/xsl/ for copyright
+     and other information.
+
+     ******************************************************************** -->
+
+<!-- ==================================================================== -->
+
 <!-- cross reference target collection  -->
 
 <doc:mode mode="collect.targets" xmlns="">
@@ -51,6 +62,8 @@ document output.
             <xsl:with-param name="method" select="'xml'"/>
             <xsl:with-param name="encoding" select="'utf-8'"/>
             <xsl:with-param name="omit-xml-declaration" select="'yes'"/>
+            <xsl:with-param name="doctype-public" select="''"/>
+            <xsl:with-param name="doctype-system" select="''"/>
             <xsl:with-param name="indent" select="'yes'"/>
             <xsl:with-param name="quiet" select="0"/>
             <xsl:with-param name="content">

@@ -1,6 +1,7 @@
 <?xml version='1.0'?>
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:fo="http://www.w3.org/1999/XSL/Format"
+                xmlns:rx="http://www.renderx.com/XSL/Extensions"
                 version='1.0'>
 
 <!-- ********************************************************************
@@ -32,13 +33,13 @@
     <xsl:otherwise>
       <fo:block id="{$id}">
         <xsl:call-template name="index.titlepage"/>
-        <xsl:apply-templates/>
-        <xsl:if test="count(indexentry) = 0 and count(indexdiv) = 0">
-          <xsl:call-template name="generate-index">
-            <xsl:with-param name="scope" select="(ancestor::book|/)[last()]"/>
-          </xsl:call-template>
-        </xsl:if>
       </fo:block>
+      <xsl:apply-templates/>
+      <xsl:if test="count(indexentry) = 0 and count(indexdiv) = 0">
+        <xsl:call-template name="generate-index">
+          <xsl:with-param name="scope" select="(ancestor::book|/)[last()]"/>
+        </xsl:call-template>
+      </xsl:if>
     </xsl:otherwise>
   </xsl:choose>
  </xsl:if>
@@ -58,8 +59,7 @@
     </xsl:call-template>
   </xsl:variable>
 
-  <fo:page-sequence id="{$id}"
-                    hyphenate="{$hyphenate}"
+  <fo:page-sequence hyphenate="{$hyphenate}"
                     master-reference="{$master-reference}">
     <xsl:attribute name="language">
       <xsl:call-template name="l10n.language"/>
@@ -71,6 +71,22 @@
       <xsl:attribute name="initial-page-number">auto-odd</xsl:attribute>
     </xsl:if>
 
+    <xsl:attribute name="hyphenation-character">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-character'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+    <xsl:attribute name="hyphenation-push-character-count">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-push-character-count'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+    <xsl:attribute name="hyphenation-remain-character-count">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-remain-character-count'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+
     <xsl:apply-templates select="." mode="running.head.mode">
       <xsl:with-param name="master-reference" select="$master-reference"/>
     </xsl:apply-templates>
@@ -79,7 +95,9 @@
     </xsl:apply-templates>
 
     <fo:flow flow-name="xsl-region-body">
-      <xsl:call-template name="index.titlepage"/>
+      <fo:block id="{$id}">
+        <xsl:call-template name="index.titlepage"/>
+      </fo:block>
       <xsl:apply-templates/>
       <xsl:if test="count(indexentry) = 0 and count(indexdiv) = 0">
 
@@ -126,8 +144,7 @@
     </xsl:call-template>
   </xsl:variable>
 
-  <fo:page-sequence id="{$id}"
-                    hyphenate="{$hyphenate}"
+  <fo:page-sequence hyphenate="{$hyphenate}"
                     master-reference="{$master-reference}">
     <xsl:attribute name="language">
       <xsl:call-template name="l10n.language"/>
@@ -139,6 +156,22 @@
       <xsl:attribute name="initial-page-number">auto-odd</xsl:attribute>
     </xsl:if>
 
+    <xsl:attribute name="hyphenation-character">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-character'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+    <xsl:attribute name="hyphenation-push-character-count">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-push-character-count'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+    <xsl:attribute name="hyphenation-remain-character-count">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-remain-character-count'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+
     <xsl:apply-templates select="." mode="running.head.mode">
       <xsl:with-param name="master-reference" select="$master-reference"/>
     </xsl:apply-templates>
@@ -147,7 +180,9 @@
     </xsl:apply-templates>
 
     <fo:flow flow-name="xsl-region-body">
-      <xsl:call-template name="setindex.titlepage"/>
+      <fo:block id="{$id}">
+        <xsl:call-template name="setindex.titlepage"/>
+      </fo:block>
       <xsl:apply-templates/>
       <xsl:if test="count(indexentry) = 0 and count(indexdiv) = 0">
 
@@ -187,9 +222,9 @@
   <xsl:param name="title"/>
   <xsl:param name="titlecontent"/>
 
-  <fo:block margin-left="{$title.margin.left}"
+  <fo:block margin-left="0pt"
 	    font-size="14.4pt"
-            font-family="{$title.font.family}"
+            font-family="{$title.fontset}"
             font-weight="bold"
             keep-with-next.within-column="always"
             space-before.optimum="{$body.font.master}pt"
@@ -197,7 +232,7 @@
             space-before.maximum="{$body.font.master * 1.2}pt">
     <xsl:choose>
       <xsl:when test="$title">
-        <xsl:apply-templates select="$title" mode="object.title.markup">
+        <xsl:apply-templates select="." mode="object.title.markup">
           <xsl:with-param name="allow-anchors" select="1"/>
         </xsl:apply-templates>
       </xsl:when>
@@ -221,15 +256,27 @@
 
 <!-- ==================================================================== -->
 
-<xsl:template match="indexterm">
-  <fo:wrapper>
+<!-- Text used for distiguishing between normal and significant entries -->
+<xsl:variable name="significant.flag">.tnacifingis</xsl:variable>
+
+<xsl:template match="indexterm" name="indexterm">
+  <!-- Temporal workaround for bug in AXF -->
+  <xsl:variable name="wrapper.name">
+    <xsl:choose>
+      <xsl:when test="$axf.extensions != 0">fo:block</xsl:when>
+      <xsl:otherwise>fo:wrapper</xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+
+  <xsl:element name="{$wrapper.name}">
     <xsl:attribute name="id">
       <xsl:call-template name="object.id"/>
     </xsl:attribute>
-    <xsl:comment>
-      <xsl:call-template name="comment-escape-string">
-        <xsl:with-param name="string">
+    <xsl:choose>
+      <xsl:when test="$xep.extensions != 0">
+        <xsl:attribute name="rx:key">
           <xsl:value-of select="primary"/>
+          <xsl:if test="@significance='preferred'"><xsl:value-of select="$significant.flag"/></xsl:if>
           <xsl:if test="secondary">
             <xsl:text>, </xsl:text>
             <xsl:value-of select="secondary"/>
@@ -238,10 +285,69 @@
             <xsl:text>, </xsl:text>
             <xsl:value-of select="tertiary"/>
           </xsl:if>
-        </xsl:with-param>
-      </xsl:call-template>
-    </xsl:comment>
-  </fo:wrapper>
+        </xsl:attribute>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:comment>
+          <xsl:call-template name="comment-escape-string">
+            <xsl:with-param name="string">
+              <xsl:value-of select="primary"/>
+              <xsl:if test="secondary">
+                <xsl:text>, </xsl:text>
+                <xsl:value-of select="secondary"/>
+              </xsl:if>
+              <xsl:if test="tertiary">
+                <xsl:text>, </xsl:text>
+                <xsl:value-of select="tertiary"/>
+              </xsl:if>
+            </xsl:with-param>
+          </xsl:call-template>
+        </xsl:comment>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:element>
+</xsl:template>
+
+<xsl:template match="indexterm[@class='startofrange']">
+  <xsl:choose>
+    <xsl:when test="$xep.extensions != 0">
+      <rx:begin-index-range>
+        <xsl:attribute name="id">
+          <xsl:value-of select="@id"/>
+        </xsl:attribute>
+        <xsl:attribute name="rx:key">
+          <xsl:value-of select="primary"/>
+          <xsl:if test="@significance='preferred'"><xsl:value-of select="$significant.flag"/></xsl:if>
+          <xsl:if test="secondary">
+            <xsl:text>, </xsl:text>
+            <xsl:value-of select="secondary"/>
+          </xsl:if>
+          <xsl:if test="tertiary">
+            <xsl:text>, </xsl:text>
+            <xsl:value-of select="tertiary"/>
+          </xsl:if>
+        </xsl:attribute>
+      </rx:begin-index-range>
+    </xsl:when>
+    <xsl:otherwise>
+      <xsl:call-template name="indexterm"/>
+    </xsl:otherwise>
+  </xsl:choose>
+</xsl:template>
+
+<xsl:template match="indexterm[@class='endofrange']">
+  <xsl:choose>
+    <xsl:when test="$xep.extensions != 0">
+      <rx:end-index-range>
+        <xsl:attribute name="ref-id">
+          <xsl:value-of select="@startref"/>
+        </xsl:attribute>
+      </rx:end-index-range>
+    </xsl:when>
+    <xsl:otherwise>
+      <xsl:call-template name="indexterm"/>
+    </xsl:otherwise>
+  </xsl:choose>
 </xsl:template>
 
 <!-- ==================================================================== -->

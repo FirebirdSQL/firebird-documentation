@@ -194,10 +194,11 @@
     <h3 class="{name(.)}"><xsl:call-template name="person.name"/></h3>
     <xsl:apply-templates mode="titlepage.mode" select="./contrib"/>
     <xsl:apply-templates mode="titlepage.mode" select="./affiliation"/>
+    <xsl:apply-templates mode="titlepage.mode" select="./email"/>
   </div>
 </xsl:template>
 
-<xsl:template match="authorblurb" mode="titlepage.mode">
+<xsl:template match="authorblurb|personblurb" mode="titlepage.mode">
   <div class="{name(.)}">
     <xsl:apply-templates mode="titlepage.mode"/>
   </div>
@@ -369,6 +370,11 @@
 <xsl:template match="editor[position()=1]" mode="titlepage.mode">
   <h4 class="editedby"><xsl:call-template name="gentext.edited.by"/></h4>
   <h3 class="{name(.)}"><xsl:call-template name="person.name"/></h3>
+</xsl:template>
+
+<xsl:template match="email" mode="titlepage.mode">
+  <!-- use the normal e-mail handling code -->
+  <xsl:apply-templates select="."/>
 </xsl:template>
 
 <xsl:template match="firstname" mode="titlepage.mode">

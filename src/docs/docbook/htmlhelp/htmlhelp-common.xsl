@@ -18,7 +18,7 @@
 
 <!-- ==================================================================== -->
 
-<xsl:variable name="generate.index" select="//indexterm[1]"/>
+<xsl:variable name="htmlhelp.generate.index" select="//indexterm[1]"/>
 
 <!-- ==================================================================== -->
 
@@ -53,7 +53,7 @@
     <xsl:call-template name="hh-map"/>
     <xsl:call-template name="hh-alias"/>
   </xsl:if>
-  <xsl:if test="$generate.index">
+  <xsl:if test="$htmlhelp.generate.index">
     <xsl:call-template name="hhk"/>
   </xsl:if>
 </xsl:template>
@@ -62,7 +62,12 @@
 
 <xsl:template name="hhp">
   <xsl:call-template name="write.text.chunk">
-    <xsl:with-param name="filename" select="$htmlhelp.hhp"/>
+    <xsl:with-param name="filename">
+      <xsl:if test="$manifest.in.base.dir != 0">
+        <xsl:value-of select="$base.dir"/>
+      </xsl:if>
+      <xsl:value-of select="$htmlhelp.hhp"/>
+    </xsl:with-param>
     <xsl:with-param name="method" select="'text'"/>
     <xsl:with-param name="content">
       <xsl:call-template name="hhp-main"/>
@@ -80,7 +85,11 @@
     </xsl:when>
     <xsl:otherwise>
       <xsl:call-template name="make-relative-filename">
-        <xsl:with-param name="base.dir" select="$base.dir"/>
+        <xsl:with-param name="base.dir">
+          <xsl:if test="$manifest.in.base.dir = 0">
+            <xsl:value-of select="$base.dir"/>
+          </xsl:if>
+        </xsl:with-param>
         <xsl:with-param name="base.name">
           <xsl:choose>
             <xsl:when test="$rootid != ''">
@@ -100,7 +109,9 @@
   <xsl:call-template name="toHex">
     <xsl:with-param name="n" select="9504 + $htmlhelp.show.menu * 65536
                                           + $htmlhelp.show.advanced.search * 131072
-                                          + $htmlhelp.show.favorities * 4096"/>
+                                          + $htmlhelp.show.favorities * 4096
+                                          + (1 - $htmlhelp.show.toolbar.text) * 64
+                                          + $htmlhelp.remember.window.position * 262144"/>
   </xsl:call-template>
 </xsl:variable>
 <xsl:variable name="xbuttons">
@@ -124,7 +135,7 @@
 </xsl:variable>
 <xsl:text>[OPTIONS]
 </xsl:text>
-<xsl:if test="$generate.index">
+<xsl:if test="$htmlhelp.generate.index">
 <xsl:text>Auto Index=Yes
 </xsl:text></xsl:if>
 <xsl:if test="$htmlhelp.hhc.binary != 0">
@@ -139,20 +150,28 @@ Contents file=</xsl:text><xsl:value-of select="$htmlhelp.hhc"/><xsl:text>
 </xsl:text></xsl:if>
 <xsl:text>Default topic=</xsl:text><xsl:value-of select="$default.topic"/>
 <xsl:text>
-Display compile progress=Yes
+Display compile progress=</xsl:text>
+  <xsl:choose>
+    <xsl:when test="$htmlhelp.display.progress != 1">
+      <xsl:text>No</xsl:text>
+    </xsl:when>
+    <xsl:otherwise>
+      <xsl:text>Yes</xsl:text>
+    </xsl:otherwise>
+  </xsl:choose>
+<xsl:text>
 Full-text search=Yes
 </xsl:text>
-<xsl:if test="$generate.index">
+<xsl:if test="$htmlhelp.generate.index">
 <xsl:text>Index file=</xsl:text><xsl:value-of select="$htmlhelp.hhk"/><xsl:text>
 </xsl:text></xsl:if>
 <xsl:text>Language=</xsl:text>
-<xsl:if test="//@lang">
-  <xsl:variable name="lang" select="//@lang[1]"/>
-  <xsl:value-of select="document('langcodes.xml')//gentext[@lang=string($lang)]"/>
-</xsl:if>
-<xsl:if test="not(//@lang)">
-  <xsl:text>0x0409 English (United States)</xsl:text>
-</xsl:if>
+<xsl:for-each select="*">   <!-- Change context from / to root element -->
+  <xsl:call-template name="gentext.template">
+    <xsl:with-param name="context" select="'htmlhelp'"/>
+    <xsl:with-param name="name" select="'langcode'"/>
+  </xsl:call-template>
+</xsl:for-each>
 <xsl:text>
 Title=</xsl:text>
   <xsl:choose>
@@ -170,6 +189,16 @@ Title=</xsl:text>
       <xsl:value-of select="$htmlhelp.title"/>
     </xsl:otherwise>
   </xsl:choose>
+<xsl:text>
+Enhanced decompilation=</xsl:text>
+  <xsl:choose>
+    <xsl:when test="$htmlhelp.enhanced.decompilation != 0">
+      <xsl:text>Yes</xsl:text>
+    </xsl:when>
+    <xsl:otherwise>
+      <xsl:text>No</xsl:text>
+    </xsl:otherwise>
+  </xsl:choose>
 
 <xsl:if test="$htmlhelp.hhp.window != ''">
   <xsl:text>
@@ -179,7 +208,7 @@ Title=</xsl:text>
 <xsl:value-of select="$htmlhelp.hhp.window"/>
 <xsl:text>=,"</xsl:text><xsl:value-of select="$htmlhelp.hhc"/>
 <xsl:text>",</xsl:text>
-<xsl:if test="$generate.index">
+<xsl:if test="$htmlhelp.generate.index">
   <xsl:text>"</xsl:text>
   <xsl:value-of select="$htmlhelp.hhk"/>
   <xsl:text>"</xsl:text>
@@ -223,12 +252,15 @@ Title=</xsl:text>
 </xsl:if>
 <xsl:text>,</xsl:text>
 <xsl:value-of select="$xnavigation"/>
-<xsl:text>,,</xsl:text>
+<xsl:text>,</xsl:text><xsl:value-of select="$htmlhelp.hhc.width"/><xsl:text>,</xsl:text>
 <xsl:value-of select="$xbuttons"/>
-<xsl:text>,,,,,,,,0
+<xsl:text>,</xsl:text><xsl:value-of select="$htmlhelp.window.geometry"/><xsl:text>,,,,,,,0
 </xsl:text>
 </xsl:if>
 
+<xsl:if test="$htmlhelp.hhp.windows">
+  <xsl:value-of select="$htmlhelp.hhp.windows"/>
+</xsl:if>
 <xsl:text>
 
 [FILES]
@@ -408,7 +440,12 @@ Title=</xsl:text>
 
 <xsl:template name="hhc">
   <xsl:call-template name="write.text.chunk">
-    <xsl:with-param name="filename" select="$htmlhelp.hhc"/>
+    <xsl:with-param name="filename">
+      <xsl:if test="$manifest.in.base.dir != 0">
+        <xsl:value-of select="$base.dir"/>
+      </xsl:if>
+      <xsl:value-of select="$htmlhelp.hhc"/>
+    </xsl:with-param>
     <xsl:with-param name="method" select="'text'"/>
     <xsl:with-param name="content">
       <xsl:call-template name="hhc-main"/>
@@ -804,7 +841,9 @@ Title=</xsl:text>
 
 <!-- no separate HTML page with index -->
 <xsl:template match="index"/>   
+<xsl:template match="setindex"/>   
 <xsl:template match="index" mode="toc"/>
+<xsl:template match="setindex" mode="toc"/>
 
 <xsl:template match="indexterm">
   <xsl:choose>
@@ -862,9 +901,14 @@ Title=</xsl:text>
 
 <xsl:template name="hhk">
   <xsl:call-template name="write.text.chunk">
-    <xsl:with-param name="filename" select="$htmlhelp.hhk"/>
+    <xsl:with-param name="filename">
+      <xsl:if test="$manifest.in.base.dir != 0">
+        <xsl:value-of select="$base.dir"/>
+      </xsl:if>
+      <xsl:value-of select="$htmlhelp.hhk"/>
+    </xsl:with-param>
     <xsl:with-param name="method" select="'text'"/>
-    <xsl:with-param name="content"><![CDATA[<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+    <xsl:with-param name="content"><xsl:text disable-output-escaping="yes"><![CDATA[<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
 <HTML>
 <HEAD>
 <meta name="GENERATOR" content="Microsoft&reg; HTML Help Workshop 4.1">
@@ -873,7 +917,8 @@ Title=</xsl:text>
 <OBJECT type="text/site properties">
 </OBJECT>
 <UL>]]>
-<xsl:if test="($htmlhelp.use.hhk != 0) and $generate.index">
+</xsl:text>
+<xsl:if test="($htmlhelp.use.hhk != 0) and $htmlhelp.generate.index">
   <xsl:choose>
     <xsl:when test="$rootid != ''">
       <xsl:apply-templates select="key('id',$rootid)" mode="hhk"/>
@@ -883,8 +928,9 @@ Title=</xsl:text>
     </xsl:otherwise>
   </xsl:choose>
 </xsl:if>
-<![CDATA[</UL>
-</BODY></HTML>]]></xsl:with-param>
+<xsl:text disable-output-escaping="yes"><![CDATA[</UL>
+</BODY></HTML>]]>
+</xsl:text></xsl:with-param>
     <xsl:with-param name="encoding" select="$htmlhelp.encoding"/>
   </xsl:call-template>
 </xsl:template>
@@ -909,20 +955,20 @@ Title=</xsl:text>
         <xsl:with-param name="seealso" select="$primary"/>
       </xsl:call-template>
     </xsl:if>
-    <![CDATA[<UL>]]>
+    <xsl:text disable-output-escaping="yes"><![CDATA[<UL>]]>&#10;</xsl:text>
     <xsl:call-template name="write.indexterm.hhk">
       <xsl:with-param name="text" select="$secondary"/>
       <xsl:with-param name="seealso" select="secondary/seealso"/>
     </xsl:call-template>
     <xsl:if test="tertiary">
-      <![CDATA[<UL>]]>
+      <xsl:text disable-output-escaping="yes"><![CDATA[<UL>]]>&#10;</xsl:text>
       <xsl:call-template name="write.indexterm.hhk">
         <xsl:with-param name="text" select="$tertiary"/>
         <xsl:with-param name="seealso" select="tertiary/seealso"/>
       </xsl:call-template>
-      <![CDATA[</UL>]]>
+      <xsl:text disable-output-escaping="yes"><![CDATA[</UL>]]>&#10;</xsl:text>
     </xsl:if>
-    <![CDATA[</UL>]]>
+    <xsl:text disable-output-escaping="yes"><![CDATA[</UL>]]>&#10;</xsl:text>
   </xsl:if>
 
 </xsl:template>
@@ -936,8 +982,8 @@ Title=</xsl:text>
     </xsl:call-template>
   </xsl:variable>
 
-  <![CDATA[<LI> <OBJECT type="text/sitemap">
-        <param name="Name" value="]]><xsl:value-of select="$text.escaped"/><xsl:text><![CDATA[">]]></xsl:text>
+  <xsl:text disable-output-escaping="yes"><![CDATA[<LI> <OBJECT type="text/sitemap">
+    <param name="Name" value="]]></xsl:text><xsl:value-of select="$text.escaped"/><xsl:text disable-output-escaping="yes"><![CDATA[">]]></xsl:text>
       <xsl:if test="not(seealso)">
         <xsl:variable name="href">
           <xsl:call-template name="href.target.with.base.dir"/>
@@ -951,13 +997,19 @@ Title=</xsl:text>
             </xsl:with-param>
           </xsl:call-template>
         </xsl:variable>
-        <![CDATA[<param name="Name" value="]]><xsl:value-of select="$title"/><![CDATA[">]]>
-        <![CDATA[<param name="Local" value="]]><xsl:value-of select="$href"/><![CDATA[">]]>
+        <xsl:text disable-output-escaping="yes"><![CDATA[<param name="Name" value="]]></xsl:text>
+          <xsl:value-of select="$title"/>
+        <xsl:text disable-output-escaping="yes"><![CDATA[">]]></xsl:text>
+        <xsl:text disable-output-escaping="yes"><![CDATA[<param name="Local" value="]]></xsl:text>
+          <xsl:value-of select="$href"/>
+        <xsl:text disable-output-escaping="yes"><![CDATA[">]]></xsl:text>
       </xsl:if>
       <xsl:if test="seealso">
-        <![CDATA[<param name="See Also" value="]]><xsl:value-of select="$seealso"/><![CDATA[">]]>
+        <xsl:text disable-output-escaping="yes"><![CDATA[<param name="See Also" value="]]></xsl:text>
+          <xsl:value-of select="$seealso"/>
+        <xsl:text disable-output-escaping="yes"><![CDATA[">]]></xsl:text>
       </xsl:if>
-      <xsl:text><![CDATA[ </OBJECT>]]></xsl:text>
+      <xsl:text disable-output-escaping="yes"><![CDATA[ </OBJECT>]]></xsl:text>
 </xsl:template>
 
 <xsl:template match="text()" mode="hhk"/>
@@ -971,7 +1023,12 @@ Title=</xsl:text>
 
 <xsl:template name="hh-map">
   <xsl:call-template name="write.text.chunk">
-    <xsl:with-param name="filename" select="$htmlhelp.map.file"/>
+    <xsl:with-param name="filename">
+      <xsl:if test="$manifest.in.base.dir != 0">
+        <xsl:value-of select="$base.dir"/>
+      </xsl:if>
+      <xsl:value-of select="$htmlhelp.map.file"/>
+    </xsl:with-param>
     <xsl:with-param name="method" select="'text'"/>
     <xsl:with-param name="content">
      <xsl:choose>
@@ -1015,7 +1072,12 @@ Title=</xsl:text>
 
 <xsl:template name="hh-alias">
   <xsl:call-template name="write.text.chunk">
-    <xsl:with-param name="filename" select="$htmlhelp.alias.file"/>
+    <xsl:with-param name="filename">
+      <xsl:if test="$manifest.in.base.dir != 0">
+        <xsl:value-of select="$base.dir"/>
+      </xsl:if>
+      <xsl:value-of select="$htmlhelp.alias.file"/>
+    </xsl:with-param>
     <xsl:with-param name="method" select="'text'"/>
     <xsl:with-param name="content">
      <xsl:choose>
@@ -1046,21 +1108,13 @@ Title=</xsl:text>
   </xsl:variable>
   <xsl:value-of select="$topicname"/>
   <xsl:text>=</xsl:text>
-  <xsl:value-of select="substring-before(concat($href, '#'), '#')"/>
+  <!-- Some versions of HH doesn't like fragment identifires, but some does. -->
+  <!-- <xsl:value-of select="substring-before(concat($href, '#'), '#')"/> -->
+  <xsl:value-of select="$href"/>
   <xsl:text>&#xA;</xsl:text>
 </xsl:template>
 
 <xsl:template match="text()" mode="hh-alias"/>
-
-<!-- ==================================================================== -->
-
-<xsl:template name="href.target.with.base.dir">
-  <xsl:param name="object" select="."/>
-  <xsl:value-of select="$base.dir"/>
-  <xsl:call-template name="href.target">
-    <xsl:with-param name="object" select="$object"/>
-  </xsl:call-template>
-</xsl:template>
 
 <!-- ==================================================================== -->
 <!-- This code can be used to convert any number to hexadecimal format -->
@@ -1130,6 +1184,19 @@ Title=</xsl:text>
   <xsl:value-of select="$angle.escaped"/>
 
 </xsl:template>
-  
+
+<!-- ==================================================================== -->
+<!-- Modification to standard HTML stylesheets -->
+
+<!-- There are links from ToC pane to bibliodivs, so there must be anchor -->
+<xsl:template match="bibliodiv/title">
+  <h3 class="{name(.)}">
+    <xsl:call-template name="anchor">
+      <xsl:with-param name="node" select=".."/>
+      <xsl:with-param name="conditional" select="0"/>
+    </xsl:call-template>
+    <xsl:apply-templates/>
+  </h3>
+</xsl:template>
 
 </xsl:stylesheet>

@@ -83,7 +83,9 @@
         </td>
         <th align="left">
           <xsl:call-template name="anchor"/>
-          <xsl:apply-templates select="." mode="object.title.markup"/>
+          <xsl:if test="$admon.textlabel != 0 or title">
+            <xsl:apply-templates select="." mode="object.title.markup"/>
+          </xsl:if>
         </th>
       </tr>
       <tr>
@@ -105,7 +107,9 @@
 
     <h3 class="title">
       <xsl:call-template name="anchor"/>
-      <xsl:apply-templates select="." mode="object.title.markup"/>
+      <xsl:if test="$admon.textlabel != 0 or title">
+        <xsl:apply-templates select="." mode="object.title.markup"/>
+      </xsl:if>
     </h3>
 
     <xsl:apply-templates/>

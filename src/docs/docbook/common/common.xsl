@@ -216,6 +216,7 @@ Defaults to the context node.</para>
     <xsl:when test="name($node)='sect5'">5</xsl:when>
     <xsl:when test="name($node)='section'">
       <xsl:choose>
+        <xsl:when test="$node/../../../../../../section">6</xsl:when>
         <xsl:when test="$node/../../../../../section">5</xsl:when>
         <xsl:when test="$node/../../../../section">4</xsl:when>
         <xsl:when test="$node/../../../section">3</xsl:when>
@@ -223,17 +224,14 @@ Defaults to the context node.</para>
         <xsl:otherwise>1</xsl:otherwise>
       </xsl:choose>
     </xsl:when>
-    <xsl:when test="name($node)='refsect1'">1</xsl:when>
-    <xsl:when test="name($node)='refsect2'">2</xsl:when>
-    <xsl:when test="name($node)='refsect3'">3</xsl:when>
-    <xsl:when test="name($node)='refsection'">
-      <xsl:choose>
-        <xsl:when test="$node/../../../../../refsection">5</xsl:when>
-        <xsl:when test="$node/../../../../refsection">4</xsl:when>
-        <xsl:when test="$node/../../../refsection">3</xsl:when>
-        <xsl:when test="$node/../../refsection">2</xsl:when>
-        <xsl:otherwise>1</xsl:otherwise>
-      </xsl:choose>
+    <xsl:when test="name($node)='refsect1' or
+                    name($node)='refsect2' or
+                    name($node)='refsect3' or
+                    name($node)='refsection' or
+                    name($node)='refsynopsisdiv'">
+      <xsl:call-template name="refentry.section.level">
+        <xsl:with-param name="node" select="$node"/>
+      </xsl:call-template>
     </xsl:when>
     <xsl:when test="name($node)='simplesect'">
       <xsl:choose>
@@ -297,6 +295,61 @@ Defaults to the context node.</para>
   </xsl:choose>
 </xsl:template>
 
+<!-- Finds the total section depth of a section in a refentry -->
+<xsl:template name="refentry.section.level">
+  <xsl:param name="node" select="."/>
+
+  <xsl:variable name="RElevel">
+    <xsl:call-template name="refentry.level">
+      <xsl:with-param name="node" select="$node/ancestor::refentry[1]"/>
+    </xsl:call-template>
+  </xsl:variable>
+
+  <xsl:variable name="levelinRE">
+    <xsl:choose>
+      <xsl:when test="name($node)='refsynopsisdiv'">1</xsl:when>
+      <xsl:when test="name($node)='refsect1'">1</xsl:when>
+      <xsl:when test="name($node)='refsect2'">2</xsl:when>
+      <xsl:when test="name($node)='refsect3'">3</xsl:when>
+      <xsl:when test="name($node)='refsection'">
+        <xsl:choose>
+          <xsl:when test="$node/../../../../../refsection">5</xsl:when>
+          <xsl:when test="$node/../../../../refsection">4</xsl:when>
+          <xsl:when test="$node/../../../refsection">3</xsl:when>
+          <xsl:when test="$node/../../refsection">2</xsl:when>
+          <xsl:otherwise>1</xsl:otherwise>
+        </xsl:choose>
+      </xsl:when>
+    </xsl:choose>
+  </xsl:variable>
+
+  <xsl:value-of select="$levelinRE + $RElevel"/>
+</xsl:template>
+
+<!-- Finds the section depth of a refentry -->
+<xsl:template name="refentry.level">
+  <xsl:param name="node" select="."/>
+  <xsl:variable name="container"
+                select="($node/ancestor::section |
+                        $node/ancestor::sect1 |
+                        $node/ancestor::sect2 |
+                        $node/ancestor::sect3 |
+                        $node/ancestor::sect4 |
+                        $node/ancestor::sect5)[last()]"/>
+
+  <xsl:choose>
+    <xsl:when test="$container">
+      <xsl:variable name="slevel">
+        <xsl:call-template name="section.level">
+          <xsl:with-param name="node" select="$container"/>
+        </xsl:call-template>
+      </xsl:variable>
+      <xsl:value-of select="$slevel + 1"/>
+    </xsl:when>
+    <xsl:otherwise>1</xsl:otherwise>
+  </xsl:choose>
+</xsl:template>
+
 <xsl:template name="qandadiv.section.level">
   <xsl:variable name="section.level">
     <xsl:call-template name="qanda.section.level"/>
@@ -314,7 +367,7 @@ Defaults to the context node.</para>
                               /@defaultlabel"/>
       </xsl:when>
       <xsl:otherwise>
-        <xsl:value-of select="qanda.defaultlabel"/>
+        <xsl:value-of select="$qanda.defaultlabel"/>
       </xsl:otherwise>
     </xsl:choose>
   </xsl:variable>
@@ -551,7 +604,7 @@ Defaults to the context node.</para>
        John Doe, Jane Doe, and A. Nonymous
   -->
   <xsl:param name="person.list"
-             select="./author|./corpauthor|./othercredit|./editor"/>
+             select="author|corpauthor|othercredit|editor"/>
   <xsl:param name="person.count" select="count($person.list)"/>
   <xsl:param name="count" select="1"/>
 
@@ -907,20 +960,34 @@ recursive process.</para>
     
         <xsl:variable name="useobject">
           <xsl:choose>
-          <!-- The phrase is never used -->
+            <!-- The phrase is used only when contains TeX Math and output is FO -->
+            <xsl:when test="name($object)='textobject' and $object/phrase
+                            and $object/@role='tex' and $stylesheet.result.type = 'fo'
+                            and $tex.math.in.alt != ''">
+              <xsl:text>1</xsl:text> 
+            </xsl:when>
+            <!-- The phrase is never used -->
             <xsl:when test="name($object)='textobject' and $object/phrase">
               <xsl:text>0</xsl:text>
             </xsl:when>
             <xsl:when test="name($object)='textobject'
-	                     and $object/ancestor::equation ">
-	    <!-- The first textobject is not a reasonable fallback
-	         for equation image -->
+                            and $object/ancestor::equation ">
+            <!-- The first textobject is not a reasonable fallback
+                 for equation image -->
               <xsl:text>0</xsl:text>
-	    </xsl:when>
+            </xsl:when>
             <!-- The first textobject is a reasonable fallback -->
             <xsl:when test="name($object)='textobject'
-	                    and $object[not(@role) or @role!='tex']">
+                            and $object[not(@role) or @role!='tex']">
               <xsl:text>1</xsl:text>
+            </xsl:when>
+            <!-- don't use graphic when output is FO, TeX Math is used 
+                 and there is math in alt element -->
+            <xsl:when test="$object/ancestor::equation and 
+                            $object/ancestor::equation/alt[@role='tex']
+                            and $stylesheet.result.type = 'fo'
+                            and $tex.math.in.alt != ''">
+              <xsl:text>0</xsl:text>
             </xsl:when>
             <!-- If there's only one object, use it -->
             <xsl:when test="$count = 1 and count($olist) = 1">
@@ -1023,6 +1090,7 @@ object is recognized as a graphic.</para>
   </xsl:variable>
 
   <xsl:choose>
+    <xsl:when test="$use.svg = 0 and $format = 'SVG'">0</xsl:when>
     <xsl:when xmlns:svg="http://www.w3.org/2000/svg"
               test="$use.svg != 0 and $object/svg:*">1</xsl:when>
     <xsl:when test="$graphic.format = '1'">1</xsl:when>
@@ -1448,7 +1516,7 @@ year range is <quote>1991-1992</quote> but discretely it's
   -->
 
   <xsl:choose>
-    <xsl:when test="$print.ranges = 0">
+    <xsl:when test="$print.ranges = 0 and count($years) &gt; 0">
       <xsl:choose>
         <xsl:when test="count($years) = 1">
           <xsl:apply-templates select="$years[1]" mode="titlepage.mode"/>

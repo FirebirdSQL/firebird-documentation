@@ -271,13 +271,14 @@
         </xsl:choose>
       </xsl:when>
       <xsl:otherwise>
-        <xsl:value-of select="$nominal.image.width"/>
+        <xsl:value-of select="$nominal.image.depth"/>
       </xsl:otherwise>
     </xsl:choose>
   </xsl:variable>
 
   <xsl:variable name="contentwidth">
     <xsl:choose>
+      <xsl:when test="$ignore.image.scaling != 0"></xsl:when>
       <xsl:when test="@contentwidth">
         <xsl:variable name="units">
           <xsl:call-template name="length-units">
@@ -344,6 +345,7 @@
 
   <xsl:variable name="contentdepth">
     <xsl:choose>
+      <xsl:when test="$ignore.image.scaling != 0"></xsl:when>
       <xsl:when test="@contentdepth">
         <xsl:variable name="units">
           <xsl:call-template name="length-units">
@@ -744,7 +746,7 @@ valign: <xsl:value-of select="@valign"/></xsl:message>
 
 <xsl:template match="graphic">
   <xsl:choose>
-    <xsl:when test="../inlineequation">
+    <xsl:when test="parent::inlineequation">
       <xsl:call-template name="anchor"/>
       <xsl:call-template name="process.image"/>
     </xsl:when>
@@ -924,6 +926,7 @@ valign: <xsl:value-of select="@valign"/></xsl:message>
 
       <xsl:variable name="phrases"
                     select="ancestor::mediaobject/textobject[phrase]
+                            |ancestor::inlinemediaobject/textobject[phrase]
                             |ancestor::mediaobjectco/textobject[phrase]"/>
 
       <xsl:call-template name="process.image">
