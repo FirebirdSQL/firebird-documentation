@@ -14,7 +14,7 @@ set _CP_=%_CP_%;..\..\lib\saxon.jar
 rem ----- fop libraries ------
 set _CP_=%_CP_%;..\..\lib\fop.jar
 set _CP_=%_CP_%;..\..\lib\batik.jar
-set _CP_=%_CP_%;..\..\lib\avalon-framework-cvs-20020315.jar
+set _CP_=%_CP_%;..\..\lib\avalon-framework.jar
 
 set _CP_=%_CP_%;..\..\lib
 

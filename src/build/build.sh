@@ -20,7 +20,7 @@ _CP_=$_CP_:../../lib/saxon.jar
 # ----- FOP libraries: ------
 _CP_=$_CP_:../../lib/fop.jar
 _CP_=$_CP_:../../lib/batik.jar
-_CP_=$_CP_:../../lib/avalon-framework-cvs-20020315.jar
+_CP_=$_CP_:../../lib/avalon-framework.jar
 
 _CP_=$_CP_:../../lib
 
