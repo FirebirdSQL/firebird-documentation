@@ -28,6 +28,7 @@
   <xsl:include href="common/l10n.xsl"/>
   <xsl:include href="fo/param.xsl"/>
   <xsl:include href="fo/pagesetup.xsl"/>
+  <xsl:include href="fo/verbatim.xsl"/>
   <xsl:include href="fo/lists.xsl"/>
   <xsl:include href="fo/block.xsl"/>
   <xsl:include href="fo/titlepage.xsl"/>
