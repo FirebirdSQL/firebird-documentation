@@ -6,8 +6,8 @@
 
 
 
-  <!-- Split article in top level articles and others. Top level articles get
-    "cover pages" just like books. Both variations get the logo, by the way. -->
+  <!-- Split article in top level articles and others. 
+       Top level articles get "cover pages" just like books. -->
 
   <xsl:template match="article">
     <xsl:variable name="id">
@@ -24,7 +24,7 @@
   </xsl:template>
 
 
-  <xsl:template match="article" mode="article.toplevel.mode">  <!-- with coverpage, logo etc. -->
+  <xsl:template match="article" mode="article.toplevel.mode">  <!-- with coverpage etc. -->
     <xsl:variable name="id">
       <xsl:call-template name="object.id"/>
     </xsl:variable>
@@ -94,7 +94,6 @@
 
         <fo:flow flow-name="xsl-region-body">
           <fo:block id="{$id}">
-            <xsl:call-template name="titlepage.logo"/>
             <xsl:call-template name="article.titlepage"/>
           </fo:block>
         </fo:flow>
@@ -301,7 +300,6 @@
 
       <fo:flow flow-name="xsl-region-body">
         <fo:block id="{$id}">
-          <xsl:call-template name="titlepage.logo"/>
           <xsl:call-template name="article.titlepage"/>
         </fo:block>
 

@@ -176,7 +176,7 @@ set       toc,title
   <xsl:attribute-set name="blockquote.properties">
     <xsl:attribute name="space-after.minimum">0em</xsl:attribute>
     <xsl:attribute name="space-after.optimum">0em</xsl:attribute>
-    <xsl:attribute name="space-after.maximum">1em</xsl:attribute>
+    <xsl:attribute name="space-after.maximum">0.2em</xsl:attribute>
   </xsl:attribute-set>
 
   <!-- override of list.block.spacing in param.xsl: -->
