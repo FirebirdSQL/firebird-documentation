@@ -28,7 +28,7 @@
     </xsl:choose>
   </xsl:variable>
 
-  <fo:table table-layout="fixed" width="{$table.width}" 
+  <fo:table table-layout="fixed" width="{$table.width}"
             space-before="1em" text-align="left">
     <fo:table-column column-number="1" column-width="proportional-column-width(2)"/>
     <fo:table-column column-number="2" column-width="proportional-column-width(3)"/>
@@ -57,6 +57,12 @@
   <xsl:variable name="revdate"   select=".//date"/>
   <xsl:variable name="revauthor" select=".//authorinitials"/>
   <xsl:variable name="revremark" select=".//revremark|.//revdescription"/>
+
+  <!-- spacer row before each revision except first: -->
+  <xsl:if test="preceding-sibling::* or preceding-sibling::text()">
+    <fo:table-row height="1em"/>
+  </xsl:if>
+
   <fo:table-row>
     <fo:table-cell>
       <fo:block>
