@@ -25,6 +25,7 @@
          the CSS; if we want margins we'll put them in the CSS -->
 
   <!-- misc params -->
+  <xsl:param name="segmentedlist.as.table" select="1"/>
   <xsl:param name="spacing.paras">1</xsl:param>
   <xsl:param name="chunker.output.indent">yes</xsl:param>
   <xsl:param name="use.id.as.filename">1</xsl:param>
