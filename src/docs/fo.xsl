@@ -7,9 +7,9 @@
 -->
 
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns:exsl="http://exslt.org/common"
                 xmlns:fo="http://www.w3.org/1999/XSL/Format"
-                xmlns:doc="http://nwalsh.com/xsl/documentation/1.0"
-                exclude-result-prefixes="doc"
+                exclude-result-prefixes="exsl"
                 version='1.0'>
 
   <!-- Import default DocBook stylesheet for fo generation: -->
@@ -17,6 +17,8 @@
 
 
   <!-- STYLESHEET PARAMETERS: -->
+
+  <xsl:param name="rootid" select="''"/>
 
   <xsl:param name="fop.extensions" select="1"/>
     <!-- otherwise broken URLs, and no bookmarks! -->
@@ -28,8 +30,7 @@
   <xsl:param name="variablelist.as.blocks" select="1"/>
   <xsl:param name="segmentedlist.as.table" select="1"/>
   <xsl:param name="ulink.show" select="0"/>
-
-<!--  <xsl:param name="appendix.autolabel" select="0"/>  -->
+  <xsl:param name="admon.textlabel" select="1"/>
 
 
   <!-- Our own params: -->
@@ -56,9 +57,29 @@
 
   <!-- ATTRIBUTE SETS: -->
 
+
+  <xsl:attribute-set name="monospace.properties">
+    <xsl:attribute name="font-family">
+      <xsl:value-of select="$monospace.font.family"/>
+    </xsl:attribute>
+    <xsl:attribute name="font-size">0.9em</xsl:attribute>
+  </xsl:attribute-set>
+
+
+  <!-- Must include this one even if it's an exact copy from fo/param.xsl.
+       If we leave it out, fo build fails with:
+       <path>/fo/param.xsl:29: Fatal Error! Circular reference to attribute set -->
+  <xsl:attribute-set name="article.appendix.title.properties"
+                     use-attribute-sets="section.title.properties section.title.level1.properties">
+    <xsl:attribute name="margin-left">
+      <xsl:value-of select="$title.margin.left"/>
+    </xsl:attribute>
+  </xsl:attribute-set>
+
+
   <xsl:attribute-set name="section.title.properties">
     <xsl:attribute name="color"><xsl:value-of select="$lowlevel.title.color"/></xsl:attribute>
-    <xsl:attribute name="keep-with-next.within-page">always</xsl:attribute>
+    <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>
   </xsl:attribute-set>
 
 
@@ -123,6 +144,7 @@
        If this ever bites us, we must remove this line or comment
        it out: -->
   <xsl:output method="xml" indent="yes"/>
+
 
 
   <!-- HIGHLEVEL TITLES -->
@@ -202,7 +224,7 @@
 
 
   <!-- Standard header.table (see pagesetup.xsl) has cellwidths 1:1:1,
-       which leads  to ugliness with somewhat longer article/chapter
+       which leads to ugliness with somewhat longer article/chapter
        names. And we don't use the left and right cells anyway...      -->
 
   <xsl:template name="header.table">
@@ -329,6 +351,54 @@
 
   <xsl:template match="varlistentry/term[position()=last()]" priority="2">
     <fo:inline font-style="italic"><xsl:apply-templates/></fo:inline>
+  </xsl:template>
+
+
+  <!-- Colored background for non-graphical admonitions,
+       based on a solution by Carlos Guzman Alvarez     -->
+
+  <xsl:template name="nongraphical.admonition">
+    <xsl:variable name="id">
+      <xsl:call-template name="object.id"/>
+    </xsl:variable>
+
+    <xsl:variable name="color">
+      <xsl:choose>
+        <xsl:when test="name()='note'">F0FFFF</xsl:when>
+        <xsl:when test="name()='warning'">FFE4E1</xsl:when>
+        <xsl:when test="name()='caution'">FFE4E1</xsl:when>
+        <xsl:when test="name()='tip'">F0FFFF</xsl:when>
+        <xsl:when test="name()='important'">FFE4E1</xsl:when>
+      </xsl:choose>
+    </xsl:variable>
+
+    <fo:block space-before.minimum="0.8em"
+              space-before.optimum="1em"
+              space-before.maximum="1.2em"
+              background-color="#{$color}"
+              id="{$id}">
+      <fo:table>
+        <fo:table-column/>
+        <fo:table-body>
+          <fo:table-row>
+            <fo:table-cell padding="6pt">
+
+              <xsl:if test="$admon.textlabel != 0 or title">
+                <fo:block keep-with-next='always'
+                          xsl:use-attribute-sets="admonition.title.properties">
+                   <xsl:apply-templates select="." mode="object.title.markup"/>
+                </fo:block>
+              </xsl:if>
+
+              <fo:block xsl:use-attribute-sets="admonition.properties">
+                <xsl:apply-templates/>
+              </fo:block>
+
+            </fo:table-cell>
+          </fo:table-row>
+        </fo:table-body>
+      </fo:table>
+    </fo:block>
   </xsl:template>
 
 
