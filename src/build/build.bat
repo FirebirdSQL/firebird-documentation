@@ -18,7 +18,7 @@ set _CP_=%_CP_%;..\..\lib\avalon-framework-cvs-20020315.jar
 
 set _CP_=%_CP_%;..\..\lib
 
-%JAVA_HOME%\bin\java.exe -showversion -Xmx100000000 -classpath "%JAVA_HOME%\lib\tools.jar;%_CP_%;%CLASSPATH%" org.apache.tools.ant.Main %1 %2 %3
+"%JAVA_HOME%\bin\java.exe" -showversion -Xmx100000000 -classpath "%JAVA_HOME%\lib\tools.jar;%_CP_%;%CLASSPATH%" org.apache.tools.ant.Main %1 %2 %3
 rem -Xbootclasspath/p:d:/Work/Firebird/manual/lib
 
 :exit
