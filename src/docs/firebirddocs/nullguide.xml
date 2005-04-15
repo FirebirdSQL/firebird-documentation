@@ -17,7 +17,7 @@
       <surname>Vinkenoog</surname>
     </author>
 
-    <edition>8 April 2005 - Document version 0.1</edition>
+    <edition>15 April 2005 - Document version 0.2</edition>
   </articleinfo>
 
   <section id="nullguide-intro">
@@ -79,11 +79,11 @@
     <constant>NULL</constant>. Use it in a boolean expression, and the outcome
     depends on the type of operation and the other values involved.</para>
 
-    <para>Please note, by the way, that in SQL it is mostly illegal to use the
-    constant <constant>NULL</constant> directly in operations or comparisons.
-    Wherever you see <constant>NULL</constant> in the expressions below, read
-    it as <quote>a field, variable or other expression that resolves to
-    <constant>NULL</constant></quote>.</para>
+    <para>Please note, by the way, that in Firebird versions prior to 2.0 it
+    is mostly illegal to use the constant <constant>NULL</constant> directly
+    in operations or comparisons. Wherever you see <constant>NULL</constant>
+    in the expressions below, read it as <quote>a field, variable or other
+    expression that resolves to <constant>NULL</constant></quote>.</para>
 
     <section id="nullguide-expr-returning-null">
       <title>Expressions returning <constant>NULL</constant></title>
@@ -557,7 +557,7 @@
       </itemizedlist>
 
       <para>Both conversions are usually unwanted, but the second probably
-      more so than the first (better validate someting
+      more so than the first (better validate something
       <constant>NULL</constant> than wreck something valid). To get back to
       our <function>LTRIM</function> example: up to and including Firebird
       1.0.3, this function returned <constant>NULL</constant> if you fed it an
@@ -680,7 +680,7 @@ else
 
         <para>This one looks like it should give the same results as the
         previous example, doesn't it? After all, we've inverted the test
-        expression and swapped the <literal>if</literal> and
+        expression and swapped the <literal>then</literal> and
         <literal>else</literal> clauses. And indeed, as long as neither
         variable is <constant>NULL</constant>, both code fragments are
         equivalent. But as soon as <varname>a</varname> or
@@ -706,21 +706,23 @@ else
 
     <para>In light of the havoc that <constant>NULL</constant> can wreak, you
     will often want to know whether something is <constant>NULL</constant>
-    <emphasis>before</emphasis> you use it in an expression. The obvious test
-    would seem to be</para>
+    <emphasis>before</emphasis> you use it in an expression. To some, the
+    obvious test would seem to be</para>
 
     <blockquote>
       <para><literal>if (A = <constant>NULL</constant>)
       then...</literal></para>
     </blockquote>
 
-    <para>and indeed there are database management systems that allow this
-    syntax. But not so Firebird. First, the use of <constant>NULL</constant>
-    is illegal here (at least according to Firebird law), and second: even if
-    it were permitted, this comparison would always return
-    <constant>NULL</constant> - regardless of A's state and value. What we
-    need instead is a clear <constant>true</constant> or
-    <constant>false</constant> result. The correct syntax is:</para>
+    <para>and indeed there are database management systems that support this
+    syntax to determine nullness. But the SQL standard doesn't allow it, and
+    neither does Firebird. In versions prior to 2.0 this entire syntax is even
+    illegal. From 2.0 onward it is permitted, but the comparison always
+    returns <constant>NULL</constant>, regardless of A's state and value. It
+    is therefore worthless as a nullness test - what we need is a clear
+    <constant>true</constant> or <constant>false</constant> result.</para>
+
+    <para>The correct way to test for <constant>NULL</constant> is:</para>
 
     <blockquote>
       <para><literal>...is null</literal> / <literal>...is not
@@ -780,7 +782,8 @@ else
     NULL</literal> was illegal!</quote></para>
 
     <para>That's right... for the <emphasis>comparison operator</emphasis>
-    <quote><literal>=</literal></quote>. But here we are talking about
+    <quote><literal>=</literal></quote> (at least in pre-2.0 versions of
+    Firebird). But here we are talking about
     <quote><literal>=</literal></quote> as an <emphasis>assignment
     operator</emphasis>. Unfortunately, both operators have the same symbol in
     SQL. In assignments, whether done with <quote><literal>=</literal></quote>
@@ -791,55 +794,65 @@ else
   <section id="nullguide-dealing-with-nulls">
     <title>Dealing with <constant>NULL</constant>s</title>
 
-    <para>Sometimes, it really doesn't matter if fields or variables may be
-    <constant>NULL</constant>. For instance, if you do this:</para>
+    <para>This section contains some practical tips and examples that may be
+    of use to you in your everyday dealings with
+    <constant>NULL</constant>s.</para>
 
-    <blockquote>
-      <para><programlisting>select * from Customers where Town = 'Ralston'</programlisting></para>
-    </blockquote>
+    <section id="nullguide-test-if-matters">
+      <title>Testing for <constant>NULL</constant> - if it matters</title>
 
-    <para>you probably don't want to see the customers whose town is
-    unspecified. Likewise:</para>
+      <para>Quite often, you don't need to take special measures for fields or
+      variables that may be <constant>NULL</constant>. For instance, if you do
+      this:</para>
 
-    <blockquote>
-      <para><programlisting>if (Age &gt;= 18) then CanVote = 'Yes'</programlisting></para>
-    </blockquote>
+      <blockquote>
+        <para><programlisting>select * from Customers where Town = 'Ralston'</programlisting></para>
+      </blockquote>
 
-    <para>doesn't include people of unknown age, which is also defendable.
-    But:</para>
+      <para>you probably don't want to see the customers whose town is
+      unspecified. Likewise:</para>
 
-    <blockquote>
-      <para><programlisting>if (Age &gt;= 18) then CanVote = 'Yes';
+      <blockquote>
+        <para><programlisting>if (Age &gt;= 18) then CanVote = 'Yes'</programlisting></para>
+      </blockquote>
+
+      <para>doesn't include people of unknown age, which is also defendable.
+      But:</para>
+
+      <blockquote>
+        <para><programlisting>if (Age &gt;= 18) then CanVote = 'Yes';
 else CanVote = 'No';</programlisting></para>
-    </blockquote>
+      </blockquote>
 
-    <para>seems less right: if you don't know a person's age, you shouldn't
-    explicitly deny her the right to vote. Worse, this:</para>
+      <para>seems less right: if you don't know a person's age, you shouldn't
+      explicitly deny her the right to vote. Worse, this:</para>
 
-    <blockquote>
-      <para><programlisting>if (Age &lt; 18) then CanVote = 'No';
+      <blockquote>
+        <para><programlisting>if (Age &lt; 18) then CanVote = 'No';
 else CanVote = 'Yes';</programlisting></para>
-    </blockquote>
+      </blockquote>
 
-    <para>won't have the same effect as the previous. Now we're letting minors
-    vote!</para>
+      <para>won't have the same effect as the previous. If some of the
+      <constant>NULL</constant> ages are in reality under 18, you're now
+      letting minors vote!</para>
 
-    <para>The right approach here is to explicitly test for
-    <constant>NULL</constant>:</para>
+      <para>The right approach here is to test for <constant>NULL</constant>
+      explicitly:</para>
 
-    <blockquote>
-      <para><programlisting>if (Age is null) then CanVote = 'Unsure';
+      <blockquote>
+        <para><programlisting>if (Age is null) then CanVote = 'Unsure';
 else 
   if (Age &gt;= 18) then CanVote = 'Yes';
   else CanVote = 'No';</programlisting><note>
-          <para><literal>else</literal> always refers back to the last
-          <literal>if</literal> in the same block. But it's often good to
-          avoid confusion by putting <literal>begin...end</literal> keywords
-          around a group of lines. I didn't do that here though - I wanted to
-          keep the number of lines down. And then I made up for it by adding
-          this note ;-)</para>
-        </note></para>
-    </blockquote>
+            <para><literal>else</literal> always refers back to the last
+            <literal>if</literal> in the same block. But it's often good to
+            avoid confusion by putting <literal>begin...end</literal> keywords
+            around a group of lines. I didn't do that here though - I wanted
+            to keep the number of lines down. And then I made up for it by
+            adding this note ;-)</para>
+          </note></para>
+      </blockquote>
+    </section>
 
     <section id="nullguide-equality">
       <title>Finding out if fields are the same</title>
@@ -852,8 +865,8 @@ else
         <para><programlisting>if (A = B or A is null and B is null) then...</programlisting></para>
       </blockquote>
 
-      <para>or, if you want to make the precedence of the operations explicit
-      :</para>
+      <para>or, if you want to make the precedence of the operations
+      explicit:</para>
 
       <blockquote>
         <para><programlisting>if ((A = B) or (A is null and B is null)) then...</programlisting></para>
@@ -1080,6 +1093,25 @@ from OtherPersons</programlisting></para>
 
           <revdescription>
             <para>First edition.</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>0.2</revnumber>
+
+          <date>15 April 2005</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para>Mentioned that Fb 2.0 legalises <quote><literal>A =
+            NULL</literal></quote> comparisons.</para>
+
+            <para>Changed text in <quote>Testing if something is
+            <constant>NULL</constant></quote>.</para>
+
+            <para>Slightly altered <quote>Dealing with
+            <constant>NULL</constant>s</quote> section.</para>
           </revdescription>
         </revision>
       </revhistory></para>
