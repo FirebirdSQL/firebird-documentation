@@ -171,6 +171,19 @@ set       toc,title
     </xsl:attribute>
   </xsl:attribute-set>
 
+  <!-- titles for table, equation, example, etc.: -->
+  <xsl:attribute-set name="formal.title.properties" use-attribute-sets="normal.para.spacing">
+    <xsl:attribute name="font-weight">bold</xsl:attribute>
+    <xsl:attribute name="font-size">
+      <xsl:value-of select="$body.font.master"/>
+      <xsl:text>pt</xsl:text>
+    </xsl:attribute>
+    <xsl:attribute name="hyphenate">false</xsl:attribute>
+    <xsl:attribute name="space-after.minimum">0.4em</xsl:attribute>
+    <xsl:attribute name="space-after.optimum">0.6em</xsl:attribute>
+    <xsl:attribute name="space-after.maximum">0.8em</xsl:attribute>
+  </xsl:attribute-set>
+
 
   <!--
     Brought space-after back to zero for lists and blockquotes.
