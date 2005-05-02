@@ -1,0 +1,1147 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!-- For standalone validation, uncomment the following DOCTYPE declaration. -->
+<!--
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN"
+"http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd">
+-->
+<article id="nullguide-fr">
+  <articleinfo>
+    <title>Guide Firebird et NULL</title>
+
+    <subtitle>Comportement  et précautions au sujet de <constant>NULL</constant> dans Firebird
+    SQL</subtitle>
+
+    <author>
+      <firstname>Paul</firstname>
+      <surname>Vinkenoog</surname>
+    </author>
+
+    <edition>18 April 2005 - Document version 0.2-fr</edition>
+  </articleinfo>
+
+  <section id="nullguide-fr-intro">
+    <title>Introduction</title>
+
+    <para>Régulièrement, dans les listes de support sur Firebird 
+    des questions au sujet de <quote>choses étranges</quote> arrivant avec
+    <constant>NULL</constant>dans Firebird SQL sont posées. Ce concept semble
+    difficile à comprendre - peut être à cause de son nom, qui semble correspondre à
+    <quote>rien</quote> qui donc n'aurait aucune conséquence s'il est ajouté à un nombre
+    ou ajouté à la fin d'une chaîne de caractères. En fait, le résultat de ces opérations
+    renvoit toujours <constant>NULL</constant>.</para>
+
+    <para>Cet article explore le comportement de <constant>NULL</constant> dans
+    Firebird SQL, pointe les chausses trappe habituels et vous montre comment travailler 
+    avec des expressions qui contiennent <constant>NULL</constant> ou peuvent avoir un résultat
+    <constant>NULL</constant>.</para>
+
+    <para>Si vous voulez une référence rapide pour raffraichir votre mémoire, allez
+    directement à ce <link linkend="nullguide-fr-summary">résumé</link> (qui est
+    vraiment condensé).</para>
+
+    <note>
+      <para>Certaines phrases et exemples dans ce guide sont empruntés au
+      <citetitle>Guide de démarrage de Firebird</citetitle>, publié initialement par
+      IBPhoenix, et maintenant partie intégrante du Projet Firebird.</para>
+    </note>
+  </section>
+
+  <section id="nullguide-fr-whatisnull">
+    <title>Qu'est ce que <constant>NULL</constant>?</title>
+
+    <para>Dans SQL, NULL n'est pas une valeur. C'est un <emphasis>état</emphasis>
+    indiquant que la valeur d'un item est inconnue ou inexistante. Ce n'est ni zéro ni
+    blanc ni une <quote>chaîne vide</quote> et cela ne se comporte comme aucune de 
+    ces valeurs. Peu de choses sèment autant le trouble dans SQL que
+    <constant>NULL</constant>, et pourtant son mécanisme est simple
+    à comprendre quand on suit cette simple définition suivante :
+    <constant>NULL</constant> signifie <emphasis>indéterminé</emphasis>.</para>
+
+    <para>Laisser moi le redire :</para>
+
+    <blockquote>
+      <para><emphasis role="bold"><constant>NULL</constant> signifie
+      INDÉTERMINÉ</emphasis></para>
+    </blockquote>
+
+    <para>Gardez cette définition en tête quand vous lirez le reste de cet article,
+    et tout ce qui vous semblait illogique dans le comportement de
+    <constant>NULL</constant> s'expliquera quasiment de lui même.</para>
+  </section>
+
+  <section id="nullguide-fr-null-in-exps">
+    <title><constant>NULL</constant> dans les expressions</title>
+
+    <para>Combien d'entre nous ont appris à leurs dépends que
+    <constant>NULL</constant> est contagieux: utilisez le dans une expression numerique, de
+    chaîne de caractère ou de date/heure, et le résultat sera toujours
+    <constant>NULL</constant>. Utilisez le dans une expression booléenne, et le résultat dépendra
+    du type d' opération et des autres valeurs impliquées.</para>
+
+    <para>Notez au passage que dans les versions de Firebird avant 2.0, il est
+    le plus souvent illégal d'utiliser la constante <constant>NULL</constant> directement
+    dans des opérations ou comparaisons. Partout où vous verrez <constant>NULL</constant>
+    dans les instructions suivantes, lisez le comme <quote>un champ, une variable ou une autre
+    expression renvoyant <constant>NULL</constant></quote>.</para>
+
+    <section id="nullguide-fr-expr-returning-null">
+      <title>Expressions retournant <constant>NULL</constant></title>
+
+      <para>Les expressions dans cette liste renvoient <emphasis>toujours</emphasis> 
+      <constant>NULL</constant>:</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para><literal>1 + 2 + 3 +
+          <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal>'Home ' || 'sweet ' ||
+          <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal>MyField = <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal>MyField &lt;&gt;
+          <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal><constant>NULL</constant> =
+          <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal>not (<constant>NULL</constant>)</literal></para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Si vous avez des difficultés à comprendre pourquoi, souvenez vous que
+      <constant>NULL</constant> signifie <quote>indéterminé</quote>. regardez aussi
+      le tableau suivant où des explications sont données au cas par cas. Dans le
+      tableau nous n'écrivons pas <constant>NULL</constant> dans les expressions (comme
+      dit plus haut, c'est souvent interdit); à la place, nous utilisons deux entités A et B qui
+      sont toutes deux <constant>NULL</constant>. A et B peuvent être des champs, des variables, ou
+      des sous expressions - du moment quelles sont
+      <constant>NULL</constant>, elles ont le même comportement dans les
+      expressions utilisées.</para>
+
+      <table>
+        <title>Operations des entités A et B null</title>
+
+        <tgroup cols="3">
+          <colspec colname="colExpr" colnum="1" colwidth="4*" />
+
+          <colspec colname="colResult" colnum="2" colwidth="*" />
+
+          <colspec align="left" colname="colReason" colnum="3" colwidth="6*" />
+
+          <thead>
+            <row>
+              <entry align="center">Si A et B sont NULL, alors:</entry>
+
+              <entry align="center">Est:</entry>
+
+              <entry align="center">Parce que:</entry>
+            </row>
+          </thead>
+
+          <tbody>
+            <row>
+              <entry><literal>1 + 2 + 3 + A</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry>Si A est indéterminée, alors 6 + A est aussi indéterminée.</entry>
+            </row>
+
+            <row>
+              <entry><literal>'Home ' || 'sweet ' || A </literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry>Si A est indéterminée, 'Home sweet ' || A est aussi indéterminée.</entry>
+            </row>
+
+            <row>
+              <entry><literal>MonChamp = A</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry>Si A est indéterminée, vous ne pouvez dire si MonChamp à la même
+              valeur...</entry>
+            </row>
+
+            <row>
+              <entry><literal>MonChamp &lt;&gt; A</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry>...mais vous ne pouvez non plus dire si MonChamp à une valeur
+              <emphasis>différente</emphasis> !</entry>
+            </row>
+
+            <row>
+              <entry><literal>A = B</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry>Avec A et B indéterminées, il est impossible de savoir si
+              elles sont égales.</entry>
+            </row>
+
+            <row>
+              <entry><literal>not (A)</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry>Si A est indéterminée, sa négation est aussi indéterminée.</entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </section>
+
+    <section id="nullguide-fr-boolean-expressions">
+      <title><constant>NULL</constant> dans des expressions booléennes</title>
+
+      <para>Non avons déjà vu que 
+      <literal>not(<constant>NULL</constant>)</literal> renvoie
+      <constant>NULL</constant>. Pour les opérateurs <literal>and</literal> et
+      <literal>or</literal> , les choses sont un peu plus
+      compliquées :</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para><literal><constant>NULL</constant> or
+          <constant>false</constant> =
+          <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal><constant>NULL</constant> or
+          <constant>true</constant> =
+          <constant>true</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal><constant>NULL</constant> or
+          <constant>NULL</constant> =
+          <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal><constant>NULL</constant> and
+          <constant>false</constant> =
+          <constant>false</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal><constant>NULL</constant> and
+          <constant>true</constant> =
+          <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal><constant>NULL</constant> and
+          <constant>NULL</constant> =
+          <constant>NULL</constant></literal></para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Le SQL Firebird n'a pas de type booléen; les constantes
+      <constant>true</constant> et <constant>false</constant> n'existent
+      pas. Dans la colonne de gauche du tableau suivant,
+      <literal>(true)</literal> et <literal>(false)</literal> représentent
+      des expressions renvoyant
+      <constant>true</constant>/<constant>false</constant>.</para>
+
+      <table>
+        <title>Opérations booléennes sur une entité A null</title>
+
+        <tgroup cols="3">
+          <colspec colname="colExpr" colnum="1" colwidth="4*" />
+
+          <colspec colname="colResult" colnum="2" colwidth="*" />
+
+          <colspec align="left" colname="colReason" colnum="3" colwidth="6*" />
+
+          <thead>
+            <row>
+              <entry align="center">Si A est <constant>NULL</constant>,
+              alors:</entry>
+
+              <entry align="center">Est:</entry>
+
+              <entry align="center">Parce que:</entry>
+            </row>
+          </thead>
+
+          <tbody>
+            <row>
+              <entry><literal>A or (false)</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry><quote><literal>A or
+              <constant>false</constant></literal></quote> a toujours la
+              même valeur que A - qui est indéterminée.</entry>
+            </row>
+
+            <row>
+              <entry><literal>A or (true)</literal></entry>
+
+              <entry><literal><constant>true</constant></literal></entry>
+
+              <entry><quote><literal>A or
+              <constant>true</constant></literal></quote> est toujours
+              <constant>true</constant> - la valeur de A n'a pas d'importance.</entry>
+            </row>
+
+            <row>
+              <entry><literal>A or A</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry><quote><literal>A or A</literal></quote> est toujours égal à A
+              - qui est <constant>NULL</constant>.</entry>
+            </row>
+
+            <row>
+              <entry><literal>A and (false)</literal></entry>
+
+              <entry><literal><constant>false</constant></literal></entry>
+
+              <entry><quote><literal>A and
+              <constant>false</constant></literal></quote> est toujours
+              <constant>false</constant> - la valeur de A n'a pas d'importance.</entry>
+            </row>
+
+            <row>
+              <entry><literal>A and (true)</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry><quote><literal>A and
+              <constant>true</constant></literal></quote> a toujours la même
+              valeur que A - qui est indéterminée.</entry>
+            </row>
+
+            <row>
+              <entry><literal>A and A</literal></entry>
+
+              <entry><literal><constant>NULL</constant></literal></entry>
+
+              <entry><quote><literal>A and A</literal></quote> est toujours égal à A
+              - qui est <constant>NULL</constant>.</entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+
+      <para>Tous ces résultats sont en accord avec la logique booléenne. Le fait que,
+      pour calculer <quote><literal>X or
+      <constant>true</constant></literal></quote> et <quote><literal>X and
+      <constant>false</constant></literal></quote>, vous n'ayez simplement pas
+      <emphasis>besoin</emphasis> de connaitre la valeur de X, fait partie des bases
+      d'une fonctionnalité que nous connaissons dans divers langages de programmation : l'évaluation
+      booléenne rapide.</para>
+    </section>
+
+    <section id="nullguide-fr-more-logic">
+      <title>Plus de logique (ou pas)</title>
+
+      <para>Les résultats obtenus ci-dessus pouraient vous mener
+      aux idées suivantes :</para>
+
+      <itemizedlist>
+        <listitem>
+          <para>0 fois <varname>x</varname> égal 0 pour tout
+          <varname>x</varname>. En conséquence, même si la valeur de <varname>x</varname> est
+          indéterminée, <literal>0 * x</literal> égal 0. (Note: ceci seulement si
+          <varname>x</varname> est d'un type n'acceptant que des nombres, pas
+          <constant>NaN</constant> ou infini.)</para>
+        </listitem>
+
+        <listitem>
+          <para>Un chaîne vide est classée lexicographiquement avant toute
+          autre chaîne. Donc, <literal>S &gt;= ''</literal> est vrai
+          quelque soit la valeur de S.</para>
+        </listitem>
+
+        <listitem>
+          <para>Chaque valeur est égale à elle même, qu'elle soit connue ou pas. Donc,
+          bien que <literal>A = B</literal> renvoie 
+          <constant>NULL</constant> si A et B sont des entitées
+          <constant>NULL</constant> différentes, <literal>A = A</literal> devrait
+          toujours retourner <constant>true</constant>, même si A est
+          <constant>NULL</constant>.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Comment cela est il implémenté dans le SQL de Firebird ? Et bien, je suis
+      désolé de vous dire qu'en dépit de toute cette logique - et les analogies
+      avec les résultats booléens discutés ci-dessus - toutes ces expressions 
+      renvoient <constant>NULL</constant>:</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para><literal><constant>0 * NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal><constant>NULL</constant> &gt;= ''</literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal>'' &lt;= <constant>NULL</constant></literal></para>
+        </listitem>
+
+        <listitem>
+          <para><literal>A = A</literal> (avec A comme champ ou variable
+          null)</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Et voilà pour la logique.</para>
+    </section>
+
+    <section id="nullguide-fr-aggregate-functions">
+      <title><constant>NULL</constant> dans des fonctions d'aggrégat</title>
+
+      <para>Dans des fonctions d'aggrégat comme <function>COUNT</function>,
+      <function>SUM</function>, <function>AVG</function>,
+      <function>MAX</function>, et <function>MIN</function>,
+      <constant>NULL</constant> est géré différemment: pour calculer le
+      résultat, seuls les champs non-<constant>NULL</constant> sont pris en
+      consideration. C'est à dire que, si vous avez cette table:</para>
+
+      <segmentedlist>
+        <title>MyTable</title>
+
+        <segtitle>ID</segtitle>
+
+        <segtitle>Name</segtitle>
+
+        <segtitle>Amount</segtitle>
+
+        <seglistitem>
+          <seg>1</seg>
+
+          <seg>John</seg>
+
+          <seg>37</seg>
+        </seglistitem>
+
+        <seglistitem>
+          <seg>2</seg>
+
+          <seg>Jack</seg>
+
+          <seg>&lt;<constant>NULL</constant>&gt;</seg>
+        </seglistitem>
+
+        <seglistitem>
+          <seg>3</seg>
+
+          <seg>Joe</seg>
+
+          <seg>5</seg>
+        </seglistitem>
+
+        <seglistitem>
+          <seg>4</seg>
+
+          <seg>Josh</seg>
+
+          <seg>12</seg>
+        </seglistitem>
+
+        <seglistitem>
+          <seg>5</seg>
+
+          <seg>Jay</seg>
+
+          <seg>&lt;<constant>NULL</constant>&gt;</seg>
+        </seglistitem>
+      </segmentedlist>
+
+      <para>...l'instruction <userinput>select sum(Amount) from
+      MyTable</userinput> renvoie 54, qui est 37 + 5 + 12. Si les cinq
+      champs avaient été additionnés, le résultat aurait été
+      <constant>NULL</constant>. Pour <function>AVG</function>, les champs
+      non-<constant>NULL</constant> sont additionnés et la somme est divisée par
+      le nombre de champs non-<constant>NULL</constant> .</para>
+
+      <para>Il y a seulement une exception à cette règle: <function>COUNT(*)</function>
+      renvoie le dénombrement de toutes les lignes, mêm celles pour lesquelles les champs sont
+      <constant>NULL</constant>. Mais
+      <function>COUNT</function>(<parameter>FieldName</parameter>) se comporte
+      comme les autres fonctions d'aggrégat et ne compte que les enregistrements pour lequels le
+      champ spécifié est non <constant>NULL</constant>.</para>
+
+      <para>Un autre chose à savoir est que <function>COUNT(*)</function>
+      et <function>COUNT(<parameter>FieldName</parameter>)</function> ne
+      renvoient jamais <constant>NULL</constant>: s'il n'y a pas d'enregistrement dans l'ensemble de données
+      les deux fonctions renvoient 0. Ainsi,
+      <function>COUNT(<parameter>FieldName</parameter>)</function> renvoie 0
+      si tous les champs <parameter>FieldName</parameter> dans l'ensemble de données sont
+      <constant>NULL</constant>. Les autres fonctions d'aggregat renvoient
+      <constant>NULL</constant> dans ce cas. Faite attention que même
+      <function>SUM</function> renvoie <constant>NULL</constant> s'il est utilisé sur un
+      ensemble vide, ce qui est contraire à la logique commune.</para>
+    </section>
+  </section>
+
+  <section id="nullguide-fr-udfs">
+    <title><constant>NULL</constant> dans les UDFs</title>
+
+    <para><firstterm>UDF</firstterm>s (<firstterm>User Defined
+    Functions</firstterm>) sont des fonctions qui ne sont pas interne au moteur,
+    mais définies dans des modules séparés. Firebird est livré avec deux bibliothèques UDF :
+    <systemitem class="library">ib_udf</systemitem> (héritée d'
+    <application>InterBase</application>) et <systemitem
+    class="library">fbudf</systemitem>. Vous pouvez ajoutez d'autre bibliothêques, e.g.
+    en les achetant ou les téléchargeant, ou en les écrivant vous même. Les UDFs ne peuvent être
+    utilisées directement; elles doivent <quote>déclarées</quote> dans la
+    base d'abord. Ceci est aussi vrai pour les UDFs livrées avec Firebird.</para>
+
+    <section id="nullguide-fr-udfs-conversions">
+      <title><constant>NULL</constant> &lt;-&gt; non-<constant>NULL</constant>
+      conversions non demandées</title>
+
+      <para>Vous apprendre à déclarer, utiliser, et écrire des UDFs est hors du
+      champ de ce guide. Toutefois, nous devons vous prévenir que les UDFs peuvent
+      quelques fois effectuer des conversions de <constant>NULL</constant> non désirées.
+      Cela va quelques fois convertir des entrées <constant>NULL</constant> en des
+      valeurs régulières, et quelque fois rendre <constant>NULL</constant>
+      des entrées valides comme <literal>''</literal> (une chaîne vide).</para>
+
+      <para>La principal cause des ce problème est qu' avec l' <quote>ancien
+      style</quote> d'appel UDF, il n'est pas possible de passer
+      <constant>NULL</constant> comme entrée de fonction. Quand une UDF comme
+      <function>LTRIM</function> (left trim) est appelée avec un argument
+      <constant>NULL</constant> ,l'argument est passé à la fonction comme
+      une chaîne vide. A l'intérieur de la fonction, il n'y a 
+      <emphasis>aucune</emphasis> manière de savoir si cet argument représente
+      réellement une chaîne vide ou un <constant>NULL</constant>. Donc que fait le créateur
+      de la fonction? il doit choisir: soit prendre l'argument comme étant une
+      valeur, ou considérer qu'à l'origine s'était un
+      <constant>NULL</constant> et faire le traitement en conséquence.</para>
+
+      <para>en fonction du type de résultat, renvoyer <constant>NULL</constant>
+      peut être possible même si recevoir <constant>NULL</constant> ne l'est pas. Ainsi,
+      les choses non attendues suivantes peuvent arriver :</para>
+
+      <itemizedlist>
+        <listitem>
+          <para>Vous appellez une UDF avec un argument <constant>NULL</constant>. Il
+          est passé comme une valeur, e.g. 0 ou <literal>''</literal>. Dans la 
+          fonction, cet argument n'est pas remis à 
+          <constant>NULL</constant>; un résultat non-<constant>NULL</constant> est
+          renvoyé.</para>
+        </listitem>
+
+        <listitem>
+          <para>Vous appellez une UDF avec un argument valide comme 0 ou
+          <literal>''</literal>. Il es passé tel quel (manifestement). Mais le
+          code de la fonction suppose que cette valeur en réalité représente un
+          <constant>NULL</constant>, le traite comme tel, et renvoie
+          <constant>NULL</constant> à l'appelant.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Ces deux conversion sont en général non désirées, mais la seconde
+      certainement plus que la première (on préfere valider 
+      <constant>NULL</constant> que détruire quelque chose de valide). Pour revenir à notre 
+      fonction <function>LTRIM</function> par exemple: jusqu'à la version Firebird
+      1.0.3 incluse, cette fonction renvoyait <constant>NULL</constant> si vous lui donniez
+      une chaîne vide; et depuis la version 1.5, elle ne renvoie jamais
+      <constant>NULL</constant>. Dans ces versions récentes, les chaînes
+      <constant>NULL</constant> sont <quote>transformées</quote> en
+      chaînes vides. Ce n'est pas vraiment juste, mais c'est considéré comme la moins mauvaise
+      solution: dans l'ancienne situation situation, les chaînes valides (et vides) étaient sans merci
+      ramenées à <constant>NULL</constant>s.</para>
+    </section>
+
+    <section id="nullguide-fr-udfs-conversions-prepare">
+      <title>Soyez préparés aux conversions non voulues</title>
+
+      <para>Les conversions nous voulues décrites ci dessus arrivent normalement qu'avec
+      les UDFs héritées d'Interbase, mais il en existe beaucoup (essentiellement dans
+      <systemitem class="library">ib_udf</systemitem>). De même, rien n'empèchera
+      un autre developpeur de faire la même chose dans une nouvelle fonction.
+      Donc la règle est: si vous utilisez une UDF et que vous savez pas comment
+      elle se comporte avec <constant>NULL</constant>:</para>
+
+      <procedure>
+        <step>
+          <para>Regardez sa déclaration pour voir comment les valeurs sont passées et
+          retournées. Si il est écrit <quote>by descriptor</quote>, cela devrait aller
+          (même si on nepeut en être certain). Dans tous les autres cas, suivez
+          les instructions suivantes.</para>
+        </step>
+
+        <step>
+          <para>Si vous avez les sources et que vous savez les lire, regardez
+          le code de la fonction.</para>
+        </step>
+
+        <step>
+          <para>Testez la fonction avec des entrées <constant>NULL</constant> 
+          et des entrées comme 0 (pour les arguments numériques) et/ou
+          <literal>''</literal> (pour les chaînes de caractère).</para>
+        </step>
+
+        <step>
+          <para>Si la fonction effectue une conversion non désirée de
+          <constant>NULL</constant> &lt;-&gt; non-<constant>NULL</constant>
+          , vous devrez en tenir compte dans votre code avant d'utiliser l'UDF (voir aussi <link
+          linkend="nullguide-fr-testing-for-null">Tester si quelque chose est 
+          <constant>NULL</constant></link>, dans ce guide).</para>
+        </step>
+      </procedure>
+
+      <para>Les déclarations pour les bibliothêques UDF livrées avec Firebird se trouvent
+      dans le sous répertoire de Firebird <filename
+      class="directory">bin/examples</filename> (v. 1.0) ou <filename
+      class="directory">bin/UDF</filename> (v. 1.5 et suivantes). Regardez 
+      les fichiers avec l'extension <filename class="extension">.sql</filename></para>
+    </section>
+
+    <section id="nullguide-fr-udfs-links">
+      <title>Plus d'information sur les UDFs</title>
+
+      <para>pour en savoir plus sur les UDFs, consultez  <citetitle>InterBase 6.0
+      Developer's Guide</citetitle> (disponible gratuitement à <ulink
+      url="http://www.ibphoenix.com/downloads/60DevGuide.zip">http://www.ibphoenix.com/downloads/60DevGuide.zip</ulink>),
+      <citetitle>Using Firebird</citetitle> et le <citetitle>Firebird
+      Reference Guide</citetitle> (les deux sur CD), ou le <citetitle>Firebird
+      Book</citetitle>. Les CD et le livre peuvent être achetés chez <ulink
+      url="http://www.ibphoenix.com">http://www.ibphoenix.com</ulink>.</para>
+    </section>
+  </section>
+
+  <section id="nullguide-fr-if-statements">
+    <title><constant>NULL</constant> dans des instructions <literal>if</literal></title>
+
+    <para>Si l'expression à tester dans l'instruction <literal>if</literal> est évaluée
+    à <constant>NULL</constant>, la clause <literal>then</literal> est
+    ignorée et la clause <literal>else</literal> (si elle est présente) exécutée.
+    Attention! Cette expression semble se <emphasis>comporter</emphasis> comme
+    <constant>false</constant> dans ce cas, mais elle n'a pas la 
+    <emphasis>valeur</emphasis> <constant>false</constant>. Elle est toujours
+    <constant>NULL</constant>, et des choses curieuses peuvent arriver si vous oubliez cela.
+    Les exemples suivants explorent quelques diaboliques comportements de 
+    <constant>NULL</constant> dans des instructions <literal>if</literal> :</para>
+
+    <itemizedlist>
+      <listitem>
+        <para><programlisting>if (a = b) then
+  MyVariable = 'Egal';
+else
+  MyVariable = 'Different';</programlisting></para>
+
+        <para>Si <varname>a</varname> et <varname>b</varname> sont tous deux
+        <constant>NULL</constant>, <varname>MyVariable</varname> sera
+        <quote><literal>Different</literal></quote> après l'exécution de ce code.
+        Cela vient de ce que l'expression <quote><literal>a =
+        b</literal></quote> renvoie <constant>NULL</constant> si au moins un
+        des termes est  <constant>NULL</constant>. Avec l'expression évaluée à 
+        <constant>NULL</constant>, le bloc <literal>then</literal> est
+        ignoré, et le bloc <literal>else</literal> exécuté.</para>
+      </listitem>
+
+      <listitem>
+        <para><programlisting>if (a &lt;&gt; b) then
+  MyVariable = 'Different';
+else
+  MyVariable = 'Egal';</programlisting></para>
+
+        <para>Ici, <varname>MyVariable</varname> sera
+        <quote><literal>Equal</literal></quote> si <varname>a</varname> est
+        <constant>NULL</constant> et <varname>b</varname> ne l'est pas, et vice
+        versa. L'explication est analogue à celle de l'exemple précédent.</para>
+      </listitem>
+
+      <listitem>
+        <para><programlisting>if (not (a &lt;&gt; b)) then
+  MyVariable = 'Egal';
+else
+  MyVariable = 'Different';</programlisting></para>
+
+        <para>Il semble que cet exemple devrait donner le même résultat
+        que l'exemple précédent, n'est ce pas? Après tout, nous avons inversé l'expression
+        de test et interverti  les clauses <literal>then</literal> et 
+        <literal>else</literal>. Et de fait, tant qu'aucune variable est
+        <constant>NULL</constant>, les deux codes sont
+        equivalents. Mais dès que <varname>a</varname> ou
+        <varname>b</varname> est <constant>NULL</constant>, alors toute
+        l'expression l'est aussi, la clause <literal>else</literal> est
+        executée, et le résultat est <quote><literal>Different</literal></quote>.</para>
+
+        <note>
+          <para>Bien sûr, nous savons que ce troisième exemple est équivalent
+          au premier. Nous ne vous l'avons proposé que pour insister sur le fait que
+           <literal>not(<constant>NULL</constant>)</literal> est
+          <constant>NULL</constant>. Donc, dans les situations où l'expression
+          testée est <constant>NULL</constant>,
+          <function>not()</function> n'inverse pas le résultat .</para>
+        </note>
+      </listitem>
+    </itemizedlist>
+  </section>
+
+  <section id="nullguide-fr-testing-for-null">
+    <title>Tester si quelque chose est <constant>NULL</constant></title>
+
+    <para>Puisque <constant>NULL</constant> peut vous poser des problèmes, vous
+    aurez souvent à tester si quelque chose est <constant>NULL</constant>
+    <emphasis>avant</emphasis> de l'utiliser dans une expression. La plupart du temps, 
+    on pense que le test le plus indiqué serait</para>
+
+    <blockquote>
+      <para><literal>if (A = <constant>NULL</constant>)
+      then...</literal></para>
+    </blockquote>
+
+    <para>et de fait certains systèmes de gestion de base de données supportent
+    cette syntaxe pour déterminé l'état <constant>NULL</constant>. Mais le standard SQL ne le permet pas, et
+    Firebird non plus. Dans les version avant 2.0 cette syntaxe est même
+    illégale. Depuis la 2.0 c'est permis, mais la comparaison retournera toujours
+    <constant>NULL</constant>, quelque soit l'état et la valeur de A. Et
+    cela n'est pas très utile comme test - ce dont nous avons besoin est un résultat clair
+    <constant>true</constant> ou <constant>false</constant> .</para>
+
+    <para>La façon correcte de tester <constant>NULL</constant> est:</para>
+
+    <blockquote>
+      <para><literal>...is null</literal> / <literal>...is not
+      null</literal></para>
+    </blockquote>
+
+    <para>Ces tests retourneront toujours <constant>true</constant> ou
+    <constant>false</constant> - sans tourner autour du pot. Exemples:</para>
+
+    <itemizedlist>
+      <listitem>
+        <para><programlisting>if (MyField is null) then...</programlisting></para>
+      </listitem>
+
+      <listitem>
+        <para><programlisting>select * from Pupils where PhoneNumber is not null</programlisting></para>
+      </listitem>
+
+      <listitem>
+        <para><programlisting>select * from Pupils where not (PhoneNumber is null)
+/* exemple identique au précédent */</programlisting></para>
+      </listitem>
+
+      <listitem>
+        <para><programlisting>update Numbers set Total = A + B + C where A + B + C is not null</programlisting></para>
+      </listitem>
+    </itemizedlist>
+
+    <para>On peut dire que <quote><emphasis
+    role="bold"><literal>=</literal></emphasis></quote> (utilisé comme
+    opérateur d'égalité) peut seulement comparer des valeurs, <quote> et que <emphasis
+    role="bold"><literal>is</literal></emphasis></quote> teste
+    un état.</para>
+  </section>
+
+  <section id="nullguide-fr-assigning-null">
+    <title>Affecter <constant>NULL</constant> à une variable ou un champ</title>
+
+    <para>On peut affecter <constant>NULL</constant> aux champs et variables en utilisant
+    la même syntaxe que pour les valeurs :</para>
+
+    <itemizedlist>
+      <listitem>
+        <para><programlisting>insert into MyTable values (1, 'teststring', NULL, '8-May-2004')</programlisting></para>
+      </listitem>
+
+      <listitem>
+        <para><programlisting>update MyTable set MyField = null where YourField = -1</programlisting></para>
+      </listitem>
+
+      <listitem>
+        <para><programlisting>if (Number = 0) then MyVariable = null;</programlisting></para>
+      </listitem>
+    </itemizedlist>
+
+    <para>- <quote>Attendez une minute... vous avez dit que <literal>MyField =
+    NULL</literal> n'était pas permis!</quote></para>
+
+    <para>C'est vrai... pour l'<emphasis>opérateur de comparaison</emphasis>
+    <quote><literal>=</literal></quote> (au moins pour les versions pre-2.0 de
+    Firebird). Mais ici nous parlons de 
+    <quote><literal>=</literal></quote> en tant qu'<emphasis>opérateur d'affectation
+    </emphasis>. Malheureusement, les deux opérateurs utilisent le même symbole en
+    SQL. Pour les affectations, faitent soit avec <quote><literal>=</literal></quote>
+    soit avec une liste d'insertion, vous pouvez traiter <constant>NULL</constant> comme
+    n'importe quelle valeur - cela ne nécessite pas de syntaxe particulière (ou même possible).</para>
+  </section>
+
+  <section id="nullguide-fr-dealing-with-nulls">
+    <title>Travailler avec les <constant>NULL</constant>s</title>
+
+    <para>Cette section contient des trucs et astuces et exemples qui peuvent
+    être utilisés dans votre travail avec 
+    <constant>NULL</constant>s.</para>
+
+    <section id="nullguide-test-if-matters">
+      <title>Tester <constant>NULL</constant> - si cela est nécessaire</title>
+
+      <para>La pluspart du temps, vous n'avez pas à prendre de précaution particulière pour les champs
+      ou variables qui peuvent être <constant>NULL</constant>. Par exemple, si vous faites
+      ceci :</para>
+
+      <blockquote>
+        <para><programlisting>select * from Clients where Ville = 'Ralston'</programlisting></para>
+      </blockquote>
+
+      <para>vous ne voulez certainement pas voir les clients pour lesquels la ville
+      n'a pas été spécifiée. De même :</para>
+
+      <blockquote>
+        <para><programlisting>if (Age &gt;= 18) then CanVote = 'Yes'</programlisting></para>
+      </blockquote>
+
+      <para>n'inclue pas les gens dont l'age est inconnu, ce qui semble correct.
+      Mais :</para>
+
+      <blockquote>
+        <para><programlisting>if (Age &gt;= 18) then CanVote = 'Yes';
+else CanVote = 'No';</programlisting></para>
+      </blockquote>
+
+      <para>semble moins vrai : si vous ne connaissez pas l'age d'une personne, vous ne pouvez
+      expressement lui refuser le droit de vote. Pire, cela :</para>
+
+      <blockquote>
+        <para><programlisting>if (Age &lt; 18) then CanVote = 'No';
+else CanVote = 'Yes';</programlisting></para>
+      </blockquote>
+
+      <para>n'a pas les mêmes conséquences. Si certain des ages
+      <constant>NULL</constant> sont en réalité inférieurs à 18, vous allez
+      laisser des mineurs voter!</para>
+
+      <para>La bonne approche ici est de tester <constant>NULL</constant>
+      expressement:</para>
+
+      <blockquote>
+        <para><programlisting>if (Age is null) then CanVote = 'Unsure';
+else 
+  if (Age &gt;= 18) then CanVote = 'Yes';
+  else CanVote = 'No';</programlisting><note>
+            <para><literal>else</literal> se réfère toujours au dernier
+            <literal>if</literal> dans le même bloc. Mais il est préférable souvent
+            d'éviter les confusions en utilisant les mots clés <literal>begin...end</literal> 
+            autour des groupes de lignes. Je ne l'ai pas fait ici - je voulais
+            écrire un faible nombre de lignes. Mais du coup je l'ai fait en
+            ajoutant cette note ;-)</para>
+          </note></para>
+      </blockquote>
+    </section>
+
+    <section id="nullguide-fr-equality">
+      <title>Vérifier que des champs sont égaux</title>
+
+      <para>Quelques fois vous devez vérifier que deux champs ou variables sont
+      égaux et vous voulez les considérer égaux s'ils sont tous deux
+      <constant>NULL</constant>. Les test correct pour cela est :</para>
+
+      <blockquote>
+        <para><programlisting>if (A = B or A is null and B is null) then...</programlisting></para>
+      </blockquote>
+
+      <para>ou, si vous préférez
+      explicit:</para>
+
+      <blockquote>
+        <para><programlisting>if ((A = B) or (A is null and B is null)) then...</programlisting></para>
+      </blockquote>
+
+      <para>Attention tout de même: si seulement un des deux (A ou B) 
+      est <constant>NULL</constant>, l'expression de test devient
+      <constant>NULL</constant>, pas false! C'est correct dans une instruction
+      <literal>if</literal> , et nous pouvons même ajouter une clause
+      <literal>else</literal> qui sera exécutée si A et B ne sont pas
+      égaux (incluant le cas où un est <constant>NULL</constant> et l'autre ne
+      l'est pas):</para>
+
+      <blockquote>
+        <para><programlisting>if (A = B or A is null and B is null) 
+  then ...travail à faire si A égal B...
+  else ...travail à faire si A et B sont différents...</programlisting></para>
+      </blockquote>
+
+      <para>Mais n'ayez pas la brillante idée d'inverser l'expression
+      et de l'utiliser comme un test d'inégalité (comme je l'ai déjà fait dans le passé):</para>
+
+      <blockquote>
+        <para><programlisting>/* Ne faites pas cela! */
+if (not(A = B or A is null and B is null))
+  then ...travail à faire si A différent de B...</programlisting></para>
+      </blockquote>
+
+      <para>Le code ci-dessus fonctionnera correctement si A et B sont tous deux
+      <constant>NULL</constant> ou tous deux non-<constant>NULL</constant>. Mais 
+      la clause <literal>then</literal> ne s'éxécutera pas si un des deux seulement
+      est <constant>NULL</constant>.</para>
+
+      <para>Si vous voulez que quelque chose soit fait seulement si A et B sont différents,
+      utilisez soit une des expressions correctes ci dessus ou mettez une 
+      expression muette dans la clause <literal>then</literal> clause, ou utilisez cette
+      expression de test suivante :</para>
+
+      <blockquote>
+        <para><programlisting>/* Ceci est un test correct d'inégalité: */
+if (A &lt;&gt; B
+    or A is null and B is not null
+    or A is not null and B is null) then...</programlisting></para>
+      </blockquote>
+
+      <section id="nullguide-fr-field-changed">
+        <title>Vérifier qu'une valeur de champ a changée</title>
+
+        <para>Dans les triggers, il est souvent utile de savoir si une valeur de champ a
+        changée (y compris: passer de <constant>NULL</constant> à
+        non-<constant>NULL</constant> ou vice versa) ou est restée la même. Ce n'est
+        rien d'autre qu'un cas particulier du test de l'(in)égalité de deux
+        champs. Utilisez juste New.Fieldname et Old.Fieldname pour A et B:</para>
+
+        <blockquote>
+          <para><programlisting>if (New.Job = Old.Job or New.Job is null and Old.Job is null)
+  then ...le champ Job est resté le même...
+  else ...le champ Job a changé...</programlisting></para>
+        </blockquote>
+      </section>
+    </section>
+
+    <section id="nullguide-fr-subst-with-value">
+      <title>Substituer une valeur à <constant>NULL</constant> </title>
+
+      <section id="nullguide-fr-coalesce">
+        <title>La fonction <function>COALESCE</function></title>
+
+        <para>Il existe une fonction dans Firebird 1.5 qui converti
+        <constant>NULL</constant> en qusiment tout ce que l'on veut. Cela permet
+        de faire un conversion à la volée et utiliser le résultat dans le processus,
+        sans utiliser la construction <quote><literal>if (MyExpression is
+        null) then</literal></quote>. Cette fonction s'appelle
+        <function>COALESCE</function> et s'utilise comme suit :</para>
+
+        <blockquote>
+          <para><literal>COALESCE(Expr1, Expr2, Expr3, ...)</literal></para>
+        </blockquote>
+
+        <para><function>COALESCE</function> retourne la première expression
+        non-<constant>NULL</constant> dans la liste d'arguments. Si toutes les
+        expressions sont <constant>NULL</constant>, elle renvoie
+        <constant>NULL</constant>.</para>
+
+        <para>Voici comment utiliser <function>COALESCE</function> pour
+        écrire le nom complet d'une personne avec ces prénom, surnom et nom,
+        en supposant que certains surnoms sont
+        <constant>NULL</constant>:</para>
+
+        <blockquote>
+          <para><programlisting>select Prenom
+       || coalesce(' ' || Surnom, '')
+       || ' ' || Nom
+from Personnes</programlisting></para>
+        </blockquote>
+
+        <para>Ou bien encore en considérant que le surnom et le prénom peuvent
+        être <constant>NULL</constant>:</para>
+
+        <blockquote>
+          <para><programlisting>select coalesce (Surnom, Prenom, 'Mr/Mme.')
+       || ' ' || Nom
+from AutresPersonnes</programlisting></para>
+        </blockquote>
+
+        <para><function>COALESCE</function> ne vous aidera que dans les 
+        situations où <constant>NULL</constant> peut être traité de la 
+        même manière que les valeurs correctes pour le type de données. Si
+        <constant>NULL</constant> a besoin d'un traitement particulier, comme dans l'exemple
+        <quote>droit de vote</quote> utilisé précédemment, votre seule option
+        est d'utiliser <quote><literal>if (MonExpression is null)
+        then</literal></quote>.</para>
+      </section>
+
+      <section id="nullguide-fr-nvl">
+        <title>Firebird 1.0: les fonctions <function>*NVL</function></title>
+
+        <para>Firebird 1.0 ne connait pas <function>COALESCE</function>.
+        Toutefois, vous pouvez utiliser quatre UDFs qui procurent une bonne partie de ses
+        fonctionnalités. Ces UDFs sont dans la bibliothèque <filename
+        class="libraryfile">fbudf</filename> et sont :</para>
+
+        <itemizedlist spacing="compact">
+          <listitem>
+            <para><function>iNVL</function>, pour les integers</para>
+          </listitem>
+
+          <listitem>
+            <para><function>i64NVL</function>, pour les bigint</para>
+          </listitem>
+
+          <listitem>
+            <para><function>dNVL</function>, pour les double precision
+            </para>
+          </listitem>
+
+          <listitem>
+            <para><function>sNVL</function>, pour les chaînes de caractères</para>
+          </listitem>
+        </itemizedlist>
+
+        <para>Les fonctions <function><function>*NVL</function></function> 
+        prennent deux arguments. Comme <function>COALESCE</function>, elles
+        renvoient le premier argument s'il n'est pas <constant>NULL</constant>;
+        sinon, elles renvoient le second. Notez que la bibliothèque de Firebird 1.0
+        <filename class="libraryfile">fbudf</filename> - et par conséquent,
+        les fonctions <function>*NVL</function> - n'est disponible que pour
+        Windows.</para>
+      </section>
+    </section>
+  </section>
+
+  <section id="nullguide-fr-summary">
+    <title>Résumé</title>
+
+    <para><constant>NULL</constant> en bref :</para>
+
+    <itemizedlist>
+      <listitem>
+        <para><constant>NULL</constant> signifie
+        <emphasis>indéterminé</emphasis>.</para>
+      </listitem>
+
+      <listitem>
+        <para>Si <constant>NULL</constant> est présent dans une expression, le plus
+        souvent l'expression entière devient
+        <constant>NULL</constant>.</para>
+      </listitem>
+
+      <listitem>
+        <para>Dans les fonctions d'aggregat seuls les champs non-<constant>NULL</constant> 
+        sont pris en compte. Exception:
+        <function>COUNT(*).</function></para>
+      </listitem>
+
+      <listitem>
+        <para>Quelques fois les UDFs convertissent <constant>NULL</constant> &lt;-&gt;
+        non-<constant>NULL</constant> d'une manière qui semble aléatoire.</para>
+      </listitem>
+
+      <listitem>
+        <para>Si l'expression de test d'une instruction <literal>if</literal> est
+        <constant>NULL</constant>, le bloc <literal>then</literal> est
+        ignoré et le bloc <literal>else</literal> exécuté.</para>
+      </listitem>
+
+      <listitem>
+        <para>Pour déterminer si A est <constant>NULL</constant>, utilisez
+        <quote><literal>A is (not) null</literal></quote>.</para>
+      </listitem>
+
+      <listitem>
+        <para>Les fonctions <function>COALESCE</function> et <function>*NVL</function>
+        peuvent convertir <constant>NULL</constant> en une valeur.</para>
+      </listitem>
+
+      <listitem>
+        <para>L'assignation de <constant>NULL</constant> est comme assigner
+        une valeur : avec <quote><literal>A = NULL</literal></quote> ou une liste
+        d'insertion.</para>
+      </listitem>
+    </itemizedlist>
+
+    <para>Souvenez vous, c'est comme cela que <constant>NULL</constant> fonctionne <emphasis> dans
+    Firebird SQL</emphasis>. Il peut y avoir des (subtiles) différences avec d'autre
+    SGBDRs.</para>
+  </section>
+
+  <appendix id="nullguide-fr-dochist">
+    <title>Historique du document</title>
+
+    <para>L'historique exact est enregistré dans le module <filename
+    class="directory">manual</filename> de notre arbre CVS; voir <ulink
+    url="http://sourceforge.net/cvs/?group_id=9028">http://sourceforge.net/cvs/?group_id=9028</ulink></para>
+
+    <para><revhistory>
+        <revision>
+          <revnumber>0.1</revnumber>
+
+          <date>8 Avril 2005</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para>Première édition.</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>0.2</revnumber>
+
+          <date>15 Avril 2005</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para>Ajout de l'information que Fb 2.0 legalise les comparaisons <quote><literal>A =
+            NULL</literal></quote>.</para>
+
+            <para>Texte changé dans <quote>Tester si quelquechose est
+            <constant>NULL</constant></quote>.</para>
+
+            <para>Légère modification de <quote>Travailler avec
+            <constant>NULL</constant>s</quote>.</para>
+          </revdescription>
+        </revision>
+        <revision>
+          <revnumber>0.2-fr</revnumber>
+          <date>02 mai 2005</date>
+          <authorinitials>PM</authorinitials>
+          <revdescription>
+            <para>Traduit en français par Philippe Makowski.</para>
+          </revdescription>
+        </revision>
+      </revhistory></para>
+  </appendix>
+
+  <appendix id="nullguide-fr-license">
+    <title>Licence</title>
+
+    <para>Le contenu de cette documentation est soumis à la <quote>Licence</quote> Public
+    Documentation License Version 1.0 ; vous pouvez
+    utilisez cette Documentation seulement si vous respectez les termes de cette Licence.
+    Des copies de cette Licence sont disponibles à <ulink
+    url="http://www.firebirdsql.org/pdfmanual/pdl.pdf">http://www.firebirdsql.org/pdfmanual/pdl.pdf</ulink>
+    (PDF) et <ulink
+    url="http://www.firebirdsql.org/manual/pdl.html">http://www.firebirdsql.org/manual/pdl.html</ulink>
+    (HTML).</para>
+
+    <para>Le titre d'origine est : <citetitle>Firebird Null
+    Guide</citetitle>.</para>
+
+    <para>Le rédacteur initial de la première version est : Paul
+    Vinkenoog.</para>
+
+    <para>Copyright (C) 2005. Tous droits réservés. Contact:
+    paulvink at users dot sourceforge dot net.</para>
+
+    <para>Traduction française par Philippe Makowski - voir <link
+    linkend="nullguide-fr-dochist">historique du document</link> - Copyright (C) 2005. Tous 
+    droits réservés. Contact: makowski at firebird-fr dot eu dot org.</para>
+ </appendix>
+</article>
