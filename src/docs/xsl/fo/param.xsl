@@ -119,6 +119,7 @@ set       toc,title
   <xsl:attribute-set name="section.title.properties">
     <xsl:attribute name="color"><xsl:value-of select="$lowlevel.title.color"/></xsl:attribute>
     <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>
+    <xsl:attribute name="text-align">start</xsl:attribute>
   </xsl:attribute-set>
 
 
@@ -178,6 +179,7 @@ set       toc,title
       <xsl:value-of select="$body.font.master"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
+    <xsl:attribute name="text-align">start</xsl:attribute>
     <xsl:attribute name="hyphenate">false</xsl:attribute>
     <xsl:attribute name="space-after.minimum">0.4em</xsl:attribute>
     <xsl:attribute name="space-after.optimum">0.6em</xsl:attribute>

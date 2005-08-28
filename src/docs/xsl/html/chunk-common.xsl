@@ -322,21 +322,27 @@
       </xsl:apply-templates>
     </xsl:variable>
 
-    <xsl:choose>
-      <!-- title(abbrev).markup template returns ???TITLE??? if no title(abbrev) found -->
-      <xsl:when test="not($nodetitle='' or $nodetitle='???TITLE???')">
-        <xsl:value-of select="$nodetitle"/>
-      </xsl:when>
-      <xsl:when test="$node/@xreflabel and $node/@xreflabel!=''">
-        <xsl:value-of select="$node/@xreflabel"/>
-      </xsl:when>
-      <xsl:when test="$node/@id and $node/@id!=''">
-        <xsl:value-of select="$node/@id"/>
-      </xsl:when>
-      <xsl:otherwise>
-        <xsl:text>???</xsl:text>
-      </xsl:otherwise>
-    </xsl:choose>
+    <xsl:variable name="titletext">
+      <xsl:choose>
+        <!-- title(abbrev).markup template returns ???TITLE??? if no title(abbrev) found -->
+        <xsl:when test="not($nodetitle='' or $nodetitle='???TITLE???')">
+          <xsl:value-of select="$nodetitle"/>
+        </xsl:when>
+        <xsl:when test="$node/@xreflabel and $node/@xreflabel!=''">
+          <xsl:value-of select="$node/@xreflabel"/>
+        </xsl:when>
+        <xsl:when test="$node/@id and $node/@id!=''">
+          <xsl:value-of select="$node/@id"/>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:text>???</xsl:text>
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+
+    <xsl:value-of select="normalize-space( $titletext )"/>
+      <!-- because it may contain newlines that show up ugly in the 
+      displayed text -->
   </xsl:template>
 
 
