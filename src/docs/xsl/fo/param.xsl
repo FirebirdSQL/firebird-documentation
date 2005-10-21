@@ -125,7 +125,7 @@ set       toc,title
 
   <xsl:attribute-set name="section.title.level1.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master * 1.80"/>
+      <xsl:value-of select="$body.font.master * 1.95"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
     <xsl:attribute name="space-before.minimum">1.12em</xsl:attribute>
@@ -134,7 +134,7 @@ set       toc,title
   </xsl:attribute-set>
   <xsl:attribute-set name="section.title.level2.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master * 1.40"/>
+      <xsl:value-of select="$body.font.master * 1.56"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
     <xsl:attribute name="space-before.minimum">1.04em</xsl:attribute>
@@ -143,7 +143,7 @@ set       toc,title
   </xsl:attribute-set>
   <xsl:attribute-set name="section.title.level3.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master * 1.20"/>
+      <xsl:value-of select="$body.font.master * 1.25"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
     <xsl:attribute name="space-before.minimum">0.96em</xsl:attribute>
@@ -203,6 +203,10 @@ set       toc,title
     <xsl:attribute name="space-after.optimum">0em</xsl:attribute>
     <xsl:attribute name="space-after.maximum">0.2em</xsl:attribute>
   </xsl:attribute-set>
+  <!-- Overriding the above leaves only start-indent and end-indent
+       from the default set. However, these are currently overridden
+       in the blockquote template itself... -->
+
 
   <!-- override of list.block.spacing in param.xsl: -->
   <xsl:attribute-set name="list.block.spacing">

@@ -14,7 +14,7 @@
 <xsl:template match="blockquote">
   <fo:table xsl:use-attribute-sets="blockquote.properties"
             table-layout="fixed" width="100%"
-            start-indent="0pt" end-indent="0pt"> 
+            start-indent="0pt" end-indent="0pt">
             <!-- override start-indent and end-indent from attrset! -->
     <fo:table-column column-number="1" column-width="{$blockquote-indent}"/>
     <fo:table-column column-number="2"/>

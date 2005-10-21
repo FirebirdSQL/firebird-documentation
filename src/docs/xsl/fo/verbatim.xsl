@@ -32,9 +32,13 @@
   </xsl:variable>
 
 
-  <!-- Our addition: Is there a preceding element or text node? -->
+  <!-- Our addition: Is there a preceding element or text node,
+       or is space-before necessary because daddy is a blockquote? -->
+
   <xsl:variable name="no-space-before">
-    <xsl:if test="not(preceding-sibling::* or preceding-sibling::text())">1</xsl:if>
+    <xsl:if test="not( preceding-sibling::*
+                       or preceding-sibling::text()
+                       or parent::blockquote )">1</xsl:if>
   </xsl:variable>
 
   <xsl:choose>
