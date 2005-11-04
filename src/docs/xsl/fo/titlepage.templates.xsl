@@ -911,7 +911,7 @@
 </xsl:template>
 
 <xsl:template match="title" mode="chapter.titlepage.recto.auto.mode">
-<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="chapter.titlepage.recto.style" font-size="24.8832pt" font-weight="bold" color="{$midlevel.title.color}">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="chapter.titlepage.recto.style" font-size="24.8832pt" font-weight="bold" text-align="start" color="{$midlevel.title.color}">
 <xsl:call-template name="component.title">
 <xsl:with-param name="node" select="ancestor-or-self::chapter[1]"/>
 </xsl:call-template>

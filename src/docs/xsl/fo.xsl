@@ -21,7 +21,7 @@
        extension is used.
        If this ever bites us, we must remove this line or comment
        it out: -->
-  <xsl:output method="xml" indent="no"/>
+  <xsl:output method="xml" indent="yes"/>
   <!-- Hmm... indent should be "no" for proglistings/screens in blockquotes
        in procedure steps... because linefeed-treatment="preserve" for these
        verbatim elems and the prettifier (sometimes?) puts the closing </block>
@@ -36,6 +36,7 @@
   <xsl:include href="fo/verbatim.xsl"/>
   <xsl:include href="fo/lists.xsl"/>
   <xsl:include href="fo/block.xsl"/>
+  <xsl:include href="fo/sections.xsl"/>
   <xsl:include href="fo/titlepage.xsl"/>
   <xsl:include href="fo/titlepage.templates.xsl"/>
   <xsl:include href="fo/admon.xsl"/>

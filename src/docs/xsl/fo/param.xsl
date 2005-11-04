@@ -81,8 +81,9 @@ set       toc,title
   <!-- Our own params: -->
 
   <xsl:param name="highlevel.title.color" select="'#FB2400'"/>  <!-- set, book -->   <!-- also nice:  #E03000 -->
-  <xsl:param name="midlevel.title.color" select="'darkblue'"/>  <!-- part, chapter, article... TODO: preface !!! -->
-  <xsl:param name="lowlevel.title.color" select="'darkblue'"/>  <!-- section, sectN -->
+  <xsl:param name="midlevel.title.color" select="'#103090'"/>  <!-- part, chapter, article... TODO: preface !!! -->
+<!--  <xsl:param name="lowlevel.title.color" select="'darkblue'"/> --> <!-- section, sectN -->
+  <xsl:param name="lowlevel.title.color" select="'#108060'"/> <!-- section, sectN -->
 
 
   <!-- ATTRIBUTE SETS: -->
