@@ -23,7 +23,7 @@
 
   <xsl:param name="paper.type" select="'A4'"/>
 
-  <!-- Wit FOP 0.20.5, this doesn't break the fo2pdf stage anymore.
+  <!-- With FOP 0.20.5, this doesn't break the fo2pdf stage anymore.
        But double-sided is less pleasant to read on-screen
        due to rather big inner/outer margin difference: -->
     <xsl:param name="double.sided" select="0"/>
@@ -81,9 +81,8 @@ set       toc,title
   <!-- Our own params: -->
 
   <xsl:param name="highlevel.title.color" select="'#FB2400'"/>  <!-- set, book -->   <!-- also nice:  #E03000 -->
-  <xsl:param name="midlevel.title.color" select="'#103090'"/>  <!-- part, chapter, article... TODO: preface !!! -->
-<!--  <xsl:param name="lowlevel.title.color" select="'darkblue'"/> --> <!-- section, sectN -->
-  <xsl:param name="lowlevel.title.color" select="'#108060'"/> <!-- section, sectN -->
+  <xsl:param name="midlevel.title.color"  select="'#108060'"/>  <!-- part, chapter, article... TODO: preface !!! -->
+  <xsl:param name="lowlevel.title.color"  select="'#404090'"/>  <!-- section, sectN -->
 
 
   <!-- ATTRIBUTE SETS: -->
@@ -117,61 +116,110 @@ set       toc,title
   </xsl:attribute-set>
 
 
+  <!-- CHAPTER TITLE PROPERTIES - attribute sets created by us -->
+
+  <!-- The label is the line just before the title, e.g. "Chapter 9".
+       Anything not overidden in the next two sets (ch.label and ch.
+       title) will default to the settings in titlepage.templates.xml,
+       template <t:titlepage t:element="chapter".../>
+       Default color for both is $midlevel.title.color (see above)
+  -->
+
+  <xsl:attribute-set name="chapter.label.properties">
+    <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>
+    <xsl:attribute name="text-align">start</xsl:attribute>
+    <xsl:attribute name="font-size">
+      <xsl:value-of select="$body.font.master * 1.2"/>
+      <xsl:text>pt</xsl:text>
+    </xsl:attribute>
+  </xsl:attribute-set>
+
+  <xsl:attribute-set name="chapter.title.properties">
+    <!-- space between label and title: -->
+    <xsl:attribute name="space-before.minimum">0.48em</xsl:attribute>
+    <xsl:attribute name="space-before.optimum">0.60em</xsl:attribute>
+    <xsl:attribute name="space-before.maximum">0.72em</xsl:attribute>
+    <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>
+    <xsl:attribute name="text-align">center</xsl:attribute>
+    <xsl:attribute name="font-size">
+      <xsl:value-of select="$body.font.master * 3.0"/>
+      <xsl:text>pt</xsl:text>
+    </xsl:attribute>
+    <xsl:attribute name="space-after.minimum">0.8em</xsl:attribute>
+    <xsl:attribute name="space-after.optimum">1.0em</xsl:attribute>
+    <xsl:attribute name="space-after.maximum">1.2em</xsl:attribute>
+  </xsl:attribute-set>
+
+
+  <!-- SECTION TITLE PROPERTIES -->
+
+  <!-- first set is for all sections, following sets are per level -->
+
   <xsl:attribute-set name="section.title.properties">
     <xsl:attribute name="color"><xsl:value-of select="$lowlevel.title.color"/></xsl:attribute>
     <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>
     <xsl:attribute name="text-align">start</xsl:attribute>
   </xsl:attribute-set>
 
-
   <xsl:attribute-set name="section.title.level1.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master * 1.95"/>
+      <xsl:value-of select="$body.font.master * 1.837"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
     <xsl:attribute name="space-before.minimum">1.12em</xsl:attribute>
     <xsl:attribute name="space-before.optimum">1.40em</xsl:attribute>
     <xsl:attribute name="space-before.maximum">1.68em</xsl:attribute>
   </xsl:attribute-set>
+
   <xsl:attribute-set name="section.title.level2.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master * 1.56"/>
+      <xsl:value-of select="$body.font.master * 1.5"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
+    <xsl:attribute name="font-style">italic</xsl:attribute>
     <xsl:attribute name="space-before.minimum">1.04em</xsl:attribute>
     <xsl:attribute name="space-before.optimum">1.30em</xsl:attribute>
     <xsl:attribute name="space-before.maximum">1.56em</xsl:attribute>
   </xsl:attribute-set>
+
   <xsl:attribute-set name="section.title.level3.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master * 1.25"/>
+      <xsl:value-of select="$body.font.master * 1.225"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
     <xsl:attribute name="space-before.minimum">0.96em</xsl:attribute>
     <xsl:attribute name="space-before.optimum">1.20em</xsl:attribute>
     <xsl:attribute name="space-before.maximum">1.44em</xsl:attribute>
   </xsl:attribute-set>
+
   <xsl:attribute-set name="section.title.level4.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master"/>
+      <xsl:value-of select="$body.font.master * 1.0"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
+    <xsl:attribute name="font-style">italic</xsl:attribute>
     <xsl:attribute name="space-before.minimum">0.88em</xsl:attribute>
     <xsl:attribute name="space-before.optimum">1.10em</xsl:attribute>
     <xsl:attribute name="space-before.maximum">1.32em</xsl:attribute>
   </xsl:attribute-set>
+
   <xsl:attribute-set name="section.title.level5.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master"/>
+      <xsl:value-of select="$body.font.master * 0.95"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
+    <xsl:attribute name="color">black</xsl:attribute>
   </xsl:attribute-set>
+
   <xsl:attribute-set name="section.title.level6.properties">
     <xsl:attribute name="font-size">
-      <xsl:value-of select="$body.font.master"/>
+      <xsl:value-of select="$body.font.master * 0.95"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
+    <xsl:attribute name="font-style">italic</xsl:attribute>
+    <xsl:attribute name="color">black</xsl:attribute>
   </xsl:attribute-set>
+
 
   <!-- titles for table, equation, example, etc.: -->
   <xsl:attribute-set name="formal.title.properties" use-attribute-sets="normal.para.spacing">

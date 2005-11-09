@@ -6,6 +6,104 @@
 
 
 
+<!-- Altered this template so that for <chapter>, two fo:blocks are
+     generated: one with the label, and one with the title proper: -->
+
+<xsl:template name="component.title">
+  <xsl:param name="node" select="."/>
+  <xsl:param name="pagewide" select="0"/>
+  <xsl:variable name="id">
+    <xsl:call-template name="object.id">
+      <xsl:with-param name="object" select="$node"/>
+    </xsl:call-template>
+  </xsl:variable>
+
+  <!-- This one was simply "title" in the original, for all elems: -->
+  <xsl:variable name="possibly-labeled-title">
+    <xsl:apply-templates select="$node" mode="object.title.markup">
+      <xsl:with-param name="allow-anchors" select="1"/>
+    </xsl:apply-templates>
+  </xsl:variable>
+
+  <xsl:variable name="label">
+    <xsl:if test="$node/self::chapter and $chapter.autolabel != 0">
+      <fo:block xsl:use-attribute-sets="chapter.label.properties">
+        <xsl:apply-templates select="$node" mode="xref-number.markup"/>
+        <!-- This returns stuff like "Chapter&#160;%n" etc.
+             Any explicit label is deliberately ignored. -->
+      </fo:block>
+    </xsl:if>
+  </xsl:variable>
+
+  <xsl:variable name="title">
+    <xsl:choose>
+      <xsl:when test="$node/self::chapter">
+        <fo:block xsl:use-attribute-sets="chapter.title.properties">
+          <xsl:apply-templates select="$node" mode="unlabeled.title.markup">
+            <xsl:with-param name="allow-anchors" select="1"/>
+          </xsl:apply-templates>
+        </fo:block>
+      </xsl:when>
+      <xsl:otherwise> <!-- $node is not a chapter -->
+        <xsl:copy-of select="$possibly-labeled-title"/>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+
+  <xsl:variable name="titleabbrev">
+    <xsl:apply-templates select="$node" mode="titleabbrev.markup"/>
+  </xsl:variable>
+
+  <xsl:if test="$passivetex.extensions != 0">
+    <fotex:bookmark xmlns:fotex="http://www.tug.org/fotex"
+                    fotex-bookmark-level="2"
+                    fotex-bookmark-label="{$id}">
+      <xsl:value-of select="$titleabbrev"/>
+    </fotex:bookmark>
+  </xsl:if>
+
+  <fo:block keep-with-next.within-column="always"
+            space-before.optimum="{$body.font.master}pt"
+            space-before.minimum="{$body.font.master * 0.8}pt"
+            space-before.maximum="{$body.font.master * 1.2}pt"
+            hyphenate="false">
+    <xsl:if test="$pagewide != 0">
+      <!-- Doesn't work to use 'all' here since not a child of fo:flow -->
+      <xsl:attribute name="span">inherit</xsl:attribute>
+    </xsl:if>
+    <xsl:attribute name="hyphenation-character">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-character'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+    <xsl:attribute name="hyphenation-push-character-count">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-push-character-count'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+    <xsl:attribute name="hyphenation-remain-character-count">
+      <xsl:call-template name="gentext">
+        <xsl:with-param name="key" select="'hyphenation-remain-character-count'"/>
+      </xsl:call-template>
+    </xsl:attribute>
+    <xsl:if test="$axf.extensions != 0">
+      <xsl:attribute name="axf:outline-level">
+        <xsl:value-of select="count($node/ancestor::*)"/>
+      </xsl:attribute>
+      <xsl:attribute name="axf:outline-expand">false</xsl:attribute>
+      <xsl:attribute name="axf:outline-title">
+        <xsl:value-of select="$possibly-labeled-title"/>
+      </xsl:attribute>
+    </xsl:if>
+    <xsl:copy-of select="$label"/>
+    <xsl:copy-of select="$title"/>
+  </fo:block>
+</xsl:template>
+
+<!-- ==================================================================== -->
+
+
+
   <!-- Split article in top level articles and others. 
        Top level articles get "cover pages" just like books. -->
 
