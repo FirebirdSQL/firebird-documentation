@@ -1,0 +1,742 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook XML V4.3//EN"
+"http://www.oasis-open.org/docbook/xml/4.3/docbookx.dtd">
+-->
+<article id="nbackup">
+  <articleinfo>
+    <title>Firebird's nbackup tool</title>
+
+    <author>
+      <firstname>Paul</firstname>
+
+      <surname>Vinkenoog</surname>
+    </author>
+
+    <edition>21 October 2005 - Document version 0.1 - for Firebird 2.0
+    beta</edition>
+  </articleinfo>
+
+  <section id="nbackup-intro">
+    <title>Introduction</title>
+
+    <para><firstterm>nbackup</firstterm> is a new backup utility that comes
+    with Firebird 2.0. It offers possibilities not present in
+    <firstterm>gbak</firstterm> - Firebird's pre-existing backup tool - but
+    doesn't replace the latter. Both programmes have their strengths and
+    weaknesses; they will likely coexist for some time to come.</para>
+  </section>
+
+  <section id="nbackup-overview">
+    <title>nbackup features - an overview</title>
+
+    <para>With nbackup, you can perform two different groups of tasks:</para>
+
+    <orderedlist>
+      <listitem>
+        <para>Making and restoring of both full and
+        <firstterm>incremental</firstterm> backups. An <firstterm>incremental
+        backup</firstterm> only contains the mutations since some specific
+        previous backup.</para>
+      </listitem>
+
+      <listitem>
+        <para>Locking the main database file so you can subsequently back it
+        up yourself with copying or backup tools of your own choice. In this
+        mode, nbackup doesn't back up anything; it just creates the conditions
+        under which you can safely make the backup yourself. There's a
+        provision for restoring here, too.</para>
+      </listitem>
+    </orderedlist>
+
+    <para>Both modes can operate on an active database, without hindering
+    connected users. The backup created will always reflect the state of the
+    database <emphasis>at the beginning of the operation</emphasis>. In these
+    respects nbackup doesn't differ from gbak.</para>
+
+    <section id="nbackup-advantages">
+      <title>Advantages of nbackup</title>
+
+      <itemizedlist>
+        <listitem>
+          <para><emphasis>Both modes:</emphasis> high speed (as high as
+          hardware and OS will allow), because nbackup doesn't look at the
+          actual data. In backup mode the contents are written more or less
+          blindly to the backup file.</para>
+        </listitem>
+
+        <listitem>
+          <para><emphasis>Backup/restore mode:</emphasis> time and disk space
+          savings, because you don't need to make a full backup every time.
+          This can make a huge difference with databases in the gigabyte
+          range.</para>
+        </listitem>
+
+        <listitem>
+          <para><emphasis>Lock/unlock mode:</emphasis> total freedom in your
+          choice of backup, copy, and/or compression tools.</para>
+        </listitem>
+      </itemizedlist>
+    </section>
+
+    <section id="nbackup-limitations">
+      <title>Limitations of nbackup</title>
+
+      <itemizedlist>
+        <listitem>
+          <para>nbackup will not sweep and compact your database the way gbak
+          does.</para>
+        </listitem>
+
+        <listitem>
+          <para>You can't change the database owner with an nbackup
+          backup/restore cycle, like you can with gbak.</para>
+        </listitem>
+
+        <listitem>
+          <para>nbackup can't make <firstterm>transportable
+          backups</firstterm>, that is: backups you can restore on an
+          incompatible platform or under another server version.</para>
+        </listitem>
+
+        <listitem>
+          <para>At this moment, nbackup should not be used on multifile
+          databases.</para>
+        </listitem>
+
+        <listitem>
+          <para>nbackup can only back up local databases.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>We'll discuss nbackup's various functions extensively in the
+      following sections.</para>
+    </section>
+  </section>
+
+  <section id="nbackup-backups">
+    <title>Making and restoring backups</title>
+
+    <para>To begin with: <filename>nbackup.exe</filename> is located in the
+    <filename class="directory">bin</filename> subdirectory of your Firebird
+    folder. Typical locations are e.g. <filename class="directory">C:\Program
+    Files\Firebird\Firebird_2_0\bin</filename> (Windows) or <filename
+    class="directory">/opt/firebird/bin</filename> (Linux). Just like most of
+    the tools that come with Firebird, nbackup has no graphical interface; you
+    launch it from the command prompt (or from within a batch file or
+    application).</para>
+
+    <section id="nbackup-backups-full">
+      <title>Full backups</title>
+
+      <section>
+        <title>Making full backups</title>
+
+        <para>To make a full database backup, the command syntax is:</para>
+
+        <blockquote>
+          <programlisting>nbackup [-U <replaceable>&lt;user&gt;</replaceable> -P <replaceable>&lt;password&gt;</replaceable>] -B 0 <replaceable>&lt;database&gt;</replaceable> [<replaceable>&lt;backupfile&gt;</replaceable>]</programlisting>
+        </blockquote>
+
+        <para>For instance:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -B 0 inventory.fdb inventory_1-Mar-2006.nbk</screen>
+        </blockquote>
+
+        <para id="nbackup-backups-comments">Comments:</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>The parameter <parameter>-B</parameter> stands for backup
+            (gee!). The <firstterm>backup level</firstterm> 0 indicates a full
+            backup. Backup levels greater than 0 are used for incremental
+            backups; we'll discuss those later on.</para>
+          </listitem>
+
+          <listitem>
+            <para>Instead of a database filename you may also specify an
+            alias.</para>
+          </listitem>
+
+          <listitem>
+            <para>Instead of a backup filename you may also specify
+            <systemitem>stdout</systemitem>. This will send the backup to
+            standard output, from where you can redirect it to e.g. a tape
+            archiver or a compression tool.</para>
+          </listitem>
+
+          <listitem>
+            <para>The <parameter>-U</parameter> (user) and
+            <parameter>-P</parameter> (password) parameters may be
+            omitted:</para>
+
+            <itemizedlist spacing="compact">
+              <listitem>
+                <para>if you're logged on as superuser (<systemitem
+                class="username">root</systemitem>, <systemitem
+                class="username">Administrator</systemitem>...), or</para>
+              </listitem>
+
+              <listitem>
+                <para>if the environment variables <envar>ISC_USER</envar> and
+                <envar>ISC_PASSWORD</envar> are set.</para>
+              </listitem>
+            </itemizedlist>
+
+            <para>For clarity and brevity, these parameters are not used in
+            the examples.</para>
+          </listitem>
+
+          <listitem>
+            <para>The different parameters (<parameter>-B</parameter>,
+            <parameter>-U</parameter> and <parameter>-P</parameter>) may occur
+            in any order. Of course each parameter should be immediately
+            followed by its own argument(s). In the case of
+            <parameter>-B</parameter> there are three of them: backup level,
+            database, and backup file - in that order!</para>
+          </listitem>
+
+          <listitem>
+            <para>If the <parameter>-B</parameter> parameter comes last, you
+            <emphasis>may</emphasis> leave out the name of the backup file. In
+            that case nbackup will compose a filename based on the database
+            name, the backup level, and the current date and time. This can
+            lead to a name clash (and a failed backup) if two backup commands
+            of the same level are issued in the same minute.</para>
+          </listitem>
+        </itemizedlist>
+
+        <warning>
+          <para>Do <emphasis>not</emphasis> use nbackup for multifile
+          databases. This can lead to corruption and loss of data, despite the
+          fact that nbackup will not complain about such a command.</para>
+        </warning>
+
+        <section id="nbackup-backups-workings">
+          <title>A word on the inner workings</title>
+
+          <para>Note: What follows here is not necessary knowledge to use
+          nbackup. It just gives a rough (and incomplete) image of what
+          happens under the hood during execution of nbackup
+          <parameter>-B</parameter>:</para>
+
+          <procedure>
+            <step>
+              <para>First of all, the main database file is locked by changing
+              an internal state flag. From this moment on, any and all
+              mutations in the database are written to a temporary file - the
+              difference file or <firstterm>delta file</firstterm>.</para>
+            </step>
+
+            <step>
+              <para>Then the actual backup is made. This isn't a straight file
+              copy; restoring must be done by nbackup as well.</para>
+            </step>
+
+            <step>
+              <para>Upon completion of the backup, the contents of the delta
+              file are integrated with the main database file. After that, the
+              database is unlocked (flag goes back to <quote>normal</quote>)
+              and the delta is removed.</para>
+            </step>
+          </procedure>
+
+          <para>The functionality of steps 1 and 3 is provided by two new SQL
+          statements: <database>ALTER DATABASE BEGIN BACKUP</database> and
+          <database>ALTER DATABASE END BACKUP</database>. Contrary to what the
+          names suggest, these statements do <emphasis>not</emphasis> take
+          care of making the actual backup; rather, they create the conditions
+          under which the main database file can be safely backed up. And to
+          be clear: you don't need to issue these commands yourself; nbackup
+          will do that for you, at the right moments.</para>
+        </section>
+      </section>
+
+      <section>
+        <title>Restoring a full backup</title>
+
+        <para>A full backup is restored as follows:</para>
+
+        <blockquote>
+          <programlisting>nbackup [-U <replaceable>&lt;user&gt;</replaceable> -P <replaceable>&lt;password&gt;</replaceable>] -R <replaceable>&lt;database&gt;</replaceable> [<replaceable>&lt;backupfile&gt;</replaceable>]</programlisting>
+        </blockquote>
+
+        <para>For instance:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -R inventory.fdb inventory_1-Mar-2006.nbk</screen>
+        </blockquote>
+
+        <para id="nbackup-restore-comments">Comments:</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>You don't specify a level for a restore.</para>
+          </listitem>
+
+          <listitem>
+            <para>When restoring, the <parameter>-R</parameter> parameter
+            <emphasis>must</emphasis> come last, for reasons that will become
+            clear later.</para>
+          </listitem>
+
+          <listitem>
+            <para>If the specified database exists already and there are no
+            connections, it will be overwritten without any warning! If there
+            are users connected, the restore fails and you get an error
+            message.</para>
+          </listitem>
+
+          <listitem>
+            <para>Here too, you may omit the name of the backup file. If you
+            do, nbackup will prompt you for it. <emphasis>However, at this
+            point in the development of Firebird 2 - the alpha 3 stage - this
+            leads to an error (at least under Windows) and a failed
+            restore.</emphasis></para>
+          </listitem>
+        </itemizedlist>
+      </section>
+    </section>
+
+    <section id="nbackup-backups-incr">
+      <title>Incremental backups</title>
+
+      <section>
+        <title>Making incremental backups</title>
+
+        <para>To make an incremental (<quote>differential</quote>) backup we
+        specify a backup level greater than 0. An incremental backup of level
+        <replaceable>N</replaceable> always contains the database mutations
+        since the most recent level <replaceable>N-1</replaceable>
+        backup.</para>
+
+        <para>Examples:</para>
+
+        <para>One day after the full backup (level 0), you make one with level
+        1:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -B 1 inventory.fdb inventory_2-Mar-2006.nbk</screen>
+        </blockquote>
+
+        <para>This backup will only contain the mutations of the last
+        day.</para>
+
+        <para>One day later again, you make another one with level 1:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -B 1 inventory.fdb inventory_3-Mar-2006.nbk</screen>
+        </blockquote>
+
+        <para>This one contains the mutations of the last
+        <emphasis>two</emphasis> days, since the full backup, not only those
+        since the previous level-1 backup.</para>
+
+        <para>A couple of hours on we go for a level-2 backup:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -B 2 inventory.fdb inventory_3-Mar-2006_2.nbk</screen>
+        </blockquote>
+
+        <para>This youngest backup only contains the mutations since the most
+        recent level-1 backup, that is: of the last few hours.</para>
+
+        <note>
+          <para>All the <link
+          linkend="nbackup-backups-comments">comments</link> that have been
+          made about full backups also apply to incremental backups.</para>
+        </note>
+
+        <warning>
+          <para>Again: do not use nbackup for multifile databases.</para>
+        </warning>
+      </section>
+
+      <section>
+        <title>Restoring incremental backups</title>
+
+        <para>When restoring incremental backups you must specify the entire
+        chain of backup files, from level 0 through the one you wish to
+        restore. The database is always built up from the ground, step by
+        step. (It is this stepwise adding until the database is restored that
+        gave rise to the term <emphasis>incremental backup</emphasis>).</para>
+
+        <para>The formal syntax is:</para>
+
+        <blockquote>
+          <programlisting>nbackup [-U <replaceable>&lt;user&gt;</replaceable> -P <replaceable>&lt;password&gt;</replaceable>] 
+        -R <replaceable>&lt;database&gt;</replaceable> [<replaceable>&lt;backup0&gt;</replaceable> [<replaceable>&lt;backup1&gt;</replaceable> [<replaceable>...</replaceable>] ] ]       </programlisting>
+        </blockquote>
+
+        <para>So restoring the level-2 backup from the previous example goes
+        as follows:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -R inventory.fdb inventory_1-Mar-2006.nbk
+                inventory_3-Mar-2006.nbk inventory_3-Mar-2006_2.nbk</screen>
+        </blockquote>
+
+        <para>Of course the line has been split here for layout reasons only -
+        in reality you type the entire command and only hit
+        <keycap>Enter</keycap> at the end.</para>
+
+        <para>Comments (in addition to the <link
+        linkend="nbackup-restore-comments">comments with restoring a full
+        backup</link>):</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Because it is not known beforehand how many filenames will
+            follow the <parameter>-R</parameter> switch (as we don't specify a
+            level when restoring), nbackup considers all arguments after the
+            <parameter>-R</parameter> to be names of backup files. It is for
+            this reason that no other parameter (<parameter>-U</parameter> or
+            <parameter>-P</parameter>) may follow the list of
+            filenames.</para>
+          </listitem>
+
+          <listitem>
+            <para>There is no formal limit to the number of backup levels, but
+            in practice it will rarely make sense to go beyond 3 or 4.</para>
+          </listitem>
+        </itemizedlist>
+
+        <section>
+          <title>Non-connecting links</title>
+
+          <para>What happens if you accidentally leave out a file, or specify
+          a series of files that don't all belong together? You could imagine
+          that you specify <filename>inventory_2-Mar-2006.nbk</filename> by
+          mistake instead of <filename>inventory_3-Mar-2006.nbk</filename> in
+          the above example. Both are level-1 backup files, so in both cases
+          we get a nice <quote>0, 1, 2</quote> level series. But our level-2
+          file is incremental to the level-1 backup of 3 March, not to the one
+          of 2 March.</para>
+
+          <para>Fortunately such a mistake can never lead to an incorrectly
+          restored database. Each backup file has its own unique ID.
+          Furthermore, each backup file of level 1 or above contains the ID of
+          the backup on which it is based. When restoring, nbackup checks
+          these IDs; if somewhere in the chain the links don't connect, the
+          operation is cancelled and you get an error message.</para>
+        </section>
+      </section>
+    </section>
+
+    <section id="nbackup-backups-pract">
+      <title>A practical application</title>
+
+      <para>An nbackup-based incremental backup scheme could look like
+      this:</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>Each month a full backup (level 0) is made;</para>
+        </listitem>
+
+        <listitem>
+          <para>Each week a level-1;</para>
+        </listitem>
+
+        <listitem>
+          <para>A level-2 backup daily;</para>
+        </listitem>
+
+        <listitem>
+          <para>A level-3 backup hourly.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>As long as all backups are preserved, you can restore the database
+      to its state at any hour in the past. For each restore action, a maximum
+      of four backup files is used. Of course you schedule things in such a
+      way that the bigger, time-consuming backups are made during off-peak
+      hours. In this case the levels 0 and 1 could be made at weekends, and
+      level 2 at night.</para>
+
+      <para>If you don't want to keep everything for eternity, you can add a
+      deletion schedule:</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>Level-3 backups are deleted after 8 days;</para>
+        </listitem>
+
+        <listitem>
+          <para>Level-2s after a month;</para>
+        </listitem>
+
+        <listitem>
+          <para>Level-1s after six months;</para>
+        </listitem>
+
+        <listitem>
+          <para>Full backups after two years, but the first one of each year
+          is kept.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>This is only an example of course. What's useful in an individual
+      case depends on the application, the size of the database, its activity,
+      etc.</para>
+    </section>
+
+    <section id="nbackup-backups-readon">
+      <title>Read on?</title>
+
+      <para>At this point you know everything you need in order to make and
+      restore full and/or incremental backups with nbackup. You only need to
+      read any further if you want to use backup tools of your own choice for
+      your Firebird databases.</para>
+
+      <para>If you have no craving for that: good luck in you work with
+      nbackup!</para>
+    </section>
+  </section>
+
+  <section id="nbackup-lock-unlock">
+    <title>Locking and unlocking</title>
+
+    <para>If you prefer to use your own backup tools or just make a file copy,
+    nbackup's lock-unlock mode comes into view. <quote>Locking</quote> means
+    here that the main database file is frozen temporarily, not that there
+    can't be no changes to the database. Just like in backup mode, mutations
+    are directed to a temporary delta file; upon unlocking, the delta file is
+    merged with the main file.</para>
+
+    <para>As a reminder: <filename>nbackup.exe</filename> lives in the
+    <filename class="directory">bin</filename> subdir of your Firebird folder.
+    Typical locations are e.g. <filename class="directory">C:\Program
+    Files\Firebird\Firebird_2_0\bin</filename> (Windows) or <filename
+    class="directory">/opt/firebird/bin</filename> (Linux). There's no GUI;
+    you launch it from the command prompt (or from within a batch file or
+    application).</para>
+
+    <section id="nbackup-lock-and-backup">
+      <title>Locking the database and backing up yourself</title>
+
+      <para>A typical session in which you make your own backup goes as
+      follows:</para>
+
+      <procedure>
+        <step>
+          <para>Lock the database with the <parameter>-L</parameter> (lock)
+          switch:</para>
+
+          <blockquote>
+            <para><programlisting>nbackup [-U <replaceable>&lt;user&gt;</replaceable> -P <replaceable>&lt;password&gt;</replaceable>] -L <replaceable>&lt;database&gt;</replaceable></programlisting></para>
+          </blockquote>
+        </step>
+
+        <step>
+          <para>Now copy/backup/zip the database file to your heart's content,
+          with your own choice of tools. A simple file copy is also
+          possible.</para>
+        </step>
+
+        <step>
+          <para>Unlock the database with <parameter>-N</parameter>
+          (uNlock):</para>
+
+          <blockquote>
+            <para><programlisting>nbackup [-U <replaceable>&lt;user&gt;</replaceable> -P <replaceable>&lt;password&gt;</replaceable>] -N <replaceable>&lt;database&gt;</replaceable></programlisting></para>
+          </blockquote>
+        </step>
+      </procedure>
+
+      <para>The last command will also cause any mutations - which have been
+      written to the delta file - to be merged into the main file.</para>
+
+      <para>The backup you made contains the data as they were at the moment
+      the database was locked, regardless how long the locked state has
+      lasted, and regardless how long you may have waited before making the
+      actual backup.</para>
+
+      <warning>
+        <para>What goes for backup/restore also applies to the lock/unlock
+        switches: do not use them on multifile databases. Until things have
+        changed, don't let nbackup loose on multifile databases at all!</para>
+      </warning>
+    </section>
+
+    <section id="nbackup-restore-and-fixup">
+      <title>Restoring a backup made after <quote>nbackup -L</quote></title>
+
+      <para>An copy of a locked database is itself a locked database too, so
+      you can't just copy it back and start using it. Should your original
+      database get lost or damaged and the self-made copy needs to be restored
+      (or should you wish to install the copy on another machine), proceed
+      like this:</para>
+
+      <procedure>
+        <step>
+          <para>Copy/restore/unzip the backed-up database file yourself with
+          the necessary tools.</para>
+        </step>
+
+        <step>
+          <para>Now unlock the database, <emphasis>not</emphasis> with the
+          <parameter>-N</parameter> switch, but with <parameter>-F</parameter>
+          (fixup):</para>
+
+          <blockquote>
+            <para><programlisting>nbackup -F <replaceable>&lt;database&gt;</replaceable></programlisting></para>
+          </blockquote>
+        </step>
+      </procedure>
+
+      <para>Why are there two unlock switches, <parameter>-N</parameter> en
+      <parameter>-F</parameter>?</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para><parameter>-N</parameter> first sees that any changes made
+          since the locking by <parameter>-L</parameter> are merged into the
+          main database file. After that, the database goes back into normal
+          read/write mode and the temporary file is deleted.</para>
+        </listitem>
+
+        <listitem>
+          <para><parameter>-F</parameter> only changes the state flag of the
+          self-restored database to <quote>normal</quote>.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>So you use:</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para><parameter>-N</parameter> after having
+          <emphasis>made</emphasis> a copy/backup yourself (to reverse the
+          <parameter>-L</parameter> issued earlier);</para>
+        </listitem>
+
+        <listitem>
+          <para><parameter>-F</parameter> after having
+          <emphasis>restored</emphasis> such a backup yourself.</para>
+        </listitem>
+      </itemizedlist>
+
+      <note>
+        <para>It is a bit unfortunate that the last switch should be called
+        <parameter>-F</parameter> for Fixup. After all, it doesn't fix
+        anything; it only <emphasis>unlocks</emphasis> the database. The
+        <parameter>-N</parameter> (uNlock) flag on the other hand performs not
+        only an unlock, but also a fixup (integration of mutations into the
+        main file). But we'll have to live with that.</para>
+      </note>
+    </section>
+
+    <section id="nbackup-lock-unlock-extrainfo">
+      <title>Under the hood</title>
+
+      <para>Note: This section doesn't contain any necessary knowledge, but
+      provides some extra information which could deepen your understanding of
+      the various switches.</para>
+
+      <!--These two orderedlists should really be procedures, but I want compact spacing!-->
+
+      <para><command>nbackup <parameter>-L</parameter></command> does the
+      following:</para>
+
+      <orderedlist spacing="compact">
+        <listitem>
+          <para>Connect to the database;</para>
+        </listitem>
+
+        <listitem>
+          <para>Start a transaction;</para>
+        </listitem>
+
+        <listitem>
+          <para>Call ALTER DATABASE BEGIN BACKUP (this statement has been
+          discussed in the <link linkend="nbackup-backups-workings">extra
+          information on nbackup -B</link>);</para>
+        </listitem>
+
+        <listitem>
+          <para>Commit the transaction;</para>
+        </listitem>
+
+        <listitem>
+          <para>Disconnect from the database.</para>
+        </listitem>
+      </orderedlist>
+
+      <para><command>nbackup <parameter>-N</parameter></command> follows the
+      same steps, but with <quote><database>...END BACKUP</database></quote>
+      in step 3.</para>
+
+      <para><command>nbackup <parameter>-F</parameter></command> works as
+      follows:</para>
+
+      <orderedlist spacing="compact">
+        <listitem>
+          <para>The restored database file is opened;</para>
+        </listitem>
+
+        <listitem>
+          <para>Within the file, the state flag is changed from locked
+          (<constant>nbak_state_stalled</constant>) to normal
+          (<constant>nbak_state_normal</constant>);</para>
+        </listitem>
+
+        <listitem>
+          <para>The file is closed again.</para>
+        </listitem>
+      </orderedlist>
+
+      <note>
+        <para>nbackup -F operates purely on file level and can therefore even
+        be performed without a Firebird server running. Any
+        <parameter>-U</parameter> or <parameter>-P</parameter> parameters
+        added to the command will be completely ignored.</para>
+      </note>
+    </section>
+  </section>
+
+  <appendix id="nbackup-dochist">
+    <title>Document history</title>
+
+    <para>The exact file history is (or will be) recorded in the <filename
+    class="directory">manual</filename> module in our CVS tree; see <ulink
+    url="http://sourceforge.net/cvs/?group_id=9028">http://sourceforge.net/cvs/?group_id=9028</ulink></para>
+
+    <para><revhistory>
+        <revision>
+          <revnumber>0.1</revnumber>
+
+          <date>21 October 2005</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para>First edition.</para>
+          </revdescription>
+        </revision>
+      </revhistory></para>
+  </appendix>
+
+  <appendix id="nbackup-license">
+    <title>License notice</title>
+
+    <para>The contents of this Documentation are subject to the Public
+    Documentation License Version 1.0 (the <quote>License</quote>); you may
+    only use this Documentation if you comply with the terms of this License.
+    Copies of the License are available at <ulink
+    url="http://www.firebirdsql.org/pdfmanual/pdl.pdf">http://www.firebirdsql.org/pdfmanual/pdl.pdf</ulink>
+    (PDF) and <ulink
+    url="http://www.firebirdsql.org/manual/pdl.html">http://www.firebirdsql.org/manual/pdl.html</ulink>
+    (HTML).</para>
+
+    <para>The Original Documentation is titled <citetitle>Firebird's nbackup
+    tool</citetitle>.</para>
+
+    <para>The Initial Writer of the Original Documentation is: Paul
+    Vinkenoog.</para>
+
+    <para>Copyright (C) 2005. All Rights Reserved. Initial Writer contact:
+    paulvink at users dot sourceforge dot net.</para>
+  </appendix>
+</article>
