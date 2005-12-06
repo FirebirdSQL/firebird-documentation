@@ -1,0 +1,846 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook XML V4.3//EN"
+"http://www.oasis-open.org/docbook/xml/4.3/docbookx.dtd">
+-->
+<article id="nbackup-ru">
+  <articleinfo>
+    <title>Утилита <application>nbackup</application> СУБД Firebird</title>
+    <titleabbrev>Утилита nbackup</titleabbrev>
+
+    <author>
+      <firstname>Paul</firstname>
+
+      <surname>Vinkenoog</surname>
+    </author>
+
+    <othercredit class="translator">
+      <firstname>Павел</firstname>
+      <surname>Меньщиков</surname>
+      <contrib>Перевод на русский язык</contrib>
+    </othercredit>
+
+    <edition>10 декабря 2005 - Версия документа 0.1.ru</edition>
+  </articleinfo>
+
+  <section id="nbackup-intro-ru">
+    <title>Введение</title>
+
+    <para><firstterm>nbackup</firstterm> является новой утилитой резервного
+    копирования для СУБД Firebird 2.0. Эта утилита предоставляет возможности,
+    отсутствовшие в утилите <firstterm>gbak</firstterm>, которая
+    была унаследована от СУБД Interbase. Однако она не заменяет полностью
+    возможности последней. Обе программы имеют свои сильные и слабые стороны;
+    вероятнее всего, они будут сосуществовать некоторое время.</para>
+  </section>
+
+  <section id="nbackup-overview-ru">
+    <title>Функции <application>nbackup</application>: обзор</title>
+    <titleabbrev>Обзор функций</titleabbrev>
+
+    <para>С помощью <application>nbackup</application> Вы сможете выполнять
+    две различные группы задач:</para>
+
+    <orderedlist>
+      <listitem>
+        <para>Создание резервных копий (всей базы данных и
+        <firstterm>инкрементных</firstterm>) и восстановление из резервных
+        копий. <firstterm>Инкрементная резервная копия</firstterm> содержит
+        только изменения со времени создания определенной, ранее созданной
+        резервной копии.</para>
+      </listitem>
+
+      <listitem>
+        <para>Блокирование основного файла базы данных. Таким образом, Вы
+        после этого сможете сами создавать обычные копии или резервные копии
+        с помощью утилит по Вашему выбору. В этом режиме
+        <application>nbackup</application> ничего не резервирует, а лишь создает
+        подходящие условия, чтобы Вы могли без каких бы то ни было проблем
+        создавать резервные копии. Также эти условия могут использоваться для
+        восстановления базы данных из резервной копии.</para>
+      </listitem>
+    </orderedlist>
+
+    <para>Оба режима могут работать с активной базой данных, не мешая
+    подключенным к базе данным пользователям. Созданная резервная копия
+    базы данных всегда будет отображать состояние базы данных
+    <emphasis>на момент начала создания резервной копии</emphasis>. В этой
+    части <application>nbackup</application> не отличается от
+    <application>gbak</application>.</para>
+
+    <section id="nbackup-advantages-ru">
+      <title>Преимущества <application>nbackup</application></title>
+      <titleabbrev>Преимущества</titleabbrev>
+
+      <itemizedlist>
+        <listitem>
+          <para><emphasis>Оба режима:</emphasis> высокая скорость (настолько,
+          насколько позволяет оборудование и операционная система), так как
+          <application>nbackup</application> не обращается к, собственно, данным.
+          В режиме создания резервной копии содержимое более-менее без
+          всяких изменений записывается в резервный файл.</para>
+        </listitem>
+
+        <listitem>
+          <para><emphasis>Режим резервирования/восстановления:</emphasis>
+          сохранение времени и объема свободного места на диске, так как
+          Вам нет необходимости делать резервные копии всей базы данных
+          каждый раз. Это преимущество особенно актуально для баз данных
+          с гигабайтными размерами.</para>
+        </listitem>
+
+        <listitem>
+          <para><emphasis>Режим блокировки/разблокировки:</emphasis>
+          свобода в Вашем выборе средств для создания резервных копий,
+          обычных копий базы данных, а также средств компрессии.</para>
+        </listitem>
+      </itemizedlist>
+    </section>
+
+    <section id="nbackup-limitations-ru">
+      <title>Ограничения <application>nbackup</application></title>
+      <titleabbrev>Ограничения</titleabbrev>
+
+      <itemizedlist>
+        <listitem>
+          <para><application>nbackup</application> не занимается чисткой
+          (sweep) и сжатием базы данных, как может делать
+           <application>gbak</application>.</para>
+        </listitem>
+
+        <listitem>
+          <para>Вы не сможете изменить владельца базы данных при восстановлении
+          базы данных из резервной копии, как могли сделать при помощи
+          <application>gbak</application>.</para>
+        </listitem>
+
+        <listitem>
+          <para><application>nbackup</application> не может создавать резервные
+          копии в <firstterm>переносимом (transportable)
+          формате</firstterm>, то есть копии, которые затем можно восстановить
+          на другой платформе или под другой версией СУБД.</para>
+        </listitem>
+
+        <listitem>
+          <para>На настоящий момент <application>nbackup</application> не
+          следует использовать на многофайловых базах данных.</para>
+        </listitem>
+
+        <listitem>
+          <para><application>nbackup</application> может работать только с
+          локальными базами данных.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Следующие разделы содержат подробное описание функций
+      <application>nbackup</application>.</para>
+    </section>
+  </section>
+
+  <section id="nbackup-backups-ru">
+    <title>Создание резервных копий и восстановление из них</title>
+    <titleabbrev>Резервирование и восстановление</titleabbrev>
+
+    <para>Для начала, <filename>nbackup.exe</filename> находится в подпапке
+    <filename class="directory">bin</filename> папки, куда установлена СУБД
+    Firebird. Например, типичным расположением является
+    <filename class="directory">C:\Program Files\Firebird\Firebird_2_0\bin</filename>
+    (Windows) или <filename class="directory">/opt/firebird/bin</filename>
+    (Linux). Как и у большинства утилит, распространяемых с СУБД Firebird,
+    у <application>nbackup</application> нет графического интерфейса; Вы
+    запускаете программу из командной строки (или из командного файла, или
+    из другой программы).</para>
+
+    <section id="nbackup-backups-full-ru">
+      <title>Резервная копия всей базы данных</title>
+      <titleabbrev>Вся база данных</titleabbrev>
+
+      <section>
+        <title>Содание резервной копии всей базы данных</title>
+        <titleabbrev>Резервирование</titleabbrev>
+
+        <para>Для создания резервной копии всей базы данных используйте
+        следующий синтаксис командной строки:</para>
+
+        <blockquote>
+          <programlisting>nbackup [-U <replaceable>&lt;пользователь&gt;</replaceable> -P <replaceable>&lt;пароль&gt;</replaceable>] -B 0 <replaceable>&lt;база_данных&gt;</replaceable> [<replaceable>&lt;резервный_файл&gt;</replaceable>]</programlisting>
+        </blockquote>
+
+        <para>Например:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -B 0 inventory.fdb inventory_1-Mar-2006.nbk</screen>
+        </blockquote>
+
+        <para id="nbackup-backups-comments-ru">Примечания:</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Параметр <parameter>-B</parameter> означает создание резервной
+            копии. <firstterm>Уровень резервной копии</firstterm> 0 означает
+            создание резервной копии всей базы данных. Уровни резервных копий
+            больше 0 используются для создания инкрементных резервных копий;
+            это будет рассмотрено далее.</para>
+          </listitem>
+
+          <listitem>
+            <para>Вместо имени файла базы данных Вы можете указать псевдоним
+            (alias, из файла <filename>aliases.conf</filename>).</para>
+          </listitem>
+
+          <listitem>
+            <para>Вместо имени файла резервной копии Вы также можете указать
+            <systemitem>stdout</systemitem>. Это перенаправит резервную копию
+            в стандартный поток вывода, откуда Вы сможете перенаправить ее,
+            например, на ленточный накопитель или на вход утилиты для сжатия
+            получаемой резервной копии.</para>
+          </listitem>
+
+          <listitem>
+            <para>Параметры <parameter>-U</parameter> (user, имя пользователя)
+            и <parameter>-P</parameter> (password, пароль) могут быть
+            опущены (не указываться):</para>
+
+            <itemizedlist spacing="compact">
+              <listitem>
+                <para>если Вы зарегистрированы в системе как администратор
+                (<systemitem class="username">root</systemitem>,
+                <systemitem class="username">Administrator</systemitem>...),
+                или</para>
+              </listitem>
+
+              <listitem>
+                <para>если установлены переменные окружения
+                <envar>ISC_USER</envar> и <envar>ISC_PASSWORD</envar>.</para>
+              </listitem>
+            </itemizedlist>
+
+            <para>Для понятности и краткости эти параметры не указаны в
+            приводимых примерах.</para>
+          </listitem>
+
+          <listitem>
+            <para>Все параметры (<parameter>-B</parameter>,
+            <parameter>-U</parameter> и <parameter>-P</parameter>) можно
+            указывать в произвольном порядке. Естественно, за каждым параметром
+            должен(ны) следовать его аргумент(ы). В случае с параметром
+            <parameter>-B</parameter> есть три аргумента: уровень резервной
+            копии, база данных и файл резервной копии - в этом
+            порядке!</para>
+          </listitem>
+
+          <listitem>
+            <para>Если параметр <parameter>-B</parameter> указан последним,
+            Вы <emphasis>можете</emphasis> не указывать имя файла резервной
+            копии. В этом случае, <application>nbackup</application> построит
+            имя файла на основе имени базы данных, уровне резервной копии и
+            текущем дате и времени. Это может привести к коллизии имен файлов
+            (и неудавшемуся резервному копированию), если две команды
+            резервирования одного уровня вызываются в одну и ту же
+            минуту.</para>
+          </listitem>
+        </itemizedlist>
+
+        <warning>
+          <para><emphasis>Не</emphasis> используйте
+          <application>nbackup</application> для многофайловых баз данных. Это
+          может привести к повреждениям базы данных и потере данных -
+          <application>nbackup</application> не будет возражать против
+          выполнения действий над многофайловой базой данных.</para>
+        </warning>
+
+        <section id="nbackup-backups-workings-ru">
+          <title>Несколько слов о внутренних механизмах</title>
+          <titleabbrev>Внутренние механизмы</titleabbrev>
+
+          <para>На заметку: то, что здесь будет описано, не является
+          необходимыми знаниями для использования
+          <application>nbackup</application>. Это описание дает грубое
+          представление о том, что происходит при работе программы
+          <application>nbackup</application> с параметром 
+          <parameter>-B</parameter>:</para>
+
+          <procedure>
+            <step>
+              <para>Прежде всего, основной файл базы данных блокируется
+              установкой внутреннего флага состояния. С этого момента абсолютно
+              все изменения в базе данных записываются во временный файл,
+              называемый файлом разницы (difference file) или
+              <firstterm>файлом дельты</firstterm>.</para>
+            </step>
+
+            <step>
+              <para>После этого создается резервная копия. Это не обычная
+              копия файла базы данных - восстановление из полученной копии
+              необходимо производить также при помощи
+              <application>nbackup</application>.</para>
+            </step>
+
+            <step>
+              <para>По завершении резервирования содержимое файла дельты
+              объединяется с основным файлом базы данных. После этого база
+              данных разблокируется (флаг возвращается в
+              <quote>нормальное</quote> состояние) и файл дельты
+              удаляется.</para>
+            </step>
+          </procedure>
+
+          <para>Функциональность шагов 1 и 3 достигается введением двух
+          новых операторов SQL: <database>ALTER DATABASE BEGIN BACKUP</database>
+          и <database>ALTER DATABASE END BACKUP</database>. Вразрез с
+          указанным в операторах, они <emphasis>не</emphasis> ведут к
+          созданию резервной копии, они лишь создают условия, с которыми
+          можно безопасно создать резервную копию основного файла базы
+          данных. Чтобы прояснить: Вам не нужно употреблять указанные
+          операторы самостоятельно и явно; <application>nbackup</application>
+          сделает это за Вас в нужное время.</para>
+        </section>
+      </section>
+
+      <section>
+        <title>Восстановление из резервной копии всего файла базы данных</title>
+        <titleabbrev>Восстановление</titleabbrev>
+
+        <para>Резервная копия всей базы данных восстанавливается следующим
+        образом:</para>
+
+        <blockquote>
+          <programlisting>nbackup [-U <replaceable>&lt;пользователь&gt;</replaceable> -P <replaceable>&lt;пароль&gt;</replaceable>] -R <replaceable>&lt;база_данных&gt;</replaceable> [<replaceable>&lt;резервный_файл&gt;</replaceable>]</programlisting>
+        </blockquote>
+
+        <para>Например:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -R inventory.fdb inventory_1-Mar-2006.nbk</screen>
+        </blockquote>
+
+        <para id="nbackup-restore-comments-ru">Примечания:</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Вам не нужно указывать уровень при восстановлении.</para>
+          </listitem>
+
+          <listitem>
+            <para>При восстановлении параметр <parameter>-R</parameter>
+            <emphasis>должен</emphasis> быть указан последним по причинам,
+            которые будут описаны позже.</para>
+          </listitem>
+
+          <listitem>
+            <para>Если указанная база данных уже существует и нет активных
+            соединений, она будет перезаписана без предупреждения! Если есть
+            активные соединения, восстановление не состоится и Вы получите
+            сообщение об ошибке.</para>
+          </listitem>
+
+          <listitem>
+            <para>Здесь также Вы можете не указывать имя файла резервной
+            копии. Если Вы его опустите, <application>nbackup</application>
+            спросит Вас об этом позже. <emphasis>Однако на текущий момент
+            разработки СУБД Firebird 2 (стадия alpha 3) это приведет к
+            ошибке (по крайней мере под Windows) и неудавшемуся
+            восстановлению.</emphasis></para>
+          </listitem>
+        </itemizedlist>
+      </section>
+    </section>
+
+    <section id="nbackup-backups-incr-ru">
+      <title>Инкрементные резервные копии</title>
+      <titleabbrev>Инкрементное резервирование</titleabbrev>
+
+      <section>
+        <title>Создание инкрементных резервных копий</title>
+        <titleabbrev>Создание</titleabbrev>
+
+        <para>Для создания инкрементной (<quote>дифференциальной</quote>)
+        резервной копии необходимо указать уровень резервной копии
+        больше 0. Инкрементная резервная копия уровня
+        <replaceable>N</replaceable> содержит изменения базы данных
+        с момента создания последней резервной копии уровня
+        <replaceable>N-1</replaceable>.</para>
+
+        <para>Примеры:</para>
+
+        <para>Через день после создания резервной копии всей базы данных
+        (уровня 0) Вы создаете резервную копию уровня 1:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -B 1 inventory.fdb inventory_2-Mar-2006.nbk</screen>
+        </blockquote>
+
+        <para>Эта резервная копия будет содержать только изменения базы
+        данных за последний день.</para>
+
+        <para>Через день Вы вновь решили сделать резервную копию уровня
+        1:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -B 1 inventory.fdb inventory_3-Mar-2006.nbk</screen>
+        </blockquote>
+
+        <para>Эта копия будет содержать изменения за последние
+        <emphasis>два</emphasis> дня, то есть с момента создания резервной
+        копии всей базы данных, а не только с момента создания предыдущей
+        инкрементной копии уровня 1.</para>
+
+        <para>Через пару часов Вы создаете резервную копию уровня 2:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -B 2 inventory.fdb inventory_3-Mar-2006_2.nbk</screen>
+        </blockquote>
+
+        <para>Эта резервная копия будет содержать изменения только с момента
+        создания последней резервной копии уровня 1, то есть только за
+        последние несколько часов.</para>
+
+        <note>
+          <para>Все <link
+          linkend="nbackup-backups-comments-ru">примечания</link>, сделанные
+          по поводу создания резервной копии всей базы данных, применимы
+          и к созданию инкрементных резервных копий.</para>
+        </note>
+
+        <warning>
+          <para>Еще раз: не используйте <application>nbackup</application>
+          для многофайловых баз данных.</para>
+        </warning>
+      </section>
+
+      <section>
+        <title>Восстановление из инкрементных резервных копий</title>
+        <titleabbrev>Восстановление</titleabbrev>
+
+        <para>При восстановлении базы данных из инкрементных резерных копий
+        Вы должны обеспечить наличие полной цепочки инкрементных резервных
+        копий, начиная с уровня 0 и до уровня, которым Вы хотите завершить.
+        База данных всегда строиться с самой первой резервной копии уровня 0,
+        шаг за шагом.</para>
+
+        <para>Формальный синтаксис:</para>
+
+        <blockquote>
+          <programlisting>nbackup [-U <replaceable>&lt;пользователь&gt;</replaceable> -P <replaceable>&lt;пароль&gt;</replaceable>]
+        -R <replaceable>&lt;база_данных&gt;</replaceable> [<replaceable>&lt;резервная_копия0&gt;</replaceable> [<replaceable>&lt;резервная_копия1&gt;</replaceable> [<replaceable>...</replaceable>] ] ]</programlisting>
+        </blockquote>
+
+        <para>Таким образом, восстановление для предыдущего примера до уровня
+        2 будет выглядеть так:</para>
+
+        <blockquote>
+          <screen>C:\Databases&gt; nbackup -R inventory.fdb inventory_1-Mar-2006.nbk
+                inventory_3-Mar-2006.nbk inventory_3-Mar-2006_2.nbk</screen>
+        </blockquote>
+
+        <para>Перенос на новую строку сделан здесь исключительно из
+        эстетических соображений - Вам необходимо вводить команду в командной
+        строке полностью, и нажать <keycap>Enter</keycap> только в конце.</para>
+
+        <para>Примечания (дополнительно к <link
+        linkend="nbackup-restore-comments-ru">примечаниям по восстановлению
+        из резервной копии всей базы данных</link>):</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Так как программа не может знать заранее количество
+            указанных после параметра <parameter>-R</parameter> имен файлов
+            (уровень при восстановлении не указывается),
+            <application>nbackup</application> считает все аргументы после
+            параметра <parameter>-R</parameter> именами файлов с резервными
+            копиями. По этой причине никакие другие параметры
+            (<parameter>-U</parameter> или <parameter>-P</parameter>) не могут
+            следовать за списком файлов параметра
+            <parameter>-R</parameter>.</para>
+          </listitem>
+
+          <listitem>
+            <para>Не существует формального ограничения на уровень
+            резервной копии, однако на практике редко имеет смысл создавать
+            копии уровней больше 3 или 4.</para>
+          </listitem>
+        </itemizedlist>
+
+        <section>
+          <title>Несвязанные ссылки</title>
+
+          <para>Что произойдет, если Вы нечаяно пропустите файл с инкрементной
+          резервной копией в цепочке восстановления, или укажете набор файлов,
+          которые не являются одной цепочкой? Представьте, что Вы по ошибке
+          указали <filename>inventory_2-Mar-2006.nbk</filename> вместо
+          <filename>inventory_3-Mar-2006.nbk</filename> в вышеприведенном
+          примере. Обе резервные копии являются копиями уровня 1, поэтому в
+          обоих случаях у Вас получится замечательная последовательность
+          уровней <quote>0, 1, 2</quote>. Но файл уровня 2 является инкрементной
+          резервной копией для инкрементной резервной копии уровня 1 от
+          3 марта, а не от 2 марта.</para>
+
+          <para>К счастью, такие ошибки никогда не приведут к неверно
+          восстановленной базе данных. Каждый файл с резервной копией имеет
+          уникальный идентификатор. Более того, каждый резервный файл уровня 1
+          и выше содержит идентификатор того файла, на котором он основан.
+          При восстановлении <application>nbackup</application> проверяет
+          эти идентификаторы; если где-то в указаной цепочке обнаруживается
+          неверная ссылка, операция восстановления не производится и Вы
+          получите сообщение об ошибке.</para>
+        </section>
+      </section>
+    </section>
+
+    <section id="nbackup-backups-pract-ru">
+      <title>Практическое применение</title>
+
+      <para>Основанная на <application>nbackup</application> инкрементная
+      схема резервирования может выглядеть следующим образом:</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>Каждый месяц создается резервная копия всей базы данных
+          (уровня 0);</para>
+        </listitem>
+
+        <listitem>
+          <para>Каждую неделю делается инкрементная резервная копия уровня
+          1;</para>
+        </listitem>
+
+        <listitem>
+          <para>Каждые сутки создается инкрементная резервная копия уровня
+          2;</para>
+        </listitem>
+
+        <listitem>
+          <para>Каждый час создается инкрементная резервная копия
+          уровня 3.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Поскольку все резервные копии сохраняются, Вы сможете восстановить
+      базу данных в любое состояние с точностью до часа. При каждом
+      восстановлении используется максиум до четырех резервных файлов.
+      Разумеется, Вам необходимо так планировать процесс создания резервных
+      копий, что наибольшие из них (требующие больше времени) создаются во
+      время наименьшей нагрузки на СУБД со стороны пользователей. В указанной
+      схеме уровни 0 и 1 могут создаваться по выходным, а уровень 2 - в
+      ночное время.</para>
+
+      <para>Если Вы не хотите хранить все созданные резервные копии, Вы
+      можете спланировать схему удаления ненужных копий:</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>Резервный копии уровня 3 удаляются после 8 дней хранения 
+          с момента создания;</para>
+        </listitem>
+
+        <listitem>
+          <para>Резервные копии уровня 2 - после месяца;</para>
+        </listitem>
+
+        <listitem>
+          <para>Резервные копии уровня 1 - после полугода;</para>
+        </listitem>
+
+        <listitem>
+          <para>Резервные копии уровня 0 (всей базы данных) - после двух лет,
+          но первую резервную копию всей базы данных каждого года нужно
+          сохранить.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Конечно, приведенные схемы являются лишь примером. Что будет
+      подходящим в конкретном случае, зависит от приложения, размера базы
+      данных, активности пользователей и т.д.</para>
+    </section>
+
+    <section id="nbackup-backups-readon-ru">
+      <title>Читать ли дальше?</title>
+      <titleabbrev>Читать дальше?</titleabbrev>
+
+      <para>Сейчас Вы знаете все, что нужно, для того, чтобы создавать
+      резервные копии базы данных и производить восстановление базы данных
+      из резервных копий с помощью <application>nbackup</application>. Если Вы
+      хотите использовать другие утилиты для создания резервных копий баз
+      данных Firebird, то читайте следующие разделы.</para>
+
+      <para>Если у Вас нет желания вникать в тонкости, удачи Вам в обычной
+      работе с <application>nbackup</application>!</para>
+    </section>
+  </section>
+
+  <section id="nbackup-lock-unlock-ru">
+    <title>Блокирование и разблокирование</title>
+
+    <para>Если Вы предпочитаете использовать какие-то другие утилиты для
+    создания резервных копий базы данных или просто делать обычную копию
+    базы данных как резервную, то в игру вступает режим
+    блокировки/разблокировки программы <application>nbackup</application>.
+    <quote>Блокировка</quote> в данном случае означает, что основной файл
+    базы данных временно замораживается, а не невозможность внесения
+    изменений в базу данных. Как и в режиме резервирования, изменения
+    фиксируются во временном файле дельты; при разблокировании файл дельты
+    объединяется с основным файлом базы данных.</para>
+
+    <para>В качестве напоминания: <filename>nbackup.exe</filename> находится в
+    подпапке <filename class="directory">bin</filename> папки, куда
+    установлена СУБД Firebird. Типичными местонахождениями, например, являются
+    <filename class="directory">C:\Program Files\Firebird\Firebird_2_0\bin</filename>
+    (Windows) или <filename class="directory">/opt/firebird/bin</filename>
+    (Linux). У утилиты нет графического интерфейса; Вы запускаете ее из
+    командной строки (или из пакетного файла, или из другого 
+    приложения).</para>
+
+    <section id="nbackup-lock-and-backup-ru">
+      <title>Блокировка базы данных и самостоятельное резервное копирование</title>
+      <titleabbrev>Блокировка и самостоятельное резервирование</titleabbrev>
+
+      <para>Типичным сценарием является следующий:</para>
+
+      <procedure>
+        <step>
+          <para>Блокировать базу данных с помощью параметра
+          <parameter>-L</parameter> (lock):</para>
+
+          <blockquote>
+            <para><programlisting>nbackup [-U <replaceable>&lt;пользователь&gt;</replaceable> -P <replaceable>&lt;пароль&gt;</replaceable>] -L <replaceable>&lt;база_данных&gt;</replaceable></programlisting></para>
+          </blockquote>
+        </step>
+
+        <step>
+          <para>Теперь можно создать резервную копию, сжать файл базы данных
+          (и много еще чего можно делать с содержимым файла базы данных),
+          используя Ваши любимые программы. Простое копирование файла также
+          допустимо.</para>
+        </step>
+
+        <step>
+          <para>Разблокировать базу данных с помощью параметра
+          <parameter>-N</parameter> (uNlock):</para>
+
+          <blockquote>
+            <para><programlisting>nbackup [-U <replaceable>&lt;пользователь&gt;</replaceable> -P <replaceable>&lt;пароль&gt;</replaceable>] -N <replaceable>&lt;база_данных&gt;</replaceable></programlisting></para>
+          </blockquote>
+        </step>
+      </procedure>
+
+      <para>Последняя команда также приведет к объединению файла дельты,
+      куда записывались все изменения (мета)данных за время блокировки, с
+      основным файлом базы данных.</para>
+
+      <para>Созанная резервная копия будет содержать данные, которые являлись
+      актуальными на момент начала блокировки; эти данные не зависят от
+      длительности блокировки, а также от периода времени, прошедшего с начала 
+      блокировки до момента начала резервного копирования.</para>
+
+      <warning>
+        <para>Что применимо к резервированию/восстановлению, также применимо
+        и к блокированию/разблокированию: не используйте
+        блокирование/разблокирование на многофайловых базах данных. Пока
+        ситуация не изменится, не подпускайте <application>nbackup</application>
+        к многофайловым базам данных!</para>
+      </warning>
+    </section>
+
+    <section id="nbackup-restore-and-fixup-ru">
+      <title>Восстановление из резервной копии, сделанной после выполнения "nbackup -L"</title>
+      <titleabbrev>Восстановление из самостоятельно созданной копии</titleabbrev>
+
+      <para>Копия блокированной базы данных является так же блокированной,
+      поэтому Вы не сможете просто использовать копию как рабочую базу
+      данных. В случае, если Ваша исходная база данных повреждена или утеряна,
+      и нужно восстановить базу данных из копии, сделанной Вами самостоятельно,
+      действуйте следующим образом:</para>
+
+      <procedure>
+        <step>
+          <para>Разархивируйте/скопируйте/восстановите файл базы данных
+          с помощью используемых Вами утилит.</para>
+        </step>
+
+        <step>
+          <para>Теперь разблокируйте базу данных, но <emphasis>не</emphasis>
+          с параметром <parameter>-N</parameter>, а с параметром
+          <parameter>-F</parameter> (Fixup):</para>
+
+          <blockquote>
+            <para><programlisting>nbackup -F <replaceable>&lt;база_данных&gt;</replaceable></programlisting></para>
+          </blockquote>
+        </step>
+      </procedure>
+
+      <para>Почему существует два параметра командной строки,
+      <parameter>-N</parameter> и <parameter>-F</parameter>?</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>При использовании параметра <parameter>-N</parameter> сначала
+          определяется наличие любых изменений с момента блокирования базы
+          данных (после использования параметра <parameter>-L</parameter>) и
+          производится объединение временного файла дельты и основного файла
+          базы данных. После этого база данных переводится в нормальный
+          режим чтения/записи, а временный файл удаляется.</para>
+        </listitem>
+
+        <listitem>
+          <para>При использовании параметра <parameter>-F</parameter> только
+          изменяется в <quote>нормальное</quote> значение флага состояния
+          самостоятельно восстановленной базы данных.</para>
+        </listitem>
+      </itemizedlist>
+
+      <para>Итак, Вы используете:</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>параметр <parameter>-N</parameter> после
+          <emphasis>создания</emphasis> резервной копии своими силами
+          (для возвращения флага состояния после ранее выполненного
+          блокирования файла с параметром <parameter>-L</parameter>);</para>
+        </listitem>
+
+        <listitem>
+          <para>параметр <parameter>-F</parameter> после самостоятельного
+          <emphasis>восстановления</emphasis> из такой резервной копии.</para>
+        </listitem>
+      </itemizedlist>
+
+      <note>
+        <para>Не очень хорошо получилось, что последний параметр
+        <parameter>-F</parameter> назван по слову Fixup (поправить): его
+        предназначение не исправлять что-либо, а только
+        <emphasis>разблокировать</emphasis> базу данных. Параметр
+        <parameter>-N</parameter> (uNlock, разблокировать), с другой стороны,
+        не только разблокирует базу данных, но и вносит в нее некоторые
+        правки (внедряет сделанные изменения в базу данных). Однако, нам
+        придется работать с тем, что есть.</para>
+      </note>
+    </section>
+
+    <section id="nbackup-lock-unlock-extrainfo-ru">
+      <title>Механизмы работы</title>
+
+      <para>На заметку: то, что здесь будет описано, не является
+      необходимыми знаниями для использования <application>nbackup</application>,
+      но предоставялет Вам дополнительную информацию, которая поможет
+      Вам глубже понять использование различных параметров командной
+      строки.</para>
+
+      <!--These two orderedlists should really be procedures, but I want compact spacing!-->
+
+      <para><command>nbackup <parameter>-L</parameter></command> делает
+      следующее:</para>
+
+      <orderedlist spacing="compact">
+        <listitem>
+          <para>соединяется с базой данных;</para>
+        </listitem>
+
+        <listitem>
+          <para>запускает транзакцию;</para>
+        </listitem>
+
+        <listitem>
+          <para>выполняет оператор <database>ALTER DATABASE BEGIN
+          BACKUP</database> (этот оператор обсуждался в разделе
+          <link linkend="nbackup-backups-workings-ru">дополнительной
+          информации по nbackup -B</link>);</para>
+        </listitem>
+
+        <listitem>
+          <para>завершает (commit) транзакцию;</para>
+        </listitem>
+
+        <listitem>
+          <para>отсоединяется от базы данных.</para>
+        </listitem>
+      </orderedlist>
+
+      <para><command>nbackup <parameter>-N</parameter></command> делает те же
+      шаги, но выполняет оператор <database>...END BACKUP</database>
+      на шаге 3.</para>
+
+      <para><command>nbackup <parameter>-F</parameter></command> работает
+      следующим образом:</para>
+
+      <orderedlist spacing="compact">
+        <listitem>
+          <para>открывается восстановленный файл базы данных;</para>
+        </listitem>
+
+        <listitem>
+          <para>в файле базы данных флаг состояния изменяется с блокированного
+          (<constant>nbak_state_stalled</constant>) в нормальное
+          (<constant>nbak_state_normal</constant>) состояние;</para>
+        </listitem>
+
+        <listitem>
+          <para>файл закрывается.</para>
+        </listitem>
+      </orderedlist>
+
+      <note>
+        <para><application>nbackup</application> <parameter>-F</parameter>
+        работает на файловом уровне, а поэтому может быть выполнена даже при
+        отсутствии работающего сервера Firebird. Любой из дополнительно
+        указанных параметров <parameter>-U</parameter> и
+        <parameter>-P</parameter> полностью игнорируются.</para>
+      </note>
+    </section>
+  </section>
+
+  <appendix id="nbackup-dochist-ru">
+    <title>История документа</title>
+
+    <para>Точная история изменения исходного файла фиксируется (или будет)
+    в модуле <filename class="directory">manual</filename> нашего дерева CVS;
+    обратитесь к <ulink url="http://sourceforge.net/cvs/?group_id=9028">http://sourceforge.net/cvs/?group_id=9028</ulink></para>
+
+    <para><revhistory>
+        <revision>
+          <revnumber>0.1</revnumber>
+
+          <date>21 октября 2005</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para>Первая редакция.</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>0.1.ru</revnumber>
+
+          <date>10 декабря 2005</date>
+
+          <authorinitials>PM</authorinitials>
+
+          <revdescription>
+            <para>Документ переведен на русский язык.</para>
+          </revdescription>
+        </revision>
+      </revhistory></para>
+  </appendix>
+
+  <appendix id="nbackup-license-ru">
+    <title>Лицензия (англ.)</title>
+
+    <para>The contents of this Documentation are subject to the Public
+    Documentation License Version 1.0 (the <quote>License</quote>); you may
+    only use this Documentation if you comply with the terms of this License.
+    Copies of the License are available at <ulink
+    url="http://www.firebirdsql.org/pdfmanual/pdl.pdf">http://www.firebirdsql.org/pdfmanual/pdl.pdf</ulink>
+    (PDF) and <ulink
+    url="http://www.firebirdsql.org/manual/pdl.html">http://www.firebirdsql.org/manual/pdl.html</ulink>
+    (HTML).</para>
+
+    <para>The Original Documentation is titled <citetitle>Firebird's nbackup
+    tool</citetitle>.</para>
+
+    <para>The Initial Writer of the Original Documentation is: Paul
+    Vinkenoog.</para>
+
+    <para>Copyright (C) 2005. All Rights Reserved. Initial Writer contact:
+    paulvink at users dot sourceforge dot net.</para>
+  </appendix>
+</article>
