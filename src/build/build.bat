@@ -32,7 +32,7 @@ set _CP_=%_CP_%;..\..\lib
 set _CP_=%_CP_%;%JAVA_HOME%\lib\tools.jar;%CLASSPATH%
 
 
-"%JAVA_HOME%\bin\java.exe" -showversion -Xmx100000000 -classpath "%_CP_%" org.apache.tools.ant.Main %1 %2 %3 %4 %5
+"%JAVA_HOME%\bin\java.exe" -showversion -Xmx100000000 -classpath "%_CP_%" org.apache.tools.ant.Main %1 %2 %3 %4 %5 %6 %7 %8 %9
 
 
 :exit
