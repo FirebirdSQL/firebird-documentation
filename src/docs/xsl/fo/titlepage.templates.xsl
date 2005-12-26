@@ -107,7 +107,7 @@
 </xsl:template>
 
 <xsl:template match="title" mode="article.titlepage.recto.auto.mode">
-<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="article.titlepage.recto.style" keep-with-next="always" font-size="24.8832pt" font-weight="bold" color="{$midlevel.title.color}">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="article.titlepage.recto.style" keep-with-next="always" font-size="24.8832pt" font-weight="bold" color="{$highlevel.title.color}">
 <xsl:call-template name="component.title">
 <xsl:with-param name="node" select="ancestor-or-self::article[1]"/>
 </xsl:call-template>
@@ -885,7 +885,7 @@
 </xsl:template>
 
 <xsl:template name="chapter.titlepage">
-  <fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" font-family="{$title.fontset}">
+  <fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" font-family="{$title.fontset}" space-after="2em">
     <fo:block margin-left="{$title.margin.left}">
     <xsl:call-template name="chapter.titlepage.before.recto"/>
     <xsl:call-template name="chapter.titlepage.recto"/>
@@ -911,7 +911,7 @@
 </xsl:template>
 
 <xsl:template match="title" mode="chapter.titlepage.recto.auto.mode">
-<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="chapter.titlepage.recto.style" font-size="24.8832pt" font-weight="bold" text-align="start" color="{$midlevel.title.color}">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="chapter.titlepage.recto.style" font-size="24.8832pt" font-weight="bold" color="{$midlevel.title.color}">
 <xsl:call-template name="component.title">
 <xsl:with-param name="node" select="ancestor-or-self::chapter[1]"/>
 </xsl:call-template>
@@ -919,7 +919,7 @@
 </xsl:template>
 
 <xsl:template match="subtitle" mode="chapter.titlepage.recto.auto.mode">
-<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="chapter.titlepage.recto.style" space-before="0.5em" font-style="italic" font-size="14.4pt" font-weight="bold">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="chapter.titlepage.recto.style" space-before="0.5em" font-style="italic" font-size="14.4pt" font-weight="bold" color="{$midlevel.title.color}">
 <xsl:apply-templates select="." mode="chapter.titlepage.recto.mode"/>
 </fo:block>
 </xsl:template>

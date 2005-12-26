@@ -80,8 +80,10 @@ set       toc,title
 
   <!-- Our own params: -->
 
-  <xsl:param name="highlevel.title.color" select="'#FB2400'"/>  <!-- set, book -->   <!-- also nice:  #E03000 -->
-  <xsl:param name="midlevel.title.color"  select="'#108060'"/>  <!-- part, chapter, article... TODO: preface !!! -->
+  <xsl:param name="firebird.orange" select="'#FB2400'"/> <!-- also nice: #E03000 -->
+
+  <xsl:param name="highlevel.title.color" select="'#108060'"/>  <!-- set, book, article -->
+  <xsl:param name="midlevel.title.color"  select="'#108060'"/>  <!-- part, chapter... TODO: preface !!! -->
   <xsl:param name="lowlevel.title.color"  select="'#404090'"/>  <!-- section, sectN -->
 
 
@@ -119,10 +121,10 @@ set       toc,title
   <!-- CHAPTER TITLE PROPERTIES - attribute sets created by us -->
 
   <!-- The label is the line just before the title, e.g. "Chapter 9".
-       Anything not overidden in the next two sets (ch.label and ch.
-       title) will default to the settings in titlepage.templates.xml,
+       Anything not overidden in the next three sets (ch.label, ch.title,
+       and ch.subtitle) will default to the settings in titlepage.templates.xml,
        template <t:titlepage t:element="chapter".../>
-       Default color for both is $midlevel.title.color (see above)
+       Default color for all three is $midlevel.title.color (see above)
   -->
 
   <xsl:attribute-set name="chapter.label.properties">
@@ -145,9 +147,15 @@ set       toc,title
       <xsl:value-of select="$body.font.master * 3.0"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
-    <xsl:attribute name="space-after.minimum">0.8em</xsl:attribute>
-    <xsl:attribute name="space-after.optimum">1.0em</xsl:attribute>
-    <xsl:attribute name="space-after.maximum">1.2em</xsl:attribute>
+  </xsl:attribute-set>
+
+  <xsl:attribute-set name="chapter.subtitle.properties">
+    <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>
+    <xsl:attribute name="text-align">center</xsl:attribute>
+    <xsl:attribute name="font-size">
+      <xsl:value-of select="$body.font.master * 1.2"/>
+      <xsl:text>pt</xsl:text>
+    </xsl:attribute>
   </xsl:attribute-set>
 
 

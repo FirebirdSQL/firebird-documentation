@@ -100,6 +100,21 @@
   </fo:block>
 </xsl:template>
 
+
+<!-- chapter subtitles pick up the attribute set we've introduced: -->
+
+<xsl:template match="chapter/chapterinfo/subtitle
+                     | chapter/docinfo/subtitle
+                     | chapter/info/subtitle
+                     | chapter/subtitle" 
+              mode="titlepage.mode">
+  <fo:block xsl:use-attribute-sets="chapter.subtitle.properties">
+    <xsl:apply-templates mode="titlepage.mode"/>
+  </fo:block>
+</xsl:template>
+
+
+
 <!-- ==================================================================== -->
 
 
