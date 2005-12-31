@@ -1,0 +1,1358 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- For standalone validation, uncomment the following DOCTYPE declaration. -->
+<!-- DOCTYPE article PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"> "file:../docs/docbookx/docbookx.dtd" -->
+<article id="migration-mssql">
+  <articleinfo>
+    <title>Migration from MS-SQL to Firebird</title>
+
+    <author>
+      <firstname>Marcelo</firstname>
+
+      <surname>Lopez Ruiz</surname>
+
+      <affiliation>
+        <address>marcelo.lopezruiz@xlnet.com.ar</address>
+      </affiliation>
+    </author>
+
+    <pubdate>2003</pubdate>
+  </articleinfo>
+
+  <para><application><application>Microsoft SQL Server</application> (MS SQL)
+  é um servidor de bancos de dados largamente usado. Existem três versões que
+  correntemente contam para a maioria da base de usuários: MS SQL 6.5, 7 e
+  2000.</application></para>
+
+  <sect1 id="migration-mssql-intro">
+    <title>Introdução</title>
+
+    <para>Esta seção descreve o próprio guia de conversão.</para>
+
+    <para>Esta documentação de conversão a partir do MS SQL Server server
+    para, primeiro, ajudar usuários a avaliar se o processo vale a pena ser
+    feito. Depois entra em detalhes em como isso pode ser feito, adicionando
+    pitadas da experiência coletada por diferentes pessoas.</para>
+
+    <para>Existem duas coisas importantes para ter em consideração quando
+    migrar. Primeiro, mover dados de um banco de dados para outro pode ser
+    trivial ou não, dependendo da sua esquema de banco de dados. Existem
+    muitas ferramentas para ajudá-lo nesse processo. As conversões de dados
+    padrões são listadas neste documento.</para>
+
+    <para>Segundo, você precisará migrar quaisquer stored procedures(SPs) e
+    triggers manualmente. Este é a parte complicada. Existem diversas
+    diferenças, algumas menores, outras importantes; este documento tenta
+    mostrar a maioria delas, dando exemplos dos problemas mais freqüentes e
+    como resolvê-los.</para>
+  </sect1>
+
+  <sect1 id="migration-mssql-pros-cons">
+    <title>Prós and Contras</title>
+
+    <para>Esta seção decreve as razões para migrar um banco de dados
+    existentes para o Firebird, e razões para não fazê-lo.</para>
+
+    <sect2 id="migration-mssql-pros">
+      <title>Porque migrar para o Firebird</title>
+
+      <para>Isto depende muito em qual versão do MSSQL você está usando e para
+      quê você o está usando.</para>
+
+      <para>Por exemplo, se estiver usando o MS SQL 6.5, é um simples caso de
+      considerar as funcionalidade e facilidade de uso. MSSQL 6.5 trabalha com
+      devices fixos em vez de arquivos expandindo dinamicamente, o que faz
+      muito difícil equilibrar facilidade de administração com o espaço
+      disponível. Existem inúmeros bugs e comportamentos irritantes os quais
+      dificultam a vida de quem deseja um sistema para rodar silenciosa e
+      independentemente de haver pessoal monitorando.</para>
+
+      <para>Se estiver utilizando o MSSQL 7, você sabe que um monte de
+      problemas foram resolvidos,mas ainda sente falte de algumas
+      funcionalidades importantes, como visões alteráveis
+      (<foreignphrase>updatable views</foreignphrase>), maior controle sobre
+      os campos identity, funções definidas pelo usuário, e SPs selecionáveis.
+      E também não existe integridade referencial cascateada até a versão
+      2000. O mesmo para usar diversas ordens de intercalação no mesmo banco
+      de dados.</para>
+
+      <para>Para ambientes Unix, Firebird pode ter sua segurança integrada com
+      a do sistema operacional. Porém, isto é desencorajado devido a
+      portabilidade.</para>
+
+      <para>MSSQL 2000 melhorou sobre o MSSQL 7, mas ainda falta uma das
+      peças-chaves do Firebird: a arquitetura multi-geracional, o qual permite
+      que queries longas sejam executadas sem que entrem em conflito com as
+      transações operacionais curtas. MS SQL em vez disso tenta convencer os
+      usuários a comprar outro servidor (hardware, sistema operacional e
+      servidor de banco de dados), configurá-lo como datawarehouse, e usar
+      esse servidor para relatórios. Alguém só poderia pensar em tal coisa com
+      um ambiente integrado com capacidade de consultas entre bancos de
+      dados.</para>
+
+      <para>Outra razão para migrtar é evitar ficar preso a um forncedor. MS
+      SQL irá rodar em Windows NT/2000 (existem as chamadas edições pessoais,
+      mas essas são limitadas em número de conexões e funcionalidades). Isso
+      significa que você ficará atado à Microsoft para o seu sistema
+      operacional e servidor de banco de dados. Firebird pode ser executado em
+      várias plataformas, incluindo Microsoft Windows, Linux Solaris, Mac OS
+      X, e outras.</para>
+
+      <para>E tem ainda outra razão: preço. MSSQL requer uma soma considerável
+      de dinheiro numa base por processador, mas o Firebird é grátis. Por
+      exemplo, um banco de dados MSSQL acessado pela internet numa máquina
+      Pentium-dual custará US$ 39.998,00 (preços obtidos do site da Microsoft
+      em 03/05/2001).</para>
+
+      <note>
+        <para>Estes preços continuam válidos, as licensas para essa situação
+        nos EUA continua valendo US$ 39998,00 atualmente (data da consulta
+        09/02/2005). No Brasil, no revendedor Brasoftware, o preço provável
+        para essa configuração ficaria em R$ 35.620,00 (sem frete) -
+        considerando-se duas licensas de processador.</para>
+      </note>
+
+      <para>Por último mas não menos importante, é o fato de que o Firebird é
+      open source.Isto não somente significa que existem centenas de
+      programadores desejando ajudar você a usá-lo, melhorá-lo, achar bugs,
+      etc mas você também pode modificá-lo e recompilá-lo você mesmo.
+      Adicionar funcionalidades como e-mail integrado e logging é uma questão
+      de entendimento do código fonte e tendo o conhecimento para fazê-lo.
+      Embora isso não seja uma tarefa trivial, é certamente possível, e traz
+      um enorme capacidade de flexibilidade.</para>
+    </sect2>
+
+    <sect2 id="migration-mssql-cons">
+      <title>Porque não migrar para o Firebird</title>
+
+      <para>A primeira razão seria porque o seu sistema está trabalhando bem
+      como está. Se este é o caso, considere FIrebird para futuros projetos,
+      mas não quebre os que está funcionando atualmente.</para>
+
+      <para>Existe algumas funcionalidades do MS SQL 7 que você não achará no
+      Firebird, como replicação integrada (a qual é disponível como add-on),
+      tabelas temporárias, e integração com outros sistemas de banco de dados
+      através de OLE DB. Ele também possui um servidor Análise OLAP embutido e
+      busca de texto nativa (a qual é disponível como add-on para o
+      Firebird).</para>
+
+      <para>Backups e restaurações podem ser incrementais para o MS SQL;
+      Firebird apenas faz backups e restaurações de bancos de dados
+      completos.</para>
+
+      <note>
+        <para>Para a versão 2 do FIrebird será disponibilizado o utilitário
+        NBackup, o qual possibilitará a criação de backups
+        incrementais.</para>
+      </note>
+
+      <para>Em ambientes Microsoft, MS SQL 7 e acima possuem segurança
+      integrada com o sistema operacional. Porém isso deve ser desencorajado
+      por razões de performance e portabilidade.</para>
+
+      <para>MS SQL 2000 também possui a abilidade para trabalhar com XML
+      diretamente, e suporta visões particionadas para melhor performance para
+      tabelas que se espalham por diversos servidores.</para>
+
+      <para>Em geral, MS SQL possui melhor performance em Windows que o
+      Firebird for Windows. E possui melhor integração com o Microsoft Visual
+      Studio</para>
+    </sect2>
+  </sect1>
+
+  <sect1 id="migration-mssql-db-setup">
+    <title>Configuração do Servidor de Banco de Dados</title>
+
+    <para>Esta seção descreve diferenças quando da instalação do software de
+    servidor de banco de dados.</para>
+
+    <para>Para usuários que tenham usado MS SQL no passado e que são novos no
+    Firebird, ficarão bastante surpreendidos com quão fácil é instalar o
+    Firebird. O processo de instalação é bastante linear, e você pode conectar
+    ao banco imediatamente após a instalação. Note que o nome de usuário
+    administrador do sistema padrão é SYSDBA e a senha é masterkey, em MS SQL,
+    a nome de usuário é sa e a senha é vazia.</para>
+
+    <para>Note que você não precisa selecionar a <foreignphrase>collation
+    order</foreignphrase> e conjuntos de caracteres quando instalando um
+    servidor Firebird. No MS SQL, você não apenas tem que selecionar essa
+    opção na instalação; além disso, muitos outros softwares, como o Commerce
+    Server da própria Microsoft, recusará a usar o servidor se você selecionou
+    a opção errada.</para>
+
+    <para>Para usuários vindos do MS SQL 6.5, Firebird não tem nenhuma noção
+    de <foreignphrase>devices. </foreignphrase> Todos os dados são armazenados
+    em arquivos normais de sistema. Perceba que você não pode usar uma
+    partição de disco não-formatada para armazenar seus bancos de
+    dados.</para>
+
+    <important>
+      <para>MS SQL usa um mecanismo de logging para manter o banco de dados
+      consistente e sobreviver a travas. Firebird um mecanismo
+      multi-geracional para criar cópias no lugar assim quando requeridas, mas
+      estas não são escritas imediatamente para o disk. Enquanto isso provê um
+      ganho considerável ganho de performance, você pode tornar Forced Writes
+      (escrita forçada) numa base por-banco para garantir que os blecautes
+      repentinos não irão comprometer a integridade dos dados. Se o seu
+      servidor tem um ambiente confiável como uma máquina Linux dedicada, e
+      alguma forma de UPS (<emphasis>nota do tradutor:</emphasis> leia-se
+      no-breaks ou gerador, no caso de uma empresa que não pode parar caso a
+      luz caia por grandes períodos), pode-se deixar desligado Forced Writes
+      on.</para>
+    </important>
+  </sect1>
+
+  <sect1 id="migration-mssql-db-admin">
+    <title>Administração do Banco de Dados</title>
+
+    <para>Esta seção descreve as diferenças em como o banco de dados são
+    gerenciados no Firebird e MS SQL.</para>
+
+    <sect2 id="migration-mssql-db-admin-files">
+      <title>Administração dos Arquivos da Base de Dados</title>
+
+      <para>MS SQL 6.5 usa devices, os quais podem ser arquivos ou partições
+      não-formatadas, para gerenciar dados. Isto resulta num sistema difícil
+      de manter. MS SQL 7 e 2000 corrigiram isto usando arquivos normais em
+      lugar de devices. Para cada banco de dados, você terá no mínimo dois
+      arquivos: para as informações do próprio banco de dados, e um com o log
+      de transações executadas.</para>
+
+      <para>Firebird não se apóis num log para manter rastro das transações, e
+      usa um único arquivo para manter tudo.</para>
+
+      <para>O comando CREATE DATABASE no Firebird é mais simples que o
+      equivalente no MS SQL; veja a referência do SQL para uma descrição
+      completa das suas capacidades.</para>
+
+      <para>Uma diferença significante entre o gerenciamento de arquivos é que
+      o MS SQL usam <firstterm>filegroups</firstterm> para particionar o banco
+      de dados em um conjunto de arquivos. Firebird podem usar diferentes
+      arquivos, mas o modelo é mais simples.</para>
+
+      <para>Uma consideração adicional para o Firebird é o uso de arquivos de
+      sombra (<firstterm>shadows</firstterm>). Arquivos de sombra são uma
+      replica do próprio banco de dados. São utilizados principalmente para se
+      criar um backup rápido prontamente disponível. MS SQL não possui essa
+      funcionalidade, embora na versão 2000 possa obter-se algo parecido com o
+      use de <firstterm>log shipping</firstterm> entre servidores de bancos de
+      dados e replicação.</para>
+    </sect2>
+
+    <sect2 id="migration-mssql-db-admin-users">
+      <title>User Administration</title>
+
+      <para>In MS SQL 6.5, there are two objects to manage: logins and users.
+      Logins specify a username/password combination used to access a database
+      server; users specify the access rights on each database. Logins are
+      then mapped to users in databases.</para>
+
+      <para>In MS SQL 7, a new kind of object is added to manage groups of
+      users: roles. These simply security definition. Some roles are
+      system-defined, such as backup operators or database
+      administrators.</para>
+
+      <para>Firebird has a security model similar to MS SQL's, but without
+      logins. Users supply a username, a password, and a role they wish to
+      work under. There is a single security database per database server,
+      which holds all information about permissions on every database, for
+      every user, for every role.</para>
+
+      <para>Under both database systems, it is considered good practice to
+      access all resources through stored procedures, and grant access only to
+      stored procedures. Security can then be setup through the security
+      assigned to stored procedures (in Firebird; in MS SQL, the stored
+      procedure executes using the rights of its creator).</para>
+    </sect2>
+
+    <sect2 id="migration-mssql-db-admin-backups">
+      <title>Backup and Restore Operations</title>
+
+      <para>Firebird uses a backup and restore model which is much simpler
+      than MS SQL, although it sacrifices flexibility. Backups are performed
+      through command-line or GUI tools, and they backup a whole database at a
+      time. A restore operation will restore a whole database on a
+      server.</para>
+
+      <para>There is no operation to backup differences only, or to restore an
+      isolated set of transactions.</para>
+
+      <para>Note that there is a very important option when backing up a
+      database in Firebird: platform dependant or portable. Performing a
+      portable backup allows the administrator to backup a database on an
+      operating system and restore that same database on another. This is
+      typically used when development is performed on Windows workstations,
+      and the operational database is then deployed on a more powerful Linux
+      server, for example.</para>
+    </sect2>
+  </sect1>
+
+  <sect1 id="migration-mssql-data-types">
+    <title>Data Types</title>
+
+    <para>This section describes the different data types available in
+    <application>Firebird</application> and MS SQL, and how to translate types
+    from one system to another.</para>
+
+    <para>MS SQL has different data types, depending on the version. The
+    following table lists the data types along with the version in which they
+    were introduced.</para>
+
+    <para><table>
+        <title>Data Types Conversion Table</title>
+
+        <tgroup cols="4" colsep="1" rowsep="1">
+          <colspec align="center" colname="c1" colwidth="2*" />
+
+          <colspec align="center" colname="c2" colwidth="3*" />
+
+          <colspec align="center" colname="c3" colwidth="3*" />
+
+          <colspec colname="c4" colwidth="6*" />
+
+          <thead>
+            <row>
+              <entry align="center"><para>MSSQL Ver</para></entry>
+
+              <entry align="center"><para>Data Type</para></entry>
+
+              <entry align="center"><para>Firebird</para></entry>
+
+              <entry align="center"><para>MSSQL definition and
+              comments</para></entry>
+            </row>
+          </thead>
+
+          <tbody>
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>bigint</type> </para></entry>
+
+              <entry><para><type>INT64</type> </para></entry>
+
+              <entry><para>8-byte integer type.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>binary</type> </para></entry>
+
+              <entry><para><type>CHAR</type> </para></entry>
+
+              <entry><para>Fixed-length binary data with a maximum length of
+              8,000 bytes. In 6.5, maximum was 255.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>bit</type> </para></entry>
+
+              <entry><para><type>CHAR(1)</type> </para></entry>
+
+              <entry><para>Integer data with either a 1 or 0 value. Typically,
+              replaced by constants 'T' and 'F'.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>char</type> </para></entry>
+
+              <entry><para><type>CHAR</type> </para></entry>
+
+              <entry><para>Fixed-length non-Unicode character data with a
+              maximum length of 8,000 characters. In 6.5, maximum was 255.
+              Firebird can hold up to 32,767 characters.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>cursor</type> </para></entry>
+
+              <entry><para></para></entry>
+
+              <entry><para>A reference to a cursor. This can only be used
+              inside stored procedure or triggers; it cannot be used on table
+              declarations.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>datetime</type> </para></entry>
+
+              <entry><para><type>TIMESTAMP</type> </para></entry>
+
+              <entry><para>Date and time data from January 1, 1753, to
+              December 31, 9999, with an accuracy of three-hundredths of a
+              second, or 3.33 milliseconds.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>decimal</type> </para></entry>
+
+              <entry><para><type>DECIMAL</type> </para></entry>
+
+              <entry><para>Fixed precision and scale numeric data from
+              -10<superscript>38</superscript> -1 through
+              10<superscript>38</superscript> -1.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>float</type> </para></entry>
+
+              <entry><para><type>FLOAT</type> </para></entry>
+
+              <entry><para>Floating precision number data from -1.79E + 308
+              through 1.79E + 308.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>image</type></para></entry>
+
+              <entry><para><type>BLOB</type></para></entry>
+
+              <entry><para>Variable-length binary data with a maximum length
+              of 2<superscript>31</superscript> - 1 (2,147,483,647)
+              bytes.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>int</type></para></entry>
+
+              <entry><para><type>INTEGER</type></para></entry>
+
+              <entry><para>Integer (whole number) data from
+              -2<superscript>31</superscript> (-2,147,483,648) through
+              2<superscript>31</superscript> - 1
+              (2,147,483,647).</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>money</type></para></entry>
+
+              <entry><para><type>DECIMAL(18, 4)</type></para></entry>
+
+              <entry><para>Monetary data values from
+              -2<superscript>63</superscript> (-922,337,203,685,477.5808)
+              through 2<superscript>63</superscript> - 1
+              (+922,337,203,685,477.5807), with accuracy to a ten-thousandth
+              of a monetary unit.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>7</para></entry>
+
+              <entry><para><type>nchar</type></para></entry>
+
+              <entry><para><type>CHAR(x) CHARACTER SET
+              UNICODE_FSS</type></para></entry>
+
+              <entry><para>Fixed-length Unicode data with a maximum length of
+              4,000 characters.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>7</para></entry>
+
+              <entry><para><type>ntext</type></para></entry>
+
+              <entry><para><type>BLOB SUB_TYPE TEXT</type></para></entry>
+
+              <entry><para>Variable-length Unicode data with a maximum length
+              of 2<superscript>30</superscript> - 1 (1,073,741,823)
+              characters.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>numeric</type></para></entry>
+
+              <entry><para><type>NUMERIC</type></para></entry>
+
+              <entry><para>In MS SQL, decimal and numeric are
+              synonims.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>7</para></entry>
+
+              <entry><para><type>nvarchar</type></para></entry>
+
+              <entry><para><type>VARCHAR(x) CHARACTER SET
+              UNICODE_FSS</type></para></entry>
+
+              <entry><para>Fixed-length Unicode data with a maximum length of
+              4,000 characters.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>real</type></para></entry>
+
+              <entry><para><type>DOUBLE</type></para></entry>
+
+              <entry><para>Floating precision number data from -3.40E + 38
+              through 3.40E + 38.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>smalldatetime</type></para></entry>
+
+              <entry><para><type>TIMESTAMP</type></para></entry>
+
+              <entry><para>Date and time data from January 1, 1900, through
+              June 6, 2079, with an accuracy of one minute. Firebird's has
+              greater range and accuracy.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>smallint</type></para></entry>
+
+              <entry><para><type>SMALLINT</type></para></entry>
+
+              <entry><para>Integer data from -2<superscript>15</superscript>
+              (-32,768) through 2<superscript>15</superscript> - 1
+              (32,767).</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>smallmoney</type></para></entry>
+
+              <entry><para><type>DECIMAL(10, 4)</type></para></entry>
+
+              <entry><para>Monetary data values from -214,748.3648 through
+              +214,748.3647, with accuracy to a ten-thousandth of a monetary
+              unit. Note that Firebird's range is greater with this
+              declaration.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>2000</para></entry>
+
+              <entry><para><type>sql_variant</type></para></entry>
+
+              <entry><para><type>BLOB</type></para></entry>
+
+              <entry><para>Allows the storage of data values of different data
+              types.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>2000</para></entry>
+
+              <entry><para><type>table</type></para></entry>
+
+              <entry><para>none</para></entry>
+
+              <entry><para>Stores results temporarily for later user.
+              </para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>text</type></para></entry>
+
+              <entry><para><type>BLOB SUB_TYPE TEXT</type></para></entry>
+
+              <entry><para>Variable-length non-Unicode data with a maximum
+              length of 2<superscript>31</superscript> - 1 (2,147,483,647)
+              characters.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>timestamp</type></para></entry>
+
+              <entry><para><type>INTEGER</type></para></entry>
+
+              <entry><para>A database-wide unique number. In Firebird, you
+              will have to manage uniqueness through
+              generators.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>tinyint</type> </para></entry>
+
+              <entry><para><type>SMALLINT</type></para></entry>
+
+              <entry><para>Integer data from 0 through 255. Firebird does not
+              have such a small data type.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>varbinary</type></para></entry>
+
+              <entry><para><type>CHAR</type></para></entry>
+
+              <entry><para>Variable-length binary data with a maximum length
+              of 8,000 bytes.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>6.5</para></entry>
+
+              <entry><para><type>varchar</type></para></entry>
+
+              <entry><para><type>VARCHAR</type></para></entry>
+
+              <entry><para>Variable-length non-Unicode data with a maximum of
+              8,000 characters. Firebird can hold up to 32,765 characters. In
+              6.5, maximum was 255.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>7</para></entry>
+
+              <entry><para><type>uniqueidentifier</type></para></entry>
+
+              <entry><para><type>CHAR(38)</type></para></entry>
+
+              <entry><para>A globally unique identifier (GUID). In Firebird,
+              you will have to generate the values with User-Defined Functions
+              (UDFs).</para></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table></para>
+
+    <para>A subtle difference in the way <type>NUMERIC</type> and
+    <type>DECIMAL</type> behave in Firebird to bear in mind is that the
+    <type>NUMERIC</type> definition means <emphasis>exactly</emphasis> the
+    precision requested (total number of digits), while <type>DECIMAL</type>
+    mean <emphasis>at least</emphasis> the request precision (the digits to
+    the right of the decimal symbol, however, are maintained exactly). In MS
+    SQL, on the other hand, <type>numeric</type> and <type>decimal</type> are
+    synonims.</para>
+
+    <para>There is also a very common quasi-data type, identity, which can
+    only be used when defining tables. This is an <type>int</type> which is
+    automatically assigned a value on insertion and cannot be changed.</para>
+
+    <sect2 id="migration-mssql-data-types-bit">
+      <title>Converting the <type>bit</type> data type</title>
+
+      <para>The <type>bit</type> data type is used to hold a single boolean
+      value, 0 or 1. MS SQL does not support assigning NULL to this fields.
+      InterBase can emulate this with an <type>INTEGER</type> or a
+      <type>CHAR(1)</type> data type.</para>
+
+      <para>The acceptable values can be restricted using domains. For more
+      information on Firebird domains, see the Data Definition
+      documentation.</para>
+    </sect2>
+
+    <sect2 id="migration-mssql-data-types-identity">
+      <title>Converting the identity data type</title>
+
+      <para>There are many ways to perform the conversion. In general,
+      Firebird is more flexible and powerful in this respect.</para>
+
+      <para>The most direct conversion is to create a BEFORE trigger on the
+      table, assigning to the previous column the value from a generator. This
+      ensures that the number is unique.</para>
+
+      <para>For added flexibility, a single generator can be used for many
+      tables. In this case, the type would work in a similar way as a
+      timestamp would - by creating a database-wide unique identifier.</para>
+
+      <para>Another common technique is to create a stored procedure to allow
+      access to the generator, and allow clients to pre-fetch the number. This
+      is particularly useful for tools such as Delphi which import the NOT
+      NULL constraint on primary keys and refuse to post records with NULL
+      values.</para>
+
+      <programlisting>CREATE TABLE my_table (
+  my_number integer not null primary key
+)</programlisting>
+
+      <programlisting>CREATE GENERATOR my_generator</programlisting>
+
+      <programlisting>CREATE TRIGGER my_before_trigger FOR my_table 
+BEFORE INSERT 
+AS
+BEGIN 
+  IF (NEW.my_number IS NULL) 
+    THEN NEW.my_number = GEN_ID(my_generator, 1); 
+END </programlisting>
+
+      <programlisting>CREATE PROCEDURE get_my_generator
+RETURNS (new_value INTEGER) 
+AS 
+BEGIN 
+  new_value = GEN_ID(my_generator, 1);
+END </programlisting>
+    </sect2>
+
+    <sect2 id="migration-mssql-data-types-uniqueidentifier">
+      <title>Converting the <type>uniqueidentifier</type> data type</title>
+
+      <para>MS SQL depends on <type>uniqueidentifier</type> data types for
+      replication. It is also a handy way of creating a world-wide unique
+      identifier for a record.</para>
+
+      <para>To use the field like this, create a BEFORE trigger on the table
+      with the field, and retrieve the value from a UDF.</para>
+
+      <para>TODO: write the UDF and write the importing procedure</para>
+    </sect2>
+  </sect1>
+
+  <sect1 id="migration-mssql-sql-syntax">
+    <title>SQL Syntax</title>
+
+    <para>This section describes differences in the SQL syntax used by
+    Firebird and MS SQL in general.</para>
+
+    <para><application>Firebird</application> and MS SQL can both use object
+    names (table names, field names, etc.) directly, when they have no
+    whitespace or other symbols. To include whitespace and otherwise escape
+    object names, MS SQL uses brackets, [ and ], while
+    <application>Firebird</application> uses double quotes, ". Another thing
+    to bear in mind is that MS SQL accepts a database.username.objectname
+    syntax to name objects, which <application>Firebird</application> does
+    not.</para>
+
+    <warning>
+      <para>Bear in mind that MS SQL is case-sensitive in its object naming if
+      it was installed with the case-sensitive option; otherwise it's case
+      insensitive. Fun. Not.</para>
+    </warning>
+
+    <tip>
+      <para>MS SQL also accepts quoted identifiers, but by default it is set
+      only when accessed through OLE DB and ODBC, and not when accessed
+      through the DB-Library. In general, therefore, this practice is
+      discouraged.</para>
+    </tip>
+
+    <para>MS SQL 7 and above supports modification on joins (update, delete,
+    insert). <application>Firebird</application> has no such syntax.</para>
+
+    <para>Data types are, of course, different for the different database.
+    Both support a common subset with the most-used types; this is rarely an
+    issue.</para>
+
+    <para>There are different built-in functions. Most of MS SQL functions can
+    be replaced and extended by UDFs in Firebird.</para>
+
+    <para>There are different formats for specifying date constants. In
+    general, <application>Firebird</application> will accept different formats
+    independently of the underlying platform - MS SQL, on the other hand, uses
+    a mixture of server-independent, server-side platform and
+    per-client-connection formats. In addition to this, the MS SQL access
+    methods typically introduce one or two additional layers where a string
+    constant may be changed one way or another into a date.</para>
+
+    <para>MS SQL has more environment variables than
+    <application>Firebird</application> does, but the most common ones
+    (identity retrieval and user name retrieval) can be found. The only
+    important variable missing is the row count of the latest
+    operation.</para>
+
+    <para>An important difference is that <application>Firebird</application>
+    does not support the MS SQL CASE statement. You can sometimes use a stored
+    procedure in its stead, which promotes reusability and eases
+    maintenance.</para>
+
+    <para>A minor difference is that MS SQL does not use a delimiter between
+    statement. This can be the source of some tricky bugs, specially when
+    using many parenthesis. <application>Firebird</application> requires that
+    every statement end in a semicolon ; so errors are easier to spot.</para>
+
+    <para>Both MS SQL and <application>Firebird</application> support comments
+    using the /* and */ delimiters. MS SQL also supports the -- syntax to
+    comment a single line. Some client-side
+    <application>Firebird</application> tools also support this syntax, but it
+    is not supported in-line.</para>
+
+    <sect2 id="migration-mssql-sql-syntax-using-basics">
+      <title>Using Database Basics</title>
+
+      <para>MS SQL allows clients to use many databases from a single
+      connection. To do this, you can use the dbname.user.syntax, or execute
+      an explicit USE statement.</para>
+
+      <para><application>Firebird</application> does not allow you to use
+      different databases in the same SQL statement, but it does allow you to
+      perform transactions spanning multiple databases.</para>
+
+      <para>There are many generic tools to enter SQL commands to your
+      database, in both platforms. Note that for
+      <application>Firebird</application>, you do not need to use
+      <command>GO</command> to delimit T-SQLbatches; rather, you manage
+      transactions explicitly. You can also use the default of
+      commit-every-statement on both servers.</para>
+
+      <warning>
+        <para>If you MS SQL and <application>Firebird</application> setup on
+        the same computer, be careful with the <command>isql</command>
+        command. If you do not reference them by the full path, the one which
+        is first on your system path will be used, and both MS SQL and
+        <application>Firebird</application> have a command-line
+        <command>isql</command> program.</para>
+      </warning>
+    </sect2>
+
+    <sect2 id="migration-mssql-sql-syntax-variables">
+      <title>Using variables</title>
+
+      <para>Variable handling is similar on both platforms. Variables must be
+      declared before being used, specifying their types. However, bear in
+      mind that variables names in Firebird need not be prefixed with a @
+      character, and they do need to be declared before the procedure or
+      trigger body.</para>
+
+      <para>For example, compare the following code snippets.</para>
+
+      <programlisting>/* MS-SQL */
+CREATE PROCEDURE my_procedure
+AS
+DECLARE @my_variable int
+SET @my_variable = 5</programlisting>
+
+      <programlisting>/* Firebird */
+CREATE PROCEDURE my_procedure
+AS 
+DECLARE VARIABLE my_variable int;
+BEGIN 
+  my_variable = 5; 
+END </programlisting>
+
+      <para>Under both database servers, parameters are considered normal
+      variables, set to an initial value.</para>
+    </sect2>
+
+    <sect2 id="migration-mssql-sql-syntax-flow">
+      <title>Flow Control</title>
+
+      <para>Under both database servers, the <command>BEGIN</command> and
+      <command>END</command> keywords can be used to group multiple
+      statements, for example, inside an <command>IF</command> branch.</para>
+
+      <para>The one important flow control statement missing in
+      <application>Firebird</application> is the <command>CASE</command>
+      statement. This statement can be used as a <command>switch</command>
+      statement in C or a <command>case</command> statement in Pascal to
+      change one value for another. This can usually be translated to
+      <application>Firebird</application> as a stored procedure returning some
+      value.</para>
+
+      <programlisting>/* This is the original MS SQL
+   statement, using the * traditional pubs database. */
+CREATE PROCEDURE list_states 
+AS 
+SELECT 
+  CASE state 
+    WHEN 'CA' THEN 'California'
+    WHEN 'UT' THEN 'Utah' 
+    ELSE 'unknown' 
+  END 
+FROM authors </programlisting>
+
+      <programlisting>/* This is how it can be converted to Firebird. */ 
+/* Isolate the CASE statement. */
+CREATE PROCEDURE get_state_name ( state_code char(2) ) 
+RETURNS ( state_name varchar(64) ) 
+AS
+BEGIN 
+ IF (state_code = 'CA') THEN state_name = 'California';
+ ELSE IF (state_code = 'UT') THEN state_name = 'Utah'; 
+ ELSE state_name = 'unknown'; 
+END 
+
+/* This is the selectable stored procedure. */ 
+CREATE PROCEDURE list_states 
+RETURNS (state varchar(64))
+AS
+DECLARE VARIABLE short_state CHAR(2);
+BEGIN 
+  FOR SELECT state FROM authors INTO :short_state DO 
+  BEGIN 
+    EXECUTE PROCEDURE get_state_name :short_state
+    RETURNING_VALUES :state; 
+    SUSPEND; 
+  END 
+END </programlisting>
+
+      <!-- To test the above script, execute first: CREATE TABLE authors ( state char(2), au_lname varchar(40) ) insert into authors values ('UT', 'pepe') insert into authors values ('CA', 'pide') insert into authors values ('CA', 'la') insert into authors values ('MI', 'papa') Test with: select * from list_states -->
+
+      <para>Three things should be noted from the example above. First, the
+      conversion is trivial. Second, it is however quite verbose. Third, using
+      a stored procedure allows for greater flexibility, and makes maintenance
+      easier. Suppose the <command>CASE</command> statement for the state
+      occurs in twelve different procedures, and a new state was added; or
+      that you misspelled a state name; or any other change. It is clearly
+      beneficial to abstract this conversion, trivial as it may seem, into its
+      own stored procedure.</para>
+
+      <para>Firebird has no <command>GOTO</command> statement. However, this
+      usually turns for the better. <command>GOTO</command> statements are
+      usually used in MS SQL because errors do not roll back transactions by
+      default (the @@ERROR variable must be examined after every statement);
+      <command>GOTO</command> is used to group error handling statements. In
+      Firebird, there is a better error-handling mechanism: the
+      <command>WHEN...DO</command> statements.<!-- TODO: insert reference to docs here. --></para>
+
+      <para>Of course, <command>GOTO</command> statements can be used for
+      other purposes. In these cases, using stored procedures correctly will
+      usually improve the database design.</para>
+
+      <para>The <command>IF..ELSE</command> statement exists on Firebird with
+      the same semantics. However, Firebird syntax requires a THEN after the
+      IF condition clause.</para>
+
+      <programlisting>IF (something = 'unknown')
+  THEN something = 'uuhhh.....';
+  ELSE something = 'I know! I know!';  </programlisting>
+
+      <para>The <command>RETURN</command> statement in MS SQL will return an
+      output integer variable and stop execution. Firebird supports the
+      <command>EXIT</command> statement, which will jump to the final
+      <command>END</command> in stored procedures. However, there is no
+      implicit output variable, so if you need to return a code (it's optional
+      in MS SQL), you will need to declare an output variable in the
+      procedure.</para>
+
+      <para>The <command>WAITFOR</command> statement in MS SQL will suspend
+      execution for an amount of time, or until a specified time is reached.
+      Something like this could be done with a UDF; however, under both
+      database servers, an alternative would be very much preferred, as the
+      connection from the client remains suspended, too.</para>
+
+      <para><command>WHILE</command> exists in
+      <application>Firebird</application> as it does in MS SQL, with some
+      differences. There are no <command>BREAK</command> or
+      <command>CONTINUE</command> statements, but these can be emulated with
+      additional controls and variables. There's also a small difference in
+      syntax; <application>Firebird</application> requires a DO keywords after
+      the <command>WHILE</command> condition. Compare the following equivalent
+      snips.</para>
+
+      <programlisting>/* Firebird syntax. */
+WHILE (i &lt; 3) DO 
+BEGIN 
+  i = i + 1; 
+  j = j * 2;
+END </programlisting>
+
+      <programlisting>/* MS SQL syntax. */
+WHILE (i &lt; 3) 
+BEGIN 
+  SET @i = @i + 1 
+  SET @j = @j * 2 
+END  </programlisting>
+    </sect2>
+
+    <sect2 id="migration-mssql-sql-syntax-statements">
+      <title>Standard Statements</title>
+
+      <para>The standard statements which can be found in all databases are
+      <command>SELECT</command>, <command>INSERT</command>,
+      <command>UPDATE</command> and <command>DELETE</command>.
+      <application>Firebird</application> and MS SQL support them, but there
+      are some non-standard MS SQL extension to consider if they are being
+      used.</para>
+
+      <para>The SELECT statement in Firebird does not allow the INTO clause to
+      create a new table on the fly. Instead, it is used to bind a result into
+      a variable.</para>
+
+      <programlisting>/* MS SQL syntax to get field values into a variable. */
+SELECT @my_state = state
+FROM authors
+WHERE auth_name = 'John'</programlisting>
+
+      <programlisting>/* Firebird syntax. */
+SELECT state INTO :state /* --&gt; note the ":" before the name */
+FROM authors
+WHERE auth_name = 'John'</programlisting>
+
+      <para>In MS SQL 7 and above, the <command>SELECT</command> clause can
+      take a <command>TOP</command> specifier to limit the number of rows
+      returned. This feature is currently under development for the
+      <application>Firebird</application> engine.</para>
+
+      <para>Both MS SQL and <application>Firebird</application> support the
+      normal <command>INSERT</command> syntax and the
+      <command>INSERT..SELECT</command> syntax.</para>
+
+      <para>Both MS SQL and <application>Firebird</application> support the
+      normal <command>UPDATE</command>. MS SQL also supports a form of
+      <command>UPDATE</command> in which a join is performed, and one side of
+      the join is updated. Think of this as a <command>WHERE</command> on
+      steroids. If this feature is absolutely required, it can be implemented
+      using views.</para>
+
+      <para>Both MS SQL and Firebird support the normal DELETE. MS SQL also
+      supports the TRUNCATE TABLE statement, which is a more efficient (but
+      dangerous) form of DELETE.</para>
+
+      <programlisting>/* MS SQL syntax to delete all records in my_table. */
+TRUNCATE TABLE my_table /* ...or... */
+DELETE FROM my_table </programlisting>
+
+      <programlisting>/* Firebird syntax. */
+DELETE FROM my_table </programlisting>
+
+      <blockquote>
+        <attribution>Jim Starkey<!-- http://groups.yahoo.com/group/IB-Architect/message/3051 Thu Jan 11, 2001 9:24 pm --></attribution>
+
+        <para>The biggest threat are our funbling fingers. More data has been
+        destroyed by "delete from xxx" "oops" than deliberate "delete
+        rdb$pages".</para>
+      </blockquote>
+    </sect2>
+
+    <sect2 id="migration-mssql-sql-syntax-transactions">
+      <title>Using Transactions</title>
+
+      <para>Transactions are rarely used directly in
+      <application>Firebird</application> when using DSQL. Named transactions
+      are not supported in this case. Both syntaxes accept the
+      <command>WORK</command> keyword for compatibility.</para>
+
+      <para>This should not present a problem in most situations, as MS SQL's
+      explicit transaction control is usually in place because there no
+      support for using exception handlers.</para>
+
+      <tip>
+        <para>MS SQL has a <varname>XACT_ABORT</varname> global variable, to
+        manage whether transactions are rolled back on run-time errors.
+        Otherwise, the <varname>@@ERROR</varname> variable must be examined
+        after each statement.</para>
+      </tip>
+
+      <para>In general, most discussions about isolation level problems found
+      in MS SQL environments are void when taken to a
+      <application>Firebird</application> database server. Contention between
+      readers and writers is minimal and is resolved by the multigeneration
+      architecture.</para>
+    </sect2>
+
+    <sect2 id="migration-mssql-sql-syntax-cursors">
+      <title>Using Cursors</title>
+
+      <para>MS SQL uses cursors mostly to iterate over query results to
+      perform activities. Other than syntax, there is little difference in
+      what can be accomplished in either database. Although there are many
+      options for iterating backwards and forwards, in practice the only
+      cursor used is the forward-only cursor.</para>
+
+      <programlisting>/* MS SQL syntax. */
+DECLARE my_cursor CURSOR
+FOR SELECT au_lname FROM authors ORDER BY au_lname
+  DECLARE @au_lname varchar(40)
+  OPEN my_cursor
+  FETCH NEXT FROM my_cursor INTO @au_lname
+  WHILE @@FETCH_STATUS = 0 
+  BEGIN 
+    /* Do something interesting with @au_lname. */
+    FETCH NEXT FROM my_cursor 
+  END 
+CLOSE my_cursor
+DEALLOCATE my_cursor </programlisting>
+
+      <programlisting>/* Firebird syntax. */
+DECLARE VARIABLE au_lname VARCHAR(40);
+  ... 
+  FOR SELECT au_lname FROM authors 
+  ORDER BY au_lname INTO :au_lname DO 
+  BEGIN
+    /* Do something interesting with au_lname. */
+  END </programlisting>
+
+      <para>Note that MS SQL can place cursors in variables and pass them
+      around; this cannot be performed in
+      <application>Firebird</application>.</para>
+
+      <warning>
+        <para>Different versions of MS SQL change the default scope for cursor
+        variables. Be careful with how you use them and bear this in mind when
+        reading code to convert it.</para>
+      </warning>
+    </sect2>
+  </sect1>
+
+  <sect1 id="migration-mssql-sql-server-side">
+    <title>Server-Side SQL</title>
+
+    <para>This section goes beyond simple SQL syntax differences, and
+    describes the different tasks which can be accomplished server-side
+    through SQL.</para>
+  </sect1>
+
+  <sect1 id="migration-mssql-sql-tricks">
+    <title>SQL Tricks</title>
+
+    <para>This section shows how to use some advanced
+    <application>Firebird</application> features to emulate MS SQL behaviour,
+    and avoid MS SQL workarounds.</para>
+
+    <sect2 id="migration-mssql-sql-tricks-cascades">
+      <title>Trick: Using Cascades</title>
+
+      <para>Versions of MS SQL previous to 2000 will not support cascading
+      updates and deletes. Foreign keys will always roll back on
+      changes.</para>
+
+      <para>In MS SQL, this is typically solved by a combination of stored
+      procedures and triggers, to avoid declaring the foreign key explicitly.
+      This, in turns, makes the relationships implicit rather than explicit,
+      which means that tools can't read the relationships directly and work on
+      them.</para>
+
+      <para>During the migration process, all of the workaround procedures and
+      triggers can be ignored - <application>Firebird</application> supports
+      the cascading updates and deletes enforcing declaratively.</para>
+    </sect2>
+
+    <sect2 id="migration-mssql-sql-tricks-views">
+      <title>Trick: Using Updateable Views</title>
+
+      <para>Versions of MS SQL previous to 2000 will not support updates on
+      joined views fully. This is a major issue, since views are typically
+      considered read-only; there are numerous restrictions to have them being
+      updateable.</para>
+
+      <para>In <application>Firebird</application>, there are also a number of
+      restrictions, but they are only meant for <emphasis>automatic</emphasis>
+      updating. If the engine cannot perform the updates by itself, you can
+      write triggers on the view to perform the required logic.</para>
+    </sect2>
+  </sect1>
+
+  <sect1 id="migration-mssql-client-access">
+    <title>Client Access</title>
+
+    <para>This section describes the differences in how clients access a
+    Firebird and an MS SQL database.</para>
+
+    <sect2 id="migration-mssql-client-access-builtin">
+      <title>Built-in Client Access Tools</title>
+
+      <para>The standard command-line utility is <command>isql</command>. This
+      is used usually when executing large scripts, or when writing batch
+      files.<!-- TODO: provide a link to docs. --></para>
+
+      <para>When a graphical user interface (GUI) is available, the
+      administration tool will most probably be
+      <application>IBConsole</application>. This tool is similar to MS SQL's
+      <application>Enterprise Manager</application>.<!-- TODO: provide a link to docs. --></para>
+    </sect2>
+
+    <sect2 id="migration-mssql-client-access-developers">
+      <title>Client Access for Developers</title>
+
+      <para>There are three basic mechanisms to get to a Firebird database.
+      You can either use the raw C API interface, an Open Database
+      Connectivity (ODBC) driver, or an OLE DB driver (the latter is used also
+      for ActiveX Data Objects, ADO, access).</para>
+
+      <para>Using the raw C API allows developers to write portable code. All
+      platforms support this API. This is also the foundation for the popular
+      Delphi and C++ Builder component sets, such as InterBase Objects (IBO)
+      and InterBase Express (IBX).</para>
+
+      <para>Using an ODBC driver lets developers write code that can be reused
+      with different databases, as long as they restrict themselves to a
+      common SQL subset. There are many tools which can use
+      <application>Firebird</application> through ODBC drivers.<!-- TODO: provide links to existing drivers --></para>
+
+      <para>Using an OLE DB drivers lets developers use Microsoft's popular
+      ADO API. This allows the <application>Firebird</application> database to
+      be reached from tools such as <application>Visual Basic</application> or
+      <application>ActiveX Server Pages</application> (ASP). The most popular
+      driver is currently Microsoft's own OLE DB-&gt;ODBC bridge.</para>
+    </sect2>
+  </sect1>
+
+  <sect1 id="migration-mssql-tools">
+    <title>Tools</title>
+
+    <para>This section describes tools used to aid in migration, and to
+    replace standard tools found in MS SQL.</para>
+
+    <sect2 id="migration-mssql-tools-migration">
+      <title>Migration Tools</title>
+
+      <para>The following table lists tools which can be used to help you
+      migrate an MS SQL database to a Firebird database.</para>
+
+      <table>
+        <title>Migration Tools</title>
+
+        <tgroup cols="2" colsep="1" rowsep="1">
+          <colspec colname="c1" colwidth="2*" />
+
+          <colspec colname="c2" colwidth="1*" />
+
+          <thead>
+            <row>
+              <entry align="center"><para>Tool Name</para></entry>
+
+              <entry align="center"><para>Provided By</para></entry>
+            </row>
+          </thead>
+
+          <tbody>
+            <row>
+              <entry><para>Microsoft Access and Microsoft SQL Server to
+              InterBase Wizard</para></entry>
+
+              <entry><para><ulink
+              url="http://www.ibphoenix.com/sql2gdb.html">Marcelo Lopez
+              Ruiz</ulink> </para></entry>
+            </row>
+
+            <row>
+              <entry><para>IBDataPump</para></entry>
+
+              <entry><para><ulink
+              url="http://www.geocities.com/poloziouk/IBDataPump.html">Alex
+              Poloziouk</ulink> </para></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+    </sect2>
+
+    <sect2 id="migration-mssql-tools-replacing">
+      <title>Replacing MS SQL Tools</title>
+
+      <para>The following table lists tools which can be used to replace the
+      standard tools that come with MS SQL.</para>
+
+      <para>Note that, in general, all applications that provide services
+      similar to <application>Enterprise Manager</application> also provide
+      query services.</para>
+
+      <table>
+        <title>Replacement Tools</title>
+
+        <tgroup cols="2" colsep="1" rowsep="1">
+          <colspec colname="c1" colwidth="2*" />
+
+          <colspec colname="c2" colwidth="4*" />
+
+          <thead>
+            <row>
+              <entry align="center"><para>Tool Name</para></entry>
+
+              <entry align="center"><para>Replaced By</para></entry>
+            </row>
+          </thead>
+
+          <tbody>
+            <row>
+              <entry><para>Books Online</para></entry>
+
+              <entry><para>Online PDF Documentation</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Client Network Utility</para></entry>
+
+              <entry><para>No need to; connection strings are fully
+              self-described. Test with IBConsole.</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Enterprise Manager</para></entry>
+
+              <entry><para>IBConsole</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Enterprise Manager</para></entry>
+
+              <entry><para><ulink
+              url="http://www.ibexpert.com/">IBExpert</ulink>
+              (commercial)</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Enterprise Manager</para></entry>
+
+              <entry><para><ulink
+              url="http://www.InterBaseworkbench.com/">InterBase
+              Workbench</ulink> (commercial)</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Import and Export Data</para></entry>
+
+              <entry><para>-</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Performance Monitor</para></entry>
+
+              <entry><para><ulink
+              url="http://www.fleetriver.demon.co.uk/">InterBase
+              Heartbeat</ulink> (commercial)</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Profiler</para></entry>
+
+              <entry><para><ulink
+              url="http://www.fleetriver.demon.co.uk/">InterBase Observer SQL
+              Profiler</ulink> (commercial)</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Query Analyzer</para></entry>
+
+              <entry><para>IBConsole</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Server Network Utility</para></entry>
+
+              <entry><para>IBConsole</para></entry>
+            </row>
+
+            <row>
+              <entry><para>Service Manager</para></entry>
+
+              <entry><para>Control Panel Applet</para></entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+
+      <para>These tools are just samples to help in replacement. For a better
+      and more up-to-date list, see <ulink
+      url="http://www.ibphoenix.com/ibp_contrib_download.html">IBPhoenix
+      Contributed Downloads</ulink></para>
+    </sect2>
+  </sect1>
+</article>
