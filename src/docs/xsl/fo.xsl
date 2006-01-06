@@ -32,9 +32,11 @@
   <xsl:include href="common/l10n.xsl"/>
   <xsl:include href="common/titles.xsl"/>
   <xsl:include href="common/gentext.xsl"/>
+  <xsl:include href="common/special-hyph.xsl"/>
   <xsl:include href="fo/param.xsl"/>
   <xsl:include href="fo/pagesetup.xsl"/>
   <xsl:include href="fo/verbatim.xsl"/>
+  <xsl:include href="fo/inline.xsl"/>
   <xsl:include href="fo/lists.xsl"/>
   <xsl:include href="fo/block.xsl"/>
   <xsl:include href="fo/sections.xsl"/>

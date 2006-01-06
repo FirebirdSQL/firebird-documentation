@@ -13,7 +13,7 @@
 
   <!-- This connects to that URL everytime it is mentioned in the draft pagemasters!
     <xsl:param name="draft.watermark.image"
-               select="'http://docbook.sourceforge.net/release/images/draft.png'"/>  
+               select="'http://docbook.sourceforge.net/release/images/draft.png'"/>
     so we change it to: -->
   <xsl:param name="draft.watermark.image" select="''"/>
 
@@ -39,21 +39,6 @@
   <xsl:param name="generate.index" select="1"/>
   <xsl:param name="make.index.markup" select="0"/>
 
-<!--
-  Do something with this?
-
-  "If not empty, the specified character (or more generally, content)
-   is added to URLs after every /. If the character specified is a
-   Unicode soft hyphen (0x00AD) or Unicode zero-width space (0x200B),
-   some FO processors will be able to reasonably hyphenate long URLs.
-
-   As of 28 Jan 2002, discretionary hyphens are more widely and
-   correctly supported than zero-width spaces for this purpose."
--->
-  <xsl:param name="ulink.hyphenate" select="'&#x00AD;'"/>
-  <!-- Hmmmm... somehow those soft buggers don't make it into the .fo.
-       Nor does anything else you specify here. -->
-
   <xsl:param name="shade.verbatim" select="0"/>
      <!-- see also shade.verbatim.style (under attribute sets) -->
 
@@ -78,6 +63,7 @@ reference toc,title
 set       toc,title
 </xsl:param>
 
+
   <!-- Our own params: -->
 
   <xsl:param name="firebird.orange" select="'#FB2400'"/> <!-- also nice: #E03000 -->
@@ -85,6 +71,52 @@ set       toc,title
   <xsl:param name="highlevel.title.color" select="'#108060'"/>  <!-- set, book, article -->
   <xsl:param name="midlevel.title.color"  select="'#108060'"/>  <!-- part, chapter... TODO: preface !!! -->
   <xsl:param name="lowlevel.title.color"  select="'#404090'"/>  <!-- section, sectN -->
+
+
+  <!-- Default params for special word-breaking (e.g. in urls, filenames): -->
+  <!--
+    &#x200B; (zero-width space) WORKS
+        One issue: in justified text (= almost all text) the zwsp's are stretched to
+        visible spaces. We would prefer FOP to consider zwsp *only* as a breakability
+        indicator, not as place to insert justification space.
+    &#x00AD; (soft hyphen) does NOT work - FOP 0.20.5 treats it as a normal hyphen,
+             always displaying it!
+  -->
+  <xsl:param name="special-hyph.char"         select="'&#x200B;'"/>
+  <xsl:param name="special-hyph.min-before"   select="3"/>
+  <xsl:param name="special-hyph.min-after"    select="2"/>
+
+  <!-- Just in case some other (future-version?) template refers to
+       ulink.hyphenate, which is used in the original DocBook stylesheets: -->
+  <xsl:param name="ulink.hyphenate"           select="$special-hyph.char"/>
+
+  <!-- A convenience parameter: -->
+  <xsl:param name="digits" select="'0123456789'"/>
+
+  <!-- Element-specific params for special word-breaking follow here.
+       They are explained in ../common/special-hyph.xsl -->
+
+  <!-- Params for URL breaking (works only in ulinks, and then only if the
+       text content is (almost) the same as the @url attvalue - see xref.xsl: -->
+  <xsl:param name="url-hyph.char"             select="$special-hyph.char"/>
+  <xsl:param name="url-hyph.before"           select="concat($digits, '?&amp;')"/>
+  <xsl:param name="url-hyph.after"            select="concat($digits, '/.,-=:;_@')"/>
+  <xsl:param name="url-hyph.not-before"       select="'/'"/>
+  <xsl:param name="url-hyph.not-after"        select="''"/>
+  <xsl:param name="url-hyph.not-between"      select="'./'"/>
+  <xsl:param name="url-hyph.min-before"       select="$special-hyph.min-before"/>
+  <xsl:param name="url-hyph.min-after"        select="$special-hyph.min-after"/>
+
+  <!-- Params for filename breaking: -->
+  <xsl:param name="filename-hyph.char"        select="$special-hyph.char"/>
+  <xsl:param name="filename-hyph.before"      select="concat($digits, '?&amp;')"/>
+  <xsl:param name="filename-hyph.after"       select="concat($digits, '\/.,-+=:;_')"/>
+  <xsl:param name="filename-hyph.not-before"  select="'\/'"/>
+  <xsl:param name="filename-hyph.not-after"   select="''"/>
+  <xsl:param name="filename-hyph.not-between" select="'./\'"/>
+  <xsl:param name="filename-hyph.min-before"  select="$special-hyph.min-before"/>
+  <xsl:param name="filename-hyph.min-after"   select="$special-hyph.min-after"/>
+
 
 
   <!-- ATTRIBUTE SETS: -->

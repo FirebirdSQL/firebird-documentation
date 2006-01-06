@@ -7,6 +7,39 @@
                 version="1.0">
 
 
+  <xsl:template match="ulink//text()">
+    <xsl:variable name="me" select="string(.)"/>
+    <xsl:variable name="url-attr" select="ancestor::ulink[1]/@url"/>
+    <xsl:choose>
+      <xsl:when test="$me = $url-attr
+                      or $me = substring-after($url-attr, ':')
+                      or $me = substring-after($url-attr, '://')">
+        <xsl:call-template name="hyphenate-url">
+          <xsl:with-param name="url" select="."/>
+        </xsl:call-template>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:copy/>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+  
+  
+  <xsl:template name="hyphenate-url">
+    <xsl:param name="url" select="''"/>
+    <xsl:call-template name="hyphenate-special">
+      <xsl:with-param name="str"         select="$url"/>
+      <xsl:with-param name="before"      select="$url-hyph.before"/>
+      <xsl:with-param name="after"       select="$url-hyph.after"/>
+      <xsl:with-param name="not-before"  select="$url-hyph.not-before"/>
+      <xsl:with-param name="not-after"   select="$url-hyph.not-after"/>
+      <xsl:with-param name="not-between" select="$url-hyph.not-between"/>
+      <xsl:with-param name="hyph-char"   select="$url-hyph.char"/>
+      <xsl:with-param name="min-before"  select="$url-hyph.min-before"/>
+      <xsl:with-param name="min-after"   select="$url-hyph.min-after"/>
+    </xsl:call-template>
+  </xsl:template>
+
 
   <!-- ulink appearance.  TODO: Parameterize color etc.  -->
 
@@ -17,7 +50,6 @@
           <xsl:with-param name="filename" select="@url"/>
         </xsl:call-template>
       </xsl:attribute>
-  
       <xsl:choose>
         <xsl:when test="count(child::node())=0">
           <xsl:call-template name="hyphenate-url">
