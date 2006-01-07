@@ -76,9 +76,10 @@ set       toc,title
   <!-- Default params for special word-breaking (e.g. in urls, filenames): -->
   <!--
     &#x200B; (zero-width space) WORKS
-        One issue: in justified text (= almost all text) the zwsp's are stretched to
-        visible spaces. We would prefer FOP to consider zwsp *only* as a breakability
-        indicator, not as place to insert justification space.
+        One issue: in justified text (= almost all text) the zwsp's are sometimes 
+        stretched to visible - though usually very narrow - spaces. We would prefer 
+        FOP to interpret a zwsp *only* as a breakability indicator, not as place to 
+        insert justification space.
     &#x00AD; (soft hyphen) does NOT work - FOP 0.20.5 treats it as a normal hyphen,
              always displaying it!
   -->
