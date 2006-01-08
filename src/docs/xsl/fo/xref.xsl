@@ -13,9 +13,9 @@
     <xsl:choose>
       <xsl:when test="$me = $url-attr
                       or $me = substring-after($url-attr, ':')
-                      or $me = substring-after($url-attr, '://')">
+                      or $me = substring-after($url-attr, '//')">
         <xsl:call-template name="hyphenate-url">
-          <xsl:with-param name="url" select="."/>
+          <xsl:with-param name="url" select="$me"/>
         </xsl:call-template>
       </xsl:when>
       <xsl:otherwise>
