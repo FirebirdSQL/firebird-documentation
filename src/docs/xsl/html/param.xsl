@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 
-<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                version='1.0'>
 
 
 
@@ -8,6 +9,7 @@
        with values 0/1: -->
   <xsl:param name="chunk.fast" select="1"/>
 
+  <xsl:param name="chunk.quietly" select="0"/>
 
 
   <!-- TOC params -->
