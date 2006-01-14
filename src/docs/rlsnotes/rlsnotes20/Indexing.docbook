@@ -1,0 +1,269 @@
+  <chapter id="rnfbtwo-indexing">
+  <chapterinfo>
+    <title>Enhancements to Indexing</title>
+  </chapterinfo>
+
+    <section id="indexing-limits"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>252-byte index length limit is gone</title>
+      <author><firstname>A.</firstname><surname>Brinkman</surname></author>
+    </sectioninfo>
+    <para>New and reworked index code is very fast and tolerant of large numbers of duplicates.
+    The old aggregate key length limit of 252 bytes is removed.
+    Now the limit depends on page size.   Actual numbers and more information to come.</para>
+    </section>
+
+    <section id="indexing-expression"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>Expression Indexes</title>
+      <author><firstname>O.</firstname><surname>Loa, D. Yemanov, A. Karyakin</surname></author>
+    </sectioninfo>
+    <para>Arbitrary expressions applied to values in a row in dynamic DDL can now be indexed,
+    allowing indexed access paths to be available for search predicates that are based on expressions.</para>
+
+    <para><emphasis role="bold">Syntax Pattern</emphasis></para>
+    <programlisting>
+   CREATE [UNIQUE] [ASC[ENDING] | DESC[ENDING]] INDEX &lt;index name&gt;
+    ON &lt;table name&gt;
+    COMPUTED BY ( &lt;value expression&gt; )
+    </programlisting>
+
+    <para><emphasis role="bold">Examples</emphasis></para>
+
+    <para>1.</para>
+    <programlisting>
+   CREATE INDEX IDX1 ON T1
+     COMPUTED BY ( UPPER(COL1 COLLATE PXW_CYRL) );
+   COMMIT;
+   /**/
+   SELECT * FROM T1
+     WHERE UPPER(COL1 COLLATE PXW_CYRL) = 'ÔÛÂÀ'
+   -- PLAN (T1 INDEX (IDX1))
+    </programlisting>
+
+    <para>2.</para>
+    <programlisting>
+   CREATE INDEX IDX2 ON T2
+     COMPUTED BY ( EXTRACT(YEAR FROM COL2) || EXTRACT(MONTH FROM COL2) );
+   COMMIT;
+   /**/
+   SELECT * FROM T2
+     ORDER BY EXTRACT(YEAR FROM COL2) || EXTRACT(MONTH FROM COL2)
+   -- PLAN (T2 ORDER IDX2)
+    </programlisting>
+
+    <note>
+    <orderedlist>
+    <listitem><para>The expression used in the predicate must match <emphasis>exactly</emphasis> the expression 
+    used in the index declaration,  in order to allow the engine to choose an indexed access path. The given index 
+    will not be available for any  retrieval or sorting operation if the expressions do not match.</para></listitem>
+    <listitem><para>Expression indices have exactly the same features and limitations as regular indices, except 
+    that, by definition, they cannot be composite (multi-segment).</para></listitem>
+    </orderedlist>
+    </note>
+    </section>
+
+    <section id="indexing-nullkeys"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>Changes to Null keys handling</title>
+      <author><firstname>V.</firstname><surname>Horsun, A. Brinkman</surname></author>
+    </sectioninfo>
+    <itemizedlist>
+    <listitem><para>Null keys are now bypassed for uniqueness checks. (V. Horsun)</para></listitem>
+    <listitem><para>NULLs are ignored during the index scan, when it makes sense to ignore them.
+    (A. Brinkman).</para></listitem>
+    </itemizedlist>
+    <para>More information to come.</para>
+    </section>
+
+    <section id="indexing-compression"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>Improved Index Compression</title>
+      <author><firstname>A.</firstname><surname>Brinkman</surname></author>
+    </sectioninfo>
+    <para>A full reworking of the index compression algorithm has made a manifold improvement in the performance of
+    many queries.</para>
+    </section>
+
+    <section id="indexing-per-segment"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>Selectivity Maintenance per Segment</title>
+      <author><firstname>D.</firstname><surname>Yemanov, A. Brinkman</surname></author>
+    </sectioninfo>
+    <para>Per-segment selectivity information is now available to the optimizer, opening more possibilities for
+    clever access path decisions.   More information to come.</para>
+    </section>
+
+    <section id="indexing-ods11"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>Firebird Index Structure from ODS11 Onward</title>
+      <author><firstname>&copy; Abvisie 2005,</firstname><surname>Arno Brinkman</surname></author>
+    </sectioninfo>
+    <para>The aims achieved by the new structure were:</para>
+    <itemizedlist>
+    <listitem><para>better support for deleting an index-key out of many duplicates
+    (caused slow garbage collection)</para></listitem>
+    <listitem><para>support for bigger record numbers than 32-bits (40 bits)</para></listitem>
+    <listitem><para>to increase index-key size (1/4 page-size)</para></listitem>
+    </itemizedlist>
+
+    <figure>
+      <title>Existing structure (ODS10 and lower)</title>
+      <mediaobject>
+        <imageobject float="0">
+          <imagedata fileref="images/indx_existing_structure.png" width="488" depth="57"></imagedata>
+        </imageobject>
+      </mediaobject>
+    </figure>
+
+    <para>header =</para>
+    <programlisting>
+  typedef struct btr {
+  struct pag btr_header;
+    SLONG btr_sibling;       // right sibling page
+    SLONG btr_left_sibling;  // left sibling page
+    SLONG btr_prefix_total;  // sum of all prefixes on page
+    USHORT btr_relation;     // relation id for consistency
+    USHORT btr_length;       // length of data in bucket
+    UCHAR btr_id;            // index id for consistency
+    UCHAR btr_level;         // index level (0 = leaf)
+    struct btn btr_nodes[1];
+  };
+    </programlisting>
+    <para>node =</para>
+    <programlisting>
+  struct btn {
+    UCHAR btn_prefix;    // size of compressed prefix
+    UCHAR btn_length;    // length of data in node
+    UCHAR btn_number[4]; // page or record number
+    UCHAR btn_data[1];
+};
+    </programlisting>
+    <para>end marker = END_BUCKET or END_LEVEL</para>
+    <para>These are in place of record-number for leaf nodes and in place of page-number for non-leaf nodes.</para>
+    <para>If the node is a END_BUCKET marker then it should contain the same data as the first node on the next
+    sibling page.</para>
+    <para>On an END_LEVEL marker prefix and length are zero, thus it contains no data.  Also, every first node on
+    a level (except leaf pages) contains a degeneration zero-length node.</para>
+
+    <figure>
+      <title>New ODS11 structure</title>
+      <mediaobject>
+        <imageobject float="0">
+          <imagedata fileref="images/indx_new_structure.png" width="489" depth="74"></imagedata>
+        </imageobject>
+      </mediaobject>
+    </figure>
+
+    <para>jump info =</para>
+    <programlisting>
+  struct IndexJumpInfo {
+    USHORT firstNodeOffset; // offset to first node in page [*]
+    USHORT jumpAreaSize;    // size area before a new jumpnode is made
+    UCHAR  jumpers;         // nr of jump-nodes in page, with a maximum of 255
+  };
+    </programlisting>
+    <para>jump node =</para>
+    <programlisting>
+  struct IndexJumpNode {
+    UCHAR* nodePointer; // pointer to where this node can be read from the page
+    USHORT prefix;      // length of prefix against previous jump node
+    USHORT length;      // length of data in jump node (together with prefix this
+                        // is prefix for pointing node)
+    USHORT offset;      // offset to node in page
+    UCHAR* data;        // Data can be read from here
+  };
+    </programlisting>
+      <section id="indexing-ods11-one"><!-- Level 2 -->
+      <title>New flag for the new index structure</title>
+      <para>New flags are added to the <function>header-&gt;pag_flags</function>.</para>
+      <para>The flag <function>btr_large_keys (32)</function> is for storing compressed length/prefix and
+      record-number. This meant also that length and prefix can be up to 1/4 of page-size (1024 for 4096 page-size)
+      and is easy extensible in the future without changing disk-structure again.</para>
+      <para> Also the record-number can be easy extended to for example 40 bits. Those numbers are stored per 7-bits
+      with 1 bit (highest) as marker (variable length encoding). Every new byte that needs to be stored is shifted
+      by 7.</para>
+      <para><emphasis role="bold">Examples</emphasis></para>
+      <para>25 is stored as 1 byte 0x19, 130 = 2 bytes 0x82&nbsp; 0x01,
+      65535 = 3 bytes 0xFF&nbsp; 0xFF&nbsp; 0x03.</para>
+      </section>
+      <section id="indexing-ods11-two"><!-- Level 2 -->
+      <title>Duplicate nodes</title>
+      <para>A new flag is also added for storing record-number on every node (non-leaf pages). This speeds up
+      index-retrieval on many duplicates. The flag is&nbsp; <function>btr_all_recordnumber (16)</function>.</para>
+      <para>With this added information, key-lookup on inserts/deletes with many duplicates (NULLs in foreign keys,
+      for example) becomes much faster (such as the garbage collection!).</para>
+      <para>Beside that duplicate nodes (length = 0) don't store their length information, 3 bits from the first
+      stored byte are used to determine if this nodes is a duplicate.</para>
+      <para>Beside the ZERO_LENGTH (4) there is also END_LEVEL (1), END_BUCKET (2), ZERO_PREFIX_ZERO_LENGTH (3) and
+      ONE_LENGTH (5) marker. Number 6 and 7 are reserved for future use.</para>
+      </section>
+      <section id="indexing-ods11-three"><!-- Level 2 -->
+      <title>Jump nodes</title>
+      <para>A jump node is a reference to a node somewhere in the page.</para>
+      <para>It contains offset information about the specific node and the prefix data from the referenced node, but
+      on the jump-nodes self is also prefix compression done.</para>
+      <para>Ideally a new jump node is generated after the first node that is found after
+      every <function>jumpAreaSize</function>, but that's only the case on deactivate/active an index or inserting
+      nodes in the same order as they will be stored in the index.</para>
+      <para>If nodes are inserted between two jump node references only the offsets are updated, but only if the
+      offsets don't exceed a specific threshold (+/-10 %).</para>
+      <para>When a node is deleted only offsets are updated or a jump node is removed. This means a little hole can
+      exist between the last jump node and the first node, so we don't waste time on generating new jump-nodes.</para>
+      <para>The prefix and length are also stored by variable length encoding.</para>
+
+      <figure>
+        <title>Example data ((x) = size in x bytes)</title>
+        <mediaobject>
+          <imageobject float="0">
+            <imagedata fileref="images/indx_example_data.png" width="491" depth="171"></imagedata>
+          </imageobject>
+        </mediaobject>
+      </figure>
+
+      <para>Pointer after fixed header = 0x22</para>
+      <para>Pointer after jump info = 0x29</para>
+      <para>Pointer to first jump node = 0x29 + 6 (jump node 1) + 5 (jump node 2) = 0x34</para>
+      <para>Jump node 1 is referencing to the node that represents FIREBIRD as data, because this node has a prefix
+      of 2 the first 2 characters FI are stored also on the jump node.</para>
+      <para>Our next jump node points to a node that represents FUEL with also a prefix of 2. Thus jump node 2 should
+      contain FU, but our previous node already contained the F so, due to prefix compression, this one is ignored
+      and only U is stored.</para>
+      </section>
+
+      <section id="indexing-ods11-four"><!-- Level 2 -->
+      <title>NULL state</title>
+      <para>The data that needs to be stored is determined in the procedure compress() in btr.cpp.</para>
+      <para>For ASC (ascending) indexes no data will be stored (key is zero length). This will automatically put them 
+      as first entry in the index and thus correct order (For single field index node length and prefix is 
+      zero).</para>
+      <para>DESC (descending) indexes will store a single byte with the value 0xFF (255). To distinguish between a 
+      value (empty string can be 255) and an NULL state we insert a byte of 0xFE (254) at the front of the data. 
+      This is only done for values that begin with 0xFF (255) or 0xFE (254), so we keep the right order.</para>
+      
+      <figure><!-- 4 images -->
+        <title>Examples</title>
+        <mediaobject>
+          <imageobject float="0">
+            <imagedata fileref="images/indx_examples_1.png" width="491" depth="141"></imagedata>
+          </imageobject>
+        </mediaobject>
+        <mediaobject>
+          <imageobject float="0">
+            <imagedata fileref="images/indx_examples_2.png" width="491" depth="159"></imagedata>
+          </imageobject>
+        </mediaobject>
+        <mediaobject>
+          <imageobject float="0">
+            <imagedata fileref="images/indx_examples_3.png" width="490" depth="228"></imagedata>
+          </imageobject>
+        </mediaobject>
+        <mediaobject>
+          <imageobject float="0">
+            <imagedata fileref="images/indx_examples_4.png" width="490" depth="260"></imagedata>
+          </imageobject>
+        </mediaobject>
+      </figure>
+      </section><!-- Level 2 -->
+    </section>
+  </chapter>

@@ -1,0 +1,400 @@
+  <chapter id="rnfbtwo-psql">
+  <chapterinfo>
+    <title>Stored Procedure Language (PSQL)</title>
+  </chapterinfo>
+
+    <section id="psql"><!-- Level 1 section -->
+    <title>PSQL Enhancements</title>
+    <para>The following enhancements have been made to the PSQL language extensions for stored procedures and triggers:
+    </para>
+
+      <section id="psql-cursors" xreflabel="Explicit Cursors"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>Explicit Cursors</title>
+        <author><firstname>D.</firstname><surname>Yemanov</surname></author>
+      </sectioninfo>
+      <para>It is now possible to declare and use multiple cursors in PSQL.  Explicit cursors are available in a 
+      DSQL EXECUTE BLOCK structure as well as in stored procedures and triggers.</para>
+
+      <para><emphasis role="bold">Syntax pattern</emphasis></para>
+      <programlisting>
+    DECLARE [VARIABLE] &lt;cursor_name&gt; CURSOR FOR ( &lt;select_statement&gt; );
+    OPEN &lt;cursor_name&gt;;
+    FETCH &lt;cursor_name&gt; INTO &lt;var_name&gt; [, &lt;var_name&gt; ...];
+    CLOSE &lt;cursor_name&gt;;
+      </programlisting>
+
+      <para><emphasis role="bold">Examples</emphasis></para>
+      <para>1.</para>
+      <programlisting>
+    DECLARE RNAME CHAR(31);
+    DECLARE C CURSOR FOR ( SELECT RDB$RELATION_NAME
+                              FROM RDB$RELATIONS );
+    BEGIN
+      OPEN C;
+      WHILE (1 = 1) DO
+      BEGIN
+        FETCH C INTO :RNAME;
+        IF (ROW_COUNT = 0) THEN
+          LEAVE;
+        SUSPEND;
+      END
+      CLOSE C;
+    END
+      </programlisting>
+      
+      <para>2.</para>
+      <programlisting>
+    DECLARE RNAME CHAR(31);
+    DECLARE FNAME CHAR(31);
+    DECLARE C CURSOR FOR ( SELECT RDB$FIELD_NAME
+                           FROM RDB$RELATION_FIELDS
+                           WHERE RDB$RELATION_NAME = :RNAME
+                           ORDER BY RDB$FIELD_POSITION );
+    BEGIN
+      FOR
+        SELECT RDB$RELATION_NAME
+        FROM RDB$RELATIONS
+        INTO :RNAME
+      DO
+      BEGIN
+        OPEN C;
+        FETCH C INTO :FNAME;
+        CLOSE C;
+        SUSPEND;
+      END
+    END
+      </programlisting>
+      <note>
+      <itemizedlist>
+      <listitem><para>Cursor declaration is allowed only in the declaration section of a PSQL block/procedure/trigger,
+      as with any regular local variable declaration.</para></listitem>
+      <listitem><para>Cursor names are required to be unique in the given context. They must not conflict with the
+      name of another cursor that is "announced", via the AS CURSOR clause, by a FOR SELECT cursor.  However, a
+      cursor can share its name with any other type of variable within the same context, since the operations
+      available to each are different.</para></listitem>
+      <listitem><para>Positioned updates and deletes with cursors using the WHERE CURRENT OF clause
+      are allowed.</para></listitem>
+      <listitem><para>Attempts to fetch from or close a FOR SELECT cursor are prohibited.</para></listitem>
+      <listitem><para>Attempts to open a cursor that is already open, or to fetch from or close a cursor
+       that is already closed, will fail.</para></listitem>
+      <listitem><para>All cursors which were not explicitly closed will be closed automatically on exit from
+       the current PSQL block/procedure/trigger.</para></listitem>
+      <listitem><para>The ROW_COUNT system variable can be used after each FETCH statement to check whether any row
+      was returned.</para></listitem>
+      </itemizedlist>
+      </note>
+      </section>
+
+      <section id="psql-default-args"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>Defaults for Stored Procedure Arguments</title>
+        <author><firstname>V.</firstname><surname>Horsun</surname></author>
+      </sectioninfo>
+      <para>Defaults can now be declared for stored procedure arguments.</para>
+      <para>The syntax is the same as a default value definition for a column or domain, except that you can
+      use '=' in place of 'DEFAULT' keyword.</para>
+
+      <para>Arguments with default values must be last in the argument list;  that is, you cannot declare
+      an argument that has no default value after any arguments that have been declared with default values.  The
+      caller must supply the values for all of the arguments preceding any that are to use their defaults.</para>
+
+      <para>For example, it is illegal to do something like this: &nbsp;&nbsp;<literal>supply arg1, arg2, miss arg3, 
+      set arg4...</literal></para>
+
+      <para>Substitution of default values occurs at run-time. If you define a procedure with defaults (say P1),
+      call it from another procedure (say P2) and skip some final, defaulted arguments, then the default values
+      for P1 will be substituted by the engine at time execution P1 starts.  This means that, if you change the
+      default values for P1, it is not necessary to recompile P2.</para>
+
+      <para>However, it is still necessary to disconnect all client connections, as discussed in the Borland
+      InterBase 6 beta &quot;Data Definition Guide&quot; (DataDef.pdf), in the section &quot;Altering and
+      dropping procedures in use&quot;.</para>
+
+      <para><emphasis role="bold">Examples</emphasis></para>
+      <programlisting>
+   CONNECT ... ;
+   SET TERM ^;
+   CREATE PROCEDURE P1 (X INTEGER = 123)
+   RETURNS (Y INTEGER)
+   AS
+   BEGIN
+     Y = X;
+     SUSPEND;
+   END ^
+   COMMIT ^
+   SET TERM ;^
+
+   SELECT * FROM P1;
+
+              Y
+   ============
+
+            123
+
+   EXECUTE PROCEDURE P1;
+
+              Y
+   ============
+            123
+
+   SET TERM ^;
+   CREATE PROCEDURE P2
+   RETURNS (Y INTEGER)
+   AS
+   BEGIN
+     FOR SELECT Y FROM P1 INTO :Y
+     DO SUSPEND;
+   END ^
+   COMMIT ^
+   SET TERM ;^
+
+   SELECT * FROM P2;
+
+              Y
+   ============
+
+            123
+
+   SET TERM ^;
+   ALTER PROCEDURE P1 (X INTEGER = CURRENT_TRANSACTION)
+            RETURNS (Y INTEGER)
+   AS
+   BEGIN
+     Y = X;
+    SUSPEND;
+   END; ^
+   COMMIT ^
+   SET TERM ;^
+
+   SELECT * FROM P1;
+
+              Y
+   ============
+
+           5875
+
+   SELECT * FROM P2;
+
+              Y
+   ============
+
+            123
+
+   COMMIT;
+
+   CONNECT  ... ;
+
+   SELECT * FROM P2;
+
+              Y
+   ============
+
+           5880
+
+      </programlisting>
+
+      <note>
+      <para>The source and BLR for the argument defaults are stored in RDB$FIELDS.</para>
+      </note>
+      </section>
+
+      <section id="psql-leave-label"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>LEAVE &lt;label&gt; Syntax Support</title>
+        <author><firstname>D.</firstname><surname>Yemanov</surname></author>
+      </sectioninfo>
+
+      <para>New <function>LEAVE &lt;label&gt;</function> syntax now allows PSQL loops to be marked with labels
+      and terminated in Java style.  The purpose is to stop execution of the current block and unwind back to 
+      the specified label.  After that execution resumes at the statement following the terminated loop.</para>
+      
+      <para><emphasis role="bold">Syntax pattern</emphasis></para>
+      <programlisting>
+    &lt;label_name&gt;: &lt;loop_statement&gt;
+    ...
+    LEAVE [&lt;label_name&gt;]
+      </programlisting>
+      <para>where &lt;loop_statement&gt; is one of: WHILE, FOR SELECT, FOR EXECUTE STATEMENT.</para>
+      
+      <para><emphasis role="bold">Examples</emphasis></para>
+      
+      <para>1.</para>
+      <programlisting>
+   FOR
+     SELECT COALESCE(RDB$SYSTEM_FLAG, 0), RDB$RELATION_NAME
+       FROM RDB$RELATIONS
+       ORDER BY 1
+     INTO :RTYPE, :RNAME
+     DO
+     BEGIN
+       IF (RTYPE = 0) THEN
+         SUSPEND;
+       ELSE
+         LEAVE; -- exits current loop
+     END
+      </programlisting>
+      
+      <para>2.</para>
+      <programlisting>
+   CNT = 100;
+   L1:
+   WHILE (CNT &gt;= 0) DO
+   BEGIN
+     IF (CNT &lt; 50) THEN
+       LEAVE L1; -- exists WHILE loop
+     CNT = CNT - l;
+   END
+      </programlisting>
+      
+      <para>3.</para>
+      <programlisting>
+   STMT1 = 'SELECT RDB$RELATION_NAME FROM RDB$RELATIONS';
+   L1:
+   FOR
+     EXECUTE STATEMENT :STMT1 INTO :RNAME
+   DO
+   BEGIN
+     STMT2 = 'SELECT RDB$FIELD_NAME FROM RDB$RELATION_FIELDS
+       WHERE RDB$RELATION_NAME = ';
+     L2:
+     FOR
+       EXECUTE STATEMENT :STMT2 || :RNAME INTO :FNAME
+     DO
+     BEGIN
+       IF (RNAME = 'RDB$DATABASE') THEN
+         LEAVE L1; -- exits the outer loop
+       ELSE IF (RNAME = 'RDB$RELATIONS') THEN
+         LEAVE L2; -- exits the inner loop
+       ELSE
+         SUSPEND;
+     END
+   END
+      </programlisting>
+      
+      <note>
+      <para>Note that LEAVE without an explicit label means interrupting the current (most inner) loop.</para>
+      </note>
+      </section>
+
+      <section id="psql-old"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>OLD Context Variables Now Read-only</title>
+        <author><firstname>D.</firstname><surname>Yemanov</surname></author>
+      </sectioninfo>
+      <para>The set of OLD context variables available in trigger modules is now read-only. An attempt to assign a
+      value to OLD.something will be rejected.</para>
+      </section>
+
+      <section id="psql-stacktrace"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>PSQL Stack Trace</title>
+        <author><firstname>V.</firstname><surname>Horsun</surname></author>
+      </sectioninfo>
+      <para>The API client can now extract a simple stack trace Error Status Vector when an exception 
+      occurs during PSQL  execution (stored procedures or triggers).  A stack trace is represented by 
+      one string (2048 bytes max.) and  consists of all the stored procedure and trigger names, starting
+      from the point where the exception occurred,  out to the outermost caller. If the actual trace is
+      longer than 2Kb, it is truncated.</para>
+
+      <para>Additional items are appended to the status vector as follows:</para>
+      <programlisting>
+   isc_stack_trace, isc_arg_string, &lt;string length&gt;, &lt;string&gt;
+      </programlisting>
+
+      <para><function>isc_stack_trace</function> is a new error code with value of 335544842L.</para>
+
+      <para><emphasis role="bold">Examples</emphasis></para>
+
+      <para>Metadata creation</para>
+      <programlisting>
+  CREATE TABLE ERR (
+    ID INT NOT NULL PRIMARY KEY,
+    NAME VARCHAR(16));
+
+  CREATE EXCEPTION EX '!';
+  SET TERM ^;
+
+  CREATE OR ALTER PROCEDURE ERR_1 AS
+  BEGIN
+    EXCEPTION EX 'ID = 3';
+  END ^
+
+  CREATE OR ALTER TRIGGER ERR_BI FOR ERR
+    BEFORE INSERT AS
+  BEGIN
+    IF (NEW.ID = 2)
+    THEN EXCEPTION EX 'ID = 2';
+
+    IF (NEW.ID = 3)
+    THEN EXECUTE PROCEDURE ERR_1;
+
+    IF (NEW.ID = 4)
+    THEN NEW.ID = 1 / 0;
+  END ^
+
+  CREATE OR ALTER PROCEDURE ERR_2 AS
+  BEGIN
+    INSERT INTO ERR VALUES (3, '333');
+  END ^
+      </programlisting>
+
+      <para>1. User exception from a trigger:</para>
+      <programlisting>
+  SQL&quot; INSERT INTO ERR VALUES (2, '2');
+  Statement failed, SQLCODE = -836
+  exception 3
+  -ID = 2
+  -At trigger 'ERR_BI'
+      </programlisting>
+      
+      <para>2. User exception from a procedure called by a trigger:</para>
+      <programlisting>
+  SQL&quot; INSERT INTO ERR VALUES (3, '3');
+  Statement failed, SQLCODE = -836
+  exception 3
+  -ID = 3
+  -At procedure 'ERR_1'
+  At trigger 'ERR_BI'
+      </programlisting>
+      
+      <para>3. Run-time exception occurring in trigger (division by zero):</para>
+      <programlisting>
+  SQL&quot; INSERT INTO ERR VALUES (4, '4');
+  Statement failed, SQLCODE = -802
+  arithmetic exception, numeric overflow, or string truncation
+  -At trigger 'ERR_BI'
+      </programlisting>
+      
+      <para>4. User exception from procedure:</para>
+      <programlisting>
+  SQL&quot; EXECUTE PROCEDURE ERR_1;
+  Statement failed, SQLCODE = -836
+  exception 3
+  -ID = 3
+  -At procedure 'ERR_1'
+      </programlisting>
+      
+      <para>5. User exception from a procedure with a deeper call stack:</para>
+      <programlisting>
+  SQL&quot; EXECUTE PROCEDURE ERR_2;
+  Statement failed, SQLCODE = -836
+  exception 3
+  -ID = 3
+  -At procedure 'ERR_1'
+  At trigger 'ERR_BI'
+  At procedure 'ERR_2'
+      </programlisting>
+
+      </section>
+
+      <section id="psql-udfcall"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>Call a UDF as a Void Function (Procedure)</title>
+        <author><firstname>N.</firstname><surname>Samofatov</surname></author>
+      </sectioninfo>
+      <para>In PSQL, supported UDFs, e.g. RDB$SET_CONTEXT, can be called as though they were void functions 
+      (a.k.a "procedures" in Object Pascal).  More information to come.</para>
+      </section>
+    </section>
+  </chapter>
