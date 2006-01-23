@@ -39,6 +39,7 @@
   <xsl:include href="fo/inline.xsl"/>
   <xsl:include href="fo/lists.xsl"/>
   <xsl:include href="fo/block.xsl"/>
+  <xsl:include href="fo/htmltbl.xsl"/>
   <xsl:include href="fo/sections.xsl"/>
   <xsl:include href="fo/titlepage.xsl"/>
   <xsl:include href="fo/titlepage.templates.xsl"/>
