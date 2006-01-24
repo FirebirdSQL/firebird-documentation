@@ -244,15 +244,19 @@
 
 
 <xsl:template name="htmltable.get-halign">
-  <xsl:if test="@align != ''">
+  <xsl:variable name="use-align">
     <!-- left, right, center, char, justify :map to: start, end, center, <string> , justify -->
+    <xsl:choose>
+      <xsl:when test="@align='left'">start</xsl:when>
+      <xsl:when test="@align='right'">end</xsl:when>
+      <xsl:when test="@align='char'"><xsl:value-of select="@char"/></xsl:when>
+      <xsl:when test="@align != ''"><xsl:value-of select="@align"/></xsl:when>
+      <xsl:when test="self::th or parent::thead">center</xsl:when>
+    </xsl:choose>
+  </xsl:variable>
+  <xsl:if test="$use-align != ''">
     <xsl:attribute name="text-align">
-      <xsl:choose>
-        <xsl:when test="@align='left'">start</xsl:when>
-        <xsl:when test="@align='right'">end</xsl:when>
-        <xsl:when test="@align='char'"><xsl:value-of select="@char"/></xsl:when>
-        <xsl:otherwise><xsl:value-of select="@align"/></xsl:otherwise>
-      </xsl:choose>
+      <xsl:value-of select="$use-align"/>
     </xsl:attribute>
   </xsl:if>
 </xsl:template>
