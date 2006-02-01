@@ -39,6 +39,7 @@
   <xsl:include href="html/autotoc.xsl"/>
   <xsl:include href="html/sections.xsl"/>
   <xsl:include href="html/block.xsl"/>
+  <xsl:include href="html/lists.xsl"/>
   <xsl:include href="html/titlepage.xsl"/>
   <xsl:include href="html/titlepage.templates.xsl"/>
 

@@ -365,6 +365,7 @@
   </xsl:template>
 
 
+
   <!-- VARLIST TERM -->
 
   <xsl:template match="varlistentry/term">
@@ -373,6 +374,11 @@
 
   <xsl:template match="varlistentry/term[position()=last()]" priority="2">
     <fo:inline font-weight="bold"><xsl:apply-templates/></fo:inline>
+  </xsl:template>
+
+  <!-- Place author in varlist term on line of his own: -->
+  <xsl:template match="varlistentry/term/author">
+    <fo:block font-weight="normal" font-style="italic"><xsl:apply-imports/></fo:block>
   </xsl:template>
 
 
