@@ -19,10 +19,10 @@
       <title>PSQL Now Supports Named Cursors</title>
       <author><firstname>D.</firstname><surname>Yemanov</surname></author>
     </sectioninfo>
-    <para>Multiple named (i.e. explicit) cursors are now supported in PSQL and in DSQL EXECUTE BLOCK statements.  More 
+    <para>Multiple named (i.e. explicit) cursors are now supported in PSQL and in DSQL EXECUTE BLOCK statements.  More
     information in the chapter <xref linkend="psql-cursors"/>.</para>
     </section>
-    
+
     <section id="new-win-protocol"><!-- Level 1 section -->
     <sectioninfo>
       <title>Reimplemented Protocols on Windows</title>
@@ -31,13 +31,59 @@
     <para>Two significant changes have been made to the Windows-only protocols.-</para>
       <section id="new-win-protocol-xnet"><!-- Level 2 section -->
       <title>Local Protocol--XNET</title>
-      <para>XNET is now used as the default local protocol for Windows and is supported also for connecting to a Classic
-      server.  More information to come.</para>
+      <para>Firebird 2.0 has replaced the former implementation of the local transport protocol
+      (often referred to as IPC or IPServer) with a new one, named XNET.</para>
+      <para>It serves exactly the same goal, to provide an efficient way to connect to server located on the same
+      machine as the connecting client without a remote node name in the connection string.  The new implementation
+      is different and addresses the known issues with the old protocol.</para>
+      <para>Like the old IPServer implementation, the XNET implementation uses shared memory for inter-process
+      communication.  However, XNET eliminates the use of window messages to deliver attachment requests and it
+      also implements a different synchronization logic.</para>
+
+        <section id="new-win-protocol-xnet-benefits"><!-- Level 3 section -->
+        <title>Benefits of the XNET Protocol over IPServer</title>
+        <para>Besides providing a more robust protocol for local clients, the XNET protocol brings some notable
+        benefits:</para>
+        <itemizedlist>
+          <listitem>
+            <para>it works with Classic Server</para>
+          </listitem>
+          <listitem>
+            <para>it works for non-interactive services and terminal sessions</para>
+          </listitem>
+          <listitem>
+            <para>it eliminates lockups when a number of simultaneous connections are attempted</para>
+          </listitem>
+        </itemizedlist>
+        </section>
+
+        <section id="new-win-protocol-xnet-perf"><!-- Level 3 section -->
+        <title>Performance</title>
+        <para>The XNET implementation should be similar to the old IPServer implementation, although XNET is expected
+        to be slightly faster.</para>
+        </section>
+
+        <section id="new-win-protocol-xnet-disadv"><!-- Level 3 section -->
+        <title>Disadvantages</title>
+        <para>The one disadvantage is that the XNET and IPServer implementations are not compatible with each other.
+        This makes it essential that your fbclient.dll version should match the version of the server binaries you are
+        using (fbserver.exe or fb_inet_server.exe) exactly.  It will not be possible to to establish a local connection
+        if this detail is overlooked. (A TCP localhost loopback connection via an ill-matched client will still do the
+        trick, of course).</para>
+        </section>
       </section>
-      <section id="new-win-protocol-wnet"><!-- Level 2 section -->
-      <title>Change to WNET ("NetBEUI") Protocol</title>
-      <para>WNET (a.k.a. NetBEUI) protocol no longer performs client impersonation.
-      More information to come.</para>
+
+      <section id="new-win-protocol-wnet" xreflabel="Change to WNET Protcol"><!-- Level 2 section -->
+      <title>Change to WNET (<quote>NetBEUI</quote>) Protocol</title>
+      <para>WNET (a.k.a. NetBEUI) protocol no longer performs client impersonation.</para>
+      <para>In all previous Firebird  versions, remote requests via WNET are performed in the context of 
+      the <firstterm>client security token</firstterm>. Since the server serves every connection according to 
+      its client security credentials, this means that, if the client machine is running some OS user from an NT domain,
+      that user should have appropriate permissions to access the physical database file, UDF libraries, etc., on the
+      server filesystem. This situation is contrary to what is generally regarded as proper for a client-server 
+      setup with a protected database.</para>
+      <para>Such impersonation has been removed in Firebird 2.0.  WNET connections are now truly client-server and
+      behave the same way as TCP ones, i.e., with no presumptions with regard to the rights of OS users.</para>
       </section>
     </section>
 
@@ -51,11 +97,11 @@
 
     <section id="new-raw-device"><!-- Level 1 section -->
     <sectioninfo>
-      <title>Storing Databases on Raw Devices</title>
+      <title>Storing Databases on Raw Devices (POSIX Only)</title>
       <author><firstname>E.</firstname><surname>Kunze, N. Samofatov</surname></author>
     </sectioninfo>
-    <para>You can now store databases on raw devices and refer to the devices using database aliases.
-    More information to come.</para>
+    <para>You can now store databases on raw devices under a POSIX OS and refer to the devices using database 
+    aliases.  More information to come.</para>
     </section>
 
     <section id="new-serv-api"><!-- Level 1 section -->
@@ -64,7 +110,8 @@
       <author><firstname>N.</firstname><surname>Samofatov</surname></author>
     </sectioninfo>
     <para>Porting of the Services API to Classic architecture is now complete.  All Services API functions are now
-    available on both Linux and Windows Classic servers. More information to come.</para>
+    available on both Linux and Windows Classic servers, with no limitations. Known issues with GSEC error 
+    reporting in previous versions of Firebird are eliminated.</para>
     </section>
 
     <section id="new-constraint-checks"><!-- Level 1 section -->
@@ -80,8 +127,17 @@
       <title>Lock Timeout for WAIT Transactions</title>
       <author><firstname>A.</firstname><surname>Karyakin, D. Yemanov</surname></author>
     </sectioninfo>
-    <para>Added lock timeouts for WAIT transactions (see new TPB value isc_tpb_lock_timeout).
-    More information to come.</para>
+    <para>All Firebird versions provide two transaction wait modes: <firstterm>NO WAIT</firstterm>
+    and <firstterm>WAIT</firstterm>. NO WAIT mode means that lock conflicts and deadlocks are reported immediately, 
+    while WAIT performs a blocking wait which times out only when the conflicting concurrent transaction ends by 
+    being committed or rolled back.</para>
+    <para>The new feature extends the WAIT mode by making provision to set a finite time interval to wait for the 
+    concurrent transactions. If the timeout has passed, an error (isc_lock_timeout) is reported.</para>
+    
+    <para>Timeout intervals are specified per transaction, using the new TPB constant 
+    <firstterm>isc_tpb_lock_timeout</firstterm> in the API or, in DSQL, the 
+    <firstterm>LOCK TIMEOUT &lt;value&gt;</firstterm> clause of the SET TRANSACTION statement.</para>
+
     </section>
 
     <section id="new-search-ops"><!-- Level 1 section -->
@@ -103,7 +159,10 @@
       <author><firstname>D.</firstname><surname>Yemanov</surname></author>
     </sectioninfo>
     <para>A reworking has been done to resolve problems with views that are implicitly updatable, but still have update
-    triggers.  More information to come.</para>
+    triggers.  This is an important change that will affect systems written to take advantage of the undocumented
+    [mis]behaviour in previous versions.</para>  
+    <para>For details, see the notes in
+    <xref linkend="install-migrate-issues-sql"/> in the Installation chapter of these notes.</para>
     </section>
 
     <section id="new-shutdown-modes"><!-- Level 1 section -->
@@ -158,8 +217,20 @@ used by the restore process)</para></listitem>
       <title>Run-time Checking for Concatenation Overflow</title>
       <author><firstname>D.</firstname><surname>Yemanov</surname></author>
     </sectioninfo>
-    <para>Compile-time checking for concatenation overflow has been replaced by run-time checking.
-    More information to come.</para>
+    <para>Compile-time checking for concatenation overflow has been replaced by run-time checking.</para>
+    <para>From Firebird 1.0 onward, concatenation operations have been checked for the possibility that the 
+    resulting string might exceed the string length limit of 32,000 bytes, i.e. overflow.  This check was performed 
+    during the statement prepare, using the declared operand sizes and would throw an error for an expressions such
+    as:</para>
+    <programlisting>
+  CAST('qwe' AS VARCHAR(30000)) || CAST('rty' AS VARCHAR(30000))
+    </programlisting>
+    
+    <para>From Firebird 2.0 onward, this expression throws only a warning at prepare time and the overflow check is 
+    repeated at runtime, using the sizes of the actual operands.  The result is that our example will be executed
+    without errors being thrown. The <firstterm>isc_concat_overflow</firstterm> exception is now thrown only for 
+    actual overflows, thus bringing the behaviour of overflow detection for concatenation into line with that for 
+    arithmetic operations.</para>
     </section>
 
     <section id="new-synchro-logic"><!-- Level 1 section -->
@@ -181,11 +252,11 @@ implemented</para></listitem>
 
     <section id="new-sixty-four-bit"><!-- Level 1 section -->
     <sectioninfo>
-      <title>Experimental Support for 64-bit Platforms</title>
-      <author><firstname>A.</firstname><surname>Peshkov, D. Yemanov</surname></author>
+      <title>Support for 64-bit Platforms</title>
+      <author><firstname>A.</firstname><surname>Peshkov, N. Samofatov</surname></author>
     </sectioninfo>
     <title></title>
-    <para>Details to come.</para>
+    <para>Firebird 2.0 will support 64-bit platforms.</para>
     </section>
 
     <section id="new-record-enumerators"><!-- Level 1 section -->
@@ -256,9 +327,28 @@ implemented</para></listitem>
       <title>ROLLBACK RETAIN Syntax Support</title>
       <author><firstname>D.</firstname><surname>Yemanov</surname></author>
     </sectioninfo>
-    <para>The ROLLBACK RETAIN statement is now supported in DSQL.  More information to come.</para>
+    <para>Firebird 2.0 adds an optional <literal>RETAIN</literal> clause to the DSQL <literal>ROLLBACK</literal>
+    statement to make it consistent with COMMIT [RETAIN].</para>
+    <para>See <xref linkend="dml-rb-retain"/> in the chapter about DML.</para>
     </section>
-
+    
+    <section id="new-rootfind"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>No More Registry Search on Win32 Servers</title>
+      <author><firstname>D.</firstname><surname>Yemanov</surname></author>
+    </sectioninfo>
+    <para>The root directory lookup path has changed so that processes on the Windows servers no longer use the
+    Registry.</para>
+    </section>
+    
+    <section id="new-optimiz"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>More Optimizer Improvements</title>
+      <author><firstname>A.</firstname><surname>Brinkman</surname></author>
+    </sectioninfo>
+    <para>Better cost-based calculation has been included in the optimizer routines.</para>
+    </section>
+    
     <section id="new-ods-changes"><!-- Level 1 section -->
     <sectioninfo>
       <title>ODS Changes</title>
