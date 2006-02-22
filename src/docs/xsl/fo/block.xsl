@@ -36,7 +36,7 @@
                                          and local-name(.) != 'attribution']"/>
           </fo:block>
           <xsl:if test="attribution">
-            <fo:block text-align="right">
+            <fo:block text-align="end">
               <!-- mdash -->
               <xsl:text>&#x2014;</xsl:text>
               <xsl:apply-templates select="attribution"/>
@@ -64,7 +64,7 @@
                                    and local-name(.) != 'attribution']"/>
     </fo:block>
     <xsl:if test="attribution">
-      <fo:block text-align="right">
+      <fo:block text-align="end">
 -->        <!-- mdash --> <!--
         <xsl:text>&#x2014;</xsl:text>
         <xsl:apply-templates select="attribution"/>
@@ -102,14 +102,16 @@
   </xsl:variable>
 
   <fo:table table-layout="fixed" width="{$table.width}"
-            space-before="1em" text-align="left">
+            table-omit-header-at-break="true"
+            table-omit-footer-at-break="true"
+            space-before="1em" text-align="start">
     <fo:table-column column-number="1" column-width="proportional-column-width(2)"/>
     <fo:table-column column-number="2" column-width="proportional-column-width(3)"/>
     <fo:table-column column-number="3" column-width="proportional-column-width(2)"/>
     <fo:table-column column-number="4" column-width="proportional-column-width(10)"/>
     <fo:table-header>
       <fo:table-row>
-        <fo:table-cell number-columns-spanned="17">
+        <fo:table-cell number-columns-spanned="4">
           <fo:block font-weight="bold" space-after="1em">
             <xsl:call-template name="gentext">
               <xsl:with-param name="key" select="'RevHistory'"/>
@@ -136,6 +138,34 @@
     <fo:table-row height="1em"/>
   </xsl:if>
 
+<!-- A possible basis for future code, using less vertical space: -->
+<!--
+  <fo:table-row>
+    <fo:table-cell>
+      <fo:block>
+        <xsl:apply-templates select="$revnumber[1]"/>
+      </fo:block>
+    </fo:table-cell>
+    <fo:table-cell number-columns-spanned="3">
+      <fo:block>
+        <xsl:apply-templates select="$revdate[1]"/>
+        <xsl:text>, </xsl:text>
+        <xsl:apply-templates select="$revauthor[1]"/>
+      </fo:block>
+    </fo:table-cell>
+  </fo:table-row>
+
+  <fo:table-row>
+    <fo:table-cell/>
+    <fo:table-cell number-columns-spanned="3">
+      <fo:block>
+        <xsl:apply-templates select="$revremark[1]"/>
+      </fo:block>
+    </fo:table-cell>
+  </fo:table-row>
+-->
+<!-- Even better: make each para in the $revremark an item in an itemizedlist -->
+
   <fo:table-row>
     <fo:table-cell>
       <fo:block>
@@ -158,6 +188,7 @@
       </fo:block>
     </fo:table-cell>
   </fo:table-row>
+
 </xsl:template>
 
 

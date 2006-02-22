@@ -82,13 +82,13 @@
     <xsl:when test="self::table"> <!-- formal table -->
       <fo:block id="{$id}" xsl:use-attribute-sets="table.properties">
         <xsl:if test="caption and $caption-placement='before'">
-          <fo:block space-after="0.1em">
+          <fo:block space-after="0.1em" keep-with-next.within-column="always">
             <xsl:apply-templates select="caption" mode="htmlTable"/>
           </fo:block>
         </xsl:if>
         <xsl:copy-of select="$table-proper"/>
         <xsl:if test="caption and $caption-placement='after'">
-          <fo:block space-before="0.2em">
+          <fo:block space-before="0.2em" keep-with-previous.within-column="always">
             <xsl:apply-templates select="caption" mode="htmlTable"/>
           </fo:block>
         </xsl:if>
@@ -201,7 +201,7 @@
 </xsl:template>
 
 
-<!-- FIXME: align and valign, as well as other attrs, nmay also
+<!-- FIXME: align and valign, as well as other attrs, may also
      occur in col or colgroup children of the (informal)table.
      See also the comment in template make-html-table-columns -->
 

@@ -39,8 +39,8 @@
   <xsl:param name="generate.index" select="1"/>
   <xsl:param name="make.index.markup" select="0"/>
 
-  <xsl:param name="shade.verbatim" select="0"/>
-     <!-- see also shade.verbatim.style (under attribute sets) -->
+  <xsl:param name="shade.verbatim" select="1"/>
+     <!-- if 1, see also shade.*.styles (under attribute sets) -->
 
 <xsl:param name="generate.toc">
 /appendix toc,title
@@ -68,10 +68,10 @@ set       toc,title
 
   <xsl:param name="firebird.orange" select="'#FB2400'"/> <!-- also nice: #E03000 -->
 
-  <xsl:param name="highlevel.title.color" select="'#108060'"/>  <!-- set, book, article -->
-  <xsl:param name="midlevel.title.color"  select="'#108060'"/>  <!-- part, chapter... TODO: preface !!! -->
+  <xsl:param name="highlevel.title.color" select="'#404090'"/>  <!-- set, book, article -->
+  <xsl:param name="midlevel.title.color"  select="'#404090'"/>  <!-- part, chapter... TODO: preface !!! -->
   <xsl:param name="lowlevel.title.color"  select="'#404090'"/>  <!-- section, sectN -->
-
+<!-- our green: #108060 -->
 
   <!-- Default params for special word-breaking (e.g. in urls, filenames): -->
   <!--
@@ -129,10 +129,6 @@ set       toc,title
     <xsl:attribute name="font-size">0.95em</xsl:attribute>
   </xsl:attribute-set>
 
-  <xsl:attribute-set name="shade.verbatim.style">
-    <xsl:attribute name="background-color">#E0E0E0</xsl:attribute>
-  </xsl:attribute-set>
-
   <xsl:attribute-set name="verbatim.properties">
     <xsl:attribute name="space-before.minimum">0.8em</xsl:attribute>
     <xsl:attribute name="space-before.optimum">1em</xsl:attribute>
@@ -142,6 +138,24 @@ set       toc,title
     <xsl:attribute name="space-after.optimum">0em</xsl:attribute>
     <xsl:attribute name="space-after.maximum">0.2em</xsl:attribute>
   </xsl:attribute-set>
+
+  <xsl:attribute-set name="shade.verbatim.style">
+    <xsl:attribute name="padding">2pt</xsl:attribute>
+    <xsl:attribute name="background-color">#FFFFE0</xsl:attribute>
+  </xsl:attribute-set>
+
+  <!-- shade.blah.styles are not *instead of*, but *on top of*
+       shade.verbatim.style, adding and/or overriding attributes: -->
+
+  <xsl:attribute-set name="shade.screen.style">
+    <xsl:attribute name="background-color">#E0FFE0</xsl:attribute>
+  </xsl:attribute-set>
+
+  <xsl:attribute-set name="shade.literallayout.style">
+    <xsl:attribute name="padding">0pt</xsl:attribute>
+    <xsl:attribute name="background-color">#FFFFFF</xsl:attribute>
+  </xsl:attribute-set>
+
 
   <xsl:attribute-set name="table.cell.padding">
     <xsl:attribute name="padding-left">4pt</xsl:attribute>
@@ -199,6 +213,7 @@ set       toc,title
   <xsl:attribute-set name="section.title.properties">
     <xsl:attribute name="color"><xsl:value-of select="$lowlevel.title.color"/></xsl:attribute>
     <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>
+    <xsl:attribute name="hyphenate">false</xsl:attribute>
     <xsl:attribute name="text-align">start</xsl:attribute>
   </xsl:attribute-set>
 
@@ -210,6 +225,13 @@ set       toc,title
     <xsl:attribute name="space-before.minimum">1.12em</xsl:attribute>
     <xsl:attribute name="space-before.optimum">1.40em</xsl:attribute>
     <xsl:attribute name="space-before.maximum">1.68em</xsl:attribute>
+<!-- Uncomment the next group of lines for nicely shaded section-1 titles.
+     It looks good in articles, but probably less so in chapters. -->
+<!--
+    <xsl:attribute name="text-align">center</xsl:attribute>
+    <xsl:attribute name="background-color">#E0E0E0</xsl:attribute>
+    <xsl:attribute name="padding">2pt</xsl:attribute>
+-->
   </xsl:attribute-set>
 
   <xsl:attribute-set name="section.title.level2.properties">

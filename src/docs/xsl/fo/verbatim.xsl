@@ -31,46 +31,95 @@
     </xsl:choose>
   </xsl:variable>
 
-
-  <!-- Our addition: Is there a preceding element or text node,
-       or is space-before necessary because daddy is a blockquote? -->
-
   <xsl:variable name="no-space-before">
     <xsl:if test="not( preceding-sibling::*
                        or preceding-sibling::text()
                        or parent::blockquote )">1</xsl:if>
   </xsl:variable>
 
-  <xsl:choose>
-    <xsl:when test="$shade.verbatim != 0">
-      <fo:block wrap-option='no-wrap'
-                white-space-collapse='false'
-		white-space-treatment='preserve'
-                linefeed-treatment='preserve'
-                xsl:use-attribute-sets="monospace.verbatim.properties shade.verbatim.style">
-        <xsl:if test="$no-space-before=1">
-          <xsl:attribute name="space-before.optimum">0em</xsl:attribute>
-          <xsl:attribute name="space-before.minimum">0em</xsl:attribute>
-          <xsl:attribute name="space-before.maximum">0.2em</xsl:attribute>
-        </xsl:if>
+  <fo:block wrap-option='no-wrap'
+            white-space-collapse='false'
+            white-space-treatment='preserve'
+            linefeed-treatment='preserve'
+            xsl:use-attribute-sets="monospace.verbatim.properties">
+    <xsl:if test="$no-space-before=1">
+      <xsl:attribute name="space-before.optimum">0em</xsl:attribute>
+      <xsl:attribute name="space-before.minimum">0em</xsl:attribute>
+      <xsl:attribute name="space-before.maximum">0.2em</xsl:attribute>
+    </xsl:if>
+
+    <xsl:choose>
+      <xsl:when test="$shade.verbatim = 0">
         <xsl:copy-of select="$content"/>
-      </fo:block>
-    </xsl:when>
-    <xsl:otherwise>
-      <fo:block wrap-option='no-wrap'
-                white-space-collapse='false'
-		white-space-treatment='preserve'
-                linefeed-treatment="preserve"
-                xsl:use-attribute-sets="monospace.verbatim.properties">
-        <xsl:if test="$no-space-before=1">
-          <xsl:attribute name="space-before.optimum">0em</xsl:attribute>
-          <xsl:attribute name="space-before.minimum">0em</xsl:attribute>
-          <xsl:attribute name="space-before.maximum">0.2em</xsl:attribute>
-        </xsl:if>
+      </xsl:when>
+      <xsl:when test="self::screen">
+        <fo:block xsl:use-attribute-sets="shade.verbatim.style shade.screen.style">
+          <xsl:copy-of select="$content"/>
+        </fo:block>
+      </xsl:when>
+      <xsl:otherwise>
+        <fo:block xsl:use-attribute-sets="shade.verbatim.style">
+          <xsl:copy-of select="$content"/>
+        </fo:block>
+      </xsl:otherwise>
+    </xsl:choose>
+  </fo:block>
+</xsl:template>
+
+
+
+<xsl:template match="literallayout">
+  <xsl:param name="suppress-numbers" select="'0'"/>
+
+  <xsl:variable name="content">
+    <xsl:choose>
+      <xsl:when test="$suppress-numbers = '0'
+                      and @linenumbering = 'numbered'
+                      and $use.extensions != '0'
+                      and $linenumbering.extension != '0'">
+        <xsl:call-template name="number.rtf.lines">
+          <xsl:with-param name="rtf">
+            <xsl:apply-templates/>
+          </xsl:with-param>
+        </xsl:call-template>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:apply-templates/>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+
+  <xsl:variable name="possibly-shaded-content">
+    <xsl:choose>
+      <xsl:when test="$shade.verbatim = 0">
         <xsl:copy-of select="$content"/>
-      </fo:block>
-    </xsl:otherwise>
-  </xsl:choose>
+      </xsl:when>
+      <xsl:otherwise>
+        <fo:block xsl:use-attribute-sets="shade.verbatim.style shade.literallayout.style">
+          <xsl:copy-of select="$content"/>
+        </fo:block>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+
+  <fo:block wrap-option='no-wrap'
+            white-space-collapse='false'
+	    white-space-treatment='preserve'
+            linefeed-treatment="preserve">
+    <xsl:choose>
+      <xsl:when test="@class='monospaced'">
+        <fo:block xsl:use-attribute-sets="monospace.verbatim.properties">
+          <xsl:copy-of select="$possibly-shaded-content"/>
+        </fo:block>
+      </xsl:when>
+      <xsl:otherwise>
+        <fo:block text-align='start'
+                  xsl:use-attribute-sets="verbatim.properties">
+          <xsl:copy-of select="$possibly-shaded-content"/>
+        </fo:block>
+      </xsl:otherwise>
+    </xsl:choose>
+  </fo:block>
 </xsl:template>
 
 
