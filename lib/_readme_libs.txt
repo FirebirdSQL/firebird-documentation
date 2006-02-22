@@ -9,9 +9,10 @@ where they will be kept up-to-date.
 At this moment, you need to pick up these files from there:
   fbdocs-lib-ant.zip
   fbdocs-lib-saxon.zip
+  foxon.jar
 
-Unpack them right here in the manual/lib directory. Overwrite existing
-files if necessary.
+Place them right here in the manual/lib directory. Unpack any ZIPs.
+Overwrite existing files if necessary.
 
 
 The 6 other libs (fop, jimi, etc.) will be phased out of CVS later.

@@ -9,23 +9,19 @@
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:exsl="http://exslt.org/common"
                 xmlns:fo="http://www.w3.org/1999/XSL/Format"
+                xmlns:saxon="http://icl.com/saxon"
                 exclude-result-prefixes="exsl"
                 version='1.0'>
 
   <!-- Import default DocBook stylesheet for fo generation: -->
   <xsl:import href="../docbook/fo/docbook.xsl"/>
 
-  <!-- WARNING: the following override is intended to make the .fo
-       more human-readable. However, with some processors, verbatim
-       environments can get broken by indented tags when the callout
-       extension is used.
-       If this ever bites us, we must remove this line or comment
-       it out: -->
-  <xsl:output method="xml" indent="no"/>
-  <!-- Hmm... indent should be "no" for proglistings/screens in blockquotes
-       in procedure steps... because linefeed-treatment="preserve" for these
-       verbatim elems and the prettifier (sometimes?) puts the closing </block>
-       on the next line :-(  -->
+
+  <xsl:output method="xml"
+              indent="no"
+              saxon:next-in-chain="fo/fo-fix.xsl"/>
+  <!-- if the 2nd pass (next-in-chain) is no longer necessary,
+       we should change the method to saxon:net.sf.foxon.FOIndenter -->
 
 
   <!-- then include our own customizations: -->
