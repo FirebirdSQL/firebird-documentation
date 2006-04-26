@@ -1,0 +1,793 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- For standalone validation, uncomment the following DOCTYPE declaration. -->
+<!-- DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.1.2//EN"> "file:../docs/docbookx/docbookx.dtd" -->
+<article id="generatorguide">
+  <articleinfo>
+    <title>Firebird Generator Guide</title>
+
+    <subtitle>A guide on how and when to use Generators in Firebird</subtitle>
+
+    <author>
+      <firstname>Frank</firstname>
+
+      <surname>Ingermann</surname>
+    </author>
+
+    <edition>04 April 2006 - Document version 0.1</edition>
+  </articleinfo>
+
+  <section id="generatorguide-intro">
+    <title>Introduction</title>
+
+    <section>
+      <title>What is this article about ?</title>
+
+      <para>Show what a Generator is in Firebird and how and why to use it.
+      This is the attempt to collect all relevant information about Generators
+      in a single document.</para>
+    </section>
+
+    <section>
+      <title>Who should read it?</title>
+
+      <para>Read this article if you... <itemizedlist spacing="compact">
+          <listitem>
+            <para>are not familiar with the concept of Generators</para>
+          </listitem>
+
+          <listitem>
+            <para>have questions on using them</para>
+          </listitem>
+
+          <listitem>
+            <para>want to make an Integer column behave like
+            an<quote>AutoInc</quote> field as found in other RDBMSs</para>
+          </listitem>
+
+          <listitem>
+            <para>are looking for examples on how to use Generators for IDs or
+            other tasks</para>
+          </listitem>
+
+          <listitem>
+            <para>want to know the Firebird word for a <quote>sequence</quote>
+            in Oracle</para>
+          </listitem>
+        </itemizedlist></para>
+    </section>
+  </section>
+
+  <section id="generatorguide-basics">
+    <title>Generator Basics</title>
+
+    <section>
+      <title>What is a generator?</title>
+
+      <para>Think of a Generator as a <quote>thread-safe</quote> integer
+      counter that lives inside a Firebird database. You can create one by
+      giving it a name: <programlisting>CREATE GENERATOR genTest</programlisting>
+      Then you can get it's current value and increase or decrease it just
+      like a <quote>var i:integer</quote> in Delphi, but it is not always easy
+      to <quote>predictably</quote> set it directly to a certain value and
+      then obtain that same value - it's inside the database, but
+      <emphasis>outside of transaction control</emphasis>.</para>
+    </section>
+
+    <section>
+      <title>Where are Generators stored?</title>
+
+      <para>Generator *declarations* are stored in the RDB$GENERATORS system
+      table. However their *values* are stored in special reserved pages
+      inside the DB. The only ways to access a Generator, once you have
+      created it, is the built-in GEN_ID( ) function or the SET GENERATOR
+      statement from within ISQL.</para>
+
+      <para>The structure of the RDB$GENERATORS system table is as follows:
+      <itemizedlist spacing="compact">
+          <listitem>
+            <para>RDB$GENERATOR_NAME CHAR(31)</para>
+          </listitem>
+
+          <listitem>
+            <para>RDB$GENERATOR_ID SMALLINT</para>
+          </listitem>
+
+          <listitem>
+            <para>RDB$SYSTEM_FLAG SMALLINT</para>
+          </listitem>
+        </itemizedlist></para>
+
+      <para>Note the GENERATOR_ID is - as the name says - an IDentifier for
+      each Generator, *not* it's value. The SYSTEM_FLAG is 1 for Generators
+      used internally by the engine, and NULL for all those you created. Have
+      a look at the RDB$GENERATORS table, here with a single self-defined
+      Generator:</para>
+
+      <para><informaltable>
+          <tr>
+            <th>RDB$GENERATOR_NAME</th>
+
+            <th>RDB$GENERATOR_ID</th>
+
+            <th>RDB$SYSTEM_FLAG</th>
+          </tr>
+
+          <tr>
+            <td>RDB$SECURITY_CLASS</td>
+
+            <td>1</td>
+
+            <td>1</td>
+          </tr>
+
+          <tr>
+            <td>SQL$DEFAULT</td>
+
+            <td>2</td>
+
+            <td>1</td>
+          </tr>
+
+          <tr>
+            <td>RDB$PROCEDURES</td>
+
+            <td>3</td>
+
+            <td>1</td>
+          </tr>
+
+          <tr>
+            <td>RDB$EXCEPTIONS</td>
+
+            <td>4</td>
+
+            <td>1</td>
+          </tr>
+
+          <tr>
+            <td>RDB$CONSTRAINT_NAME</td>
+
+            <td>5</td>
+
+            <td>1</td>
+          </tr>
+
+          <tr>
+            <td>RDB$FIELD_NAME</td>
+
+            <td>6</td>
+
+            <td>1</td>
+          </tr>
+
+          <tr>
+            <td>RDB$INDEX_NAME</td>
+
+            <td>7</td>
+
+            <td>1</td>
+          </tr>
+
+          <tr>
+            <td>RDB$TRIGGER_NAME</td>
+
+            <td>8</td>
+
+            <td>1</td>
+          </tr>
+
+          <tr>
+            <td>MY_OWN_GENERATOR</td>
+
+            <td>9</td>
+
+            <td>NULL</td>
+          </tr>
+        </informaltable></para>
+    </section>
+
+    <section>
+      <title>What is the maximum value of a Generator?</title>
+
+      <para>In SQL Dialect 1, Generators are 32 bit integers, in Dialect 3
+      they have 64 bits. If you use Generators in SPs, make sure to declare
+      any local variables large enough: <programlisting>D1: DECLARE VARIABLE MY_LOCAL_GEN_VALUE INTEGER;</programlisting>
+      <programlisting>D3: DECLARE VARIABLE MY_LOCAL_GEN_VALUE NUMERIC(18,0);</programlisting></para>
+
+      <para>That gives us a value range of: <itemizedlist spacing="compact">
+          <listitem>
+            <para>-2^31 .. 2^31-1 or +/- 2.147.483.648 [-1] for Dialect 1
+            databases and</para>
+          </listitem>
+
+          <listitem>
+            <para>-2^63 .. 2^63-1 or +/- 9.223.372.036.854.775.808 [-1] for
+            Dialect 3 dbs.</para>
+          </listitem>
+        </itemizedlist></para>
+
+      <para>So if you would feed a column with a Dialect 3 Generator, and you
+      would insert 1000 rows per second, it would take roundabout 300 million
+      years (!) before it rolls over. As it is pretty unlikely mankind will
+      still walk on this planet by then (and still use Firebird databases),
+      that's nothing to be really worried about. If you would do the same with
+      a Dialect 1 (32bit) Generator, it would roll over after ca. 25 DAYS
+      (!!!) and that is indeed something to have an eye on. 2^31 is a lot, but
+      then again not that much depending on the situation.</para>
+    </section>
+
+    <section>
+      <title>How many Generators are available in one database?</title>
+
+      <para>Since Firebird V1.0, the number of Generators in one database is
+      practically unlimited. The theoretical limit is just given by the max.
+      number of records in one table (2^64).</para>
+
+      <para>In FB versions before FB 1.0, the number of available generators
+      was limited by the PAGE_SIZE of the database and the SQL dialect that it
+      uses. Only one database page could be used to store the Generator
+      values. <emphasis>This limitation no longer exists in Firebird &gt;=
+      1.0</emphasis>. Moreover, the number of Generators you declare has no
+      effect on performance, so feel free to use as many Generators as you
+      like. See the following table for how many Generators you can have in
+      *older* versions (thanks to Paul Reeves for this information):
+      <informaltable>
+          <tr>
+            <th></th>
+
+            <th align="center" colspan="4">PAGE_SIZE</th>
+          </tr>
+
+          <tr>
+            <td>Version:</td>
+
+            <td>1K</td>
+
+            <td>2K</td>
+
+            <td>4K</td>
+
+            <td>8K</td>
+          </tr>
+
+          <tr>
+            <td>Pre-IB V6</td>
+
+            <td>248</td>
+
+            <td>504</td>
+
+            <td>1016</td>
+
+            <td>2040</td>
+          </tr>
+
+          <tr>
+            <td>IB V6</td>
+
+            <td>124</td>
+
+            <td>207</td>
+
+            <td>508</td>
+
+            <td>1020</td>
+          </tr>
+
+          <tr>
+            <td>Firebird 1.0 and up</td>
+
+            <td>unlimited</td>
+
+            <td>unlimited</td>
+
+            <td>unlimited</td>
+
+            <td>unlimited</td>
+          </tr>
+        </informaltable></para>
+    </section>
+
+    <section id="generatorguide_transactions">
+      <title>Generators and Transactions</title>
+
+      <para>As said, Generators live outside of transaction control. This
+      simply means you can not safely "rollback" generators inside a
+      transaction. There may be other transactions executing at the same time
+      that change the value while your transaction runs. So once you have
+      requested a Generator value, consider it as "gone forever".</para>
+
+      <para>When you start a transaction and then request a Gen and get a
+      value of -let's say- 5, it will remain at that value <emphasis
+      role="bold">even if you rollback the transaction (!)</emphasis>. Don't
+      even think of something like "ok, when I rollback, I can just do
+      Gen_ID(mygen,-1) afterwards to set it back to 4". This may work most of
+      the time, but is UNSAFE because other concurrent transactions may have
+      changed it inbetween. For the same reason it doesn't make sense to get
+      the current value with GEN_ID(mygen,0) and then increment the value on
+      the client side.</para>
+    </section>
+
+    <section>
+      <title>SQL Syntax overview for Generators</title>
+
+      <para>The name of a Generator must be a usual DB Meta identifier: max 31
+      chars, no special characters except the underscore "_" (unless you use
+      Quoted Identifiers). The following SQL commands and statements handle
+      Generators:</para>
+
+      <para>DDL statements: <programlisting>
+CREATE GENERATOR &lt;name&gt;;
+SET GENERATOR &lt;name&gt; TO &lt;value&gt;;
+DROP GENERATOR &lt;name&gt;;</programlisting></para>
+
+      <para>DML statements in PSQL: <programlisting>&lt;intvar&gt; = GEN_ID( &lt;Generatorname&gt;, &lt;increment&gt; );</programlisting></para>
+
+      <para>DML statements from Client side: <programlisting>SELECT GEN_ID( &lt;Generatorname&gt;, &lt;increment&gt; ) FROM RDB$DATABASE;</programlisting></para>
+    </section>
+  </section>
+
+  <section id="generatorguide-using">
+    <title>Using Generators in general</title>
+
+    <section>
+      <title>How to create a generator ("Insert")</title>
+
+      <para>in PSQL (StoredProcs and Triggers): not possible*. Since you can
+      not change db metadata inside sps/trgs, you can not create generators
+      there also.</para>
+
+      <para>* in FB 2.0, you can circumvent this limitation with the EXECUTE
+      STATEMENT feature.</para>
+
+      <para>in ISQL (from Client by SQL):</para>
+
+      <para><programlisting>CREATE GENERATOR &lt;GeneratorName&gt;;</programlisting></para>
+    </section>
+
+    <section>
+      <title>How to get the current value ("Select")</title>
+
+      <para>in PSQL (StoredProcs and Triggers):</para>
+
+      <para><programlisting>&lt;intvar&gt; = GEN_ID ( &lt;GeneratorName&gt;,0 ) ;</programlisting>
+      in ISQL (from Client by SQL):</para>
+
+      <para><programlisting>SELECT GEN_ID ( &lt;GeneratorName&gt;,0 ) FROM RDB$DATABASE</programlisting></para>
+    </section>
+
+    <section>
+      <title>How to generate a new value ("Update" + "Select")</title>
+
+      <para>in PSQL (StoredProcs and Triggers):</para>
+
+      <para>This is exactly the same as getting the current value, except you
+      have to replace the ",0" with ",1" in all the examples above. Firebird
+      will: <itemizedlist spacing="compact">
+          <listitem>
+            <para>get the current generator value</para>
+          </listitem>
+
+          <listitem>
+            <para>increment it by 1 (in this case)</para>
+          </listitem>
+
+          <listitem>
+            <para>return the incremented value</para>
+          </listitem>
+        </itemizedlist></para>
+
+      <para><programlisting>&lt;intvar&gt; = GEN_ID ( &lt;GeneratorName&gt;,1 ) ;</programlisting>
+      in ISQL (from Client by SQL):</para>
+
+      <para><programlisting>SELECT GEN_ID ( &lt;GeneratorName&gt;,1 ) FROM RDB$DATABASE</programlisting></para>
+    </section>
+
+    <section>
+      <title>How to set a Generator directly to a certain value
+      ("Update")</title>
+
+      <para>in PSQL (StoredProcs and Triggers):</para>
+
+      <para><programlisting>GEN_ID( &lt;GeneratorName&gt;, &lt;newvalue&gt; - GEN_ID(&lt;GeneratorName&gt;,0));</programlisting>
+      <note>
+          <para>This is more of a dirty little trick to do what you normally
+          can not and should not do in SPs/Triggers: *Setting* Generators.
+          They are for *getting*, not *setting* values here.</para>
+        </note></para>
+
+      <para>in ISQL (from Client by SQL):</para>
+
+      <para><programlisting>SET GENERATOR &lt;GeneratorName&gt; TO &lt;newvalue&gt;;</programlisting>
+      This is useful to pre-set Generators to a value other than 0 (which is
+      the default value after you created it) in e.g. a script to create the
+      database. Just like CREATE GENERATOR this should be thought of as a DDL
+      (not DML) statement.</para>
+    </section>
+
+    <section>
+      <title>How to drop a Generator ("Delete")</title>
+
+      <para>in PSQL (StoredProcs and Triggers): not possible*. (same
+      explanation as with Create... you can't (or better: shouldn't) change
+      meta data in PSQL)</para>
+
+      <para>in ISQL (from Client by SQL):</para>
+
+      <para><programlisting>DROP GENERATOR &lt;GeneratorName&gt;;</programlisting>
+      <note>
+          <para>Due to a bug in older FB/IB versions (pre-FB 1.0), you could
+          drop a Generator but it wouldn't free space in the special (and back
+          then *only*) database page that holds the values. Only
+          backup/restore would really free it. This bug has been fixed in FB
+          1.0.</para>
+        </note></para>
+    </section>
+  </section>
+
+  <section id="generatorguide-rowids">
+    <title>Using Generators to create unique row IDs</title>
+
+    <section>
+      <title>Why row IDs at all?</title>
+
+      <para>The answer to this question would go far beyond the scope of this
+      article. If you see no need to have a generic, unique "handle" for every
+      row inside a table, or don't like the idea of "meaningless" or
+      "surrogate" keys in general, you should probably skip this
+      section...</para>
+    </section>
+
+    <section>
+      <title>One for all or one for each?</title>
+
+      <para>OK, so you want row IDs. { author's note: congratulations! :-)
+      }</para>
+
+      <para>A major, basic decision to take is whether we'll use one single
+      generator for all the tables, or one generator for each table. This is
+      up to you - but take the following considerations into account: with the
+      "one for all" approach, you: <itemizedlist spacing="compact">
+          <listitem>
+            <para>+ need only a single generator for all your IDs</para>
+          </listitem>
+
+          <listitem>
+            <para>+ have one integer number that does not only identify your
+            row within its*table*, but within the *entire database*</para>
+          </listitem>
+
+          <listitem>
+            <para>- have less possible ID values per table (this shouldn't
+            really be a problem with 64bit Generators...)</para>
+          </listitem>
+
+          <listitem>
+            <para>- will soon have to deal with large ID values even in e.g.
+            lookup tables with only a handful of records.</para>
+          </listitem>
+
+          <listitem>
+            <para>- will likely see gaps in a per-table ID sequence, since Gen
+            values are spread throughout all tables.</para>
+          </listitem>
+        </itemizedlist></para>
+
+      <para>with the "one for each" approach you: <itemizedlist
+          spacing="compact">
+          <listitem>
+            <para>- have to create a generator for every single "ID'd" table
+            in your db</para>
+          </listitem>
+
+          <listitem>
+            <para>- always need the combination of ID and Tablename to
+            uniquely identify any row in any table</para>
+          </listitem>
+
+          <listitem>
+            <para>+ have a simple and robust "insert counter" per
+            table.</para>
+          </listitem>
+
+          <listitem>
+            <para>+ have a chronological sequence per table: if you find a gap
+            in the ID sequence of a table, then it's caused either by a DELETE
+            or by a failed INSERT.</para>
+          </listitem>
+        </itemizedlist></para>
+    </section>
+
+    <section>
+      <title>Can you re-use Generator values?</title>
+
+      <para>Well - yes, technically you *can*. But - NO, you shouldn't. Never.
+      Never ever. Not only that this would destroy the nice chronological
+      sequence (you can't judge a row's "age" by just looking at the ID any
+      more), the more you think about it the more headaches it'll give you.
+      Moreover it is an absolute contradiction to the entire concept of Unique
+      Row Identifiers.</para>
+
+      <para>So unless you have good reasons to re-use Generator values, and a
+      well-thought-of mechanism to make this work safely in multi-user /
+      multi-transaction environments, JUST DON'T DO IT!</para>
+    </section>
+
+    <section>
+      <title>Generators for IDs or AutoInc fields</title>
+
+      <para>To give a newly inserted record an ID (in the sense of a unique
+      "serial number") is easily possible with generators and Before Insert
+      triggers: Assume we have a table called TTEST with a column ID declared
+      as Integer. Our generator's name is GIDTEST.</para>
+
+      <section>
+        <title>Before Insert Trigger V1</title>
+
+        <programlisting>
+CREATE TRIGGER trgTTEST_BI_V1 for TTEST
+active before insert position 0
+as
+begin
+  new.id = gen_id( gidTest, 1 );
+end</programlisting>
+
+        <para>Problems with Insert Trigger V1:</para>
+
+        <para>This one does the job all right - but it also "uses up" a
+        generator value when there was an ID already supplied in the INSERT
+        statement. So it would be more efficient to only assign a value when
+        there was none in the INSERT:</para>
+      </section>
+
+      <section>
+        <title>Before Insert Trigger V2</title>
+
+        <programlisting>
+CREATE TRIGGER trgTTEST_BI_V2 for TTEST
+active before insert position 0
+as
+begin
+  if (new.id is null) then
+  begin
+    new.id = gen_id( gidTest, 1 );
+  end
+end</programlisting>
+
+        <para>Problems with Insert Trigger V2:</para>
+
+        <para>Some access components have the "bad habit" to auto-fill all the
+        columns in an INSERT (those not explicitly set by you with some
+        default values) - usually 0 for integer columns. In that case, the
+        above trigger would not work: It would find that the ID column does
+        not have the *state* NULL, but a *value* of 0, so it would not
+        generate a new ID. You could post the record, though - but only one...
+        the second one would fail. It is anyway a good idea to "ban" 0 as a
+        normal ID value to avoid any confusion with NULL and 0. You could e.g.
+        use a special row with an ID of 0 to store a default record in each
+        table.</para>
+      </section>
+
+      <section>
+        <title>Before Insert Trigger V3</title>
+
+        <programlisting>
+CREATE TRIGGER trgTTEST_BI_V3 for TTEST
+active before insert position 0
+as
+begin
+  if ((new.id is null) or (new.id = 0)) then
+  begin
+    new.id = gen_id( gidTest, 1 );
+  end
+end</programlisting>
+
+        <para>Well, now that we have a robust, working ID Trigger, you can
+        read in the next section why mostly you don't need it at all:</para>
+
+        <para>The basic problem with IDs that are generated with Before Insert
+        Triggers is that they get generated on the server side, *after* you
+        send the Insert statement from the client. This plainly means there is
+        no safe way to know from the client side which ID got generated for
+        the row you just inserted.</para>
+
+        <para>You could grab the Generator value from the client after the
+        Insert, but in multi-user environments you can not be really shure
+        it's your own row's ID you get (because of the transaction
+        issue).</para>
+
+        <para>When you generate a new value from the client *before*, and post
+        the Insert with that value, you can simply fetch it back with a Select
+        ... where ID=&lt;mygen&gt; to see what defaults where applied or
+        whether cols were affected by Insert Triggers. This works especially
+        well because you usually have a Unique Primary Key index on the ID
+        column, and those are about the fastest indexes you can have - they're
+        unbeatable in Selectivity, and mostly smaller than indexes on char(n)
+        cols. (for n&gt;8, depending on CharSet and Collation)</para>
+
+        <para>The bottom line to this is:</para>
+
+        <para>You should create a Before Insert Trigger to make absolutely
+        sure every row gets a unique ID, even if no ID value was supplied from
+        the client side in the Insert statement.</para>
+
+        <para>If you have a "SQL-closed" database (that is, your own
+        application code is the only source for newly inserted records), then
+        you can leave out the trigger, but then you should *always* obtain a
+        new Generator value from the database before issuing the Insert
+        statement and include it there. The same, of course, goes for Inserts
+        from within Triggers and StoredProcs.</para>
+      </section>
+    </section>
+  </section>
+
+  <section>
+    <title>What else to do with generators</title>
+
+    <para>Here you can find some ideas for useages of Generators other than
+    generating unique row IDs:</para>
+
+    <section>
+      <title>Using generators to give e.g. transfer files unique
+      numbers</title>
+
+      <para>A "classic" usage of Generators is to ensure unique, sequential
+      numbers for - well, anything in your application other than the row IDs
+      discussed above. When you have an application that is transferring data
+      to some other system, you can use Generators to safely identify a single
+      transfer by labeling it with a generated value. This greatly helps
+      tracing down problems with interfaces between two systems (and, unlike
+      most of the following, this does work safely and exactly).</para>
+    </section>
+
+    <section>
+      <title>Generators as "usage counters" for SPs to provide basic
+      statistics</title>
+
+      <para>Imagine you just built a fantastic new feature into your database
+      with a StoredProc. Now you update your customer's systems and some time
+      later you'd like to know if the users really *use* this feature and how
+      often. Simple: make a special Generator that only gets incremented in
+      that SP and you're there... with the restriction that you can't know the
+      number of transactions that were rolled back after or while your SP
+      executed. So in this case you at least know how often users *tried* to
+      use your SP :-)</para>
+
+      <para>You could further refine this method by using two Generators: One
+      gets incremented at the very start of the SP, another at the very end
+      just before the EXIT. This way you can count how many attempts to use
+      the SP were succesful: if both Generators have the same value, then none
+      of the calls to the SP failed etc. Of course you then still don't know
+      how many times the transaction(s) invoking your SP were actually
+      committed.</para>
+    </section>
+
+    <section>
+      <title>Generators to simulate "Select count(*) from..."</title>
+
+      <para>There is the known problem with IB/FB that a Select Count(*) (with
+      no where clause) from a really large table can take quite a while to
+      execute, since the server must count "by hand" how many rows there are
+      in the table at the time of the request. In theory, you could easily
+      solve this problem with Generators: <itemizedlist spacing="compact">
+          <listitem>
+            <para>Create a special "row counter" Generator</para>
+          </listitem>
+
+          <listitem>
+            <para>Make a Before Insert trigger that increments it</para>
+          </listitem>
+
+          <listitem>
+            <para>Make an After Delete trigger that decrements it</para>
+          </listitem>
+        </itemizedlist></para>
+
+      <para>This works beautifully and makes a "full" record count needless -
+      just get the current Generator value. I stressed the <emphasis>"in
+      theory"</emphasis> here because the whole thing goes down the drain when
+      any Insert statements fail, because as said those Generators are
+      <emphasis>beyond transaction control</emphasis>. Inserts can fail
+      because of Constraints (unique key violations, NOT NULL fields are NULL
+      etc.) or other Meta Data restrictions, or simply because the transaction
+      that issued the Insert gets rolled back. You have no rows in the table
+      and still your Insert counter climbs.</para>
+
+      <para>So it depends - when you know the rough percentage of Inserts that
+      fail (you can kinda get a "feeling" for this), and you're only
+      interested in an *estimation* of the record count, then this method can
+      be useful even though it's not exact. From time to time you can do a
+      "normal" record count and set the Generator to the exact value
+      ("re-synchronize" the Gen), so the error can be kept rather
+      small.</para>
+
+      <para>There are situations when customers can happily live with an info
+      like "there's *about* 2.3 million records" instantly at a mouseclick,
+      but would shoot you if they have to wait 10 minutes or more to see that
+      there are precisely 2.313.498.229 rows...</para>
+    </section>
+
+    <section>
+      <title>Generators to monitor and/or control long-running
+      StoredProcs</title>
+
+      <para>When you have SP's that e.g. generate report outputs on large
+      tables and/or complex joins, they can take quite a while to execute.
+      Generators can be helpful here in two ways: they can provide you with a
+      "progress counter" that you can fetch periodically from the client while
+      the SP runs, and they can be used to stop it: <programlisting>
+CREATE GENERATOR gen_spTestProgress;
+CREATE GENERATOR gen_spTestStop;
+
+set term ^;
+
+CREATE PROCEDURE spTest (...)
+AS
+BEGIN
+  (...)
+  for select &lt;lots of data taking lots of time&gt;
+  do begin
+    GEN_ID(gen_spTestProgress,1);
+
+    IF (GEN_ID(gen_spTestStop,0)&gt;0) THEN Exit;
+
+    (...normal processing here...)
+  end
+END^
+      </programlisting> Just a rough sketch, but you should get the idea. From
+      the client, you can do a GEN_ID(gen_spTestProgress,0) asynchronously to
+      the actual row fetching (e.g. in a different thread), to see how many
+      rows were processed, and display the value in some sort of progress
+      form. And you can do a GEN_ID(gen_spTestStop,1) to cancel the SP at any
+      time from the "outside".</para>
+
+      <para>Although this can be very handy, it has a strong limitation:
+      <emphasis>It's not multi-user safe</emphasis>. If the SP would run
+      simultaneously in two transactions, they would mess up the Progress
+      Generator - they would both increment the same counter at the same time
+      so the result would be useless. Even worse, incrementing the "Stop"
+      generator would immediately stop the SP in *both* transactions. But for
+      e.g. monthly reports that are generated by a single module run in batch
+      mode, this can be acceptable - as usual, it depends on your needs. If
+      you want to use this technique and allow *users* to trigger the SP at
+      any time, you must make sure by other means that the SP can not be run
+      twice. Thinking about this, I had the idea to use another Generator for
+      that: let's call this one gen_spTestLocked (assuming the initial value
+      of 0 of course): <programlisting>
+CREATE GENERATOR gen_spTestProgress;
+CREATE GENERATOR gen_spTestStop;
+CREATE GENERATOR gen_spTestLocked;
+
+set term ^;
+
+CREATE PROCEDURE spTest (...)
+AS
+DECLARE VARIABLE lockcount INTEGER;
+BEGIN
+  lockcount = GEN_ID(gen_spTestLocked,1); /* very first step: increment the locking Generator */
+
+  if lockcount=1 then /* _we_ got the lock, continue */
+  begin
+    (..."normal" procedure body here...)
+  end
+
+  lockcount = GEN_ID(gen_spTestLocked,-1); /* undo the increment */
+
+  /* make sure the gen is reset at the very end even when an exception
+     happens inside the "normal" procedure body: */
+     
+  WHEN ANY DO
+    lockcount = GEN_ID(spTestLocked,-1); /* undo the increment */
+  exit;
+END^
+      </programlisting> NOTE: I'm not yet 100% sure this is absolutely
+      multi-user safe, but it looks rock solid - as long as no EXIT happens in
+      the "normal" procedure body: the SP would stop and quit, leaving the
+      Generator incremented. The WHEN ANY clause handles exceptions, but no
+      "normal" EXITs. Then you'd have to decrement it by hand - but you could
+      decrement the Generator just before the EXIT to avoid this. Given the
+      right precautions, I can't make up any situation where this mechanism
+      could fail... if you can - let us know!</para>
+    </section>
+  </section>
+</article>
