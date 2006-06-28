@@ -80,7 +80,7 @@
       the <firstterm>client security token</firstterm>. Since the server serves every connection according to 
       its client security credentials, this means that, if the client machine is running some OS user from an NT domain,
       that user should have appropriate permissions to access the physical database file, UDF libraries, etc., on the
-      server filesystem. This situation is contrary to what is generally regarded as proper for a client-server 
+      server filesystem. This situation is contrary to what is generally regarded as proper for a client-server
       setup with a protected database.</para>
       <para>Such impersonation has been removed in Firebird 2.0.  WNET connections are now truly client-server and
       behave the same way as TCP ones, i.e., with no presumptions with regard to the rights of OS users.</para>
@@ -92,7 +92,51 @@
       <title>Reworking of Garbage Collection</title>
       <author><firstname>V.</firstname><surname>Horsun</surname></author>
     </sectioninfo>
-    <para>New GC thread implementation and combined cooperative + background activity.  More information to come.</para>
+    <para>Since Firebird 1.0 and earlier, the Superserver engine has performed <emphasis>background garbage 
+    collection</emphasis>, maintaining information about each new record
+    version produced by an UPDATE or DELETE statement.  As soon as the old versions are no
+    longer <quote>interesting</quote>, i.e. when they become older than the oldest interesting transaction (OIT),
+    which appears as the <emphasis>Oldest Transaction</emphasis> in the <emphasis>gstat -header</emphasis> output,
+    the engine signals for them to be removed by the garbage collector.</para>
+
+    <para>Background GC eliminates the need to re-read the pages containing these versions via
+    a <literal>SELECT COUNT(*) FROM aTable</literal> or other table-scanning query from a user, as occurs in Classic
+    and in versions of InterBase prior to v.6.0.  This GC mechanism is known as <emphasis>cooperative garbage
+    collection</emphasis>.</para>
+    <para> Background GC also averts the possibility that those pages will be missed because they are seldom read.
+    (A sweep, of course, would find those unused record versions and clear them, but the next sweep is not
+    necessarily going to happen soon.)  A further benefit is the reduction in I/O, because of the higher
+    probability that subsequently requested pages still reside in the buffer cache.</para>
+
+    <para>Between the point where the engine notifies the garbage collector about a page containing unused versions
+    and the point when the garbage collector gets around to reading that page, a new transaction could update
+    a record on it.  The garbage collector cannot clean up this record if this later transaction number is higher
+    than the OIT or is still active. The engine again notifies the garbage collector about this page number,
+    overriding the earlier notification about it and the garbage will be cleaned at some later time.</para>
+
+    <para>In Firebird 2.0 Superserver, both cooperative and background garbage collection are now possible.
+    To manage it, the new configuration parameter <emphasis>GCPolicy</emphasis> was introduced. It can be 
+    set to:</para>
+    <itemizedlist>
+      <listitem>
+        <para>cooperative - garbage collection will be performed only in cooperative mode (like Classic) and the 
+        engine will not track old record versions.  This reverts GC behaviour to that of IB 5.6 and earlier.  It is 
+        the only option for Classic.</para>
+      </listitem>
+      <listitem>
+        <para>background - garbage collection will be performed only by background threads, as is the case for 
+        Firebird 1.5 and earlier.  User table-scan requests will not remove unused record versions but will cause 
+        the GC thread to be notified about any page where an unused record version is detected.  The engine will 
+        also remember those page numbers where UPDATE and DELETE statements created back versions.</para>
+      </listitem>
+      <listitem>
+        <para>combined (the installation default for Superserver) - both background and cooperative garbage 
+        collection are performed.</para>
+      </listitem>
+    </itemizedlist>
+    <note>
+      <para>The Classic server ignores this parameter and always works in <quote>cooperative</quote> mode.</para>
+    </note>
     </section>
 
     <section id="new-raw-device"><!-- Level 1 section -->
@@ -112,14 +156,6 @@
     <para>Porting of the Services API to Classic architecture is now complete.  All Services API functions are now
     available on both Linux and Windows Classic servers, with no limitations. Known issues with GSEC error 
     reporting in previous versions of Firebird are eliminated.</para>
-    </section>
-
-    <section id="new-constraint-checks"><!-- Level 1 section -->
-    <sectioninfo>
-      <title>Reworking of Constraint Checking</title>
-      <author><firstname>V.</firstname><surname>Horsun</surname></author>
-    </sectioninfo>
-    <para>More precise checks for PK/UK/FK constraints.  More information to come.</para>
     </section>
 
     <section id="new-lock-timeout"><!-- Level 1 section -->
@@ -146,11 +182,12 @@
       <author><firstname>N.</firstname><surname>Samofatov</surname></author>
     </sectioninfo>
     <orderedlist>
-    <listitem><para>The operators now work correctly with BLOBs</para></listitem>
-    <listitem><para>Pattern matching now uses a single-pass Knuth-Morris-Pratt algorithm</para></listitem>
+    <listitem><para>The operators now work correctly with BLOBs of any size. Issues with only the first segment being 
+    searched and with searches missing matches that straddle segment boundaries are now gone. </para></listitem>
+    <listitem><para>Pattern matching now uses a single-pass Knuth-Morris-Pratt algorithm, improving performance when 
+    complex patterns are used.</para></listitem>
     <listitem><para>The engine no longer crashes when NULL is used as ESCAPE character for LIKE</para></listitem>
     </orderedlist>
-    <para>More information to come.</para>
     </section>
 
     <section id="new-updatable-views"><!-- Level 1 section -->
@@ -207,7 +244,7 @@ used by the restore process)</para></listitem>
       <para>The script <function>ib_udf_upgrade.sql</function> can be applied to pre-v.2 databases that have these 
       functions declared, to upgrade them to work with the upgraded library.  This script should be used only when 
       you are using the new ib_udf library with Firebird v2 and operation requests are modified to anticipate 
-      nulls. <emphasis>(Coming in Beta 2.)</emphasis></para></listitem>
+      nulls.</para></listitem>
       </itemizedlist>
       </section>
     </section>
@@ -343,8 +380,11 @@ implemented</para></listitem>
       <title>No More Registry Search on Win32 Servers</title>
       <author><firstname>D.</firstname><surname>Yemanov</surname></author>
     </sectioninfo>
-    <para>The root directory lookup path has changed so that processes on the Windows servers no longer use the
+    <para>The root directory lookup path has changed so that server processes on Windows no longer use the
     Registry.</para>
+    <important>
+      <para>The command-line utilities still check the Registry.</para>
+    </important>
     </section>
     
     <section id="new-optimiz"><!-- Level 1 section -->
