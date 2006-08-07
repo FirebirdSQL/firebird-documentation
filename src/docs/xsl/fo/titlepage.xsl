@@ -18,7 +18,7 @@
 
 
 
-<!-- OVERRIDE: Not everything in bold 
+<!-- OVERRIDE: Not everything in bold
      (finetuning in titlepage.templates.xml) -->
 
 <xsl:attribute-set name="book.titlepage.recto.style">
@@ -29,6 +29,15 @@
   <xsl:attribute name="font-size">12pt</xsl:attribute>
   <xsl:attribute name="text-align">center</xsl:attribute>
 </xsl:attribute-set>
+
+
+
+<!-- corpauthor must have own block just like author: -->
+<xsl:template match="corpauthor" mode="titlepage.mode">
+  <fo:block>
+    <xsl:apply-templates mode="titlepage.mode"/>
+  </fo:block>
+</xsl:template>
 
 
 
