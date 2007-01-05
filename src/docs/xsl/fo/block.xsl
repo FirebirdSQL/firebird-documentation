@@ -192,7 +192,7 @@
 </xsl:template>
 
 
-<xsl:template match="revdescription/para">
+<xsl:template match="revdescription//para">
   <fo:block> <!-- No normal para spacing, ie no vertical whitespace before -->
     <xsl:apply-templates/>
   </fo:block>

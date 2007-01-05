@@ -99,7 +99,7 @@
   <xsl:apply-templates/>
 </xsl:template>
 
-<xsl:template match="revdescription/para">
+<xsl:template match="revdescription//para">
   <xsl:apply-templates/>
   <br/>
 </xsl:template>
