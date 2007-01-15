@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+                xmlns:fo="http://www.w3.org/1999/XSL/Format"
                 version="1.0">
 
 
@@ -16,6 +17,11 @@
       <xsl:with-param name="min-before"  select="$filename-hyph.min-before"/>
       <xsl:with-param name="min-after"   select="$filename-hyph.min-after"/>
     </xsl:call-template>
+  </xsl:template>
+
+
+  <xsl:template match="database">
+    <fo:inline font-size="0.9em"><xsl:call-template name="inline.charseq"/></fo:inline>
   </xsl:template>
 
 
