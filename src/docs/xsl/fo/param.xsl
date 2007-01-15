@@ -174,6 +174,14 @@ set       toc,title
        Default color for all three is $midlevel.title.color (see above)
   -->
 
+  <xsl:attribute-set name="chapter.label-plus-title.properties"> <!-- label plus title -->
+    <!-- uncomment next two for grey bg: -->
+<!--
+    <xsl:attribute name="background-color">#E0E0E0</xsl:attribute>
+    <xsl:attribute name="padding">2pt</xsl:attribute>
+-->
+  </xsl:attribute-set>
+
   <xsl:attribute-set name="chapter.label.properties">
     <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>
     <xsl:attribute name="text-align">start</xsl:attribute>
@@ -271,7 +279,6 @@ set       toc,title
       <xsl:value-of select="$body.font.master * 0.95"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
-    <xsl:attribute name="color">black</xsl:attribute>
   </xsl:attribute-set>
 
   <xsl:attribute-set name="section.title.level6.properties">

@@ -62,42 +62,56 @@
     </fotex:bookmark>
   </xsl:if>
 
-  <fo:block keep-with-next.within-column="always"
-            space-before.optimum="{$body.font.master}pt"
-            space-before.minimum="{$body.font.master * 0.8}pt"
-            space-before.maximum="{$body.font.master * 1.2}pt"
-            hyphenate="false">
-    <xsl:if test="$pagewide != 0">
-      <!-- Doesn't work to use 'all' here since not a child of fo:flow -->
-      <xsl:attribute name="span">inherit</xsl:attribute>
-    </xsl:if>
-    <xsl:attribute name="hyphenation-character">
-      <xsl:call-template name="gentext">
-        <xsl:with-param name="key" select="'hyphenation-character'"/>
-      </xsl:call-template>
-    </xsl:attribute>
-    <xsl:attribute name="hyphenation-push-character-count">
-      <xsl:call-template name="gentext">
-        <xsl:with-param name="key" select="'hyphenation-push-character-count'"/>
-      </xsl:call-template>
-    </xsl:attribute>
-    <xsl:attribute name="hyphenation-remain-character-count">
-      <xsl:call-template name="gentext">
-        <xsl:with-param name="key" select="'hyphenation-remain-character-count'"/>
-      </xsl:call-template>
-    </xsl:attribute>
-    <xsl:if test="$axf.extensions != 0">
-      <xsl:attribute name="axf:outline-level">
-        <xsl:value-of select="count($node/ancestor::*)"/>
+  <xsl:variable name="label-plus-title">
+    <fo:block keep-with-next.within-column="always"
+              space-before.optimum="{$body.font.master}pt"
+              space-before.minimum="{$body.font.master * 0.8}pt"
+              space-before.maximum="{$body.font.master * 1.2}pt"
+              hyphenate="false">
+      <xsl:if test="$pagewide != 0">
+        <!-- Doesn't work to use 'all' here since not a child of fo:flow -->
+        <xsl:attribute name="span">inherit</xsl:attribute>
+      </xsl:if>
+      <xsl:attribute name="hyphenation-character">
+        <xsl:call-template name="gentext">
+          <xsl:with-param name="key" select="'hyphenation-character'"/>
+        </xsl:call-template>
       </xsl:attribute>
-      <xsl:attribute name="axf:outline-expand">false</xsl:attribute>
-      <xsl:attribute name="axf:outline-title">
-        <xsl:value-of select="$possibly-labeled-title"/>
+      <xsl:attribute name="hyphenation-push-character-count">
+        <xsl:call-template name="gentext">
+          <xsl:with-param name="key" select="'hyphenation-push-character-count'"/>
+        </xsl:call-template>
       </xsl:attribute>
-    </xsl:if>
-    <xsl:copy-of select="$label"/>
-    <xsl:copy-of select="$title"/>
-  </fo:block>
+      <xsl:attribute name="hyphenation-remain-character-count">
+        <xsl:call-template name="gentext">
+          <xsl:with-param name="key" select="'hyphenation-remain-character-count'"/>
+        </xsl:call-template>
+      </xsl:attribute>
+      <xsl:if test="$axf.extensions != 0">
+        <xsl:attribute name="axf:outline-level">
+          <xsl:value-of select="count($node/ancestor::*)"/>
+        </xsl:attribute>
+        <xsl:attribute name="axf:outline-expand">false</xsl:attribute>
+        <xsl:attribute name="axf:outline-title">
+          <xsl:value-of select="$possibly-labeled-title"/>
+        </xsl:attribute>
+      </xsl:if>
+      <xsl:copy-of select="$label"/>
+      <xsl:copy-of select="$title"/>
+    </fo:block>
+  </xsl:variable>
+
+  <xsl:choose>
+    <xsl:when test="$node/self::chapter">
+      <fo:block xsl:use-attribute-sets="chapter.label-plus-title.properties">
+        <xsl:copy-of select="$label-plus-title"/>
+      </fo:block>
+    </xsl:when>
+    <xsl:otherwise> <!-- $node is not a chapter -->
+      <xsl:copy-of select="$label-plus-title"/>
+    </xsl:otherwise>
+  </xsl:choose>
+
 </xsl:template>
 
 
