@@ -40,35 +40,33 @@
       </xsl:choose>
     </xsl:variable>
 
-    <fo:block space-before.minimum="0.8em"
+    <fo:table keep-together.within-page="always"
+              space-before.minimum="0.8em"
               space-before.optimum="1em"
               space-before.maximum="1.2em"
               id="{$id}">
-      <fo:table>
-        <fo:table-column column-width="40pt"/>
-        <fo:table-column/>
-        <fo:table-body>
-          <fo:table-row keep-together="always">
-            <fo:table-cell padding="6pt"><fo:block/></fo:table-cell>
-            <fo:table-cell padding="6pt"
-                           border-width="0.50pt"
-                           border-style="solid"
-                           border-color="{$bordercolor}"
-                           background-color="#{$bgcolor}">
-              <xsl:if test="$admon.textlabel != 0 or title">
-                <fo:block keep-with-next='always'
-                          xsl:use-attribute-sets="admonition.title.properties">
-                   <xsl:apply-templates select="." mode="object.title.markup"/>
-                </fo:block>
-              </xsl:if>
-              <fo:block xsl:use-attribute-sets="admonition.properties">
-                <xsl:apply-templates/>
+      <fo:table-column column-width="40pt"/>
+      <fo:table-column/>
+      <fo:table-body>
+        <fo:table-row>
+          <fo:table-cell padding="6pt"><fo:block/></fo:table-cell>
+          <fo:table-cell padding="6pt"
+                         border-width="0.50pt"
+                         border-style="solid"
+                         border-color="{$bordercolor}"
+                         background-color="#{$bgcolor}">
+            <xsl:if test="$admon.textlabel != 0 or title">
+              <fo:block xsl:use-attribute-sets="admonition.title.properties">
+                 <xsl:apply-templates select="." mode="object.title.markup"/>
               </fo:block>
-            </fo:table-cell>
-          </fo:table-row>
-        </fo:table-body>
-      </fo:table>
-    </fo:block>
+            </xsl:if>
+            <fo:block xsl:use-attribute-sets="admonition.properties">
+              <xsl:apply-templates/>
+            </fo:block>
+          </fo:table-cell>
+        </fo:table-row>
+      </fo:table-body>
+    </fo:table>
   </xsl:template>
 
 
