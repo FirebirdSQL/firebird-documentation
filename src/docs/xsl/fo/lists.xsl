@@ -355,7 +355,7 @@
 
     <!-- The row with the listitem: -->
     <fo:table-row>
-      <fo:table-cell/>
+      <fo:table-cell><fo:block/></fo:table-cell>
       <fo:table-cell>
         <fo:block>
           <xsl:apply-templates select="listitem"/>

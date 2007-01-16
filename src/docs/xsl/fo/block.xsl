@@ -22,7 +22,7 @@
 
     <fo:table-body>
       <fo:table-row>
-        <fo:table-cell/>
+        <fo:table-cell><fo:block/></fo:table-cell>
         <fo:table-cell>
 
           <xsl:call-template name="anchor"/>
@@ -44,7 +44,7 @@
           </xsl:if>
 
         </fo:table-cell>
-        <fo:table-cell/>
+        <fo:table-cell><fo:block/></fo:table-cell>
       </fo:table-row>
     </fo:table-body>
   </fo:table>
@@ -135,7 +135,7 @@
 
   <!-- spacer row before each revision except first: -->
   <xsl:if test="preceding-sibling::* or preceding-sibling::text()">
-    <fo:table-row height="1em"/>
+    <fo:table-row height="1em"><fo:table-cell><fo:block/></fo:table-cell></fo:table-row>
   </xsl:if>
 
 <!-- A possible basis for future code, using less vertical space: -->
@@ -156,7 +156,7 @@
   </fo:table-row>
 
   <fo:table-row>
-    <fo:table-cell/>
+    <fo:table-cell><fo:block/></fo:table-cell>
     <fo:table-cell number-columns-spanned="3">
       <fo:block>
         <xsl:apply-templates select="$revremark[1]"/>
