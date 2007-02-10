@@ -123,4 +123,12 @@
   </xsl:attribute-set>
 
 
+
+  <!-- SMALLER MONOSPACE FONT IN CODE SAMPLES, SCREENS ETC. -->
+
+  <xsl:attribute-set name="monospace.verbatim.properties">
+    <xsl:attribute name="font-size">9.4pt</xsl:attribute>
+  </xsl:attribute-set>
+
+
 </xsl:stylesheet>

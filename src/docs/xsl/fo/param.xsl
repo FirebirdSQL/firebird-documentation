@@ -139,6 +139,11 @@ set       toc,title
     <xsl:attribute name="space-after.maximum">0.2em</xsl:attribute>
   </xsl:attribute-set>
 
+  <xsl:attribute-set name="monospace.verbatim.properties">
+    <!-- in default: uses verbatim.properties and monospace.properties, text-align=start -->
+    <xsl:attribute name="font-size">0.9em</xsl:attribute>
+  </xsl:attribute-set>
+
   <xsl:attribute-set name="shade.verbatim.style">
     <xsl:attribute name="padding">2pt</xsl:attribute>
     <xsl:attribute name="background-color">#FFFFE0</xsl:attribute>
