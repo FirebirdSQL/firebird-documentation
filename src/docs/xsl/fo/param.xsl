@@ -22,11 +22,19 @@
 
 
   <xsl:param name="paper.type" select="'A4'"/>
-
-  <!-- With FOP 0.20.5, this doesn't break the fo2pdf stage anymore.
-       But double-sided is less pleasant to read on-screen
-       due to rather big inner/outer margin difference: -->
-    <xsl:param name="double.sided" select="0"/>
+  <xsl:param name="double.sided" select="0"/>
+  <xsl:param name="page.margin.inner">
+    <xsl:choose>
+      <xsl:when test="$double.sided != 0">1.0in</xsl:when>
+      <xsl:otherwise>0.75in</xsl:otherwise>
+    </xsl:choose>
+  </xsl:param>
+  <xsl:param name="page.margin.outer">
+    <xsl:choose>
+      <xsl:when test="$double.sided != 0">0.5in</xsl:when>
+      <xsl:otherwise>0.75in</xsl:otherwise>
+    </xsl:choose>
+  </xsl:param>
 
   <xsl:param name="body.font.master">11</xsl:param>
 
