@@ -54,17 +54,15 @@
 
           <!-- LINK TO FIREBIRD HOMEPAGE: -->
           <xsl:if test="$kind='header'">
-            <td valign="top">
+            <td>
               <a href="http://www.firebirdsql.org/">
                 <img src="images/firebirdlogo.png" alt="Firebird home" title="Firebird home"
-		       border="0" width="85" height="84"/>
-		</a>
+		     border="0" width="85" height="84"/></a>
             </td>
             <td width="100%">
               <a href="http://www.firebirdsql.org/">
                 <img src="images/titleblackgill.gif" alt="Firebird home" title="Firebird home"
-                     align="top" border="0" width="215" height="40"/>
-		</a>
+                     border="0" width="215" height="40"/></a>
             </td>
           </xsl:if>
 

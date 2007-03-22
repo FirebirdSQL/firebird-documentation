@@ -10,25 +10,38 @@
   extension-element-prefixes="saxon xalanredirect lxslt">
 
   <!--
-    Base stylesheet for the chunked (= multi-file) HTML generation.
+    Base stylesheet for the chunked (= multi-file) and monolith HTML
+    generation.
 
-    This stylesheet is imported by our driver stylesheet html.xsl
-    If you want to know why, read the comment in ../docbook/html/chunk.xsl
+    This stylesheet is imported by our driver stylesheets html.xsl
+    and monohtml.xsl. If you want to know more about the mechanism,
+    read the comment in ../docbook/html/chunk.xsl
 
     IMPORTANT:
-    - Files containing templates overriding chunking behaviour must be
-      xsl:included in html.xsl, AFTER the inclusion of the original 
+    - Files containing templates overriding chunking behaviour (or
+      otherwise being specific to the chunked html builds) must be
+      xsl:included in html.xsl, AFTER the inclusion of the original
       chunk-code.xsl
-    - Files overriding other stuff (element presentation etc.) must be
+
+    - Files containing templates that should only be used for
+      monohtml builds must be xsl:included in monohtml.xsl, AFTER the
+      xsl:import of htmlbase.xsl
+
+    - Files overriding other stuff (element presentation etc.) that
+      should be used by both monohtml and chunked html must be
       xsl:included here, AFTER the import of the original docbook.xsl
   -->
 
   <!-- Import the original DocBook stylesheets: -->
   <xsl:import href="../docbook/html/docbook.xsl"/>
 
-
   <!-- ...and include our own overrides/additions
-       EXCEPT THOSE THAT CONTROL CHUNKING BEHAVIOUR: -->
+       EXCEPT THOSE THAT CONTROL CHUNKING BEHAVIOUR OR ARE OTHERWISE
+       SPECIFIC TO EITHER CHUNKED OR MONOLITH HTML: -->
+
+  <xsl:output method="html"
+              encoding="ISO-8859-1"
+              indent="yes"/>
 
   <xsl:include href="common/l10n.xsl"/>
   <xsl:include href="common/titles.xsl"/>
