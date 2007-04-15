@@ -1,22 +1,26 @@
-As from Friday, 13 Jan 2006, new or upgraded libraries will no longer
-be committed to CVS. It's a waste of server space and they're all Open
-Source anyway, the sources being archived by their respective projects.
+This is the manual/lib folder.
 
-The necessary libs can now be downloaded from
-  http://www.firebirdsql.org/devel/doc/libs/
-where they will be kept up-to-date.
+To get the library jars needed to build the documentation, go to
 
-At this moment, you need to pick up these files from there:
-  fbdocs-lib-ant.zip
-  fbdocs-lib-saxon.zip
-  foxon.jar
+  http://www.firebirdsql.org/doclibs/
 
-Place them right here in the manual/lib directory. Unpack any ZIPs.
-Overwrite existing files if necessary.
+and download either all the JAR files or AllJars.zip. If you've
+downloaded AllJars.zip, unzip it here. Don't use "Unzip to..."
+because that may create a subfolder and make the jars untraceable
+for the build program.
 
+NOTE: Tools.jar has been left out of AllJars.zip because it's
+      rather big and not everybody needs it. Download it only if
+      your PDF builds fail with a message about tools.jar not
+      being found.
 
-The 6 other libs (fop, jimi, etc.) will be phased out of CVS later.
-
+NOTE: If you have downloaded AllJars.zip, look at the timestamps
+      of the JAR files on the server. If some JARs are newer than
+      AllJars.zip, download them and install them over the versions
+      extracted from the ZIP.
 
 NOTE: If you still find the file "optional.jar" in the lib folder,
       delete it!
+
+Don't forget: you may also need to download files for manual/tools.
+Look at the readme there.
