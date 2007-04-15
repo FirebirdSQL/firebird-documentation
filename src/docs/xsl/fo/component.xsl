@@ -459,10 +459,14 @@
       <xsl:call-template name="object.id"/>
     </xsl:variable>
 
+    <xsl:variable name="xref-label">
+      <xsl:apply-templates select="." mode="xref-number.markup"/>
+    </xsl:variable>
+
     <xsl:variable name="title">
       <xsl:apply-templates select="." mode="title.markup">
         <xsl:with-param name="allow-anchors" select="1"/>
-          <!-- allow-anchors 1 is our addition. Without it, 
+          <!-- allow-anchors 1 is our addition. Without it,
           indexterms within article/appendix/title will lead to
           broken index entries -->
       </xsl:apply-templates>
@@ -473,6 +477,7 @@
     </xsl:variable>
 
     <fo:block id='{$id}' break-before="page">  <!-- break-before is our addition -->
+
       <xsl:if test="$passivetex.extensions != 0">
         <fotex:bookmark xmlns:fotex="http://www.tug.org/fotex"
                         fotex-bookmark-level="{count(ancestor::*)+2}"
@@ -491,6 +496,10 @@
         </xsl:attribute>
       </xsl:if>
 
+      <xsl:if test="$fop-093=1">
+        <fo:block keep-with-next.within-page="always">&#x200B;</fo:block>  <!-- to get spacing right with FOP 0.93 -->
+      </xsl:if>
+
       <fo:block xsl:use-attribute-sets="article.appendix.title.properties">
         <fo:marker marker-class-name="section.head.marker">
           <xsl:choose>
@@ -502,6 +511,9 @@
             </xsl:otherwise>
           </xsl:choose>
         </fo:marker>
+        <xsl:copy-of select="$xref-label"/>
+        <xsl:text>:</xsl:text>
+        <fo:block/>  <!-- force newline -->
         <xsl:copy-of select="$title"/>
       </fo:block>
 

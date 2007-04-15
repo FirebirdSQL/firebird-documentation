@@ -33,7 +33,7 @@
   -->
 
   <!-- Import the original DocBook stylesheets: -->
-  <xsl:import href="../docbook/html/docbook.xsl"/>
+  <xsl:import href="../../../tools/docbook-stylesheets/html/docbook.xsl"/>
 
   <!-- ...and include our own overrides/additions
        EXCEPT THOSE THAT CONTROL CHUNKING BEHAVIOUR OR ARE OTHERWISE

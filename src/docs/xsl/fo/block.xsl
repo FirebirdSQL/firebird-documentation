@@ -14,8 +14,22 @@
 <xsl:template match="blockquote">
   <fo:table xsl:use-attribute-sets="blockquote.properties"
             table-layout="fixed" width="100%"
-            start-indent="0pt" end-indent="0pt">
-            <!-- override start-indent and end-indent from attrset! -->
+            start-indent="0pt" end-indent="0pt"
+            margin-left="0in" margin-right="0in">
+            <!-- override start-indent and end-indent from attrset! 
+                 same for margin-left/right in 1.71.1 stylesheets -->
+
+    <xsl:if test="$fop-093=1">
+      <!--
+        space-before necessary because fop 0.93 doesn't honor the space-before
+        of the first block (usually from a para) in the table.
+        With 0.20.5 this will lead to too much whitespace before the bq!
+      -->
+      <xsl:attribute name="space-before.minimum">0.8em</xsl:attribute>
+      <xsl:attribute name="space-before.optimum">1em</xsl:attribute>
+      <xsl:attribute name="space-before.maximum">1.2em</xsl:attribute>
+    </xsl:if>
+
     <fo:table-column column-number="1" column-width="{$blockquote-indent}"/>
     <fo:table-column column-number="2"/>
     <fo:table-column column-number="3" column-width="{$blockquote-indent}"/>

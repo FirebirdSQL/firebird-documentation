@@ -23,6 +23,7 @@
   <!--  <xsl:param name="lowlevel.title.color" select="'darkblue'"/> --> <!-- section, sectN -->
   <xsl:param name="lowlevel.title.color" select="'#108060'"/> <!-- section, sectN -->
 
+  <xsl:param name="shade.verbatim" select="0"/>
 
 
   <!-- CHAPTER TITLE PROPERTIES - attribute sets created by us -->

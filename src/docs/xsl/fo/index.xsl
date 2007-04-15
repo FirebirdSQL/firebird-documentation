@@ -106,8 +106,19 @@
         </xsl:apply-templates>
 
         <fo:flow flow-name="xsl-region-body">
-          <fo:block id="{$id}">
+          <fo:block id="{$id}" span="all"
+                    space-after.minimum="0.8em"
+                    space-after.optimum="1.0em"
+                    space-after.maximum="1.2em">
+
+            <xsl:if test="$fop-093=1">
+              <fo:block keep-with-next.within-page="always">&#x200B;</fo:block>  <!-- to get spacing right with FOP 0.93 -->
+            </xsl:if>
+
             <xsl:call-template name="index.titlepage"/>
+            <xsl:if test="$fop-093=1">
+              <fo:block>&#x200B;</fo:block>
+            </xsl:if>
           </fo:block>
           <xsl:apply-templates/>
           <xsl:if test="count(indexentry) = 0 and count(indexdiv) = 0">

@@ -96,4 +96,98 @@
   </xsl:template>
 
 
+  <!-- ==================================================================== -->
+
+
+  <!-- link -->
+
+  <xsl:template match="link" name="link">
+    <xsl:param name="linkend" select="@linkend"/>
+    <xsl:param name="targets" select="key('id',$linkend)"/>
+    <xsl:param name="target" select="$targets[1]"/>
+
+    <xsl:call-template name="check.id.unique">
+      <xsl:with-param name="linkend" select="$linkend"/>
+    </xsl:call-template>
+
+    <xsl:variable name="xrefstyle">
+      <xsl:choose>
+        <xsl:when test="@role and not(@xrefstyle)
+                        and $use.role.as.xrefstyle != 0">
+          <xsl:value-of select="@role"/>
+        </xsl:when>
+        <xsl:otherwise>
+          <xsl:value-of select="@xrefstyle"/>
+        </xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+
+    <fo:basic-link internal-destination="{$linkend}"
+                   xsl:use-attribute-sets="xref.properties">
+      <xsl:choose>
+        <xsl:when test="count(child::node()) &gt; 0">
+          <!-- If it has content, use it -->
+          <xsl:apply-templates/>
+        </xsl:when>
+        <xsl:otherwise>
+          <!-- else look for an endterm -->
+          <xsl:choose>
+            <xsl:when test="@endterm">
+              <xsl:variable name="etargets" select="key('id',@endterm)"/>
+              <xsl:variable name="etarget" select="$etargets[1]"/>
+              <xsl:choose>
+                <xsl:when test="count($etarget) = 0">
+                  <xsl:message>
+                    <xsl:value-of select="count($etargets)"/>
+                    <xsl:text>Endterm points to nonexistent ID: </xsl:text>
+                    <xsl:value-of select="@endterm"/>
+                  </xsl:message>
+                  <xsl:text>???</xsl:text>
+                </xsl:when>
+                <xsl:otherwise>
+                    <xsl:apply-templates select="$etarget" mode="endterm"/>
+                </xsl:otherwise>
+              </xsl:choose>
+            </xsl:when>
+
+            <xsl:otherwise>
+              <xsl:message>
+                <xsl:text>Link element has no content and no Endterm. </xsl:text>
+                <xsl:text>Nothing to show in the link to </xsl:text>
+                <xsl:value-of select="$target"/>
+              </xsl:message>
+              <xsl:text>???</xsl:text>
+            </xsl:otherwise>
+          </xsl:choose>
+        </xsl:otherwise>
+      </xsl:choose>
+    </fo:basic-link>
+
+    <!-- Add standard page reference? -->
+    <xsl:choose>
+      <!-- negative xrefstyle in instance turns it off -->
+      <xsl:when test="starts-with(normalize-space($xrefstyle), 'select:')
+                      and contains($xrefstyle, 'nopage')">
+      </xsl:when>
+      <!-- so does a negative insert.link.page.number -->
+      <xsl:when test="$insert.link.page.number = 'no'
+                      or $insert.link.page.number = '0'">
+      </xsl:when>
+      <xsl:when test="($insert.link.page.number = 'yes' or $insert.link.page.number = '1')
+                        or
+                      ($insert.link.page.number = 'maybe'
+                        and (local-name($target) = 'para'
+                              or
+                            (starts-with(normalize-space($xrefstyle), 'select:')
+                                 and (contains($xrefstyle, 'page') or contains($xrefstyle, 'Page')))))">
+        <xsl:apply-templates select="$target" mode="page.citation">
+          <xsl:with-param name="id" select="$linkend"/>
+        </xsl:apply-templates>
+      </xsl:when>
+    </xsl:choose>
+  </xsl:template>
+
+
+
+
 </xsl:stylesheet>

@@ -21,9 +21,9 @@
   <xsl:import href="htmlbase.xsl"/>
 
   <!-- Import/include the standard DocBook chunking stylesheets: -->
-  <xsl:import href="../docbook/html/chunk-common.xsl"/>
-  <xsl:include href="../docbook/html/manifest.xsl"/>
-  <xsl:include href="../docbook/html/chunk-code.xsl"/>
+  <xsl:import href="../../../tools/docbook-stylesheets/html/chunk-common.xsl"/>
+  <xsl:include href="../../../tools/docbook-stylesheets/html/manifest.xsl"/>
+  <xsl:include href="../../../tools/docbook-stylesheets/html/chunk-code.xsl"/>
 
   <!-- Include our custom templates specific to chunked html: -->
   <xsl:include href="html/chunker.xsl"/>

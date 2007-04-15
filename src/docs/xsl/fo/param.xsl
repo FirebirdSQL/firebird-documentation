@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" 
-                xmlns:src="http://nwalsh.com/xmlns/litprog/fragment" 
+                xmlns:src="http://nwalsh.com/xmlns/litprog/fragment"
                 exclude-result-prefixes="src"
                 version="1.0">
 
 
   <!-- OVERRIDDEN STYLESHEET PARAMETERS: -->
 
-  <xsl:param name="fop.extensions" select="1"/>
+  <xsl:param name="fop1.extensions" select="1"/>
     <!-- otherwise broken URLs, and no bookmarks! -->
 
   <!-- This connects to that URL everytime it is mentioned in the draft pagemasters!
@@ -36,6 +36,15 @@
     </xsl:choose>
   </xsl:param>
 
+  <xsl:param name="body.start.indent">
+    <xsl:choose>
+      <xsl:when test="$fop.extensions != 0">0pt</xsl:when>
+      <xsl:when test="$fop1.extensions != 0">0pt</xsl:when> <!-- DocBook stylesheets forgot this one -->
+      <xsl:when test="$passivetex.extensions != 0">0pt</xsl:when>
+      <xsl:otherwise>4pc</xsl:otherwise>
+    </xsl:choose>
+  </xsl:param>
+
   <xsl:param name="body.font.master">11</xsl:param>
 
   <xsl:param name="title.margin.left">0pc</xsl:param>
@@ -43,7 +52,7 @@
   <xsl:param name="segmentedlist.as.table" select="1"/>
   <xsl:param name="ulink.show" select="0"/>
   <xsl:param name="admon.textlabel" select="1"/>
-  
+
   <xsl:param name="generate.index" select="1"/>
   <xsl:param name="make.index.markup" select="0"/>
 
@@ -74,6 +83,10 @@ set       toc,title
 
   <!-- Our own params: -->
 
+  <xsl:param name="fop-093" select="1"/>
+    <!-- some fixes:
+         - extra space before blockquotes -->
+
   <xsl:param name="firebird.orange" select="'#FB2400'"/> <!-- also nice: #E03000 -->
 
   <xsl:param name="highlevel.title.color" select="'#404090'"/>  <!-- set, book, article -->
@@ -81,12 +94,15 @@ set       toc,title
   <xsl:param name="lowlevel.title.color"  select="'#404090'"/>  <!-- section, sectN -->
 <!-- our green: #108060 -->
 
+  <xsl:param name="link.color"  select="'darkblue'"/>
+
+
   <!-- Default params for special word-breaking (e.g. in urls, filenames): -->
   <!--
     &#x200B; (zero-width space) WORKS
-        One issue: in justified text (= almost all text) the zwsp's are sometimes 
-        stretched to visible - though usually very narrow - spaces. We would prefer 
-        FOP to interpret a zwsp *only* as a breakability indicator, not as place to 
+        One issue: in justified text (= almost all text) the zwsp's are sometimes
+        stretched to visible - though usually very narrow - spaces. We would prefer
+        FOP to interpret a zwsp *only* as a breakability indicator, not as place to
         insert justification space.
     &#x00AD; (soft hyphen) does NOT work - FOP 0.20.5 treats it as a normal hyphen,
              always displaying it!
@@ -261,9 +277,9 @@ set       toc,title
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
     <xsl:attribute name="font-style">italic</xsl:attribute>
-    <xsl:attribute name="space-before.minimum">1.04em</xsl:attribute>
-    <xsl:attribute name="space-before.optimum">1.30em</xsl:attribute>
-    <xsl:attribute name="space-before.maximum">1.56em</xsl:attribute>
+    <xsl:attribute name="space-before.minimum">0.96em</xsl:attribute>   <!-- 1.04, 1.30, 1.56 -->
+    <xsl:attribute name="space-before.optimum">1.20em</xsl:attribute>
+    <xsl:attribute name="space-before.maximum">1.44em</xsl:attribute>
   </xsl:attribute-set>
 
   <xsl:attribute-set name="section.title.level3.properties">
@@ -271,9 +287,9 @@ set       toc,title
       <xsl:value-of select="$body.font.master * 1.225"/>
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
-    <xsl:attribute name="space-before.minimum">0.96em</xsl:attribute>
-    <xsl:attribute name="space-before.optimum">1.20em</xsl:attribute>
-    <xsl:attribute name="space-before.maximum">1.44em</xsl:attribute>
+    <xsl:attribute name="space-before.minimum">0.91em</xsl:attribute>   <!-- 0.96, 1.20, 1.44 -->
+    <xsl:attribute name="space-before.optimum">1.14em</xsl:attribute>
+    <xsl:attribute name="space-before.maximum">1.37em</xsl:attribute>
   </xsl:attribute-set>
 
   <xsl:attribute-set name="section.title.level4.properties">
@@ -282,9 +298,9 @@ set       toc,title
       <xsl:text>pt</xsl:text>
     </xsl:attribute>
     <xsl:attribute name="font-style">italic</xsl:attribute>
-    <xsl:attribute name="space-before.minimum">0.88em</xsl:attribute>
-    <xsl:attribute name="space-before.optimum">1.10em</xsl:attribute>
-    <xsl:attribute name="space-before.maximum">1.32em</xsl:attribute>
+    <xsl:attribute name="space-before.minimum">0.86em</xsl:attribute>   <!-- 0.88, 1.10, 1.32 -->
+    <xsl:attribute name="space-before.optimum">1.08em</xsl:attribute>
+    <xsl:attribute name="space-before.maximum">1.30em</xsl:attribute>
   </xsl:attribute-set>
 
   <xsl:attribute-set name="section.title.level5.properties">
@@ -369,13 +385,14 @@ set       toc,title
     </xsl:attribute>
   </xsl:attribute-set>
 
-
   <xsl:attribute-set name="xref.properties">
-    <xsl:attribute name="color"><xsl:value-of select="'darkblue'"/></xsl:attribute>
+    <xsl:attribute name="color"><xsl:value-of select="$link.color"/></xsl:attribute>
   </xsl:attribute-set>
 
-
-
+  <xsl:attribute-set name="index.page.number.properties">
+    <xsl:attribute name="color"><xsl:value-of select="$link.color"/></xsl:attribute>
+<!--    <xsl:attribute name="font-style">italic</xsl:attribute> -->
+  </xsl:attribute-set>
 
 
 </xsl:stylesheet>

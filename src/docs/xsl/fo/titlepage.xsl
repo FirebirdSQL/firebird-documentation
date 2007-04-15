@@ -9,6 +9,9 @@
 
 <!-- new template to display logo on titlepage -->
 <xsl:template name="titlepage.logo">
+  <xsl:if test="$fop-093=1">
+    <fo:block/>  <!-- to get spacing right with FOP 0.93 -->
+  </xsl:if>
   <fo:block space-before.optimum="3em" space-after.optimum="3em" text-align="center">
      <fo:external-graphic src="images/firebird_logo_400x400.png"
                           width="33.9mm" height="33.9mm"

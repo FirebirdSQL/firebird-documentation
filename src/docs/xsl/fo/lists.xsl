@@ -181,24 +181,23 @@
     </xsl:variable>
 
     <!-- No vertical space before first listitem. Otherwise, insert a spacer row: -->
-    <xsl:choose>
-      <xsl:when test="position()=1">
-      </xsl:when>
-      <xsl:when test="$effspacing='compact'">
-        <fo:table-row>
-          <fo:table-cell number-columns-spanned="{$numcols}">
-            <fo:block xsl:use-attribute-sets="compact.list.item.spacing"/>
-          </fo:table-cell>
-        </fo:table-row>
-      </xsl:when>
-      <xsl:otherwise>
-        <fo:table-row>
-          <fo:table-cell number-columns-spanned="{$numcols}">
-            <fo:block xsl:use-attribute-sets="list.item.spacing"/>
-          </fo:table-cell>
-        </fo:table-row>
-      </xsl:otherwise>
-    </xsl:choose>
+    <xsl:if test="position()>1">
+      <fo:table-row>
+        <fo:table-cell number-columns-spanned="{$numcols}">
+          <xsl:if test="$fop-093=1">
+            <fo:block/>  <!-- to get spacing right with FOP 0.93 -->
+          </xsl:if>
+          <xsl:choose>
+            <xsl:when test="$effspacing='compact'">
+              <fo:block xsl:use-attribute-sets="compact.list.item.spacing"/>
+            </xsl:when>
+            <xsl:otherwise>
+              <fo:block xsl:use-attribute-sets="list.item.spacing"/>
+            </xsl:otherwise>
+          </xsl:choose>
+        </fo:table-cell>
+      </fo:table-row>
+    </xsl:if>
 
     <fo:table-row id="{$id}">
       <fo:table-cell>
@@ -328,16 +327,16 @@
     </xsl:variable>
 
     <!-- No vertical space before first varlistentry. Otherwise, insert a spacer row: -->
-    <xsl:choose>
-      <xsl:when test="position()=1"/>
-      <xsl:otherwise>
-        <fo:table-row>
-          <fo:table-cell number-columns-spanned="2">
-            <fo:block xsl:use-attribute-sets="list.item.spacing"/>
-          </fo:table-cell>
-        </fo:table-row>
-      </xsl:otherwise>
-    </xsl:choose>
+    <xsl:if test="position()>1">
+      <fo:table-row>
+        <fo:table-cell number-columns-spanned="2">
+          <xsl:if test="$fop-093=1">
+            <fo:block/>  <!-- to get spacing right with FOP 0.93 -->
+          </xsl:if>
+          <fo:block xsl:use-attribute-sets="list.item.spacing"/>
+        </fo:table-cell>
+      </fo:table-row>
+    </xsl:if>
 
     <!-- The row with the term: -->
     <fo:table-row id="{$id}"
@@ -491,16 +490,16 @@
     </xsl:variable>
 
     <!-- No vertical space before first listitem. Otherwise, insert a spacer row: -->
-    <xsl:choose>
-      <xsl:when test="position()=1"/>
-      <xsl:otherwise>
-        <fo:table-row>
-          <fo:table-cell number-columns-spanned="2">
-            <fo:block xsl:use-attribute-sets="list.item.spacing"/>
-          </fo:table-cell>
-        </fo:table-row>
-      </xsl:otherwise>
-    </xsl:choose>
+    <xsl:if test="position()>1">
+      <fo:table-row>
+        <fo:table-cell number-columns-spanned="2">
+          <xsl:if test="$fop-093=1">
+            <fo:block/>  <!-- to get spacing right with FOP 0.93 -->
+          </xsl:if>
+          <fo:block xsl:use-attribute-sets="list.item.spacing"/>
+        </fo:table-cell>
+      </fo:table-row>
+    </xsl:if>
 
     <!-- the row with the label: -->
     <fo:table-row id="{$id}">

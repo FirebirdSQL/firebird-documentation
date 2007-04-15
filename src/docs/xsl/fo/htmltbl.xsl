@@ -8,6 +8,10 @@
 <!-- Needed overriding because current FOP versions (latest
      is 0.91) do not support fo:table-and-caption at all -->
 
+<!-- Also, the DocBook stylesheets implementation for HTML-style
+     tables is very incomplete (no colors, no halign, empty cells
+     get no border etc. -->
+
 <xsl:template match="table|informaltable" mode="htmlTable">
   <xsl:if test="tgroup/tbody/row
                 |tgroup/thead/row
@@ -17,6 +21,14 @@
 
   <xsl:variable name="id">
     <xsl:call-template name="object.id"/>
+  </xsl:variable>
+
+  <xsl:variable name="keep-together">
+    <xsl:call-template name="dbfo-attribute">
+      <xsl:with-param name="pis"
+                      select="processing-instruction('dbfo')"/>
+      <xsl:with-param name="attribute" select="'keep-together'"/>
+    </xsl:call-template>
   </xsl:variable>
 
   <xsl:variable name="numcols">
@@ -35,7 +47,9 @@
   <xsl:variable name="table-proper"> <!-- without caption or footnotes -->
     <fo:table xsl:use-attribute-sets="table.table.properties">
       <xsl:choose>
-        <xsl:when test="$fop.extensions != 0 or $passivetex.extensions != 0">
+        <xsl:when test="$fop.extensions != 0
+                        or $fop1.extensions != 0
+                        or $passivetex.extensions != 0">
           <xsl:attribute name="table-layout">fixed</xsl:attribute>
         </xsl:when>
       </xsl:choose>
@@ -81,6 +95,13 @@
   <xsl:choose>
     <xsl:when test="self::table"> <!-- formal table -->
       <fo:block id="{$id}" xsl:use-attribute-sets="table.properties">
+        <!-- table.properties by default uses formal.object.properties,
+             which contains keep-together.within-column = "always" -->
+        <xsl:if test="$keep-together != ''">
+          <xsl:attribute name="keep-together.within-column">
+            <xsl:value-of select="$keep-together"/>
+          </xsl:attribute>
+        </xsl:if>
         <xsl:if test="caption and $caption-placement='before'">
           <fo:block space-after="0.1em" keep-with-next.within-column="always">
             <xsl:apply-templates select="caption" mode="htmlTable"/>
@@ -95,7 +116,14 @@
       </fo:block>
     </xsl:when>
     <xsl:otherwise> <!-- informaltable -->
-      <xsl:copy-of select="$table-proper"/>
+      <fo:block id="{$id}" xsl:use-attribute-sets="informaltable.properties">
+        <xsl:if test="$keep-together != ''">
+          <xsl:attribute name="keep-together.within-column">
+            <xsl:value-of select="$keep-together"/>
+          </xsl:attribute>
+        </xsl:if>
+        <xsl:copy-of select="$table-proper"/>
+      </fo:block>
     </xsl:otherwise>
   </xsl:choose>
 

@@ -14,7 +14,7 @@
                 version='1.0'>
 
   <!-- Import default DocBook stylesheet for fo generation: -->
-  <xsl:import href="../docbook/fo/docbook.xsl"/>
+  <xsl:import href="../../../tools/docbook-stylesheets/fo/docbook.xsl"/>
 
 
   <xsl:output method="xml"
@@ -34,8 +34,10 @@
   <xsl:include href="fo/verbatim.xsl"/>
   <xsl:include href="fo/inline.xsl"/>
   <xsl:include href="fo/lists.xsl"/>
+  <xsl:include href="fo/formal.xsl"/>
   <xsl:include href="fo/block.xsl"/>
   <xsl:include href="fo/htmltbl.xsl"/>
+  <xsl:include href="fo/table.xsl"/>
   <xsl:include href="fo/sections.xsl"/>
   <xsl:include href="fo/titlepage.xsl"/>
   <xsl:include href="fo/titlepage.templates.xsl"/>
@@ -43,7 +45,7 @@
   <xsl:include href="fo/index.xsl"/>
   <xsl:include href="fo/xref.xsl"/>
   <xsl:include href="fo/autotoc.xsl"/>
-  <xsl:include href="fo/fop.xsl"/>
+  <xsl:include href="fo/fop1.xsl"/>
   <xsl:include href="fo/component.xsl"/>
 
 
