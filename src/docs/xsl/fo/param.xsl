@@ -99,11 +99,7 @@ set       toc,title
 
   <!-- Default params for special word-breaking (e.g. in urls, filenames): -->
   <!--
-    &#x200B; (zero-width space) WORKS
-        One issue: in justified text (= almost all text) the zwsp's are sometimes
-        stretched to visible - though usually very narrow - spaces. We would prefer
-        FOP to interpret a zwsp *only* as a breakability indicator, not as place to
-        insert justification space.
+    &#x200B; (zero-width space) WORKS - (and no more "stretching" as of FOP 0.93)
     &#x00AD; (soft hyphen) does NOT work - FOP 0.20.5 treats it as a normal hyphen,
              always displaying it!
   -->
@@ -177,7 +173,7 @@ set       toc,title
        shade.verbatim.style, adding and/or overriding attributes: -->
 
   <xsl:attribute-set name="shade.screen.style">
-    <xsl:attribute name="background-color">#E0FFE0</xsl:attribute>
+    <xsl:attribute name="background-color">#D8F8F0</xsl:attribute>
   </xsl:attribute-set>
 
   <xsl:attribute-set name="shade.literallayout.style">
