@@ -14,7 +14,7 @@ At this moment, the external tool archives are:
   docbook-dtd.zip           - the DocBook Document Type Definition
   docbook-stylesheets.zip   - the standard DocBook XSL stylesheets
 
-NOTE: If you stiil have the "docbook" and "docbookx" subtrees in
+NOTE: If you still have the "docbook" and "docbookx" subtrees in
       manual/src/docs, remove them completely!
 
 Don't forget: you may also need to download files for manual/lib.
