@@ -1,11 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" 
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:src="http://nwalsh.com/xmlns/litprog/fragment"
                 xmlns:fo="http://www.w3.org/1999/XSL/Format"
                 exclude-result-prefixes="src"
                 version="1.0">
 
+
+  <!-- Give anchor zwsp content, otherwise FOP discards 
+       the empty inline and the link target is lost: -->
+
+  <xsl:template match="anchor">
+    <xsl:variable name="id">
+      <xsl:call-template name="object.id"/>
+    </xsl:variable>
+    <fo:inline id="{$id}">&#x200B;</fo:inline>
+  </xsl:template>
+
+
+  <!-- hyphenate URLs in ulinks: -->
 
   <xsl:template match="ulink//text()">
     <xsl:variable name="me" select="string(.)"/>
@@ -23,8 +36,7 @@
       </xsl:otherwise>
     </xsl:choose>
   </xsl:template>
-  
-  
+
   <xsl:template name="hyphenate-url">
     <xsl:param name="url" select="''"/>
     <xsl:call-template name="hyphenate-special">
