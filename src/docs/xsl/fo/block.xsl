@@ -4,6 +4,29 @@
                 version='1.0'>
 
 
+<!-- no padding in formalpara titles -->
+
+<xsl:template match="formalpara/title|formalpara/info/title">
+  <xsl:variable name="titleStr">
+      <xsl:apply-templates/>
+  </xsl:variable>
+  <xsl:variable name="lastChar">
+    <xsl:if test="$titleStr != ''">
+      <xsl:value-of select="substring($titleStr,string-length($titleStr),1)"/>
+    </xsl:if>
+  </xsl:variable>
+
+  <fo:inline font-weight="bold"
+             keep-with-next.within-line="always">
+    <xsl:copy-of select="$titleStr"/>
+    <xsl:if test="$lastChar != ''
+                  and not(contains($runinhead.title.end.punct, $lastChar))">
+      <xsl:value-of select="$runinhead.default.title.end.punct"/>
+    </xsl:if>
+    <xsl:text>&#160;</xsl:text> <!-- non-breaking space, A0h = 160d -->
+  </fo:inline>
+</xsl:template>
+
 
 <!-- implement blockquote using a blind table.
      otherwise tables in blockquotes outdent back to the original margins,
@@ -89,7 +112,7 @@
 -->
 
 
-
+<!-- revhistory & friends -->
 
 <xsl:template match="revhistory">
 
