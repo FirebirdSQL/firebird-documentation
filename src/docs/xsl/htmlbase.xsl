@@ -43,6 +43,7 @@
               encoding="ISO-8859-1"
               indent="yes"/>
 
+  <xsl:include href="common/param.xsl"/>
   <xsl:include href="common/l10n.xsl"/>
   <xsl:include href="common/titles.xsl"/>
   <xsl:include href="common/gentext.xsl"/>
