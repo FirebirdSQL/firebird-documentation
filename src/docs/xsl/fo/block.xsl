@@ -145,7 +145,7 @@
     <fo:table-column column-number="1" column-width="proportional-column-width(2)"/>
     <fo:table-column column-number="2" column-width="proportional-column-width(3)"/>
     <fo:table-column column-number="3" column-width="proportional-column-width(2)"/>
-    <fo:table-column column-number="4" column-width="proportional-column-width(10)"/>
+    <fo:table-column column-number="4" column-width="proportional-column-width(13)"/>
     <fo:table-header>
       <fo:table-row>
         <fo:table-cell number-columns-spanned="4">
