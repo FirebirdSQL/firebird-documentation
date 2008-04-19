@@ -1,0 +1,494 @@
+﻿<chapter id="rnfb210-scrty">
+  <title>Security</title>
+  <para>In this chapter are details of the changes to Firebird security that came with
+  the release of Firebird 2 and its successors.  Further changes and enhancements introduced in V.2.1
+  are highlighted.</para>
+
+  <section id="rnfb20x-sec-summary"><!-- Level 1 section -->
+    <title>Summary of Changes</title>
+    <para>Improving security has had a lot of focus in Firebird 2.0 development.  The following is a summary of the
+    major changes.</para>
+
+    <section id="rnfb20x-sec-summary-sec-db"><!-- Level 2 section -->
+      <title>New security database</title>
+      <para>The new security database is renamed as <function>security2.fdb</function>.  Inside, the user
+      authentication table, where user names and passwords are stored, is now called <function>RDB$USERS</function>.
+      There is no longer a table named <quote>users</quote> but a new <emphasis>view</emphasis> over RDB$USERS that
+      is named <quote>USERS</quote>.  Through this view, users can change their passwords.</para>
+
+      <para>For details of the new database, see <xref linkend="rnfb20x-sec-dtl-auth-fbtwo-secdb"/> in the section about
+      authentication later in this chapter.</para>
+
+      <para>For instructions on updating previous security databases, refer to the
+      section <xref linkend="rnfb20x-sec-new-db"/> at the end of this chapter.</para>
+    </section><!-- level 2 -->
+
+    <section id="rnfb210-sec-summary-wintrusted"><!-- Level 2 section -->
+      <title>Using Windows Security to Authenticate Users</title>
+      <para><emphasis role="bold">(V.2.1)</emphasis> From Firebird 2.1 onward, Windows
+      <quote>Trusted User</quote> security can be applied for authenticating Firebird users
+      on a Windows host.  The Trusted User's security context is passed to the Firebird server
+      instead of the Firebird user name and password and, if it succeeds, it is used to determine
+      the Firebird security user name.</para>
+
+      <para>For details see the section below, <xref linkend="rnfb210-wintrusted"/><!-- Windows Trusted User 
+      Security -->.</para>
+    </section>
+
+    <section id="rnfb20x-sec-summary-pwd"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>Better password encryption</title>
+        <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+      </sectioninfo>
+      <para>Password encryption/decryption now uses a more secure password hash calculation algorithm.</para>
+    </section><!-- level 2 -->
+
+    <section id="rnfb20x-sec-summary-usermod"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>Users can modify their own passwords</title>
+        <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+      </sectioninfo>
+      <para>The SYSDBA remains the keeper of the security database.  However, users can now modify their own
+      passwords.</para>
+    </section><!-- level 2 -->
+
+    <section id="rnfb20x-sec-summary-gsec"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>Non-server access to security database is rejected</title>
+        <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+      </sectioninfo>
+      <para><emphasis>gsec</emphasis> now uses the Services API.  The server will refuse any access to security2.fdb
+      except through the Services Manager.</para>
+    </section><!-- level 2 -->
+
+    <section id="rnfb20x-sec-summary-no-brute"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>Active protection from brute-force attack</title>
+        <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+      </sectioninfo>
+      <para>Attempts to get access to the server using brute-force techniques on accounts and passwords are now
+      detected and locked out.</para>
+      <itemizedlist>
+      <listitem>
+        <para>Login with password is required from any remote client</para>
+      </listitem>
+      <listitem>
+        <para>Clients making too many wrong login attempts are blocked from further attempts for a period</para>
+      </listitem>
+      </itemizedlist>
+      <para>Support for brute-force attack protection has been included in both the attachment functions of the
+      Firebird API and the Services API.  For more details, see <xref linkend="rnfb20x-sec-dtl-protect"/></para>
+    </section><!-- level 2 -->
+
+    <section id="rnfb20x-sec-summary-vulner" xreflabel="Warning"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>Vulnerabilities have been closed</title>
+        <author><firstname>A. Peshkov,</firstname><surname>C. Valderrama</surname></author>
+      </sectioninfo>
+      <para>Several known vulnerabilities in the API have been closed. </para>
+      <caution>
+        <para>It must be noted that the restoration of the <emphasis role="bold">server redirection
+        (&quot;multi-hop&quot;) capability</emphasis> to Firebird 2 potentially throws up a new vulnerability.
+        For that reason, it is controlled by a parameter (<xref linkend="rnfb20x-fbconf-redirection"/>) in
+        <filename>firebird.conf</filename>, which you should not enable unless you really understand its
+        implications.</para>
+        <para>These days, the ability to redirect requests to other servers is dangerous.  Suppose you have one
+        carefully protected firebird server, access to which is possible from the Internet.  In a situation where
+        this server has unrestricted access to your internal LAN, it will work as a gateway for incoming requests
+        like <literal> firebird.your.domain.com:internal_server:/private/database.fdb </literal>.</para>
+        <para>Knowing the name or IP address of some internal server on your LAN is enough for an intruder:  he does
+        note even need login access to the external server.  Such a gateway easily overrides a firewall that is
+        protecting your LAN from outside attack.</para>
+      </caution>
+      </section><!-- level 2 -->
+  </section><!-- level 1 -->
+
+  <section id="rnfb20x-sec-dtl"><!-- Level 1 section -->
+    <title>Details of the Security Changes in Firebird 2</title>
+    <para>Security focus was directed at some recognised weaknesses in Firebird's security from malicious
+    attacks:</para>
+    <itemizedlist>
+    <listitem><para>the lack of brute-force resistant passwords encryption in the security database</para></listitem>
+    <listitem><para>the ability for any remote user with a valid account to open the security database and read
+    hashes from it (especially interesting in combination with the first point)</para></listitem>
+    <listitem><para>the inability for users to change their own passwords</para></listitem>
+    <listitem><para>the lack of protection against remote brute-forcing of passwords on the server
+    directly</para></listitem>
+    </itemizedlist>
+
+    <section id="rnfb20x-sec-dtl-auth"><!-- Level 2 section -->
+      <title>Authentication</title>
+      <para>Firebird authentication checks a server-wide security database in order to decide whether a database or
+      server connection request is authorised.  The security database stores the user names and passwords of all
+      authorised login identities.</para>
+        <section id="rnfb20x-sec-dtl-auth-fbonefive"><!-- Level 3 section -->
+        <title>Firebird 1.5 Authentication</title>
+        <para>In Firebird 1.5 the DES algorithm is used twice to hash the password:  first by the client, then by
+        the server, before comparing it with the hash stored in security database. However, this sequence becomes
+        completely broken when the SYSDBA changes a password.  The client performs the hash calculation twice and
+        stores the resulting hash directly in the security database. Therefore, hash management is completely
+        client-dependent (or, actually, client-defined).</para>
+      </section><!-- level 3 -->
+
+      <section id="rnfb20x-sec-dtl-auth-fbtwo"><!-- Level 3 section -->
+        <title>Firebird 2: Server-side Hashing</title>
+        <para>To be able to use stronger hashes, another approach was called for.  The hash to be stored on the
+        server should always be calculated on the server side. Such a schema already exists in Firebird -- in the
+        Services API. This led to the decision to use the Services API for any client activity related to user
+        management. Now, <emphasis>gsec</emphasis> and the isc_user_add(modify, delete) API functions all use services to access the
+        security database.  (Embedded access to Classic server on POSIX is the exception --see below). </para>
+        <para>It became quite easy to make any changes to the way passwords are hashed - it is always performed by
+        the server. It is no longer <emphasis>gsec</emphasis>'s problem to calculate the hash for the security database: it simply asks
+        services to do the work!</para>
+        <para>It is worth noting that the new <emphasis>gsec</emphasis> works successfully with older Firebird versions, as long as the
+        server's architecture supports services.</para>
+
+        <section id="rnfb20x-sec-dtl-auth-fbtwo-hash"><!-- Level 4 section -->
+          <title>The SHA-1 Hashing Algorithm</title>
+          <para>This method leads to the situation where</para>
+          <orderedlist>
+          <listitem><para>a hash valid for user A is invalid for user B</para></listitem>
+          <listitem><para>when a user changes his password -- even to exactly the same string as before -- the data
+          stored in RDB$USERS.RDB$PASSWD is new.</para></listitem>
+          </orderedlist>
+
+          <para>Although this situation does not increase resistance to a brute-force attempt to crack the password,
+          it does make &quot;visual&quot; analysis of a stolen password database much harder.</para>
+        </section><!-- level 4 -->
+      </section><!-- level 3 -->
+
+      <section id="rnfb20x-sec-dtl-auth-fbtwo-secdb" xreflabel="New Security Database"><!-- Level 3 section -->
+        <title>The New Security Database</title>
+
+        <para>The structure of security database was changed. In general, now it contains a patch by Ivan Prenosil,
+        with some minor differences, enabling any user to change his/her own password, .</para>
+        <itemizedlist>
+          <listitem>
+            <para>In firebird 1.5 the table USERS has to be readable by PUBLIC, an engine requirement without
+            which the password validation process would fail.  Ivan's patch solution used a view, with the condition
+            &quot;WHERE USER = ''&quot;. That worked due to another bug in the engine that left the SQL variable USER
+            empty, not 'authenticator', as it might seem from engine's code.</para>
+            <para>Once that bug was fixed, it was certainly possible to add the condition &quot;USER = 'authenticator'&quot;.
+            For the short term, that was OK, because the username is always converted to upper case.</para>
+          </listitem>
+          <listitem>
+            <para>A better solution was found, that avoids making user authentication depend on an SQL trick.
+            The result is that the non-SYSDBA user can see only his own login in any user-management tool
+            (<emphasis>gsec</emphasis>, or any graphical interface that use the Services API). SYSDBA continues 
+            to have full access to manage users' accounts.</para>
+          </listitem>
+        </itemizedlist>
+
+        <section id="rnfb20x-sec-dtl-gsec-dbstruc"><!-- Level 4 section -->
+          <title>New security database structure</title>
+          <para>The Firebird 2 security database is named <literal>security2.fdb</literal>.  For user authentication
+          it has a new table named <literal>RDB$USERS</literal> that stores the new hashed passwords.  A view over
+          this table replaces the old USERS table and enables users to change their own passwords.</para>
+
+          <para>The DDL for the new structures can be found in <xref linkend="rnfb210-appx-C"/><!-- Appendix C -->.</para>
+        </section><!-- level 4 -->
+      </section><!-- level 3 -->
+    </section><!-- level 2 -->
+
+    <section id="rnfb20x-sec-dtl-gsec"><!-- Level 2 section -->
+      <title>gsec in Firebird 2</title>
+      <para>Special measures were thus taken to make remote connection to the security database completely
+      impossible.  Don't be surprised if some old program fails on attempting direct access:  this is by design.
+      Users information may now be accessed only through the Services API and the equivalent internal access to
+      services now implemented in the <function>isc_user_*</function> API functions.</para>
+
+    </section><!-- level 2 -->
+
+    <section id="rnfb20x-sec-dtl-protect" xreflabel="Protection from Brute-force Hacking"><!-- Level 2 section -->
+      <title>Protection from Brute-force Hacking</title>
+      <para>Current high-speed CPUs and fast WAN connections make it possible to try to brute-force Firebird
+      server users' passwords.  This is especially dangerous for Superserver which, since Firebird 1.5,
+      performs user authentication very fast. Classic is slower, since it has to create new process for each
+      connection, attach to the security database within that connection and compile a request to the table
+      RDB$USERS before validating login and password. Superserver caches the connection and request, thus enabling a
+      much faster user validation.</para>
+      <para>Given the 8-byte maximum length of the traditional Firebird password, the brute-force hacker had a
+      reasonable chance to break into the Firebird installation.</para>
+
+      <para>The v.2.0 Superserver has active protection to make a brute-force attack more difficult.  After a few
+      failed attempts to log in, the user and IP address are locked for a few seconds, denying any attempt to
+      log in with that particular user name OR from that particular IP address for a brief period.</para>
+      <para>No setup or configuration is required for this feature.  It is active automatically as soon as the
+      Firebird 2.0 SuperServer starts up.</para>
+    </section><!-- level 2 -->
+  </section><!-- level 1 -->
+
+  <section id="rnfb210-wintrusted" xreflabel="Windows Trusted User Security"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>Using Windows Security to Authenticate Users</title>
+      <author>
+        <firstname>Alex</firstname>
+        <surname>Peshkov</surname>
+      </author>
+    </sectioninfo>
+    <para><emphasis role="bold">(V.2.1)</emphasis> From Firebird 2.1 onward, Windows
+    <quote>Trusted User</quote> security can be applied for authenticating Firebird users
+    on a Windows host.  The Trusted User's security context is passed to the Firebird server
+    and, if it succeeds, it is used to determine the Firebird security user name.</para>
+
+    <para>Simply omitting the user and password parameters from the DPB/SPB will
+    automatically cause Windows Trusted User authentication to be applied, in
+    almost all cases.  See the Environment section, below, for exceptions.</para>
+
+    <para><emphasis role="bold">Illustration</emphasis></para>
+
+    <para>Suppose you have logged in to the Windows server SRV as user 'John'.  If
+    you connect to server SRV with <emphasis>isql</emphasis>, without specifying a
+    Firebird user name and password:</para>
+    <programlisting>
+isql srv:employee
+    </programlisting>
+    <para>and do:</para>
+    <programlisting>
+SQL&gt; select CURRENT_USER from rdb$database;
+    </programlisting>
+you will get something like:
+    <programlisting>
+USER
+====================================================
+SRV\John
+    </programlisting>
+
+    <section id="rnfb210-wintrusted-sqlprivs"><!-- Level 2 section -->
+      <title>SQL Privileges</title>
+      <para>Windows users can be granted rights to access database objects and
+      roles in the same way as regular Firebird users, emulating the capability
+      that has been always been available users of Unix and Linux hosted
+      Firebird databases.</para>
+    </section>
+
+    <section id="rnfb210-wintrusted-admin"><!-- Level 2 section -->
+      <title>Administrators</title>
+      <para>If a member of the built-in Domain Admins group connects to Firebird
+      using trusted authentication, he/she will be connected as SYSDBA.</para>
+    </section>
+
+    <section id="rnfb210-wintrusted-fbconf"><!-- Level 2 section -->
+      <title>Configuration Parameter <quote>Authentication</quote></title>
+      <para>The new parameter <filename>Authentication</filename> has been added
+      to firebird.conf for configuring the authentication method on Windows.
+      Possible values are.-</para>
+      <variablelist>
+       <varlistentry>
+          <term>Authentication = Native</term>
+          <listitem>
+            <para>Provides full compatibility with previous Firebird versions,
+            avoiding trusted authentication.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>Authentication = Trusted</term>
+          <listitem>
+            <para>The Security database is ignored and only Windows authentication
+            is used.  In some respects, on Windows this is more secure than Native,
+            in the sense that it is no less and no more secure than the
+            security of the host operating system.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>Authentication = Mixed</term>
+          <listitem>
+            <para>This is the default setting.</para>
+            <para>To retain the legacy behaviour, when the
+            <filename>ISC_USER</filename> and <filename>ISC_PASSWORD</filename>
+            variables are set in the environment, they are picked and used instead
+            of trusted authentication.</para>
+
+            <note>
+              <para>Trusted authentication can be coerced to override the
+              environment variables if they are set&mdash;refer to the notes
+              below.</para>
+            </note>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+    </section>
+
+    <section id="rnfb210-wintrusted-forcing"><!-- Level 2 section -->
+      <title>Forcing Trusted Authentication</title>
+      <para>For the situation where trusted authentication is needed and there is
+      a likelihood that <filename>ISC_USER</filename>
+      and <filename>ISC_PASSWORD</filename> are set, there is a new DPB parameter
+      that you can add to the DPB&mdash;<filename>isc_dpb_trusted_auth</filename>.</para>
+      <para>Most of the Firebird command-line utilities support parameter by means of the switch
+      <filename>-tru[sted]</filename> (the abbreviated form is available, according to the usual
+      rules for abbreviating switches).</para>
+      <note>
+        <para>The <emphasis>qli</emphasis> and <emphasis>nbackup</emphasis> utilities do not
+        follow the pattern:  they use single-letter switches that are somewhat arcane.  The
+        switch of interest for <emphasis>qli</emphasis> is -K).  For
+        <emphasis>nbackup</emphasis>, watch this space.  The facility to force trusted
+        authentication is yet to be implemented for it.</para>
+      </note>
+
+      <para><emphasis role="bold">Example</emphasis></para>
+      <programlisting>
+C:\Pr~\bin>isql srv:db            -- log in using trusted authentication
+C:\Pr~\bin>set ISC_USER=user1
+C:\Pr~\bin>set ISC_PASSWORD=12345
+C:\Pr~\bin>isql srv:db            -- log in as 'user1' from environment
+C:\Pr~\bin>isql -trust srv:db     -- log in using trusted authentication
+      </programlisting>
+    </section>
+
+    <important>
+      <para>Windows rules for full domain user names allow names longer than the maximum 31 characters
+      allowed by Firebird for user names.  <emphasis role="bold">The 31-character limit is enforced</emphasis> and,
+      from V.2.1, logins passing longer names are disabled.  This will remain the situation until the mapping
+      of OS objects to database objects is implemented in a later Firebird version.</para>
+    </important>
+  </section>
+
+  <section id="rnfb20x-sec-posix"><!-- Level 1 section -->
+    <title>Classic Server on POSIX</title>
+    <para>For reasons both technical and historical, a Classic server on POSIX with embedded clients is especially
+    vulnerable to security exposure.  Users having embedded access to databases MUST be given at least read access
+    to the security database.</para>
+    <para>This is the main reason that made implementing enhanced password hashes an absolute requirement. A
+    malicious user with user-level access to Firebird could easily steal a copy of the security database, take it
+    home and quietly brute-force the old DES hashes! Afterwards, he could change data in critical databases stored
+    on that server.  Firebird 2 is much less vulnerable to this kind of compromise.</para>
+    <para>But the embedded POSIX server had one more problem with security:  its implementation of the Services API
+    calls the command-line <emphasis>gsec</emphasis>, as normal users do. Therefore, an embedded user-maintenance utility must have full
+    access to security database.</para>
+    <para>The main reason to restrict direct access to the security database was to protect it from access by old
+    versions of client software. Fortuitously, it also minimizes the exposure of the embedded Classic on POSIX at
+    the same time, since it is quite unlikely that the combination of an old client and the new server would be
+    present on the production box.</para>
+  </section>
+  <section id="rnfb20x-sec-caution"><!-- Level 1 section -->
+    <title>For Any Platform</title>
+    <caution>
+      <para>The level of Firebird security is still not satisfactory in one serious respect, so
+      please read this section carefully before opening port 3050 to the Internet.</para>
+    </caution>
+    <para>An important security problem with Firebird still remains unresolved:  the transmission of poorly
+    encrypted passwords &quot;in clear&quot; across the network. It is not possible to resolve this problem without
+    breaking old clients.</para>
+    <para>To put it another way, a user who has set his/her password using a new secure method would be unable to use
+    an older client to attach to the server. Taking this into account with plans to upgrade some aspects of the API
+    in the next version, the decision was made not to change the password transmission method in Firebird 2.0.</para>
+    <para>The immediate problem can be solved easily by using any IP-tunneling software (such as ZeBeDee) to move
+    data to and from a Firebird server, for both 1.5 and 2.0.  It remains the recommended way to access your remote
+    Firebird server across the Internet.</para>
+  </section><!-- level 1 -->
+
+  <section id="rnfb210-impr-secur"><!-- Level 1 section -->
+    <title>Other Security Improvements</title>
+
+    <section id="rnfb210-impr-secur1"><!-- Level 2 section -->
+      <title>isc_service_query() wrongly revealed the full database file spec</title>
+      <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-1091">Feature request CORE-1091</ulink></para>
+      <para><emphasis role="bold">(V.2.1)</emphasis> When the server is configured &quot;DatabaseAccess = None&quot;,
+      <filename>isc_service_query()</filename> would return the full database file path and name.  It has been
+      corrected to return the database alias&mdash;one more argument in favour of making the use of database aliases
+      standard practice!</para>
+    </section>
+
+    <section id="rnfb210-impr-secur2"><!-- Level 2 section -->
+      <title>Any user could view the server log through the Services API</title>
+      <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-1148">Feature request CORE-1148</ulink></para>
+      <para>This was a minor security vulnerability.  Regular users are now blocked from retrieving the
+      server log using the Services API.  Requests are explicitly checked to ensure that the authenticated
+      user is SYSDBA.</para>
+    </section>
+  </section>
+
+  <section id="rnfb20x-sec-new-db" xreflabel="Dealing with the New Security Database"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>Dealing with the New Security Database</title>
+      <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+    </sectioninfo>
+    <para>If you try to put a pre-Firebird 2 security database -- security.fdb or a renamed isc4.gdb -- into
+    Firebird's new home directory and then try to connect to the server, you will get the message &quot;Cannot
+    attach to password database&quot;.  It is not a bug: it is by design. A security database from an earlier
+    Firebird version cannot be used directly in Firebird 2.0 or higher.</para>
+
+    <para>The newly structured security database is named security2.fdb.</para>
+
+    <para>In order to be able to use an old security database, it is necessary to run the upgrade
+    script <function>security_database.sql</function>, that is in
+    the <function>../upgrade</function> sub-directory of your Firebird server installation.</para>
+
+    <note>
+      <para>A copy of the script appears in <xref linkend="rnfb210-appx-C"/><!-- Appendix C -->.</para>
+    </note>
+
+    <section id="rnfb20x-sec-new-db-upgrade" xreflabel="Security DB Upgrade"><!-- Level 2 section -->
+      <title>Doing the Security Database Upgrade</title>
+      <para>To do the upgrade, follow these steps:</para>
+
+      <orderedlist>
+        <listitem>
+          <para>Put your old security database in some place known to you, but not in Firebird's new home
+          directory. Keep a copy available at all times!</para>
+        </listitem>
+        <listitem>
+          <para>Start Firebird 2, using its new, native security2.fdb.</para>
+        </listitem>
+        <listitem>
+          <para>Convert your old security database to ODS11 (i.e. backup and restore it using Firebird 2.0).
+          Without this step, running the security_database.sql script will fail!</para>
+        </listitem>
+        <listitem>
+          <para>Connect the restored security database as SYSDBA and run the script.</para>
+        </listitem>
+        <listitem>
+          <para>Stop the Firebird service.</para>
+        </listitem>
+        <listitem>
+          <para>Copy the upgraded database to the Firebird 2 home directory as security2.fdb.</para>
+        </listitem>
+        <listitem>
+          <para>Restart Firebird.</para>
+        </listitem>
+      </orderedlist>
+
+      <para>Now you should be able to connect to the Firebird 2 server using your old logins and passwords.</para>
+
+      <section id="rnfb20x-sec-new-db-upgrade-nullability" xreflabel="Nullability of RDB$PASSWD"><!-- Level 3 section -->
+        <title>Nullability of RDB$PASSWD</title>
+        <para>In pre-2.0 versions of Firebird it was possible to have a user with NULL password. From v.2.0 onward,
+        the RDB$PASSWD field in the security database is constrained as NOT NULL.</para>
+        <para>However, to avoid exceptions during the upgrade process, the field is created as nullable
+        by the upgrade script. If you are really sure you have no empty passwords in the security
+        database, you may modify the script yourself.  For example, you may edit the line:</para>
+        <literallayout class="monospaced">
+  RDB$PASSWD RDB$PASSWD,
+        </literallayout>
+        <para>to be</para>
+        <literallayout class="monospaced">
+  RDB$PASSWD RDB$PASSWD NOT NULL,
+        </literallayout>
+      </section>
+
+      <section id="rnfb20x-sec-new-db-upgrade-legacyhash" xreflabel="Caution with LegacyHash"><!-- Level 3 section -->
+        <title>Caution with LegacyHash</title>
+        <para>As long as you configure <function>LegacyHash = 1</function> in <function>firebird.conf</function>,
+        Firebird's security does not work completely.  To set this right, it is necessary to do as follows:</para>
+        <orderedlist>
+          <listitem>
+            <para>Change the SYSDBA password</para>
+          </listitem>
+          <listitem>
+            <para>Have the users change their passwords (in 2.0 each user can change his or her
+            own password).</para>
+          </listitem>
+          <listitem>
+            <para>Set LegacyHash back to default value of 0, or comment it out. </para>
+          </listitem>
+          <listitem>
+            <para>Stop and restart Firebird for the configuration change to take effect.</para>
+          </listitem>
+        </orderedlist>
+      </section>
+    </section><!-- level 2 -->
+  </section><!-- level 1 -->
+</chapter>

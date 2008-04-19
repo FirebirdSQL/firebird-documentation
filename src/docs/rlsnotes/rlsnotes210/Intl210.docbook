@@ -1,0 +1,597 @@
+<chapter id="rnfb210-intl">
+  <chapterinfo>
+    <title>International Language Support (INTL)</title>
+    <author>
+      <firstname>Adriano</firstname>
+      <surname>dos Santos Fernandes</surname>
+    </author>
+  </chapterinfo>
+
+  <para>This chapter describes the new international language support interface that was introduced
+  with Firebird 2.  Since then, a number of additions and improvements have been added, including the
+  ability to implement UNICODE collations from external libraries generically.  New DDL syntax has been
+  introduced to assist with this task, in the form of the
+  <xref linkend="rnfb210-intl-crtcolln"/><!-- CREATE COLLATION statement -->.</para>
+
+<!-- v.2.0.X -->
+
+  <section id="rnfb20x-charsets"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>New INTL Interface for Non-ASCII Character Sets</title>
+      <author><firstname>A.</firstname><surname>dos Santos Fernandes</surname></author>
+    </sectioninfo>
+    <para>Originally described by N. Samofatov, Firebird 2's new interface for international character sets
+    features many enhancements that have been implemented by me.</para>
+
+    <section id="rnfb20x-charsets-arch"><!-- Level 2 section -->
+      <title>Architecture</title>
+      <para>Firebird allows character sets and collations to be declared in any character field or variable declaration.
+      The default character set can also be specified at database create time, to cause every CHAR/VARCHAR declaration
+      that does not specifically include a CHARACTER SET clause to use this default.</para>
+
+      <para>At attachment time you normally specify the character set that the <emphasis>client</emphasis> is to use
+      to read strings.  If no &quot;client&quot; (or &quot;connection&quot;) character set is specified, character
+      set NONE is assumed.</para>
+
+      <para>Two special character sets, NONE and OCTETS, can be used in declarations.  However, OCTETS cannot be used
+      as a connection character set.  The two sets are similar, except that the space character of NONE is ASCII 0x20,
+      whereas the space character OCTETS is 0x00.  NONE and OCTETS are <quote>special</quote> in the sense that they
+      follow different rules from those applicable to other character sets regarding conversions.</para>
+
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>With other character sets, conversion is performed as CHARSET1-&gt;UNICODE-&gt;CHARSET2.</para>
+        </listitem>
+        <listitem>
+          <para>With NONE/OCTETS the bytes are just copied: NONE/OCTETS-&gt;CHARSET2 and CHARSET1-&gt;NONE/OCTETS.</para>
+        </listitem>
+      </itemizedlist>
+    </section><!-- sect2 -->
+
+    <section id="rnfb20x-charsets-enh"><!-- Level 2 section -->
+      <title>Enhancements</title>
+      <para>Enhancements that the new system brings include: </para>
+      <section id="rnfb20x-charsets-enh-well-formed"><!-- Level 3 section -->
+        <title>Well-formedness checks</title>
+        <para>Some character sets (especially multi-byte) do not accept just any string.  Now, the engine
+        verifies that strings are well-formed when assigning from NONE/OCTETS and when strings sent by the
+        client (the statement string and parameters).</para>
+      </section><!-- sect3 -->
+      <section id="rnfb20x-charsets-enh-ucase"><!-- Level 3 section -->
+        <title>Uppercasing</title>
+        <para>In Firebird 1.5.x, only the ASCII-equivalent characters are uppercased in any character set's default
+        (binary) collation order, which is the one that is used if no collation is specified.</para>
+        <para>For example,</para>
+        <programlisting>
+  isql -q -ch dos850
+  SQL&gt; create database 'test.fdb';
+  SQL&gt; create table t (c char(1) character set dos850);
+  SQL&gt; insert into t values ('a');
+  SQL&gt; insert into t values ('e');
+  SQL&gt; insert into t values ('&aacute;');
+  SQL&gt; insert into t values ('&eacute;');
+  SQL&gt;
+  SQL&gt; select c, upper(c) from t;
+
+  C      UPPER
+  ====== ======
+       a      A
+       e      E
+       &aacute;      &aacute;
+       &eacute;      &eacute;
+        </programlisting>
+        <para>In Firebird 2 the result is:</para>
+        <programlisting>
+  C      UPPER
+  ====== ======
+       a      A
+       e      E
+       &aacute;      &Aacute;
+       &eacute;      &Eacute;
+        </programlisting>
+      </section><!-- sect3 -->
+
+      <section id="rnfb20x-charsets-enh-max-string"><!-- Level 3 section -->
+        <title>Maximum String Length</title>
+        <para>In v.1.5.x the engine does not verify the logical length of multi-byte character set (MBCS) strings.
+        Hence, a UNICODE_FSS field takes three times as many characters as the declared field size, three being the
+        maximum length of one UNICODE_FSS character.</para>
+        <para>This has been retained for compatibility for legacy character sets.  However, new character sets (UTF8,
+        for example) do not inherit this limitation.</para>
+      </section><!-- sect3 -->
+
+      <section id="rnfb20x-charsets-enh-attcharset"><!-- Level 3 section -->
+        <title><emphasis>sqlsubtype</emphasis> and Attachment Character Set</title>
+        <para>When the character set of a CHAR or VARCHAR column is anything but NONE or OCTETS and the
+        attachment character set is not NONE, the <emphasis>sqlsubtype</emphasis> member of an XSQLVAR
+        pertaining to that column now contains the attachment (connection) character set number instead of the
+        column's character set.</para>
+      </section><!-- sect3 -->
+
+      <section id="rnfb20x-charsets-enh-blob"><!-- Level 3 section -->
+        <title>Enhancements for BLOBs</title>
+        <para>Several character set-related enhancements have been added for text BLOBs.</para>
+
+        <section id="rnfb20x-charsets-enh-blob-collate"><!-- Level 4 section -->
+          <title>COLLATE clauses for BLOBs</title>
+          <para>A DML COLLATE clause is now allowed with BLOBs.</para>
+          <para><emphasis role="bold">Example</emphasis></para>
+          <programlisting>
+  select blob_column from table
+    where blob_column collate unicode = 'foo';
+          </programlisting>
+        </section><!-- sect4 -->
+
+        <section id="rnfb20x-charsets-enh-blob-compare"><!-- Level 4 section -->
+          <title>Full equality comparisons between BLOBs</title>
+          <para>Comparison can be performed on the entire content of a text BLOB.</para>
+        </section><!-- sect4 -->
+
+        <section id="rnfb20x-charsets-enh-blob-convert"><!-- Level 4 section -->
+          <title>Character set conversion for BLOBs</title>
+          <para>Conversion between character sets is now possible when assigning to a BLOB from a string or
+          another BLOB</para>
+        </section><!-- sect4 -->
+
+      </section><!-- sect3 -->
+
+    </section><!-- sect2 -->
+
+    <section id="rnfb20x-charsets-intl"><!-- Level 2 section -->
+      <title>INTL Plug-ins</title>
+      <para>Character sets and collations are installed using a <firstterm>manifest file</firstterm>.</para>
+      <para>The manifest file should be put in the $rootdir/intl with a .conf extension.  It is used to locate
+      character sets and collations in the libraries.  If a character set/collation is declared more than once, it
+      is not loaded and the error is reported in the log.</para>
+      <para>The file <filename>/intl/fbintl.conf</filename> is an example of a manifest file.  The following snippet
+      is an excerpt from <filename>/intl/fbintl.conf</filename>:</para>
+      <literallayout class="monospaced">
+   &lt;intl_module fbintl&gt;
+       filename    $(this)/fbintl
+   &lt;/intl_module&gt;
+
+   &lt;charset ISO8859_1&gt;
+       intl_module    fbintl
+       collation    ISO8859_1
+       collation    DA_DA
+       collation    DE_DE
+       collation    EN_UK
+       collation    EN_US
+       collation    ES_ES
+       collation    PT_BR
+       collation    PT_PT
+   &lt;/charset&gt;
+
+   &lt;charset WIN1250&gt;
+       intl_module    fbintl
+       collation    WIN1250
+       collation    PXW_CSY
+       collation    PXW_HUN
+       collation    PXW_HUNDC
+   &lt;/charset&gt;
+      </literallayout>
+      <note>
+         <para>The symbol $(this) is used to indicate the same directory as the manifest file
+         and the library extension should be omitted.</para>
+      </note>
+
+    </section><!-- sect2 -->
+
+    <section id="rnfb20x-charsets-new"><!-- Level 2 section -->
+      <title>New Character Sets/Collations</title>
+      <para>Two character sets introduced in Firebird 2 will be of particular interest if you have struggled
+      with the shortcomings of UNICODE_FSS in past versions.</para>
+
+      <section id="rnfb20x-charsets-new-utf8"><!-- Level 3 section -->
+        <title>UTF8 character set</title>
+        <para>The UNICODE_FSS character set has a number of problems: it's an old version of UTF8 that accepts
+        malformed strings and does not enforce correct maximum string length.  In FB 1.5.X UTF8 is an alias
+        to UNICODE_FSS.</para>
+        <para>Now, UTF8 is a new character set, without the inherent problems of UNICODE_FSS.</para>
+      </section><!-- sect3 -->
+
+      <section id="rnfb20x-charsets-new-uni"><!-- Level 3 section -->
+        <title>UNICODE collations (for UTF8)</title>
+        <para>UCS_BASIC works identically to UTF8 with no collation specified (sorts in UNICODE code-point order).
+        The UNICODE collation sorts using UCA (Unicode Collation Algorithm).</para>
+        <para><emphasis role="bold">Sort order sample:</emphasis></para>
+        <programlisting>
+  isql -q -ch dos850
+  SQL&gt; create database 'test.fdb';
+  SQL&gt; create table t (c char(1) character set utf8);
+  SQL&gt; insert into t values ('a');
+  SQL&gt; insert into t values ('A');
+  SQL&gt; insert into t values ('&aacute;');
+  SQL&gt; insert into t values ('b');
+  SQL&gt; insert into t values ('B');
+  SQL&gt; select * from t order by c collate ucs_basic;
+
+  C
+  ======
+  A
+  B
+  a
+  b
+  &aacute;
+
+  SQL&gt; select * from t order by c collate unicode;
+
+  C
+  ======
+  a
+  A
+  &aacute;
+  b
+  B
+        </programlisting>
+      </section><!-- sect3 -->
+    </section><!-- sect2 -->
+
+<!-- V 2.1 -->
+    <section id="rnfb210-intl-devel"><!-- sect2 -->
+      <title>Developments in V.2.1</title>
+      <para>The 2.1 release sees further capabilities implemented for</para>
+      <orderedlist>
+        <listitem>
+          <para>using ICU charsets through fbintl</para>
+        </listitem>
+        <listitem>
+          <para>UNICODE collation (charset_UNICODE) being available for all <emphasis>fbintl</emphasis> charsets</para>
+        </listitem>
+        <listitem>
+          <para>using collation attributes</para>
+        </listitem>
+        <listitem>
+          <para>CREATE/DROP COLLATION statements</para>
+        </listitem>
+        <listitem>
+          <para>SHOW COLLATION and collation extraction in ISQL</para>
+        </listitem>
+        <listitem>
+          <para>Verifying that text blobs are well-formed</para>
+        </listitem>
+        <listitem>
+          <para>Transliterating text blobs automatically</para>
+        </listitem>
+      </orderedlist>
+    </section><!-- sect2 -->
+
+    <section id="rnfb210-intl-icucharsets"><!-- Level 2 section -->
+      <title>ICU Character Sets</title>
+      <para>All non-wide and ASCII-based character sets present in ICU can be used by Firebird 2.1.  To
+      reduce the size of the distribution kit, we customize ICU to include only essential character
+      sets and any for which there was a specific feature request.</para>
+      <para>If the character set you need is not included, you can replace the ICU libraries with
+      another complete module, found at our site or already installed in your operating system.</para>
+
+      <section id="rnfb210-intl-icureg"><!-- Level 3 section -->
+        <title>Registering an ICU Character Set Module</title>
+        <para>To use an alternative character set module, you need to register it in two places:</para>
+        <orderedlist>
+          <listitem>
+            <para>in the server's language configuration file, <filename>intl/fbintl.conf</filename></para>
+          </listitem>
+          <listitem>
+            <para>in each database that is going to use it</para>
+          </listitem>
+        </orderedlist>
+
+        <section id="rnfb210-intl-reginsvr"><!-- Level 4 section -->
+          <title>Registering a Character Set on the Server</title>
+          <para>Using a text editor, register the module in <filename>intl/fbintl.conf</filename>, as follows.- </para>
+          <programlisting>
+&lt;charset         NAME&gt;
+    intl_module     fbintl
+    collation       NAME [REAL-NAME]
+&lt;/charset&gt;
+          </programlisting>
+        </section><!-- sect4 -->
+
+        <section id="rnfb210-intl-regindb"><!-- Level 4 section -->
+          <title>Registering a Character Set in a Database</title>
+          <para>To register the module in a database, you have two options:</para>
+          <itemizedlist>
+            <listitem>
+              <para>Use the CREATE COLLATION statement, OR&mdash;</para>
+            </listitem>
+            <listitem>
+              <para>Run the procedure <filename>sp_register_character_set</filename>, the source
+              for which can be found in <filename>misc/intl.sql</filename> beneath your Firebird 2.1 root</para>
+            </listitem>
+          </itemizedlist>
+
+          <section id="rnfb210-intl-crtcolln" xreflabel="CREATE COLLATION statement"><!-- Level 5 section -->
+            <title>The CREATE COLLATION Statement</title>
+
+            <para><emphasis role="bold">Syntax for CREATE COLLATION</emphasis></para>
+            <programlisting>
+CREATE COLLATION &lt;name&gt;
+    FOR &lt;charset&gt;
+    [ FROM &lt;base&gt; | FROM EXTERNAL ('&lt;name&gt;') ]
+    [ NO PAD | PAD SPACE ]
+    [ CASE SENSITIVE | CASE INSENSITIVE ]
+    [ ACCENT SENSITIVE | ACCENT INSENSITIVE ]
+    [ '&lt;specific-attributes&gt;' ]
+            </programlisting>
+            <note>
+              <para>Specific attributes should be separated by semicolon and are case sensitive.</para>
+            </note>
+
+            <para><emphasis role="bold">Examples</emphasis></para>
+            <programlisting>
+/* 1 */
+CREATE COLLATION UNICODE_ENUS_CI
+    FOR UTF8
+    FROM UNICODE
+    CASE INSENSITIVE
+    'LOCALE=en_US';
+/* 2 */
+CREATE COLLATION NEW_COLLATION
+    FOR WIN1252
+    PAD SPACE;
+
+/* NEW_COLLATION should be declared in .conf file
+   in $root/intl directory */
+            </programlisting>
+          </section><!-- sect5 -->
+
+          <section id="rnfb210-intl-byscript"><!-- Level 5 section -->
+            <title>Using the Stored Procedure</title>
+
+            <para><emphasis role="bold">A Sample</emphasis></para>
+            <para>Here is the sample declaration in <filename>fbintl.conf</filename>:</para>
+            <programlisting>
+&lt;charset         GB&gt;
+    intl_module     fbintl
+    collation       GB GB18030
+&lt;/charset&gt;
+            </programlisting>
+            <para>The stored procedure takes two arguments:  a string that is the character set's identifier as
+            declared in the configuration file and a smallint that is the maximum number of bytes a single character
+            can occupy in the encoding.  For our example:</para>
+            <programlisting>
+execute procedure sp_register_character_set ('GB', 4);
+            </programlisting>
+          </section><!-- sect5 -->
+        </section><!-- sect4 -->
+      </section><!-- sect3 -->
+    </section><!-- sect2 -->
+
+    <section id="rnfb210-intl-unicode" xreflabel="UNICODE Collations"><!-- Level 2 section -->
+      <title>The UNICODE Collations</title>
+      <para>The UNICODE collations (case sensitive and case insensitive) can be applied to any character
+      set that is present in fbintl.  They are already registered in <filename>fbintl.conf</filename>,
+      but you need to register them in the databases, with the desired associations and
+      attributes.</para>
+
+      <para><emphasis role="bold">Naming Conventions</emphasis></para>
+      <para>The naming convention you should use is <filename>charset_collation</filename>.  For
+      example, </para>
+      <programlisting>
+create collation win1252_unicode
+  for win1252;
+
+create collation win1252_unicode_ci
+  for win1252
+   from win1252_unicode
+   case insensitive;
+      </programlisting>
+      <note>
+        <para>The character set name should be as in fbintl.conf (i.e. ISO8859_1 instead of ISO88591,
+        for example).</para>
+      </note>
+    </section><!-- sect2 -->
+
+    <section id="rnfb210-intl-attribs"><!-- Level 2 section -->
+      <title>Specific Attributes for Collations</title>
+      <note>
+        <para>Some attributes may not work with some collations, even though they do not report an
+        error.</para>
+      </note>
+
+      <variablelist>
+        <varlistentry>
+          <term>DISABLE-COMPRESSIONS</term>
+          <listitem>
+            <para>Disable compressions (aka contractions) changing the order of a group of
+            characters.</para>
+            <para>Valid for collations of narrow character sets.</para>
+            <para>Format: &nbsp; DISABLE-COMPRESSIONS={0 | 1}</para>
+            <para><emphasis role="bold">Example</emphasis></para>
+            <para>DISABLE-COMPRESSIONS=1</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>DISABLE-EXPANSIONS</term>
+          <listitem>
+            <para>Disable expansions changing the order of a character to sort as a group of
+            characters.</para>
+            <para>Valid for collations of narrow character sets.</para>
+            <para>Format: &nbsp; DISABLE-EXPANSIONS={0 | 1}</para>
+            <para><emphasis role="bold">Example</emphasis></para>
+            <para>DISABLE-EXPANSIONS=1</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>ICU-VERSION</term>
+          <listitem>
+            <para>Specify what version of ICU library will be used. Valid values are
+            the ones defined in the config file (intl/fbintl.conf) in entry intl_module/icu_versions.</para>
+            <para>Valid for UNICODE and UNICODE_CI.</para>
+            <para>Format: &nbsp; ICU-VERSION={default | major.minor}</para>
+            <para><emphasis role="bold">Example</emphasis></para>
+            <para>ICU-VERSION=3.0</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>LOCALE</term>
+          <listitem>
+            <para>Specify the collation locale.</para>
+            <para>Valid for UNICODE and UNICODE_CI.  Requires complete version of ICU libraries.</para>
+            <para>Format: &nbsp; LOCALE=xx_XX</para>
+            <para><emphasis role="bold">Example</emphasis></para>
+            <para>LOCALE=en_US</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>MULTI-LEVEL</term>
+          <listitem>
+            <para>Uses more than one level for ordering purposes.</para>
+            <para>Valid for collations of narrow character sets.</para>
+            <para>Format: &nbsp; MULTI-LEVEL={0 | 1}</para>
+            <para><emphasis role="bold">Example</emphasis></para>
+            <para>MULTI-LEVEL=1</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>SPECIALS-FIRST</term>
+          <listitem>
+            <para>Order special characters (spaces, symbols, etc) before alphanumeric characters.</para>
+            <para>Valid for collations of narrow character sets.</para>
+            <para>Format: &nbsp; SPECIALS-FIRST={0 | 1}</para>
+            <para><emphasis role="bold">Example</emphasis></para>
+            <para>SPECIALS-FIRST=1</para>
+          </listitem>
+        </varlistentry>
+
+      </variablelist>
+    </section><!-- sect2 -->
+
+    <section id="rnfb210-intl-chngs"><!-- Level 2 section -->
+      <title>Collation Changes in V.2.1</title>
+      <variablelist>
+        <varlistentry>
+          <term>Spanish</term>
+          <listitem>
+            <para>ES_ES (as well as the new ES_ES_CI_AI) collation automatically uses
+            attributes DISABLE-COMPRESSIONS=1;SPECIALS-FIRST=1.</para>
+            <note>
+              <para>The attributes are stored at database creation time, so the changes
+              do not apply to databases with ODS &lt; 11.1.</para>
+            </note>
+            <para>The ES_ES_CI_AI collation was standardised to current usage.</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>UTF-8</term>
+          <listitem>
+            <para>Case-insensitive collation for UTF-8. See
+            <ulink url="http://tracker.firebirdsql.org/browse/CORE-972">feature
+            request CORE-972</ulink></para>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+    </section><!-- sect2 -->
+
+  </section><!-- sect1 -->
+
+  <section id="rnfb210-intl-metafix"><!-- Level 1 section -->
+    <title>Metadata Text Conversion</title>
+    <para>Firebird versions 2.0.x had two problems related to character sets and metadata extraction:</para>
+    <orderedlist>
+      <listitem>
+        <para>When creating or altering objects, text associated with metadata was not transliterated from the
+        client character set to the system (UNICODE_FSS) character set of these BLOB columns. Instead, raw
+        bytes were stored there.</para>
+        <para>The types of text affected were PSQL sources, descriptions, text associated with constraints and
+        defaults, and so on.</para>
+        <note>
+          <para>Even in the current version (2.1 Beta 1) the problem can still occur if CREATE or ALTER operations
+          are performed with the connection character set as NONE or UNICODE_FSS and you are using non-UNICODE_FSS
+          data.</para>
+        </note>
+      </listitem>
+
+      <listitem>
+        <para>In reads from text BLOBs, transliteration from the BLOB character set to the client character
+        set was not being performed.</para>
+      </listitem>
+    </orderedlist>
+
+    <section id="rnfb210-metafix-repair"><!-- Level 2 -->
+      <title>Repairing Your Metadata Text</title>
+      <para>If your metadata text was created with non-ASCII encoding, you need to repair your database in order
+      to read the metadata correctly after upgrading it to v.2.1.</para>
+
+      <important>
+        <para>The procedure involves multiple passes through the database, using scripts.  It is strongly
+        recommended that you disconnect and reconnect before each pass.</para>
+        <para>The database should already have been converted to ODS11.1 by way of a gbak backup and
+        restore.</para>
+        <para>Before doing anything, make a copy of the database.</para>
+        <para>In the examples that follow, the string <emphasis>$fbroot$</emphasis> represents the path to your Firebird 
+        installation root directory, e.g. <emphasis>/opt/firebird</emphasis>.</para>
+      </important>
+
+      <section id="rnfb210-metafix-prepare1"><!-- Level 3 -->
+        <title>Create the procedures in the database</title>
+        <programlisting>
+[1] isql /path/to/your/database.fdb
+[2] SQL&gt; input '$fbroot$/misc/upgrade/metadata/metadata_charset_create.sql';
+        </programlisting>
+      </section><!-- sect3 -->
+
+      <section id="rnfb210-metafix-prepare2"><!-- Level 3 -->
+        <title>Check your database</title>
+        <programlisting>
+[1] isql /path/to/your/database.fdb
+[2] SQL&gt; select * from rdb$check_metadata;
+        </programlisting>
+        <para>The <emphasis>rdb$check_metadata</emphasis> procedure will return all objects that are touched
+        by it.</para>
+        <itemizedlist>
+          <listitem>
+            <para>If no exception is raised, your metadata is OK and you can go to the
+            section <quote><xref linkend="rnfb210-metafix-rmv"/></quote>.</para>
+          </listitem>
+          <listitem>
+            <para>Otherwise, the first bad object is the last one listed before the
+            exception.</para>
+          </listitem>
+        </itemizedlist>
+      </section><!-- sect3 -->
+
+      <section id="rnfb210-metafix-fix"><!-- Level 3 -->
+        <title>Fixing the metadata</title>
+        <para>To fix the metadata, you need to know in what character set the objects were created.  The
+        upgrade script will work correctly only if all your metadata was created using the same character
+        set.</para>
+
+        <programlisting>
+[1] isql /path/to/your/database.fdb
+[2] SQL&gt; input '$fbroot$/misc/upgrade/metatdata/metadata_charset_create.sql';
+[3] SQL&gt; select * from rdb$fix_metadata('WIN1252');  -- replace WIN1252 by your charset
+[4] SQL&gt; commit;
+        </programlisting>
+
+        <para>The <emphasis>rdb$fix_metadata</emphasis> procedure will return the same data as
+        <emphasis>rdb$check_metadata</emphasis>, but it will change the metadata texts.</para>
+        <important>
+          <para>It should be run once!</para>
+        </important>
+        <para>After this, you can remove the upgrade procedures.</para>
+      </section><!-- sect3 -->
+
+      <section id="rnfb210-metafix-rmv"  xreflabel="Remove the upgrade procedures"><!-- Level 3 -->
+        <title>Remove the upgrade procedures</title>
+        <programlisting>
+[1] isql /path/to/your/database.fdb
+[2] SQL&gt; input '$fbroot$/misc/upgrade/metadata/metadata_charset_drop.sql';
+        </programlisting>
+      </section><!-- sect3 -->
+    </section><!-- sect2 -->
+  </section><!-- sect1 -->
+
+  <section id="rnfb21-intl-spprtd"><!-- Level 1 section -->
+    <title>Supported Character Sets</title>
+    <para>See <xref linkend="rnfb210-appx-B"/> at the end of these notes, for a full listing of 
+    the supported character sets.</para>
+  </section><!-- sect1 -->
+
+</chapter>

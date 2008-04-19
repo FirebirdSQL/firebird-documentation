@@ -1,0 +1,442 @@
+  <chapter id="rnfb210-admin">
+    <chapterinfo>
+      <title>Administrative Features</title>
+    </chapterinfo>
+    <para>Firebird is gradually adding new features to assist in the administration
+    of databases.  Firebird 2.1 sees the introduction of a new set of system tables
+    through which administrators can monitor transactions and statements that are active
+    in a database.  These facilities employ a new v.2.1 DDL feature, <xref linkend="rnfb210-globaltemp"/>
+    <!-- Global Temporary Tables --> to provide snapshots.</para>
+
+    <section id="rnfb210-mon" xreflabel="Monitoring Tables"><!-- Level 1 section -->
+      <sectioninfo>
+        <title>Monitoring Tables</title>
+        <author>
+          <firstname>Dmitry</firstname>
+          <surname>Yemanov</surname>
+        </author>
+      </sectioninfo>
+      <para>Firebird 2.1 introduces the ability to monitor server-side activity
+      happening inside a particular database.  The engine offers a set of so-called
+      <quote>virtual</quote> tables that provides the user with a snapshot of the
+      current activity within the given database.</para>
+      <para>The word <quote>virtual</quote> means that the table data is not
+      materialised until explicitly asked for.  However, the metadata of the virtual
+      table is stable and can be retrieved from the schema.</para>
+      <note>
+        <para>Virtual monitoring tables exist only in ODS 11.1 (and higher) databases,
+        so a migration via backup/restore is required in order to use this
+        feature.</para>
+      </note>
+
+      <section id="rnfb210-mon-cncpt"><!-- Level 2 section -->
+        <title>The Concept</title>
+          <para>The key term of the monitoring feature is an <firstterm>activity
+          snapshot</firstterm>. It represents the current state of the database,
+          comprising a variety of information about the database itself, active
+          attachments and users, transactions, prepared and running statements, and
+          more.</para>
+          <para>A snapshot is created the first time any of the monitoring tables is
+          being selected from in the given transaction and it is preserved until the
+          transaction ends, in order that multiple-table queries (e.g., master-detail
+          ones) will always return a consistent view of the data.</para>
+          <para>In other words, the monitoring tables always behave like a snapshot
+          table stability (<quote>consistency</quote>) transaction, even if the host
+          transaction has been started with a lower isolation level.</para>
+          <para>To refresh the snapshot, the current transaction should be finished
+          and the monitoring tables should be queried in a new transaction
+          context.</para>
+        </section>
+
+      <section id="rnfb210-mon-scrty"><!-- Level 2 section -->
+        <title>Scope and Security</title>
+        <itemizedlist>
+          <listitem>
+            <para>Access to the monitoring tables is available in both DSQL and PSQL.</para>
+          </listitem>
+          <listitem>
+            <para>Complete database monitoring is available to SYSDBA and the
+            database owner.</para>
+          </listitem>
+          <listitem>
+            <para>Regular users are restricted to the information about their
+            own attachments only&mdash;other attachments are invisible to them.</para>
+          </listitem>
+        </itemizedlist>
+      </section>
+
+      <section id="rnfb210-mon-mtdta"><!-- Level 2 section -->
+        <title>Metadata</title>
+        <variablelist>
+          <varlistentry>
+            <term>MON$DATABASE (connected database)</term>
+            <listitem>
+              <literallayout>
+      - MON$DATABASE_NAME (database pathname or alias)
+      - MON$PAGE_SIZE (page size)
+      - MON$ODS_MAJOR (major ODS version)
+      - MON$ODS_MINOR (minor ODS version)
+      - MON$OLDEST_TRANSACTION (OIT number)
+      - MON$OLDEST_ACTIVE (OAT number)
+      - MON$OLDEST_SNAPSHOT (OST number)
+      - MON$NEXT_TRANSACTION (next transaction number)
+      - MON$PAGE_BUFFERS (number of pages allocated in the cache)
+      - MON$SQL_DIALECT (SQL dialect of the database)
+      - MON$SHUTDOWN_MODE (current shutdown mode)
+          0: online
+          1: multi-user shutdown
+          2: single-user shutdown
+          3: full shutdown
+      - MON$SWEEP_INTERVAL (sweep interval)
+      - MON$READ_ONLY (read-only flag)
+      - MON$FORCED_WRITES (sync writes flag)
+      - MON$RESERVE_SPACE (reserve space flag)
+      - MON$CREATION_DATE (creation date/time)
+      - MON$PAGES (number of pages allocated on disk)
+      - MON$BACKUP_STATE (current physical backup state)
+          0: normal
+          1: stalled
+          2: merge
+      - MON$STAT_ID (statistics ID)
+              </literallayout>
+            </listitem>
+          </varlistentry>
+
+          <varlistentry>
+            <term>MON$ATTACHMENTS (connected attachments)</term>
+            <listitem>
+              <literallayout>
+      - MON$ATTACHMENT_ID (attachment ID)
+      - MON$SERVER_PID (server process ID)
+      - MON$STATE (attachment state)
+          0: idle
+          1: active
+      - MON$ATTACHMENT_NAME (connection string)
+      - MON$USER (user name)
+      - MON$ROLE (role name)
+      - MON$REMOTE_PROTOCOL (remote protocol name)
+      - MON$REMOTE_ADDRESS (remote address)
+      - MON$REMOTE_PID (remote client process ID)
+      - MON$REMOTE_PROCESS (remote client process pathname)
+      - MON$CHARACTER_SET_ID (attachment character set)
+      - MON$TIMESTAMP (connection date/time)
+      - MON$GARBAGE_COLLECTION (garbage collection flag)
+      - MON$STAT_ID (statistics ID)
+              </literallayout>
+            </listitem>
+            <listitem>
+              <itemizedlist>
+                <listitem>
+                  <para>columns MON$REMOTE_PID and MON$REMOTE_PROCESS contains non-NULL
+                  values only if the client library is version 2.1 or higher</para>
+                </listitem>
+                <listitem>
+                  <para>column MON$REMOTE_PROCESS can contain a non-pathname value if
+                  an application has specified a custom process name via DPB</para>
+                </listitem>
+                <listitem>
+                  <para>column MON$GARBAGE_COLLECTION indicates whether GC is allowed for this
+                  attachment (as specified via the DPB in <emphasis>isc_attach_database</emphasis>).</para>
+                </listitem>
+              </itemizedlist>
+            </listitem>
+          </varlistentry>
+
+          <varlistentry>
+            <term>MON$TRANSACTIONS (started transactions)</term>
+            <listitem>
+              <literallayout>
+      - MON$TRANSACTION_ID (transaction ID)
+      - MON$ATTACHMENT_ID (attachment ID)
+      - MON$STATE (transaction state)
+          0: idle (state after prepare, until execution begins)
+          1: active (state during execution and fetch.  Idle state
+             returns after cursor is closed)
+      - MON$TIMESTAMP (transaction start date/time)
+      - MON$TOP_TRANSACTION (top transaction)
+      - MON$OLDEST_TRANSACTION (local OIT number)
+      - MON$OLDEST_ACTIVE (local OAT number)
+      - MON$ISOLATION_MODE (isolation mode)
+          0: consistency
+          1: concurrency
+          2: read committed record version
+          3: read committed no record version
+      - MON$LOCK_TIMEOUT (lock timeout)
+          -1: infinite wait
+          0: no wait
+          N: timeout N
+      - MON$READ_ONLY (read-only flag)
+      - MON$AUTO_COMMIT (auto-commit flag)
+      - MON$AUTO_UNDO (auto-undo flag)
+      - MON$STAT_ID (statistics ID)
+              </literallayout>
+            </listitem>
+            <listitem>
+              <itemizedlist>
+                <listitem>
+                  <para>MON$TOP_TRANSACTION is the upper limit used by the sweeper transaction when advancing the
+                  global OIT.  All transactions above this threshold are considered active.  It is normally 
+                  equivalent to the MON$TRANSACTION_ID but COMMIT RETAINING or ROLLBACK RETAINING will cause 
+                  MON$TOP_TRANSACTION to remain unchanged (<quote>stuck</quote>) when the transaction ID is 
+                  incremented.</para>
+                </listitem>
+                <listitem>
+                  <para>MON$AUTO_UNDO indicates the auto-undo status set for the transaction, i.e., whether a 
+                  transaction-level savepoint was created.  The existence of the transaction-level savepoint 
+                  allows changes to be undone if ROLLBACK is called and the transaction is then just committed.  If this 
+                  savepoint does not exist, or it does exist but the number of changes is very large, then an actual 
+                  ROLLBACK is executed and the the transaction is marked in the TIP as <quote>dead</quote>.</para>
+                </listitem>
+              </itemizedlist>
+            </listitem>
+          </varlistentry>
+
+          <varlistentry>
+            <term>MON$STATEMENTS (prepared statements)</term>
+            <listitem>
+              <literallayout>
+      - MON$STATEMENT_ID (statement ID)
+      - MON$ATTACHMENT_ID (attachment ID)
+      - MON$TRANSACTION_ID (transaction ID)
+      - MON$STATE (statement state)
+          0: idle
+          1: active
+      - MON$TIMESTAMP (statement start date/time)
+      - MON$SQL_TEXT (statement text, if appropriate)
+      - MON$STAT_ID (statistics ID)
+              </literallayout>
+            </listitem>
+            <listitem>
+              <itemizedlist>
+                <listitem>
+                  <para>column MON$SQL_TEXT contains NULL for GDML statements</para>
+                </listitem>
+                <listitem>
+                  <para>columns MON$TRANSACTION_ID and MON$TIMESTAMP contain valid
+                  values for active statements only</para>
+                </listitem>
+                <listitem>
+                  <para>The execution plan and the values of parameters are not
+                  available</para>
+                </listitem>
+              </itemizedlist>
+            </listitem>
+          </varlistentry>
+
+          <varlistentry>
+            <term>MON$CALL_STACK (call stack of active PSQL requests)</term>
+            <listitem>
+              <literallayout>
+      - MON$CALL_ID (call ID)
+      - MON$STATEMENT_ID (top-level DSQL statement ID)
+      - MON$CALLER_ID (caller request ID)
+      - MON$OBJECT_NAME (PSQL object name)
+      - MON$OBJECT_TYPE (PSQL object type)
+      - MON$TIMESTAMP (request start date/time)
+      - MON$SOURCE_LINE (SQL source line number)
+      - MON$SOURCE_COLUMN (SQL source column number)
+      - MON$STAT_ID (statistics ID)
+              </literallayout>
+            </listitem>
+            <listitem>
+              <itemizedlist>
+                <listitem>
+              <para>column MON$STATEMENT_ID groups call stacks by the top-level
+              DSQL statement that initiated the call chain. This ID represents an
+              active statement record in the table MON$STATEMENTS.</para>
+                </listitem>
+                <listitem>
+                  <para>columns MON$SOURCE_LINE and MON$SOURCE_COLUMN contain
+                  line/column information related to the PSQL statement currently
+                  being executed</para>
+                </listitem>
+              </itemizedlist>
+            </listitem>
+          </varlistentry>
+
+          <varlistentry>
+            <term>MON$IO_STATS (I/O statistics)</term>
+            <listitem>
+              <literallayout>
+      - MON$STAT_ID (statistics ID)
+      - MON$STAT_GROUP (statistics group)
+          0: database
+          1: attachment
+          2: transaction
+          3: statement
+          4: call
+      - MON$PAGE_READS (number of page reads)
+      - MON$PAGE_WRITES (number of page writes)
+      - MON$PAGE_FETCHES (number of page fetches)
+      - MON$PAGE_MARKS (number of pages with changes pending)
+              </literallayout>
+            </listitem>
+          </varlistentry>
+
+          <varlistentry>
+            <term>MON$RECORD_STATS (record-level statistics)</term>
+            <listitem>
+              <literallayout>
+      - MON$STAT_ID (statistics ID)
+      - MON$STAT_GROUP (statistics group)
+          0: database
+          1: attachment
+          2: transaction
+          3: statement
+          4: call
+      - MON$RECORD_SEQ_READS (number of records read sequentially)
+      - MON$RECORD_IDX_READS (number of records read via an index)
+      - MON$RECORD_INSERTS (number of inserted records)
+      - MON$RECORD_UPDATES (number of updated records)
+      - MON$RECORD_DELETES (number of deleted records)
+      - MON$RECORD_BACKOUTS (number of records where a new primary 
+           record version or a change to an existing primary record
+           version is backed out due to rollback or savepoint undo)
+      - MON$RECORD_PURGES (number of records where record version
+           chain is being purged of versions no longer needed by OAT
+           or younger transactions)
+      - MON$RECORD_EXPUNGES (number of records where record version
+           chain is being deleted due to deletions by transactions
+           older than OAT)
+              </literallayout>
+            </listitem>
+          </varlistentry>
+        </variablelist>
+
+        <note>
+          <para>Textual descriptions of all <quote>state</quote> and <quote>mode</quote>
+          values can be found in the system table RDB$TYPES.</para>
+        </note>
+      </section>
+
+      <section id="rnfb210-mon-usge"><!-- Level 2 section -->
+        <title>Usage</title>
+
+        <para>Creation of a snapshot is usually quite a fast operation, but some
+        delay could be expected under high load (especially in the Classic
+        Server).</para>
+
+        <para>A valid database connection is required in order to retrieve the
+        monitoring data. The monitoring tables return information about the attached
+        database only. If multiple databases are being accessed on the server, each
+        of them has to be connected to and monitored separately.</para>
+
+        <para>The system variables <filename>CURRENT_CONNECTION</filename> and
+        <filename>CURRENT_TRANSACTION</filename> could be used to select data about
+        the caller's current connection and transaction respectively. These variables
+        correspond to the ID columns of the appropriate monitoring tables.</para>
+
+        <para><emphasis role="bold">Examples</emphasis></para>
+        <orderedlist>
+          <listitem><!-- 1 -->
+            <para>Retrieve IDs of all CS processes loading CPU at the moment</para>
+            <programlisting>
+SELECT MON$SERVER_PID
+  FROM MON$ATTACHMENTS
+  WHERE MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION
+  AND MON$STATE = 1
+            </programlisting>
+          </listitem>
+
+          <listitem><!-- 2 -->
+            <para>Retrieve information about client applications</para>
+            <programlisting>
+SELECT MON$USER, MON$REMOTE_ADDRESS,
+    MON$REMOTE_PID,
+    MON$TIMESTAMP
+  FROM MON$ATTACHMENTS
+  WHERE MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION
+            </programlisting>
+          </listitem>
+
+          <listitem><!-- 3 -->
+            <para>Get isolation level of the current transaction</para>
+            <programlisting>
+SELECT MON$ISOLATION_MODE
+  FROM MON$TRANSACTIONS
+  WHERE MON$TRANSACTION_ID = CURRENT_TRANSACTION
+            </programlisting>
+          </listitem>
+
+          <listitem><!-- 4 -->
+            <para>Get statements that are currently active</para>
+            <programlisting>
+SELECT ATT.MON$USER,
+       ATT.MON$REMOTE_ADDRESS,
+       STMT.MON$SQL_TEXT,
+       STMT.MON$TIMESTAMP
+  FROM MON$ATTACHMENTS ATT
+    JOIN MON$STATEMENTS STMT
+      ON ATT.MON$ATTACHMENT_ID = STMT.MON$ATTACHMENT_ID
+  WHERE ATT.MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION
+    AND STMT.MON$STATE = 1
+            </programlisting>
+          </listitem>
+
+          <listitem><!-- 5 -->
+            <para>Retrieve call stacks for all connections</para>
+            <programlisting>
+WITH RECURSIVE HEAD AS
+  (
+     SELECT CALL.MON$STATEMENT_ID,
+            CALL.MON$CALL_ID,
+            CALL.MON$OBJECT_NAME,
+            CALL.MON$OBJECT_TYPE
+     FROM MON$CALL_STACK CALL
+       WHERE CALL.MON$CALLER_ID IS NULL
+     UNION ALL
+       SELECT CALL.MON$STATEMENT_ID,
+              CALL.MON$CALL_ID,
+              CALL.MON$OBJECT_NAME,
+              CALL.MON$OBJECT_TYPE
+       FROM MON$CALL_STACK CALL
+         JOIN HEAD
+           ON CALL.MON$CALLER_ID = HEAD.MON$CALL_ID
+  )
+  SELECT MON$ATTACHMENT_ID,
+         MON$OBJECT_NAME,
+         MON$OBJECT_TYPE
+  FROM HEAD
+    JOIN MON$STATEMENTS STMT
+      ON STMT.MON$STATEMENT_ID = HEAD.MON$STATEMENT_ID
+    WHERE STMT.MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION
+            </programlisting>
+          </listitem>
+
+        </orderedlist>
+      </section>
+
+      <section id="rnfb210-mon-cnclqry" xreflabel="Cancel a Running Query"><!-- Level 2 section -->
+        <title>Cancel a Running Query</title>
+          <para>Runaway and long-running queries can now be cancelled <emphasis>from a 
+          separate connection</emphasis>.</para>
+          <para>There is no API function call directed at this feature.  It will be up 
+          to the SysAdmin (SYSDBA or Owner) to make use of the data available in the 
+          monitoring tables and devise an appropriate mechanism for reining in the rogue 
+          statements.</para>
+          <para><emphasis role="bold">Example</emphasis></para>
+          <para>As a very rough example, the following statement will kill all 
+          statements currently running in the database, other than any that belong to 
+          the <emphasis>separate</emphasis> connection that the SysAdmin is using 
+          himself:</para>
+          <programlisting>
+delete from mon$statements
+  where mon$attachment_id &lt;&gt; current_connection
+          </programlisting>
+        </section>
+    </section>
+    <section id="rnfb210-svrinfo" xreflabel="More Context Information"><!-- Level 1 section -->
+      <title>More Context Information</title>
+        <para>More context information about the server and database ('SYSTEM') is
+        available via SELECT calls to the RDB$GET_CONTEXT function, including the engine
+        version.</para>
+        <para><emphasis role="bold">Example</emphasis></para>
+        <programlisting>
+SELECT RDB$GET_CONTEXT('SYSTEM', 'ENGINE_VERSION')
+  FROM RDB$DATABASE
+        </programlisting>
+        <para>For detailed information about using these context calls, refer to the
+        v.2.0.1 release notes.</para>
+      </section>
+
+  </chapter>

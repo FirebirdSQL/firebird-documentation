@@ -1,0 +1,1139 @@
+<chapter id="rnfb20x-util">
+  <chapterinfo>
+    <title>Command-line Utilities</title>
+  </chapterinfo>
+
+  <section id="rnfb210-util-general"><!-- Level 1 section -->
+    <title>General Enhancements</title>
+
+    <section id="rnfb21-utils-dbtriggers"><!-- Level 2 section -->
+      <title>Utilities Support for Database Triggers</title>
+      <para><emphasis role="bold">(V. 2.1)</emphasis> A new parameter was added to
+      <emphasis>gbak</emphasis>, <emphasis>nbackup</emphasis> and <emphasis>isql</emphasis>
+      to suppress <xref linkend="rnfb210-dbtriggers"/> <!-- database triggers--> from
+      running.  It is available only to the database owner and SYSDBA:</para>
+      <programlisting>
+  gbak -nodbtriggers
+  isql -nodbtriggers
+  nbackup -T
+      </programlisting>
+    </section>
+  </section>
+
+  <section id="rnfb210-util-svcs"><!-- Level 1 section -->
+    <title>Firebird Services</title>
+
+    <section id="rnfb21-fbsvcmgr"><!-- Level 1 section -->
+      <sectioninfo>
+        <title>New Command-line Utility fbsvcmgr</title>
+        <author>
+          <firstname>Alex</firstname>
+          <surname>Peshkov</surname>
+        </author>
+      </sectioninfo>
+      <para><emphasis role="bold">(V.2.1)</emphasis> The new utility <firstterm>fbsvcmgr</firstterm>
+      provides a command-line interface to the Services API, enabling access to any service that is
+      implemented in Firebird.</para>
+
+      <para>Although there are numerous database administration tools around that surface the
+      Services API through graphical interfaces, the new tool addresses the problem for admins
+      needing to access remote Unix servers in broad networks through a text-only connection.
+      Previously, meeting such a requirement needed a programmer.</para>
+
+      <section id="rnfb21-fbsvcmgr-using"><!-- Level 2 section -->
+        <title>Using fbsvcmgr</title>
+        <para><emphasis>fbsvcmgr</emphasis> does not emulate the switches implemented in the traditional <quote>g*</quote>
+        utilities.  Rather, it is just a front-end through which the Services API functions and
+        parameters can pass. Users therefore need to be familiar with the Services API as it stands
+        currently.  The API header file&mdash;ibase.h, in the ../include directory of your Firebird
+        installation&mdash; should be regarded as the primary source of information about what is
+        available, backed up by the InterBase 6.0 beta API Guide.</para>
+
+        <section id="rnfb21-fbsvcmgr-params"><!-- Level 3 section -->
+          <title>Parameters</title>
+          <variablelist>
+            <varlistentry>
+              <term>Specify the Services Manager</term>
+              <listitem>
+                <para>The first required parameter for a command line call is the Services Manager you
+                want to connect to:</para>
+                <itemizedlist>
+                  <listitem>
+                    <para>For a local connection use the simple symbol
+                    <filename>service_mgr</filename></para>
+                  </listitem>
+                  <listitem>
+                    <para>To attach to a remote host, use the format
+                    <filename>hostname:service_mgr</filename></para>
+                  </listitem>
+                </itemizedlist>
+              </listitem>
+            </varlistentry>
+
+            <varlistentry>
+              <term>Specify subsequent service parameter blocks (SPBs)</term>
+              <listitem>
+                <para>Subsequent SPBs, with values if required, follow. Any SPB can be optionally
+                prefixed with a single '-' symbol. For the long command lines that are typical for
+                <emphasis>fbsvcmgr</emphasis>, use of the '-' improves the readability of the command line.  Compare, for
+                example, the following (each a single command line despite the line breaks printed
+                here):</para>
+                <programlisting>
+# fbsvcmgr service_mgr user sysdba password masterke
+        action_db_stats dbname employee sts_hdr_pages
+                </programlisting>
+                <para>and</para>
+                <programlisting>
+# fbsvcmgr service_mgr -user sysdba -password masterke
+        -action_db_stats -dbname employee -sts_hdr_pages
+                </programlisting>
+              </listitem>
+            </varlistentry>
+          </variablelist>
+        </section>
+        <section id="rnfb21-fbsvcmgr-spbsyntax"><!-- Level 3 section -->
+          <title>SPB Syntax</title>
+          <para>The SPB syntax that <emphasis>fbsvcmgr</emphasis> understands closely matches with what you would encounter in
+          the <filename>ibase.h</filename> include file or the InterBase 6.0 API documentation, except
+          that a slightly abbreviated form is used to reduce typing and shorten the command lines a
+          little.  Here's how it works.</para>
+
+          <para>All SPB parameters have one of two forms: (1) <filename>isc_spb_VALUE</filename> or (2)
+          <filename>isc_VALUE1_svc_VALUE2</filename>. For <emphasis>fbsvcmgr</emphasis> you just need to pick out the
+          <filename>VALUE, VALUE1 or VALUE2</filename> part[s] when you supply your parameter.</para>
+
+          <para>Accordingly, for (1) you would type simply <filename>VALUE</filename>, while for (2) you
+          would type VALUE1_VALUE2. For example:</para>
+          <programlisting>
+isc_spb_dbname => dbname
+isc_action_svc_backup => action_backup
+isc_spb_sec_username => sec_username
+isc_info_svc_get_env_lock => info_get_env_lock
+          </programlisting>
+          <para>and so on.</para>
+          <note>
+            <para>An exception is <filename>isc_spb_user_name</filename>:  it can be specified as either
+            <filename>user_name</filename> or simply <filename>user</filename>.</para>
+          </note>
+
+          <para>It is not realistic to attempt to describe all of the SPB parameters in release notes.
+          In the InterBase 6.0 beta documentation it takes about 40 pages!  The next section highlights
+          some known differences between the operation of <emphasis>fbsvcmgr</emphasis> and what you might otherwise infer
+          from the old beta documentation.</para>
+
+          <section id="rnfb21-fbsvcmgr-spbdiffs"><!-- Level 4 section -->
+            <title>fbsvcmgr Syntax Specifics</title>
+
+            <variablelist>
+              <varlistentry>
+                <term><quote>Do's and Don'ts</quote></term>
+                <listitem>
+                  <para>With <emphasis>fbsvcmgr</emphasis> you can perform a single action&mdash;and get its results
+                  if applicable&mdash;or you can use it to retrieve multiple information items from
+                  the Services Manager.  You cannot do both in a single command.</para>
+
+                  <para>For example,</para>
+                  <programlisting>
+# fbsvcmgr service_mgr -user sysdba -password masterke
+    -action_display_user
+                  </programlisting>
+                  <para>will list all current users on the local firebird server:</para>
+                  <programlisting>
+SYSDBA                         Sql Server Administrator      0    0
+QA_USER1                                                     0    0
+QA_USER2                                                     0    0
+QA_USER3                                                     0    0
+QA_USER4                                                     0    0
+QA_USER5                                                     0    0
+GUEST                                                        0    0
+SHUT1                                                        0    0
+SHUT2                                                        0    0
+QATEST                                                       0    0
+                  </programlisting>
+                  <para>...and...</para>
+                  <programlisting>
+# fbsvcmgr service_mgr -user sysdba -password masterke
+    -info_server_version -info_implementation
+                  </programlisting>
+                  <para>will report both the server version and its implementation:</para>
+                  <programlisting>
+Server version: LI-T2.1.0.15740 Firebird 2.1 Alpha 1
+Server implementation: Firebird/linux AMD64
+                  </programlisting>
+                  <para>But an attempt to mix all of this in single command line:</para>
+                  <programlisting>
+# fbsvcmgr service_mgr -user sysdba -password masterke
+    -action_display_user -info_server_version -info_implementation
+                  </programlisting>
+                  <para>raises an error:</para>
+                  <programlisting>
+Unknown switch <quote>-info_server_version</quote>
+                  </programlisting>
+                </listitem>
+              </varlistentry>
+
+              <varlistentry>
+                <term>Undocumented Items</term>
+                <listitem>
+                  <para>The function <filename>isc_spb_rpr_list_limbo_trans</filename> was omitted from
+                  the IB6 beta documentation.  It is supported in <emphasis>fbsvcmgr</emphasis>.</para>
+                </listitem>
+              </varlistentry>
+              <varlistentry>
+                <term>Support for New Services API Items in v.2.1</term>
+                <listitem>
+                  <para>Two new items that were added to the Services API in Firebird 2.1 are supported
+                  by <emphasis>fbsvcmgr</emphasis>:</para>
+                  <itemizedlist>
+                    <listitem>
+                      <para><filename><xref linkend="rnfb210-apiods-api-wintrust"/><!-- isc_spb_trusted_auth --></filename>
+                      (type it as <filename>trusted_auth</filename>) applies only to Windows.  It forces Firebird to
+                      use Windows trusted authentication.</para>
+                    </listitem>
+                    <listitem>
+                      <para><filename><xref linkend="rnfb210-apiods-api-dbname"/><!-- isc_spb_dbname --></filename> 
+                      gives the ability to set a database name parameter (type as <filename>dbname</filename>) in all
+                      service actions related to accessing the security database from a remote client, equivalent
+                      to supplying the <filename>-database</filename> switch to the <emphasis>gsec</emphasis>
+                      utility.</para>
+                      <note>
+                        <para>For <emphasis>gsec</emphasis> the <filename>-database</filename> switch is
+                        mostly used to specify a remote server you want to administer. In <emphasis>fbsvcmgr</emphasis>, the
+                        name of the server is already given in the first parameter (via the
+                        <filename>service_mgr</filename> symbol) so
+                        the <filename>[isc_spb_]dbname</filename> parameter is mostly unnecessary.</para>
+                      </note>
+                    </listitem>
+                  </itemizedlist>
+                </listitem>
+              </varlistentry>
+              <varlistentry>
+                <term>Documentation Bugs</term>
+                <listitem>
+                  <para>The format described for some parameters in the InterBase 6 beta documentation are
+                  buggy. When in trouble, treat <filename>ibase.h</filename> as the primary source
+                  for the correct form.</para>
+                </listitem>
+              </varlistentry>
+
+              <varlistentry>
+                <term>Unsupported functions</term>
+                <listitem>
+                  <itemizedlist>
+                    <listitem>
+                      <para>Everything to do with licensing was removed from the original InterBase 6
+                      open source code and is therefore not supported either in Firebird or
+                      by <emphasis>fbsvcmgr</emphasis>.</para>
+                    </listitem>
+                    <listitem>
+                      <para>The old Config file view/modification functions have been unsupported
+                      since Firebird 1.5 and are not implemented by <emphasis>fbsvcmgr</emphasis>.</para>
+                    </listitem>
+                  </itemizedlist>
+                </listitem>
+              </varlistentry>
+            </variablelist>
+
+          </section>
+        </section>
+      </section>
+
+      <section id="rnfb21-impr-svcmgr01"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Backup Service Misbehaviour Fixed</title>
+          <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+        </sectioninfo>
+        <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-1232">Feature request
+        CORE-1232</ulink></para>
+        <para><emphasis role="bold">(V.2.1)</emphasis> Some misbehaviours that could occur when the Services
+        Manager was doing backup/restore operations and some parameter items were missing or in the wrong
+        sequence.  The problem still affects lower versions, including v.2.0.x, so care should be taken to specify
+        all required switches and supply the database name and backup file spec in the correct order when using
+        the <command>-se[vice_mgr]</command> switch. </para>
+      </section>
+
+      <section id="rnfb21-impr-svcmgr02"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>Disable Non-SYSDBA Access to Privileged Services</title>
+          <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+        </sectioninfo>
+        <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-787">Feature request
+        CORE-787</ulink></para>
+        <para>Non-SYSDBA access to parts of the Services API that return information
+        about users and database paths has been disabled.  A non-privileged user can retrieve
+        information about itself, however.</para>
+      </section>
+    </section><!-- sect2 -->
+  </section><!-- sect1 -->
+
+  <section id="rnfb20x-util-backup"><!-- Level 1 section -->
+    <title>Backup Tools</title>
+
+    <para>Firebird 2 brings plenty of enhancements to backing up databases:
+    a new utility for running on-line incremental backups and some
+    improvements to <emphasis>gbak</emphasis> to avoid some of the traps that sometimes befall
+    end-users.</para>
+
+    <section id="rnfb20x-util-backup-nbak"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>New On-line Incremental Backup</title>
+        <author><firstname>N.</firstname><surname>Samofatov</surname></author>
+      </sectioninfo>
+      <para>Fast, on-line, page-level incremental backup facilities have
+      been implemented.</para>
+
+      <para>The backup engine comprises two parts:</para>
+      <itemizedlist>
+        <listitem>
+          <para>NBak, the engine support module</para>
+        </listitem>
+
+        <listitem>
+          <para>NBackup, the tool that does the actual backups</para>
+        </listitem>
+      </itemizedlist>
+
+      <section id="rnfb20x-util-backup-nbak-nbak"><!-- Level 3 section -->
+        <title>Nbak</title>
+
+        <para>The functional responsibilities of NBAK are:</para>
+
+        <orderedlist>
+          <listitem>
+            <para>to redirect writes to difference files when asked
+            (<function>ALTER DATABASE BEGIN BACKUP</function>
+            statement)</para>
+          </listitem>
+
+          <listitem>
+            <para>to produce a GUID for the database snapshot and write it
+            into the database header before the <function>ALTER DATABASE
+            BEGIN BACKUP</function> statement returns</para>
+          </listitem>
+
+          <listitem>
+            <para>to merge differences into the database when asked
+            (<function>ALTER DATABASE END BACKUP</function>
+            statement)</para>
+          </listitem>
+
+          <listitem>
+            <para>to mark pages written by the engine with the current SCN
+            [page scan] counter value for the database</para>
+          </listitem>
+
+          <listitem>
+            <para>to increment SCN on each change of backup state</para>
+          </listitem>
+        </orderedlist>
+
+        <para>The backup state cycle is:</para>
+        <para><emphasis role="bold">nbak_state_normal -&gt; nbak_state_stalled -&gt; nbak_state_merge -&gt;
+          nbak_state_normal</emphasis></para>
+
+
+        <itemizedlist>
+          <listitem>
+            <para>In <emphasis>normal</emphasis> state writes go directly to
+            the main database files.</para>
+          </listitem>
+
+          <listitem>
+            <para>In <emphasis>stalled</emphasis> state writes go to the
+            difference file only and the main files are read-only.</para>
+          </listitem>
+
+          <listitem>
+            <para>In <emphasis>merge</emphasis> state new pages are not
+            allocated from difference files. Writes go to the main database
+            files. Reads of mapped pages compare both page versions and
+            return the version which is fresher, because we don't know if it
+            is merged or not.</para>
+
+            <note>
+              <para>This merge state logic has one quirky part. Both
+              Microsoft and Linux define the contents of file growth as
+              <quote>undefined</quote> i.e., garbage, and both zero-initialize
+              them.</para>
+
+              <para>This is why we don't read mapped pages beyond the
+              original end of the main database file and keep them current
+              in difference file until the end of a merge. This is almost
+              half of NBak fetch and write logic, tested by using modified
+              PIO on existing files containing garbage.</para>
+            </note>
+          </listitem>
+        </itemizedlist>
+      </section><!-- sect3 -->
+
+      <section id="rnfb20x-util-backup-nbak-nbackup"><!-- Level 3 section -->
+
+        <title>NBackup</title>
+
+        <para>The functional responsibilities of NBackup are</para>
+
+        <orderedlist>
+          <listitem>
+            <para>to provide a convenient way to issue ALTER DATABASE
+            BEGIN/END BACKUP</para>
+          </listitem>
+
+          <listitem>
+            <para>to fix up the database after filesystem copy (physically
+            change <function>nbak_state_diff</function> to
+            <function>nbak_state_normal</function> in the database
+            header)</para>
+          </listitem>
+
+          <listitem>
+            <para>to create and restore incremental backups.</para>
+            <para>Incremental backups are multi-level. That means if you do
+            a Level 2 backup every day and a Level 3 backup every hour, each
+            Level 3 backup contains all pages changed from the beginning of
+            the day till the hour when the Level 3 backup is made.</para>
+          </listitem>
+        </orderedlist>
+
+        <section id="rnfb20x-util-backup-nbak-nbackup-backup">
+            <!-- Level 4 section -->
+
+          <title>Backing Up</title>
+
+          <para>Creating incremental backups has the following
+          algorithm:</para>
+
+          <orderedlist>
+            <listitem>
+              <para>Issue <function>ALTER DATABASE BEGIN BACKUP</function>
+              to redirect writes to the difference file</para>
+            </listitem>
+
+            <listitem>
+              <para>Look up the SCN and GUID of the most recent backup at
+              the previous level</para>
+            </listitem>
+
+            <listitem>
+              <para>Stream database pages having SCN larger than was found
+              at step 2 to the backup file.</para>
+            </listitem>
+
+            <listitem>
+              <para>Write the GUID of the previous-level backup to the
+              header, to enable the consistency of the backup chain to be
+              checked during restore.</para>
+            </listitem>
+
+            <listitem>
+              <para>Issue <function>ALTER DATABASE END
+              BACKUP</function></para>
+            </listitem>
+
+            <listitem>
+              <para>Add a record of this backup operation to
+              <function>RDB$BACKUP_HISTORY</function>. Record current level,
+              SCN, snapshot GUID and some miscellaneous stuff for user
+              consumption.</para>
+            </listitem>
+          </orderedlist>
+        </section><!-- sect4 -->
+
+        <section id="rnfb20x-util-backup-nbak-nbackup-restore"><!-- Level 4 section -->
+
+          <title>Restoring</title>
+
+          <para>Restore is simple: we reconstruct the physical database
+          image for the chain of backup files, checking that the backup_guid
+          of each file matches prev_guid of the next one, then fix it up
+          (change its state in header to nbak_state_normal).</para>
+        </section><!-- Level 4 -->
+
+        <section id="rnfb20x-util-backup-nbak-nbackup-usage"><!-- Level 4 section -->
+
+          <title>Usage</title>
+          <programlisting>
+    nbackup &lt;options&gt;
+          </programlisting>
+
+          <section id="rnfb20x-util-backup-nbak-nbackup-usage-options"><!-- Level 5 section -->
+
+            <title>Valid Options</title>
+
+            <programlisting>
+   -L &lt;database&gt;   Lock database for filesystem copy
+   -N &lt;database&gt;       Unlock previously locked database
+   -F &lt;database&gt;              Fixup database after filesystem copy
+   -B &lt;level&gt; &lt;database&gt; [&lt;filename&gt;]  Create incremental backup
+   -R &lt;database&gt; [&lt;file0&gt; [&lt;file1&gt;...]]   Restore incremental backup
+   -U &lt;user&gt;             User name
+   -P &lt;password&gt;         Password
+            </programlisting>
+
+            <note>
+              <orderedlist>
+                <listitem>
+                  <para>&lt;database&gt; may specify a database alias</para>
+                </listitem>
+
+                <listitem>
+                  <para>incremental backup of multi-file databases is not
+                  supported yet</para>
+                </listitem>
+
+                <listitem>
+                  <para>"stdout" may be used as a value of &lt;filename&gt;
+                  for the -B option</para>
+                </listitem>
+              </orderedlist>
+            </note>
+          </section><!-- Level 5 -->
+        </section><!-- Level 4 -->
+      </section><!-- Level 3 -->
+
+      <section id="rnfb20x-util-backup-nbak-manual"><!-- Level 3 section -->
+
+        <sectioninfo>
+          <title>User Manual</title>
+          <author><firstname>P.</firstname><surname>Vinkenoog</surname></author>
+        </sectioninfo>
+
+        <para>A user manual for NBak/NBackup has been prepared. It can be downloaded from the documentation area at
+        the Firebird website:
+        <ulink url="http://www.firebirdsql.org/pdfmanual/">www.firebirdsql.org/pdfmanual/</ulink> - the file name
+        is <function>Firebird-nbackup.pdf</function>. </para>
+      </section><!-- Level 3 -->
+    </section><!-- Level 2 -->
+
+    <section id="rnfb20x-util-backup-gbak"><!-- Level 2 section -->
+
+      <title>gbak Backup/Porting/Restore Utility</title>
+
+      <para>A number of enhancements have been added to <emphasis>gbak</emphasis>.</para>
+
+      <section id="rnfb20x-util-backup-gbak-sw"><!-- Level 3 section -->
+
+        <sectioninfo>
+          <title>Changed Behaviours, New Switches</title>
+          <author><firstname>V.</firstname><surname>Khorsun</surname></author>
+        </sectioninfo>
+
+        <para>The new gbak switch</para>
+        <literallayout class="monospaced">
+  -RECREATE_DATABASE [OVERWRITE]
+        </literallayout>
+        <para>is a separate switch designed to make harder for the unsuspecting to overwrite a database
+        accidentally, as could occur easily with the shortened form of the old switch:</para>
+        <literallayout class="monospaced">
+  -R[EPLACE_DATABASE]
+        </literallayout>
+        <para><emphasis role="bold">In summary:</emphasis></para>
+        <itemizedlist>
+          <listitem>
+            <para>gbak -R (or gbak -r) now applies to the new -R[ECREATE_DATABASE] switch and will never
+            overwrite an existing database if the O[VERWRITE] argument is absent</para>
+          </listitem>
+
+          <listitem>
+            <para>The short form of the old gbak -R[EPLACE_DATABASE] is now -REP[LACE_DATABASE].  This switch
+            does not accept the O[VERWRITE] argument.</para>
+          </listitem>
+
+          <listitem>
+            <para>The -REP[LACE_DATABASE] switch should be considered as deprecated, i.e. it will become
+            unavailable in some future Firebird release.</para>
+          </listitem>
+
+        </itemizedlist>
+
+        <para>This change means that, if you have any legacy batch or cron scripts that rely
+        on <quote>gbak -r</quote> or <quote>gbak -R</quote> without modification, then the operation will
+        except if the database exists.</para>
+
+        <para>If you want to retain the ability of your script to overwrite your database unconditionally,
+        you will need to modify the command to use either the new switch with the OVERWRITE argument or the
+        new short form for the old -REPLACE_DATABASE switch.</para>
+      </section><!-- sect3 -->
+
+      <section id="rnfb21-impr-gbak01"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>gbak Made More Version-friendly</title>
+          <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+        </sectioninfo>
+        <para><emphasis role="bold">(V.2.1)</emphasis> In its latest evolution, <emphasis>gbak</emphasis>
+        can be used to restore a database on any version of Firebird.</para>
+      </section><!-- sect3 -->
+
+      <section id="rnfb21-impr-gbak02"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>Hide User Name &amp; Password in Shell</title>
+          <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+        </sectioninfo>
+        <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-867">Feature request CORE-867</ulink>
+        </para>
+        <para><emphasis role="bold">(V.2.1)</emphasis> <emphasis>gbak</emphasis> now changes param0 to prevent the
+        user name and password from being displayed in <filename>ps axf</filename>.</para>
+      </section>
+
+      <section id="rnfb20x-util-backup-gbak-nosw"><!-- Level 3 section -->
+        <title>gbak -V and the <quote>Counter</quote> Parameter</title>
+        <para>During Firebird 1 development, an optional numeric <emphasis>&lt;counter&gt;</emphasis>
+        argument was added to the -V[erbose] switch of gbak for both backup and restore.  It was
+        intended to allow you to specify a number and get a running count of rows processed as the row
+        counter passed each interval of that number of rows. It caused undesirable side-effects and was
+        removed before Firebird 1.0 was ever released.  So, although it never happened, it was documented
+        as <quote>implemented</quote> in the release notes and other places.</para>
+      </section><!-- Level 3 -->
+    </section><!-- Level 2 -->
+  </section><!-- Level 1 -->
+
+  <section id="rnfb20x-util-isql"><!-- Level 1 section -->
+
+    <title>ISQL Query Utility</title>
+
+    <para>Work on ISQL has involved a lot of bug-fixing and the introduction of a few new, useful features.</para>
+
+    <para>One trick to note is that CHAR and VARCHAR types defined in character set OCTETS (alias BINARY) now
+    display in hex format.  Currently, this feature cannot be toggled off.</para>
+
+    <section id="rnfb20x-util-isql-sw"><!-- Level 2 section -->
+      <title>New Switches</title>
+      <para>The following command-line switches were added:</para>
+
+      <section id="rnfb20x-util-isql-sw-bail"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>-b[ail] &quot;Bail out&quot;</title>
+          <author><firstname>D. Ivanov,</firstname><surname>C. Valderrama</surname></author>
+        </sectioninfo>
+
+        <para>Command line switch -b to instruct isql to bail out on error
+        when used in non-interactive mode, returning an error code to the
+        operating system.</para>
+
+        <para>When using scripts as input in the command line, it may be
+        totally unappropriate to let isql continue executing a batch of
+        commands after an error has happened. Therefore, the "-b[ail]"
+        option will cause script execution to stop at the first error it
+        detects. No further statements in the input script will be executed
+        and isql will return an error code to the operating system.</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Most cases have been covered, but if you find some error
+            that is not recognized by isql, you should inform the project,
+            as this is a feature in progress.</para>
+          </listitem>
+
+          <listitem>
+            <para>Currently there is no differentiation by error code---any
+            non-zero return code should be interpreted as failure. Depending
+            on other options (like -o, -m and -m2) , isql will show the
+            error message on screen or will send it to a file.</para>
+          </listitem>
+        </itemizedlist>
+
+        <section id="rnfb20x-util-isql-sw-bail=features"><!-- Level 4 section -->
+          <title>Some Features</title>
+          <itemizedlist>
+            <listitem>
+              <para>Even if isql is executing nested scripts, it will cease
+              all execution and will return to the operating system when it
+              detects an error. Nested scripts happen when a script A is
+              used as isql input but in turn A contains an INPUT command to
+              load script B an so on. Isql doesn't check for direct or
+              indirect recursion, thus if the programmer makes a mistake and
+              script A loads itself or loads script B that in turn loads
+              script A again, isql will run until it exhaust memory or an
+              error is returned from the database, at whose point -bail if
+              activated will stop all activity.</para>
+            </listitem>
+
+            <listitem>
+              <para>DML errors will be caught when being prepared or
+              executed, depending on the type of error.</para>
+            </listitem>
+
+            <listitem>
+              <para>In many cases, isql will return the line number of a DML statement that fails during execution
+              of a script. (More about <xref linkend="rnfb20x-util-isql-cmd-errors"/> ...)</para>
+            </listitem>
+
+            <listitem>
+              <para>DDL errors will be caught when being prepared or
+              executed by default, since isql uses AUTODDL ON by default.
+              However, if AUTO DLL is OFF, the server only complains when
+              the script does an explicit COMMIT and this may involve
+              several SQL statements.</para>
+            </listitem>
+
+            <listitem>
+              <para>The feature can be enabled/disabled interactively or
+              from a script by means of the command</para>
+ 
+              <programlisting>
+  SET BAIL [ON | OFF]
+              </programlisting>
+
+              <para>As is the case with other SET commands, simply using SET
+              BAIL will toggle the state between activated and deactivated.
+              Using SET will display the state of the switch among many
+              others.</para>
+            </listitem>
+
+            <listitem>
+              <para>Even if BAIL is activated, it doesn't mean it will change
+              isql behavior. An additional requirement should be met: the
+              session should be non-interactive. A non-interactive session
+              happens when the user calls isql in batch mode, giving it a
+              script as input.</para>
+
+              <para><emphasis role="bold">Example</emphasis></para>
+
+              <programlisting>
+  isql -b -i my_fb.sql -o results.log -m -m2
+              </programlisting>
+
+              <tip>
+                <para>However, if the user loads isql interactively and
+                later executes a script with the input command, this is
+                considered an interactive session even though isql knows it
+                is executing a script.</para>
+              </tip>
+
+              <para><emphasis role="bold">Example</emphasis></para>
+
+              <programlisting>
+  isql
+  Use CONNECT or CREATE DATABASE to specify a database
+  SQL&gt; set bail;
+  SQL&gt; input my_fb.sql;
+  SQL&gt; ^Z
+              </programlisting>
+
+              <para>Whatever contents the script has, it will be executed
+              completely, errors and all, even if the BAIL option is
+              enabled.</para>
+            </listitem>
+          </itemizedlist>
+        </section><!-- Level 4 -->
+      </section><!-- Level 3 -->
+
+      <section id="rnfb20x-util-isql-sw-stats"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>-m2 to Output Stats and Plans</title>
+          <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+        </sectioninfo>
+
+        <para>This is a command-line option -M2 to send the statistics and
+        plans to the same output file as the other output (via the -o[utput]
+        switch).</para>
+
+        <para>When the user specifies that the output should be sent to a
+        file, two possibilities have existed for years: either</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>at the command line, the switch -o followed by a file name
+            is used</para>
+          </listitem>
+
+          <listitem>
+            <para>the command OUTput followed by a file name is used, either
+            in a batch session or in the interactive isql shell. (In either
+            case, simply passing the command OUTput is enough to have the
+            output returned to the console). However, although error
+            messages are shown in the console, they are not output to the
+            file.</para>
+          </listitem>
+        </itemizedlist>
+
+        <para>The -m command line switch was added, to meld (mix) the error
+        messages with the normal output to wherever the output was being
+        redirected.</para>
+
+        <para>This left still another case: statistics about operations (SET
+        STATs command) and SQL plans as the server returns them. SET PLAN
+        and SET PLANONLY commands have been treated as diagnostic messages
+        and, as such, were always sent to the console.</para>
+
+        <para>What the -m2 command line switch does is to ensure that stats
+        and plans information go to the same file the output has been
+        redirected to.</para>
+
+        <note>
+          <para>Neither -m nor -m2 has an interactive counterpart through a
+          SET command. They are for use only as command-line isql
+          options.</para>
+        </note>
+      </section><!-- level 3 -->
+
+      <section id="rnfb20x-util-isql-sw-role"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>-r2 to Pass a Case-Sensitive Role Name</title>
+          <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+        </sectioninfo>
+        <para>The sole objective of this parameter is to specify a case-sensitive role name.</para>
+        <itemizedlist>
+          <listitem>
+            <para>The default switch for this parameter is -r.  Roles provided in the command line are
+            uppercased</para>
+          </listitem>
+          <listitem>
+            <para>With -r2, the role is passed to the engine exactly as typed in the
+            command line.</para>
+          </listitem>
+        </itemizedlist>
+      </section><!-- Level 3 -->
+    </section><!-- Level 2 -->
+
+    <section id="rnfb20x-util-isql-cmd"><!-- Level 2 section -->
+      <title>New Commands and Enhancements</title>
+      <para>The following commands have been added or enhanced.</para>
+
+      <section id="rnfb21-impr-isql1"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>Ctrl-C to cancel query output</title>
+          <authorgroup>
+            <author>
+              <firstname>M.</firstname>
+              <surname>Kubecek</surname>
+            </author>
+            <author>
+              <firstname>A.</firstname>
+              <surname>dos Santos Fernandes</surname>
+            </author>
+          </authorgroup>
+        </sectioninfo>
+        <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-704">Feature request CORE-704</ulink></para>
+        <para><emphasis role="bold">(V. 2.1)</emphasis> Output from a SELECT in an interactive isql session
+        can now be stopped using Ctrl-C.  Note, this merely stops fetching rows from the buffer, it does not
+        cancel the query.</para>
+      </section>
+
+      <section id="rnfb21-impr-isql2"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>Extension of isql SHOW SYSTEM command</title>
+          <author><firstname>A.</firstname><surname>dos Santos Fernandes</surname></author>
+        </sectioninfo>
+        <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-978">Feature request CORE-978</ulink></para>
+        <para><emphasis role="bold">(V. 2.1)</emphasis> The SHOW &lt;object_type&gt; command is
+        meant to show user objects of that type. The SHOW SYSTEM commmand is
+        meant to show system objects but, until now, it only showed system tables.
+        Now it lists the predefined system UDFs incorporated into FB 2.</para>
+
+        <para>It may be enhanced to list system views if we create some of
+        them in the future.</para>
+      </section><!-- Level 3 -->
+
+      <section id="rnfb21-impr-isql3"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>SHOW COLLATIONS command</title>
+          <author><firstname>A.</firstname><surname>dos Santos Fernandes</surname></author>
+        </sectioninfo>
+        <para><emphasis role="bold">(V. 2.1)</emphasis> Lists all the character set/collation 
+        pairs declared in the database.</para>
+      </section><!-- Level 3 -->
+
+      <section id="rnfb20x-util-isql-cmd-sethead"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>SET HEAD[ing] toggle</title>
+          <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+        </sectioninfo>
+
+        <para>Some people consider it useful to be able to do a SELECT
+        inside isql and have the output sent to a file, for additional
+        processing later, especially if the number of columns makes isql
+        display impracticable. However, isql by default prints column
+        headers and. in this scenario, they are a nuisance.</para>
+
+        <para>Therefore, printing the column headers -- previously a fixed
+        feature -- can now be enabled/disabled interactively or from a
+        script by means of the</para>
+
+        <programlisting>
+  SET HEADing [ON | OFF]
+        </programlisting>
+
+        <para>command in the isql shell. As is the case with other SET
+          commands, simply using SET HEAD will toggle the state between
+          activated and deactivated.</para>
+
+        <note>
+          <para>There is no command line option to toggle headings
+            off.</para>
+        </note>
+
+        <para>Using SET will display the state of SET HEAD, along with other
+        switches that can be toggled on/off in the isql shell.</para>
+
+      </section><!-- Level 3 -->
+
+      <section id="rnfb20x-util-isql-cmd-sqlda"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>SET SQLDA_DISPLAY ON/OFF</title>
+            <author><firstname>A.</firstname><surname>dos Santos Fernandes</surname></author>
+        </sectioninfo>
+
+        <para>This SQLDA_DISPLAY command shows the input SQLDA parameters of INSERTs, UPDATEs and DELETEs.  It
+        was previously available only in DEBUG builds and has now been promoted to the public builds.  It shows
+        the information for raw SQLVARs. Each SQLVAR represents a field in the XSQLDA, the main structure used
+        in the FB API to talk to clients transferring data into and out of the server.</para>
+        <note>
+            <para>The state of this option is not included in the output when you type
+            <literal>&nbsp;SET;&nbsp;</literal> in isql to see the current settings of most options.</para>
+        </note>
+      </section><!-- Level 3 -->
+
+      <section id="rnfb20x-util-isql-cmd-settrans"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>SET TRANSACTION Enhanced</title>
+
+          <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+        </sectioninfo>
+
+        <para>The SET TRANSACTION statement has been enhanced so that, now, all TPB options are supported:</para>
+        <itemizedlist>
+          <listitem>
+            <para>NO AUTO UNDO</para>
+          </listitem>
+          <listitem>
+            <para>IGNORE LIMBO</para>
+          </listitem>
+          <listitem>
+            <para>LOCK TIMEOUT &lt;number&gt;</para>
+          </listitem>
+        </itemizedlist>
+        <para><emphasis>Example</emphasis></para>
+        <programlisting>
+  SET TRANSACTION WAIT SNAPSHOT NO AUTO UNDO LOCK TIMEOUT 10
+        </programlisting>
+        <para>See also the document <citetitle>doc/sql.extensions/README.set_transaction.txt</citetitle>.</para>
+      </section>
+
+      <section id="rnfb20x-util-isql-cmd-version"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>SHOW DATABASE now Returns ODS Version Number</title>
+          <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+        </sectioninfo>
+
+        <para>ODS (On-Disk Structure) version is now returned in the SHOW
+        DATABASE command (C. Valderrama)</para>
+      </section><!-- Level 3 -->
+
+      <section id="rnfb20x-util-isql-cmd-errors" xreflabel="error line numbers"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>Ability to show the line number where an error happened in
+          a script</title>
+          <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+        </sectioninfo>
+
+        <para>In previous versions, the only reasonable way to know where a
+        script had caused an error was using the switch -e for echoing
+        commands, -o to send the output to a file and -m to merge the error
+        output to the same file. This way, you could observe the commands
+        <emphasis>isql</emphasis> executed and the errors if they exist. The script continued
+        executing to the end. The server only gives a line number related to
+        the single command (statement) that it's executing, for some DSQL
+        failures. For other errors, you only know the statement caused
+        problems.</para>
+
+        <para>With the addition of -b for bail as described in (1), the user
+        is given the power to tell isql to stop executing scripts when an
+        error happens, but you still need to echo the commands to the output
+        file to discover which statement caused the failure.</para>
+
+        <para>Now, the ability to signal the script-related line number of a
+        failure enables the user to go to the script directly and find the
+        offending statement. When the server provides line and column
+        information, you will be told the exact line of DML in the script that
+        caused the problem. When the server only indicates a failure, you
+        will be told the starting line of the statement that caused the
+        failure, related to the whole script.</para>
+
+        <para>This feature works even if there are nested scripts, namely,
+        if script SA includes script SB and SB causes a failure, the line
+        number is related to SB. When SB is read completely, isql continues
+        executing SA and then isql continues counting lines related to SA,
+        since each file gets a separate line counter. A script SA includes
+        SB when SA uses the INPUT command to load SB.</para>
+
+        <para>Lines are counted according to what the underlying IO layer
+        considers separate lines. For ports using EDITLINE, a line is what
+        readline() provides in a single call. The line length limit of 32767
+        bytes remains unchanged.</para>
+      </section><!-- Level 3 -->
+
+      <section id="rnfb20x-util-isql-cmd-help"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>Enhanced Command-line Help</title>
+          <author><firstname>M.</firstname><surname>Kubecek</surname></author>
+        </sectioninfo>
+        <para>When unknown parameters are used, isql now shows all of the command-line parameters and their
+        explanations instead of just a simple list of allowed switches.</para>
+        <programlisting>
+opt/firebird/bin] isql -?
+Unknown switch: ?
+usage:    isql [options] [&lt;database&gt;]
+        -a(all)                 extract metadata incl. legacy non-SQL tables
+        -b(ail)                 bail on errors (set bail on)
+        -c(ache) &lt;num&gt;          number of cache buffers
+        -ch(arset) &lt;charset&gt;    connection charset (set names)
+        -d(atabase) &lt;database&gt;  database name to put in script creation
+        -e(cho)                 echo commands (set echo on)
+        -ex(tract)              extract metadata
+        -i(nput) &lt;file&gt;         input file (set input)
+        -m(erge)                merge standard error
+        -m2                     merge diagnostic
+        -n(oautocommit)         no autocommit DDL (set autoddl off)
+        -now(arnings)           do not show warnings
+        -o(utput) &lt;file>        output file (set output)
+        -pag(elength) &lt;size&gt;    page length
+        -p(assword) &lt;password&gt;  connection password
+        -q(uiet)                do not show the message "Use CONNECT..."
+        -r(ole) &lt;role&gt;          role name
+        -r2 &lt;role&gt;              role (uses quoted identifier)
+        -sqldialect &lt;dialect&gt;   SQL dialect (set sql dialect)
+        -t(erminator) &lt;term&gt;    command terminator (set term)
+        -u(ser) &lt;user&gt;          user name
+        -x                      extract metadata
+        -z                      show program and server version
+        </programlisting>
+      </section><!-- Level 3 -->
+    </section><!-- Level 2 -->
+  </section><!-- Level 1 -->
+
+  <section id="rnfb20x-util-gsec"><!-- Level 1 section -->
+    <title>gsec Authentication Manager</title>
+    <para>Changes to the <emphasis>gsec</emphasis> utility include:</para>
+
+    <section id="rnfb20x-util-gsec-returncode"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>gsec return code</title>
+        <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+      </sectioninfo>
+
+      <para><emphasis>gsec</emphasis> now returns an error code when used as a non-interactive
+        utility. Zero indicates success; any other code indicates
+        failure.</para>
+    </section><!-- Level 2 -->
+  </section><!-- Level 1 -->
+
+  <section id="rnfb20x-util-gfix"><!-- Level 1 section -->
+    <title>gfix Server Utility</title>
+
+    <para>Changes to the gfix utility include:</para>
+      <section id="rnfb20x-util-gfix-shut" xreflabel="New Shutdown Modes"><!-- Level 2 section -->
+        <sectioninfo>
+        <title>New Shutdown States (Modes)</title>
+        <author><firstname>N. Samofatov,</firstname><surname>D. Yemanov</surname></author>
+      </sectioninfo>
+
+      <para>The options for <function>gfix -shut[down]</function> have been
+        extended to include two extra states or modes to govern the
+        shutdown.</para>
+
+      <para>
+          <emphasis role="bold">New Syntax Pattern</emphasis>
+      </para>
+
+      <programlisting>
+      gfix &lt;command&gt; [&lt;state&gt;] [&lt;options&gt;]
+
+  &lt;command&gt; ::= {-shut | -online}
+  &lt;state&gt; ::= {normal | multi | single | full}
+  &lt;options&gt; ::= {-force &lt;timeout&gt; | -tran | -attach}
+     </programlisting>
+
+     <para>- <quote>normal</quote> state = online database</para>
+
+     <para>- <quote>multi</quote> state = multi-user shutdown mode (the legacy one,
+        unlimited attachments of SYSDBA/owner are allowed)</para>
+
+     <para>- <quote>single</quote> state = single-user shutdown (only one attachment is
+        allowed, used by the restore process)</para>
+
+     <para>- <quote>full</quote> state = full/exclusive shutdown (no attachments are
+        allowed)</para>
+
+     <note>
+          <para><quote>Multi</quote> is the default state for -shut, <quote>normal</quote> is the
+          default state for -online.</para>
+     </note>
+
+     <para>The modes can be switched sequentially:</para>
+
+        <blockquote>
+          <para>normal &lt;-&gt; multi &lt;-&gt; single &lt;-&gt; full</para>
+        </blockquote>
+
+     <para>
+     <emphasis role="bold">Examples</emphasis>
+     </para>
+
+     <programlisting>
+  gfix -shut single -force 0
+  gfix -shut full -force 0
+  gfix -online single
+  gfix -online
+      </programlisting>
+
+     <para>You cannot use <function>-shut</function> to bring a database
+        one level <quote>more online</quote> and you cannot use
+        <function>-online</function> to make a database more protected (an
+        error will be thrown).</para>
+
+     <para>These are prohibited:</para>
+
+        <programlisting>
+  gfix -shut single -force 0
+  gfix -shut multi -force 0
+
+  gfix -online
+  gfix -online full
+
+  gfix -shut -force 0
+  gfix -online single
+      </programlisting>
+    </section><!-- Level 2 -->
+  </section><!-- Level 1 -->
+
+  <!-- BUILDS AND INSTALLS -->
+  <section id="rnfb21-impr-blds"><!-- Level 1 section -->
+    <title>Builds and Installs</title>
+
+    <section id="rnfb21-impr-instname"><!-- Level 3 section -->
+      <sectioninfo>
+        <title>Parameter for Instance name added to instsvc.exe</title>
+        <author><firstname>D.</firstname><surname>Yemanov</surname></author>
+      </sectioninfo>
+      <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-673">Feature request CORE-673</ulink></para>
+      <para><emphasis role="bold">(V.2.1)</emphasis> <filename>instsvc.exe</filename> now supports multi-instance
+      installations.</para>
+    </section>
+
+    <section id="rnfb21-impr-instdoc"><!-- Level 3 section -->
+      <sectioninfo>
+        <title>Revised Win32 Installer Docs</title>
+        <author><firstname>P.</firstname><surname>Reeves</surname></author>
+      </sectioninfo>
+      <para><emphasis role="bold">(V.2.1)</emphasis> The documentation for command-line setup on Windows 
+      has been revised.  See <filename>doc/install_windows_manually.txt</filename>.</para>
+      <section id="rnfb21-impr-wininst"><!-- Level 3 section -->
+        <title>Help on command line switches</title>
+        <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-548">Feature request CORE-548</ulink></para>
+        <para><emphasis role="bold">(V.2.1)</emphasis> On-line help is now available on the switches
+        for command-line setup on Windows.</para>
+      </section>
+    </section>
+    <section id="rnfb21-impr-gentoo"><!-- Level 3 section -->
+      <sectioninfo>
+        <title>Gentoo/FreeBSD detection during install</title>
+        <author><firstname>A.</firstname><surname>Peshkov</surname></author>
+       </sectioninfo>
+      <para><ulink url="http://tracker.firebirdsql.org/browse/CORE-1047">Feature request CORE-1047</ulink></para>
+      <para>Gentoo or FreeBSD is now detected during configuration, making it more likely that
+      the binary install will work <quote>out of the box</quote> on these platforms.</para>
+    </section>
+
+
+  </section>
+</chapter>
