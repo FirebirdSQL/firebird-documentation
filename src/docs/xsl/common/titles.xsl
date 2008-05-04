@@ -5,6 +5,31 @@
                 version='1.0'>
 
 
+
+<xsl:template match="*" mode="no.anchor.mode">
+  <!-- Switch to normal mode if no links or versioninfo
+       (vi is a potential line-break trigger, so here too the mode must be passed on to the descendants) -->
+  <xsl:choose>
+    <xsl:when test="descendant-or-self::footnote or
+                    descendant-or-self::anchor or
+                    descendant-or-self::ulink or
+                    descendant-or-self::link or
+                    descendant-or-self::olink or
+                    descendant-or-self::xref or
+                    descendant-or-self::indexterm or
+                    descendant-or-self::emphasis[@role='vi']">
+
+      <xsl:apply-templates mode="no.anchor.mode"/>
+    </xsl:when>
+    <xsl:otherwise>
+      <xsl:apply-templates select="."/>
+    </xsl:otherwise>
+  </xsl:choose>
+</xsl:template>
+
+
+
+
 <!-- We should probably add more elements here, everywhere it is possible
      that the titleabbrev resides in an xxxinfo subelement and the shipped
      templates (copied further below) don't take care of it -->

@@ -25,4 +25,43 @@
   </xsl:template>
 
 
+
+  <!-- Renders the current node as versioninfo: -->
+  <xsl:template name="make-vi">
+    <xsl:param name="break" select="''"/>
+
+    <xsl:variable name="content">
+      <xsl:call-template name="inline.boldseq"/>
+    </xsl:variable>
+
+    <xsl:choose>
+      <xsl:when test="$break='after'">
+        <fo:block keep-with-next.within-column="always">
+          <xsl:copy-of select="$content"/>
+        </fo:block>
+      </xsl:when>
+      <xsl:when test="$break='before'">
+        <fo:block keep-with-previous.within-column="always">
+          <xsl:copy-of select="$content"/>
+        </fo:block>
+      </xsl:when>
+      <xsl:otherwise>
+        <xsl:copy-of select="$content"/>
+      </xsl:otherwise>
+    </xsl:choose>
+  </xsl:template>
+
+  <!--
+     In the above template, the wrapping of the content in a fo:block forces a line break both before
+     and after the content. This will probably never become a problem in practice, but if it does,
+     this is an (untested!) alternative for break='after':
+
+        <xsl:inline><xsl:copy-of select="$content"/></xsl:inline>
+        <fo:block keep-with-previous.within-column="always" keep-with-next.within-column="always"/>
+
+      The idea here is that the empty block will glue the vi content to the text that follows. Question
+      is if this works between block and inline areas! We may also try keep-with-next on the fo:inline.
+  -->
+
+
 </xsl:stylesheet>

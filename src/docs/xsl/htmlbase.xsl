@@ -10,12 +10,12 @@
   extension-element-prefixes="saxon xalanredirect lxslt">
 
   <!--
-    Base stylesheet for the chunked (= multi-file) and monolith HTML
-    generation.
+    Base stylesheet for both the chunked (= multi-file) and the
+    monolith HTML generation.
 
     This stylesheet is imported by our driver stylesheets html.xsl
     and monohtml.xsl. If you want to know more about the mechanism,
-    read the comment in ../docbook/html/chunk.xsl
+    read the comment in tools/docbook-stylesheets/html/chunk.xsl
 
     IMPORTANT:
     - Files containing templates overriding chunking behaviour (or
@@ -37,7 +37,7 @@
 
   <!-- ...and include our own overrides/additions
        EXCEPT THOSE THAT CONTROL CHUNKING BEHAVIOUR OR ARE OTHERWISE
-       SPECIFIC TO EITHER CHUNKED OR MONOLITH HTML: -->
+       SPECIFIC TO EITHER CHUNKED OR MONOLITH HTML -->
 
   <xsl:output method="html"
               encoding="ISO-8859-1"
@@ -47,11 +47,13 @@
   <xsl:include href="common/l10n.xsl"/>
   <xsl:include href="common/titles.xsl"/>
   <xsl:include href="common/gentext.xsl"/>
+  <xsl:include href="common/inline.xsl"/>
   <xsl:include href="html/param.xsl"/>
   <xsl:include href="html/graphics.xsl"/>
   <xsl:include href="html/index.xsl"/>
   <xsl:include href="html/autotoc.xsl"/>
   <xsl:include href="html/sections.xsl"/>
+  <xsl:include href="html/inline.xsl"/>
   <xsl:include href="html/block.xsl"/>
   <xsl:include href="html/lists.xsl"/>
   <xsl:include href="html/titlepage.xsl"/>

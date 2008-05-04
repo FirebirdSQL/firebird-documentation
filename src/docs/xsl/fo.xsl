@@ -28,6 +28,7 @@
   <xsl:include href="common/l10n.xsl"/>
   <xsl:include href="common/titles.xsl"/>
   <xsl:include href="common/gentext.xsl"/>
+  <xsl:include href="common/inline.xsl"/>
   <xsl:include href="common/special-hyph.xsl"/>
   <xsl:include href="fo/param.xsl"/>
   <xsl:include href="fo/pagesetup.xsl"/>
