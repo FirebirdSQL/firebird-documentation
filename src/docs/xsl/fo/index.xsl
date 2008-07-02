@@ -8,6 +8,12 @@
 
 
 
+  <!-- In the new DocBook stylesheets, indexterm children wreak havoc when building the ToC,
+       PDF bookmarks etc. This takes care of it: -->
+
+  <xsl:template match="indexterm/*"/>
+
+
   <!-- Allow index also with <article> scope; index on fresh page -->
 
   <xsl:template match="index">
