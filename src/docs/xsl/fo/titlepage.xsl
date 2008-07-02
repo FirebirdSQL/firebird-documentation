@@ -44,6 +44,47 @@
 
 
 
+<!-- subtitle template doesn't have to be called from here anymore: -->
+<xsl:template name="book.verso.title">
+  <xsl:variable name="subtitle-follows">
+    <xsl:if test="following-sibling::subtitle
+                  | following-sibling::info/subtitle
+                  | following-sibling::bookinfo/subtitle">1</xsl:if>
+  </xsl:variable>
+
+  <fo:block>
+    <xsl:apply-templates mode="titlepage.mode"/>
+  </fo:block>
+<!--
+  <xsl:if test="$subtitle-follows = 1">
+    <xsl:apply-templates select="(following-sibling::subtitle
+                                 |following-sibling::info/subtitle
+                                 |following-sibling::bookinfo/subtitle)[1]"
+                         mode="book.verso.subtitle.mode"/>
+  </xsl:if>
+-->
+</xsl:template>
+
+
+<!-- following subtitle doesn't have to be called from here anymore: -->
+<xsl:template match="subtitle" mode="book.verso.subtitle.mode">
+  <fo:block>
+    <xsl:apply-templates mode="titlepage.mode"/>
+    <xsl:if test="following-sibling::subtitle">
+      <xsl:text>,</xsl:text>
+    </xsl:if>
+  </fo:block>
+<!--
+  <xsl:if test="following-sibling::subtitle">
+    <xsl:apply-templates select="following-sibling::subtitle[1]"
+                         mode="book.verso.subtitle.mode"/>
+  </xsl:if>
+-->
+</xsl:template>
+
+
+
+
 <!-- OVERRIDE: Toplevel articleinfo/legalnotice on fresh page.
   And nice formatting of course...   -paulvink
 -->

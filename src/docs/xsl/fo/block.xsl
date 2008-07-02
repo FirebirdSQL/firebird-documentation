@@ -4,27 +4,49 @@
                 version='1.0'>
 
 
-<!-- no padding in formalpara titles -->
+<!-- No padding in formalpara titles. And if the para starts with a block child,
+     the title is placed in a block (with keep-with-next) instead of an inline -->
 
 <xsl:template match="formalpara/title|formalpara/info/title">
-  <xsl:variable name="titleStr">
-      <xsl:apply-templates/>
-  </xsl:variable>
-  <xsl:variable name="lastChar">
-    <xsl:if test="$titleStr != ''">
-      <xsl:value-of select="substring($titleStr,string-length($titleStr),1)"/>
-    </xsl:if>
+
+  <xsl:variable name="firstParaChild"
+                select="ancestor::formalpara[1]/para/node()[self::text() or self::*][1]"/>
+
+  <xsl:variable name="fpcType" select="local-name($firstParaChild)"/>
+
+  <xsl:variable name="para-starts-with-block">
+    <xsl:if test="$fpcType    = 'blockquote'
+                  or $fpcType = 'literallayout'
+                  or $fpcType = 'programlisting'
+                  or $fpcType = 'screen'">1</xsl:if>
+                  <!-- we can add more block element types if needed -->
   </xsl:variable>
 
-  <fo:inline font-weight="bold"
-             keep-with-next.within-line="always">
-    <xsl:copy-of select="$titleStr"/>
-    <xsl:if test="$lastChar != ''
-                  and not(contains($runinhead.title.end.punct, $lastChar))">
-      <xsl:value-of select="$runinhead.default.title.end.punct"/>
+  <xsl:variable name="element-name">
+    <xsl:choose>
+      <xsl:when test="$para-starts-with-block = 1">fo:block</xsl:when>
+      <xsl:otherwise>fo:inline</xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+
+  <xsl:variable name="keep-attr-name">
+    <xsl:choose>
+      <xsl:when test="$para-starts-with-block = 1">keep-with-next.within-column</xsl:when>
+      <xsl:otherwise>keep-with-next.within-line</xsl:otherwise>
+    </xsl:choose>
+  </xsl:variable>
+
+  <xsl:element name="{$element-name}">
+    <xsl:attribute name="{$keep-attr-name}">always</xsl:attribute>
+    <xsl:if test="$runinhead.bold = 1">
+      <xsl:attribute name="font-weight">bold</xsl:attribute>
     </xsl:if>
-    <xsl:text>&#160;</xsl:text> <!-- non-breaking space, A0h = 160d -->
-  </fo:inline>
+    <xsl:if test="$runinhead.italic = 1">
+      <xsl:attribute name="font-style">italic</xsl:attribute>
+    </xsl:if>
+    <xsl:call-template name="dress-formalpara-title"/>
+  </xsl:element>
+
 </xsl:template>
 
 

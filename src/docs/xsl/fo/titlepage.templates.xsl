@@ -452,6 +452,18 @@
     </xsl:when>
   </xsl:choose>
 
+  <xsl:choose>
+    <xsl:when test="bookinfo/subtitle">
+      <xsl:apply-templates mode="book.titlepage.verso.auto.mode" select="bookinfo/subtitle"/>
+    </xsl:when>
+    <xsl:when test="info/subtitle">
+      <xsl:apply-templates mode="book.titlepage.verso.auto.mode" select="info/subtitle"/>
+    </xsl:when>
+    <xsl:when test="subtitle">
+      <xsl:apply-templates mode="book.titlepage.verso.auto.mode" select="subtitle"/>
+    </xsl:when>
+  </xsl:choose>
+
   <xsl:apply-templates mode="book.titlepage.verso.auto.mode" select="bookinfo/edition"/>
   <xsl:apply-templates mode="book.titlepage.verso.auto.mode" select="info/edition"/>
   <xsl:apply-templates mode="book.titlepage.verso.auto.mode" select="bookinfo/corpauthor"/>
@@ -532,7 +544,7 @@
 </xsl:template>
 
 <xsl:template match="subtitle" mode="book.titlepage.recto.auto.mode">
-<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="book.titlepage.recto.style" text-align="center" font-size="20.736pt" space-before="15.552pt" font-family="{$title.fontset}">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="book.titlepage.recto.style" text-align="center" space-before="0.5em" font-family="{$title.fontset}" font-style="italic" color="{$highlevel.title.color}">
 <xsl:apply-templates select="." mode="book.titlepage.recto.mode"/>
 </fo:block>
 </xsl:template>
@@ -550,7 +562,7 @@
 </xsl:template>
 
 <xsl:template match="author" mode="book.titlepage.recto.auto.mode">
-<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="book.titlepage.recto.style" font-size="17.28pt" space-before="10.8pt" keep-with-next="always">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="book.titlepage.recto.style" font-size="17.28pt" space-before="2em" keep-with-next="always">
 <xsl:apply-templates select="." mode="book.titlepage.recto.mode"/>
 </fo:block>
 </xsl:template>
@@ -562,9 +574,15 @@
 </xsl:template>
 
 <xsl:template match="title" mode="book.titlepage.verso.auto.mode">
-<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="book.titlepage.verso.style" font-size="14.4pt" font-weight="bold" font-family="{$title.fontset}">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="book.titlepage.verso.style" font-size="17.28pt" font-weight="bold" font-family="{$title.fontset}">
 <xsl:call-template name="book.verso.title">
 </xsl:call-template>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="subtitle" mode="book.titlepage.verso.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="book.titlepage.verso.style" font-weight="bold" font-style="italic" font-family="{$title.fontset}" space-after="1em">
+<xsl:apply-templates select="." mode="book.titlepage.verso.mode"/>
 </fo:block>
 </xsl:template>
 
@@ -1307,6 +1325,212 @@
 <xsl:template match="abstract" mode="section.titlepage.recto.auto.mode">
 <fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="section.titlepage.recto.style">
 <xsl:apply-templates select="." mode="section.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template name="appendix.titlepage.recto">
+  <xsl:choose>
+    <xsl:when test="appendixinfo/title">
+      <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/title"/>
+    </xsl:when>
+    <xsl:when test="docinfo/title">
+      <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/title"/>
+    </xsl:when>
+    <xsl:when test="info/title">
+      <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/title"/>
+    </xsl:when>
+    <xsl:when test="title">
+      <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="title"/>
+    </xsl:when>
+  </xsl:choose>
+
+  <xsl:choose>
+    <xsl:when test="appendixinfo/subtitle">
+      <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/subtitle"/>
+    </xsl:when>
+    <xsl:when test="docinfo/subtitle">
+      <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/subtitle"/>
+    </xsl:when>
+    <xsl:when test="info/subtitle">
+      <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/subtitle"/>
+    </xsl:when>
+    <xsl:when test="subtitle">
+      <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="subtitle"/>
+    </xsl:when>
+  </xsl:choose>
+
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/corpauthor"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/corpauthor"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/corpauthor"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/authorgroup"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/authorgroup"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/authorgroup"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/author"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/author"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/author"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/othercredit"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/othercredit"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/othercredit"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/releaseinfo"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/releaseinfo"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/releaseinfo"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/copyright"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/copyright"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/copyright"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/legalnotice"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/legalnotice"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/legalnotice"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/pubdate"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/pubdate"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/pubdate"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/revision"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/revision"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/revision"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/revhistory"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/revhistory"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/revhistory"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="appendixinfo/abstract"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="docinfo/abstract"/>
+  <xsl:apply-templates mode="appendix.titlepage.recto.auto.mode" select="info/abstract"/>
+</xsl:template>
+
+<xsl:template name="appendix.titlepage.verso">
+</xsl:template>
+
+<xsl:template name="appendix.titlepage.separator">
+</xsl:template>
+
+<xsl:template name="appendix.titlepage.before.recto">
+</xsl:template>
+
+<xsl:template name="appendix.titlepage.before.verso">
+</xsl:template>
+
+<xsl:template name="appendix.titlepage">
+  <fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format">
+    <xsl:variable name="recto.content">
+      <xsl:call-template name="appendix.titlepage.before.recto"/>
+      <xsl:call-template name="appendix.titlepage.recto"/>
+    </xsl:variable>
+    <xsl:variable name="recto.elements.count">
+      <xsl:choose>
+        <xsl:when test="function-available('exsl:node-set')"><xsl:value-of select="count(exsl:node-set($recto.content)/*)"/></xsl:when>
+        <xsl:when test="contains(system-property('xsl:vendor'), 'Apache Software Foundation')">
+          <!--Xalan quirk--><xsl:value-of select="count(exsl:node-set($recto.content)/*)"/></xsl:when>
+        <xsl:otherwise>1</xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+    <xsl:if test="(normalize-space($recto.content) != '') or ($recto.elements.count &gt; 0)">
+      <fo:block><xsl:copy-of select="$recto.content"/></fo:block>
+    </xsl:if>
+    <xsl:variable name="verso.content">
+      <xsl:call-template name="appendix.titlepage.before.verso"/>
+      <xsl:call-template name="appendix.titlepage.verso"/>
+    </xsl:variable>
+    <xsl:variable name="verso.elements.count">
+      <xsl:choose>
+        <xsl:when test="function-available('exsl:node-set')"><xsl:value-of select="count(exsl:node-set($verso.content)/*)"/></xsl:when>
+        <xsl:when test="contains(system-property('xsl:vendor'), 'Apache Software Foundation')">
+          <!--Xalan quirk--><xsl:value-of select="count(exsl:node-set($verso.content)/*)"/></xsl:when>
+        <xsl:otherwise>1</xsl:otherwise>
+      </xsl:choose>
+    </xsl:variable>
+    <xsl:if test="(normalize-space($verso.content) != '') or ($verso.elements.count &gt; 0)">
+      <fo:block><xsl:copy-of select="$verso.content"/></fo:block>
+    </xsl:if>
+    <xsl:call-template name="appendix.titlepage.separator"/>
+  </fo:block>
+</xsl:template>
+
+<xsl:template match="*" mode="appendix.titlepage.recto.mode">
+  <!-- if an element isn't found in this mode, -->
+  <!-- try the generic titlepage.mode -->
+  <xsl:apply-templates select="." mode="titlepage.mode"/>
+</xsl:template>
+
+<xsl:template match="*" mode="appendix.titlepage.verso.mode">
+  <!-- if an element isn't found in this mode, -->
+  <!-- try the generic titlepage.mode -->
+  <xsl:apply-templates select="." mode="titlepage.mode"/>
+</xsl:template>
+
+<xsl:template match="title" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style" margin-left="{$title.margin.left}" font-size="24.8832pt" font-weight="bold" font-family="{$title.fontset}" color="{$midlevel.title.color}">
+<xsl:call-template name="component.title">
+<xsl:with-param name="node" select="ancestor-or-self::appendix[1]"/>
+</xsl:call-template>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="subtitle" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style" font-family="{$title.fontset}">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="corpauthor" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="authorgroup" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="author" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="othercredit" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="releaseinfo" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="copyright" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="legalnotice" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="pubdate" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="revision" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="revhistory" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
+</fo:block>
+</xsl:template>
+
+<xsl:template match="abstract" mode="appendix.titlepage.recto.auto.mode">
+<fo:block xmlns:fo="http://www.w3.org/1999/XSL/Format" xsl:use-attribute-sets="appendix.titlepage.recto.style">
+<xsl:apply-templates select="." mode="appendix.titlepage.recto.mode"/>
 </fo:block>
 </xsl:template>
 

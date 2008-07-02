@@ -7,24 +7,39 @@
 
 
 <!-- Altered this template so that for <chapter>, two fo:blocks are
-     generated: one with the label, and one with the title proper: -->
+     generated: one with the label, and one with the title proper.
+     For chapter-level appendices there are also some customizations. -->
+     
+<!-- TODO:
+     The whole possibly-labeled-title / label / title business could be organized more transparently! -->
 
 <xsl:template name="component.title">
   <xsl:param name="node" select="."/>
   <xsl:param name="pagewide" select="0"/>
+
   <xsl:variable name="id">
     <xsl:call-template name="object.id">
       <xsl:with-param name="object" select="$node"/>
     </xsl:call-template>
   </xsl:variable>
 
-  <!-- This one was simply "title" in the original, for all elems: -->
+  <!-- 1 if it concerns an appendix at chapter level (i.e. not in an article) -->
+  <xsl:variable name="is-chapterlevel-appendix">
+    <xsl:if test="$node/self::appendix and not($node/parent::article)">1</xsl:if>
+  </xsl:variable>
+
+  <!-- This one was simply "title" in the original, for all elems.
+       Here it will not be used for chapters and chapter-level appendices.
+  -->
   <xsl:variable name="possibly-labeled-title">
     <xsl:apply-templates select="$node" mode="object.title.markup">
       <xsl:with-param name="allow-anchors" select="1"/>
     </xsl:apply-templates>
   </xsl:variable>
 
+  <!-- This var will only be assigend for chapters, although we'll generate
+       a label for chapter-level appendices later on.
+  -->
   <xsl:variable name="label">
     <xsl:if test="$node/self::chapter and $chapter.autolabel != 0">
       <fo:block xsl:use-attribute-sets="chapter.label.properties">
@@ -37,6 +52,9 @@
 
   <xsl:variable name="title">
     <xsl:choose>
+      <!--
+        For a chapter, $title contains just the unlabeled title, with chapter.title.properties:
+      -->
       <xsl:when test="$node/self::chapter">
         <fo:block xsl:use-attribute-sets="chapter.title.properties">
           <xsl:apply-templates select="$node" mode="unlabeled.title.markup">
@@ -44,7 +62,28 @@
           </xsl:apply-templates>
         </fo:block>
       </xsl:when>
-      <xsl:otherwise> <!-- $node is not a chapter -->
+      <!--
+        For a chapter-level appendix, we include the (conditional) autolabel and the
+        title together in the $title variable, with chapter.title.properties for the two:
+      -->
+      <xsl:when test="$is-chapterlevel-appendix = 1">
+        <fo:block xsl:use-attribute-sets="chapter.title.properties">
+          <xsl:if test="$appendix.autolabel != ''">
+            <xsl:apply-templates select="$node" mode="xref-number.markup"/>
+            <!-- This returns stuff like "Appendix&#160;A" etc.
+                 Any explicit label is deliberately ignored. -->
+            <xsl:text>:</xsl:text>
+            <fo:block/>
+          </xsl:if>
+          <xsl:apply-templates select="$node" mode="unlabeled.title.markup">
+            <xsl:with-param name="allow-anchors" select="1"/>
+          </xsl:apply-templates>
+        </fo:block>
+      </xsl:when>
+      <!--
+        For al other components, $title contains the possibly labeled title:
+      -->
+      <xsl:otherwise>
         <xsl:copy-of select="$possibly-labeled-title"/>
       </xsl:otherwise>
     </xsl:choose>
@@ -102,12 +141,12 @@
   </xsl:variable>
 
   <xsl:choose>
-    <xsl:when test="$node/self::chapter">
+    <xsl:when test="$node/self::chapter or $is-chapterlevel-appendix = 1">
       <fo:block xsl:use-attribute-sets="chapter.label-plus-title.properties">
         <xsl:copy-of select="$label-plus-title"/>
       </fo:block>
     </xsl:when>
-    <xsl:otherwise> <!-- $node is not a chapter -->
+    <xsl:otherwise> <!-- $node is no chapter or chapter-level appendix: -->
       <xsl:copy-of select="$label-plus-title"/>
     </xsl:otherwise>
   </xsl:choose>

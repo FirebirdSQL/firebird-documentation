@@ -37,6 +37,14 @@
                        or parent::blockquote )">1</xsl:if>
   </xsl:variable>
 
+  <xsl:variable name="inside-admon">
+    <xsl:if test="ancestor::note
+                  or ancestor::tip
+                  or ancestor::caution
+                  or ancestor::important
+                  or ancestor::warning">1</xsl:if>
+  </xsl:variable>
+
   <fo:block wrap-option='no-wrap'
             white-space-collapse='false'
             white-space-treatment='preserve'
@@ -49,7 +57,7 @@
     </xsl:if>
 
     <xsl:choose>
-      <xsl:when test="$shade.verbatim = 0">
+      <xsl:when test="$shade.verbatim = 0 or $inside-admon = 1">
         <xsl:copy-of select="$content"/>
       </xsl:when>
       <xsl:when test="self::screen">

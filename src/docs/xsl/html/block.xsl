@@ -3,6 +3,20 @@
                 version='1.0'>
 
 
+
+<xsl:template match="formalpara/title|formalpara/info/title">
+  <xsl:variable name="class">
+    <xsl:text>formalpara-title</xsl:text>
+    <xsl:if test="$runinhead.bold = 1"> bold</xsl:if>
+    <xsl:if test="$runinhead.italic = 1"> italic</xsl:if>
+  </xsl:variable>
+  <span class="{$class}">
+    <xsl:call-template name="dress-formalpara-title"/>
+  </span>
+</xsl:template>
+
+
+
 <xsl:template match="revhistory">
   <xsl:variable name="numcols">
     <xsl:choose>

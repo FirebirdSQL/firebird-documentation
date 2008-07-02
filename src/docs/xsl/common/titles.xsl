@@ -29,6 +29,33 @@
 
 
 
+<!-- Dresses up a formalpara title with (conditional) punctuation and a hard space.
+     Current node MUST be a formalpara/title or a formalpara/info/title
+     when this template is called! -->
+<xsl:template name="dress-formalpara-title">
+
+  <xsl:variable name="bareTitle">
+    <xsl:apply-templates/>
+  </xsl:variable>
+
+  <xsl:variable name="lastChar">
+    <xsl:if test="$bareTitle != ''">
+      <xsl:value-of select="substring($bareTitle,string-length($bareTitle),1)"/>
+    </xsl:if>
+  </xsl:variable>
+
+  <!-- Add ending punct (conditionally) and hard space: -->
+  <xsl:copy-of select="$bareTitle"/>
+  <xsl:if test="not(@role='nopunct')
+                and $lastChar != ''
+                and not(contains($runinhead.title.end.punct, $lastChar))">
+    <xsl:value-of select="$runinhead.default.title.end.punct"/>
+  </xsl:if>
+  <xsl:text>&#160;</xsl:text> <!-- non-breaking space, A0h = 160d -->
+
+</xsl:template>
+
+
 
 <!-- We should probably add more elements here, everywhere it is possible
      that the titleabbrev resides in an xxxinfo subelement and the shipped

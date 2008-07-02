@@ -10,8 +10,8 @@
      ==================
      Here you can specify parameters for the Release Notes fo (-> pdf) builds.
      Params not found here will default to the values in param.xsl
-     Params not found there will default to the values in ../../docbook/fo/param.xsl
-     
+     Params not found in param.xsl will default to the values in manual/tools/docbook-stylesheets/fo/param.xsl
+
      Only include params here if you want to OVERRIDE their default values!
 -->
 
@@ -34,6 +34,13 @@
        template <t:titlepage t:element="chapter".../>
        Default color for all three is $midlevel.title.color (see above)
   -->
+
+  <xsl:attribute-set name="chapter.label-plus-title.properties"> <!-- label plus title -->
+    <!-- Change bg to white (#FFFFFF) if you don't want chapter title shading.
+         If you comment it out, it will get the default shading (currently grey). -->
+    <xsl:attribute name="background-color">#F0F8FF</xsl:attribute><!-- aliceblue -->
+    <xsl:attribute name="padding">2pt</xsl:attribute>
+  </xsl:attribute-set>
 
   <xsl:attribute-set name="chapter.label.properties">
     <xsl:attribute name="keep-with-next.within-column">always</xsl:attribute>

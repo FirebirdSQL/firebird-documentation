@@ -6,7 +6,7 @@
                 version="1.0">
 
 
-  <!-- OVERRIDDEN STYLESHEET PARAMETERS: -->
+  <!-- OVERRIDDEN STYLESHEET PARAMETERS -->
 
   <xsl:param name="fop1.extensions" select="1"/>
     <!-- otherwise broken URLs, and no bookmarks! -->
@@ -81,7 +81,7 @@ set       toc,title
 </xsl:param>
 
 
-  <!-- Our own params: -->
+  <!-- PARAMETERS INTRODUCED BY US -->
 
   <xsl:param name="fop-093" select="1"/>
     <!-- some fixes:
@@ -95,7 +95,6 @@ set       toc,title
 <!-- our green: #108060 -->
 
   <xsl:param name="link.color"  select="'darkblue'"/>
-
 
   <!-- Default params for special word-breaking (e.g. in urls, filenames): -->
   <!--
@@ -146,7 +145,7 @@ set       toc,title
     <xsl:attribute name="font-family">
       <xsl:value-of select="$monospace.font.family"/>
     </xsl:attribute>
-    <xsl:attribute name="font-size">0.95em</xsl:attribute>
+    <xsl:attribute name="font-size">0.97em</xsl:attribute>
   </xsl:attribute-set>
 
   <xsl:attribute-set name="verbatim.properties">
@@ -200,11 +199,8 @@ set       toc,title
   -->
 
   <xsl:attribute-set name="chapter.label-plus-title.properties"> <!-- label plus title -->
-    <!-- uncomment next two for grey bg: -->
-<!--
-    <xsl:attribute name="background-color">#E0E0E0</xsl:attribute>
+    <xsl:attribute name="background-color">#D0D0D0</xsl:attribute>
     <xsl:attribute name="padding">2pt</xsl:attribute>
--->
   </xsl:attribute-set>
 
   <xsl:attribute-set name="chapter.label.properties">
@@ -258,13 +254,9 @@ set       toc,title
     <xsl:attribute name="space-before.minimum">1.12em</xsl:attribute>
     <xsl:attribute name="space-before.optimum">1.40em</xsl:attribute>
     <xsl:attribute name="space-before.maximum">1.68em</xsl:attribute>
-<!-- Uncomment the next group of lines for nicely shaded section-1 titles.
-     It looks good in articles, but probably less so in chapters. -->
-<!--
     <xsl:attribute name="text-align">center</xsl:attribute>
-    <xsl:attribute name="background-color">#E0E0E0</xsl:attribute>
+    <xsl:attribute name="background-color">#E8E8E8</xsl:attribute>
     <xsl:attribute name="padding">2pt</xsl:attribute>
--->
   </xsl:attribute-set>
 
   <xsl:attribute-set name="section.title.level2.properties">
