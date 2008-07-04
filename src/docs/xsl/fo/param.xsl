@@ -165,7 +165,7 @@ set       toc,title
 
   <xsl:attribute-set name="shade.verbatim.style">
     <xsl:attribute name="padding">2pt</xsl:attribute>
-    <xsl:attribute name="background-color">#FFFFE0</xsl:attribute>
+    <xsl:attribute name="background-color">#FFFFEC</xsl:attribute>
   </xsl:attribute-set>
 
   <!-- shade.blah.styles are not *instead of*, but *on top of*
