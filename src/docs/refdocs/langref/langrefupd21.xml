@@ -6166,6 +6166,14 @@ ook zonder alias gebruikt, hebben ze dan dezelfde context? Ik hoop van niet...--
         SELECT</database></quote>)</title>
 
         <formalpara>
+          <title>Available in</title>
+
+          <para>DSQL, PSQL</para>
+
+          <!--ESQL? Suppose not, but do find out / ask-->
+        </formalpara>
+
+        <formalpara>
           <title>Added in</title>
 
           <para>2.1</para>
@@ -6174,17 +6182,22 @@ ook zonder alias gebruikt, hebben ze dan dezelfde context? Ik hoop van niet...--
         <formalpara>
           <title>Description</title>
 
-          <para>A common table expression or <database>CTE</database> is like a volatile view,
-          defined on-the-fly in a preamble to your SELECT statement. The main statement can select
-          from the <database>CTE</database>s defined in the preamble as if they were regular tables
-          or views. <database>CTE</database>s can be recursive, i.e. self-referencing.</para>
+          <para>A common table expression or <database>CTE</database> can best be decribed as a
+          volatile view, defined on-the-fly in a preamble to a SELECT statement. The main statement
+          can select from the <database>CTE</database>s defined in the preamble as if they were
+          regular tables or views. <database>CTE</database>s can be recursive, i.e.
+          self-referencing, but they can not be nested. Once the main statement has been executed,
+          the <database>CTE</database>s go out of scope.</para>
+
+          <!--Can the main statement also be a DELETE, UPDATE or INSERT?-->
         </formalpara>
 
         <formalpara>
           <title>Syntax</title>
 
           <para><blockquote>
-              <programlisting><replaceable>&lt;cte-select&gt;</replaceable>        ::=  <replaceable>&lt;cte-preamble&gt;</replaceable> <replaceable>&lt;select-statement&gt;</replaceable>
+              <programlisting><replaceable>&lt;cte-select&gt;</replaceable>        ::=  <replaceable>&lt;cte-preamble&gt;</replaceable>
+                         <replaceable>&lt;select-statement&gt;</replaceable>
 
 <replaceable>&lt;cte-preamble&gt;</replaceable>      ::=  WITH [RECURSIVE] <replaceable>&lt;cte&gt;</replaceable> [, <replaceable>&lt;cte&gt;</replaceable> ...]
 
@@ -6192,12 +6205,185 @@ ook zonder alias gebruikt, hebben ze dan dezelfde context? Ik hoop van niet...--
 
 <replaceable>&lt;column-list&gt;</replaceable>       ::=  <replaceable>column-alias</replaceable> [, <replaceable>column-alias</replaceable> ...]
 
-<replaceable>&lt;cte-def&gt;</replaceable>           ::=  a <database>SELECT</database> query or <database>UNION
+<replaceable>&lt;cte-def&gt;</replaceable>           ::=  any <database>SELECT</database> query or <database>UNION
 
 <replaceable>&lt;select-statement&gt;</replaceable>  ::=  the main SELECT statement, which can tap from the
                          <database>CTE</database>s defined in the preamble</database></programlisting>
             </blockquote></para>
         </formalpara>
+
+        <formalpara>
+          <title>Example</title>
+
+          <para><blockquote>
+              <!--Example adapted from the one made by Vlad Khorsun (or Paul Ruizendaal?)-->
+
+              <programlisting>with dept_year_budget as (
+  select fiscal_year,
+         dept_no,
+         sum(projected_budget) as budget
+  from proj_dept_budget
+  group by fiscal_year, dept_no
+)
+select d.dept_no,
+       d.department,
+       dyb_2008.budget as budget_08,
+       dyb_2009.budget as budget_09
+from department d
+     left join dept_year_budget dyb_2008
+       on d.dept_no = dyb_2008.dept_no
+       and dyb_2008.fiscal_year = 2008
+     left join dept_year_budget dyb_2009
+       on d.dept_no = dyb_2009.dept_no
+       and dyb_2009.fiscal_year = 2009
+where exists (
+  select * from proj_dept_budget b
+  where d.dept_no = b.dept_no
+)</programlisting>
+            </blockquote></para>
+        </formalpara>
+
+        <formalpara>
+          <title>Notes</title>
+
+          <para><itemizedlist>
+              <listitem>
+                <para>A <database>CTE</database> definition can contain any legal
+                <database>SELECT</database> statement, as long as it doesn't have a
+                <quote><database>WITH...</database></quote> preamble of its own (no nesting).</para>
+              </listitem>
+
+              <listitem>
+                <para><database>CTE</database>s defined for the same query can reference each other,
+                but care should be taken to avoid loops.</para>
+
+                <!--Can a CTE also refer to another one that comes *after* it in the WITH clause?-->
+              </listitem>
+
+              <listitem>
+                <para>Just like regular views, <database>CTE</database>s can be referenced from
+                anywhere in the main query.</para>
+              </listitem>
+
+              <listitem>
+                <para>Just like a regular view, a <database>CTE</database> can be referenced
+                multiple times in the main query, possibly with different aliases.</para>
+              </listitem>
+
+              <!--Table expressions (as subqueries) can be used in INSERT, UPDATE and DELETE statements
+-> find out more about this before documenting it-->
+            </itemizedlist></para>
+        </formalpara>
+
+        <section id="langrefupd21-select-cte-recursive">
+          <title>Recursive <database>CTE</database>s</title>
+
+          <para>A recursive (self-referencing) <database>CTE</database> is a
+          <database>UNION</database> which must have at least one non-recursive member, the
+          <firstterm>anchor</firstterm>. The non-recursive member(s) must be placed before the
+          recursive member(s). Recursive members are linked to each other and to their non-recursive
+          neighbour by <database>UNION ALL</database> operators. The unions between non-recursive
+          members may be of any type.</para>
+
+          <para>Recursive <database>CTE</database>s require the <database>RECURSIVE</database>
+          keyword to be present right after <database>WITH</database>. Each recursive union member
+          may reference itself only once, and it must do so in a <database>FROM</database>
+          clause.</para>
+
+          <para>A great benefit of recursive <database>CTE</database>s is that they use far less
+          memory and CPU cycles than an equivalent recursive stored procedure.</para>
+
+          <!--Find out:
+- May the recursive reference occur in any FROM clause in the recursive union member, or only
+  in the member's main (outermost) FROM clause?
+- Can the RECURSIVE keyword be repeated before each (recursive) CTE?-->
+
+          <para>The execution pattern of a recursive <database>CTE</database> is as follows:</para>
+
+          <itemizedlist>
+            <listitem>
+              <para>The engine begins execution from a non-recursive member.</para>
+            </listitem>
+
+            <listitem>
+              <para>For each row evaluated, it starts executing each recursive member one-by-one,
+              using the current values from the outer row as parameters.</para>
+            </listitem>
+
+            <listitem>
+              <para>If the currently executing instance of a recursive member produces no rows,
+              execution loops back one level and gets the next row from the outer result set.</para>
+            </listitem>
+          </itemizedlist>
+
+          <!--I wonder if this is entirely correct. Don't all the recursive union members each present a next
+lower level in the execution pattern?
+Also, to whom should I give credit for this text (if I use it): Vlad or Paul?-->
+
+          <formalpara>
+            <title>Example with a recursive <database>CTE</database></title>
+
+            <para><blockquote>
+                <!--Example adapted from the one made by Vlad Khorsun (or Paul Ruizendaal?)-->
+
+                <programlisting>with recursive
+  dept_year_budget as (
+    select fiscal_year,
+           dept_no,
+           sum(projected_budget) as budget
+    from proj_dept_budget
+    group by fiscal_year, dept_no
+  ),
+  dept_tree as (
+    select dept_no,
+           head_dept,
+           department,
+           cast('' as varchar(255)) as indent
+    from department
+    where head_dept is null
+    union all
+    select d.dept_no,
+           d.head_dept,
+           d.department,
+           h.indent || '  '
+    from department d
+         join dept_tree h on d.head_dept = h.dept_no
+  )
+select d.dept_no,
+       d.indent || d.department as department,
+       dyb_2008.budget as budget_08,
+       dyb_2009.budget as budget_09
+from dept_tree d
+     left join dept_year_budget dyb_2008
+       on d.dept_no = dyb_2008.dept_no
+       and dyb_2008.fiscal_year = 2008
+     left join dept_year_budget dyb_2009
+       on d.dept_no = dyb_2009.dept_no
+       and dyb_2009.fiscal_year = 2009</programlisting>
+              </blockquote></para>
+          </formalpara>
+
+          <formalpara>
+            <title>Notes on recursive <database>CTE</database>s</title>
+
+            <para><itemizedlist>
+                <listitem>
+                  <para>Aggregates (<database>DISTINCT</database>, <database>GROUP BY</database>,
+                  <database>HAVING</database>) and aggregate functions (<database>SUM</database>,
+                  <database>COUNT</database>, <database>MAX</database> etc) are not allowed in
+                  recursive union members.</para>
+                </listitem>
+
+                <listitem>
+                  <para>A recursive reference cannot participate in an outer join.</para>
+                </listitem>
+
+                <listitem>
+                  <para>The maximum recursion depth is hard-coded as 1024.</para>
+                </listitem>
+              </itemizedlist></para>
+          </formalpara>
+        </section>
       </section>
 
       <section id="langrefupd21-derived-tables">
