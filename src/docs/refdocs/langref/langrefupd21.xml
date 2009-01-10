@@ -5760,7 +5760,7 @@ So the only novelty in Firebird 1.5 is:
       <formalpara>
         <title>Changed in</title>
 
-        <para>2.0</para>
+        <para>2.0, 2.1</para>
       </formalpara>
 
       <formalpara>
@@ -5772,17 +5772,18 @@ So the only novelty in Firebird 1.5 is:
       </formalpara>
 
       <formalpara>
-        <title>Syntax</title>
+        <title>Syntax<!--Changed between 2.0 and 2.1 !--></title>
 
         <para><blockquote>
             <programlisting>INSERT [TRANSACTION <replaceable>name</replaceable>]
    INTO {<replaceable>tablename</replaceable> | <replaceable>viewname</replaceable>} [(<replaceable>&lt;columns&gt;</replaceable>)]
-   {VALUES (<replaceable>&lt;values&gt;</replaceable>) [RETURNING <replaceable>&lt;columns&gt;</replaceable> [INTO <replaceable>&lt;variables&gt;</replaceable>]]
-    | <replaceable>select_expr</replaceable>}
+   {VALUES (<replaceable>&lt;values&gt;</replaceable>) | <replaceable>&lt;select_expr&gt;</replaceable>}
+   [RETURNING <replaceable>&lt;columns&gt;</replaceable> [INTO <replaceable>&lt;variables&gt;</replaceable>]]
 
-<replaceable>&lt;columns&gt;</replaceable>    ::=  <replaceable>colname</replaceable>  [, <replaceable>colname</replaceable>  ...]
-<replaceable>&lt;values&gt;</replaceable>     ::=  <replaceable>value</replaceable>    [, <replaceable>value</replaceable>    ...]
-<replaceable>&lt;variables&gt;</replaceable>  ::=  :<replaceable>varname</replaceable> [, :<replaceable>varname</replaceable> ...]</programlisting>
+<replaceable>&lt;columns&gt;</replaceable>      ::=  <replaceable>colname</replaceable>  [, <replaceable>colname</replaceable>  ...]
+<replaceable>&lt;values&gt;</replaceable>       ::=  <replaceable>value</replaceable>    [, <replaceable>value</replaceable>    ...]
+<replaceable>&lt;variables&gt;</replaceable>    ::=  :<replaceable>varname</replaceable> [, :<replaceable>varname</replaceable> ...]
+<replaceable>&lt;select_expr&gt;</replaceable>  ::=  a <database>SELECT</database> returning a set whose columns fit the target</programlisting>
 
             <!--":" before varname is NOT optional (in contrast to SELECT INTO?)-->
 
@@ -5796,7 +5797,7 @@ So the only novelty in Firebird 1.5 is:
                 </listitem>
 
                 <listitem>
-                  <para>The <database>RETURNING</database> clause is not available in ESQL.</para>
+                  <para>The <database>RETURNING</database> clause is not available in ESQL.<!--still not in 2.1 ?--></para>
                 </listitem>
 
                 <listitem>
@@ -5812,7 +5813,7 @@ So the only novelty in Firebird 1.5 is:
                 </listitem>
 
                 <listitem>
-                  <para>New in 2.0: No column may appear more than once in the insert list.</para>
+                  <para>Since v. 2.0, no column may appear more than once in the insert list.</para>
                 </listitem>
               </itemizedlist>
             </note>
@@ -5835,33 +5836,60 @@ So the only novelty in Firebird 1.5 is:
         </formalpara>
 
         <formalpara>
+          <title>Changed in</title>
+
+          <para>2.1</para>
+        </formalpara>
+
+        <formalpara>
           <title>Description</title>
 
-          <para>An <database>INSERT</database> query – unless it is
-          <database>SELECT</database>-based – may optionally specify a
-          <database>RETURNING</database> clause to produce a result set containing the values that
-          have been actually stored. The clause, if present, need not contain all of the insert
-          columns and may also contain other columns or expressions. The returned values reflect any
-          changes that may have been made in <database>BEFORE</database> tiggers, but not those in
-          <database>AFTER</database> triggers.</para>
+          <para>An <database>INSERT</database> involving at most one row may optionally specify a
+          <database>RETURNING</database> clause in order to produce a result set containing the
+          values that have actually been stored. The clause, if present, need not contain all of the
+          insert columns and may also contain other columns or expressions. The returned values
+          reflect any changes that may have been made in <database>BEFORE</database> tiggers, but
+          not those in <database>AFTER</database> triggers.</para>
 
           <!--Tested in FlameRobin: no result set.
 Tested in FirebirdAPI: "request synchronization error", but I also get the result set.
 The error seems to occur while trying to fetch a (non-existent) second row.
 Try this in isql too!-->
-
-          <!--Ga na of het ECHT onmogelijk is met een SELECT-gebaseerde INSERT. In 2.1 schijnt het vlg. rlsnotes wel te kunnen,
-al moet het ook daar om singletonoperaties gaan.-->
         </formalpara>
 
         <formalpara>
-          <title>Example</title>
+          <title>Examples</title>
 
           <para><blockquote>
               <programlisting>insert into Scholars (firstname, lastname, address, phone, email)
   values ('Henry', 'Higgins', '27A Wimpole Street', '3231212', null)
   returning lastname, fullname, id</programlisting>
+
+              <programlisting>insert into Dumbbells (firstname, lastname, iq)
+  select fname, lname, iq from Friends order by iq rows 1
+  returning id, firstname, iq</programlisting>
             </blockquote></para>
+        </formalpara>
+
+        <formalpara>
+          <title>Notes</title>
+
+          <para><itemizedlist>
+              <listitem>
+                <para><database>RETURNING</database> is only supported for
+                <database>VALUES</database> inserts and – since version 2.1 – for singleton
+                <database>SELECT</database> inserts.</para>
+              </listitem>
+
+              <listitem>
+                <para>In DSQL, a result set is always returned if the <database>RETURNING</database>
+                clause is present. If no rows were actually inserted, the result set is empty. This
+                behaviour may change in a later version.</para>
+
+                <!--And in PSQL, if no record was inserted: do the 'INTO' variables receive NULL, or do they
+remain unchanged?-->
+              </listitem>
+            </itemizedlist></para>
         </formalpara>
       </section>
 
@@ -10468,7 +10496,86 @@ concatenation into line with that for arithmetic operations.-->
     </section>
   </chapter>
 
-  <chapter id="langrefupd21-functions">
+  <chapter id="langrefupd21-aggrfunc">
+    <title>Aggregate functions</title>
+
+    <para>Aggregate functions operate on groups of records, rather than on individual records or
+    variables. They are typically, but not necessarily, used in combination with a <database>GROUP
+    BY</database> clause.</para>
+
+    <section id="langrefupd21-aggrfunc-list">
+      <title><database>LIST()</database></title>
+
+      <formalpara>
+        <title>Available in</title>
+
+        <para>DSQL, PSQL</para>
+
+        <!--ESQL?  -> Oleg Loa, Dmitry Yemanov-->
+      </formalpara>
+
+      <formalpara>
+        <title>Added in</title>
+
+        <para>2.1</para>
+      </formalpara>
+
+      <formalpara>
+        <title>Description</title>
+
+        <para><database>LIST</database> returns a string consisting of the
+        non-<constant>NULL</constant> argument values in the group, separated either by a comma or
+        by a user-supplied delimiter. If there are no non-<constant>NULL</constant> values (this
+        includes the case where the group is empty), <constant>NULL</constant> is returned.</para>
+      </formalpara>
+
+      <formalpara>
+        <title>Result type</title>
+
+        <para><database><database>BLOB</database></database></para>
+      </formalpara>
+
+      <formalpara>
+        <title>Syntax</title>
+
+        <para><blockquote>
+            <programlisting>LIST ([ALL | DISTINCT] <replaceable>expression</replaceable> [, <replaceable>separator</replaceable>])</programlisting>
+
+            <itemizedlist>
+              <listitem>
+                <para>If neither <database>ALL</database> nor <database>DISTINCT</database> is
+                supplied, all non-<constant>NULL</constant> results are listed. With
+                <database>DISTINCT</database>, duplicates are removed.</para>
+              </listitem>
+
+              <listitem>
+                <para>The optional <replaceable>separator</replaceable> argument may be a string
+                literal, a parameter or a variable.</para>
+              </listitem>
+
+              <listitem>
+                <para>Date/time and numerical arguments are implicitly converted to strings before
+                concatenation.</para>
+              </listitem>
+
+              <listitem>
+                <para>The result is a text <database>BLOB</database>, except when the argument is a
+                <database>BLOB</database> of another subtype.</para>
+              </listitem>
+
+              <listitem>
+                <para>The ordering of the list values is undefined.</para>
+
+                <!--Rlsnotes say: implementation-defined. What does this mean: that they can differ
+between, say, Fb/Win and Fb/Linux?-->
+              </listitem>
+            </itemizedlist>
+          </blockquote></para>
+      </formalpara>
+    </section>
+  </chapter>
+
+  <chapter id="langrefupd21-intfunc">
     <title>Internal functions</title>
 
     <section id="langrefupd21-bit-length">
