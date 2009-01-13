@@ -5282,7 +5282,7 @@ with DELETE and UPDATE, possibly also in LangRefUpd-1.5-->
 
             <programlisting>DELETE
    [TRANSACTION <replaceable>name</replaceable>]
-   FROM {<replaceable>tablename</replaceable> | <replaceable>viewname</replaceable>} [<replaceable>alias</replaceable>]
+   FROM {<replaceable>tablename</replaceable> | <replaceable>viewname</replaceable>} [[AS] <replaceable>alias</replaceable>]
    [WHERE {<replaceable>search-conditions</replaceable> | CURRENT OF <replaceable>cursorname</replaceable>}]
    [PLAN <replaceable>plan_items</replaceable>]
    [ORDER BY <replaceable>sort_items</replaceable>]
@@ -6011,35 +6011,68 @@ Try this in isql too!-->
       <formalpara>
         <title>Description</title>
 
-        <para>Merges data into a table or view. The source may be a table, view or derived table
-        (i.e. a parenthesized <database>SELECT</database> statement). For each source record, an
-        existing target record <!--or recordS ? test!-->will be updated or a new record created in
-        the target table, depending on whether the provided condition is met. Typically, this
-        condition will be a comparison of key fields.</para>
+        <para>Merges data into a table or view. The source may a table, view or derived table (i.e.
+        a parenthesized <database>SELECT</database> statement). Each source record will be used to
+        update one or more target records, insert a new record in the target table, or neither. The
+        action taken depends on the provided condition and the <database>WHEN</database> clause(s).
+        The condition will typically contain a comparison of fields in the source and target
+        relations.</para>
       </formalpara>
 
       <formalpara>
         <title>Syntax</title>
 
         <para><blockquote>
-            <programlisting>MERGE INTO {<replaceable>table</replaceable>|<replaceable>view</replaceable>} [[AS] <replaceable>alias</replaceable>]
-   USING {<replaceable>table</replaceable>|<replaceable>view</replaceable>|<replaceable>&lt;derived&gt;</replaceable>} [[AS] <replaceable>alias</replaceable>]
-   ON (<replaceable>condition</replaceable>)
-   [WHEN MATCHED THEN UPDATE SET <replaceable>colname</replaceable> = <replaceable>value</replaceable> [, <replaceable>colname</replaceable> = <replaceable>value</replaceable> ...]]
-   [WHEN NOT MATCHED THEN INSERT [(<replaceable>&lt;columns&gt;</replaceable>)] VALUES (<replaceable>&lt;values&gt;</replaceable>)]
+            <programlisting>MERGE INTO {<replaceable>tablename</replaceable> | <replaceable>viewname</replaceable>} [[AS] <replaceable>alias</replaceable>]
+   USING {<replaceable>tablename</replaceable> | <replaceable>viewname</replaceable> | (<replaceable>select_stmt</replaceable>)} [[AS] <replaceable>alias</replaceable>]
+   ON <replaceable>condition</replaceable>
+   WHEN MATCHED THEN UPDATE SET <replaceable>colname</replaceable> = <replaceable>value</replaceable> [, <replaceable>colname</replaceable> = <replaceable>value</replaceable> ...]
+   WHEN NOT MATCHED THEN INSERT [(<replaceable>&lt;columns&gt;</replaceable>)] VALUES (<replaceable>&lt;values&gt;</replaceable>)
 
-<replaceable>&lt;derived&gt;</replaceable>  ::=  (<replaceable>select_stmt</replaceable>)
 <replaceable>&lt;columns&gt;</replaceable>  ::=  <replaceable>colname</replaceable> [, <replaceable>colname</replaceable> ...]
-<replaceable>&lt;values&gt;</replaceable>   ::=  <replaceable>value</replaceable>   [, <replaceable>value</replaceable>   ...]</programlisting>
+<replaceable>&lt;values&gt;</replaceable>   ::=  <replaceable>value</replaceable>   [, <replaceable>value</replaceable>   ...]
 
-            <para><itemizedlist>
-                <listitem>
-                  <para>At least one of the <quote><database>WHEN [NOT]
-                  MATCHED...</database></quote> clauses must be present.</para>
-                </listitem>
-              </itemizedlist></para>
+<emphasis role="bold">Note:</emphasis> It is legal to provide only one of the WHEN clauses</programlisting>
           </blockquote></para>
       </formalpara>
+
+      <formalpara>
+        <title>Examples</title>
+
+        <para><blockquote>
+            <programlisting>merge into books b
+  using purchases p
+  on p.title = b.title and p.type = 'bk'
+  when matched then
+    update set b.desc = b.desc || '; ' || p.desc
+  when not matched then
+    insert (title, desc, bought) values (p.title, p.desc, p.bought)</programlisting>
+
+            <programlisting>merge into customers c
+  using (select * from customers_delta where id &gt; 10) cd
+  on (c.id = cd.id)
+  when matched then update set name = cd.name
+  when not matched then insert (id, name) values (cd.id, cd.name)</programlisting>
+
+            <!--Second example provided by Adriano!-->
+          </blockquote></para>
+      </formalpara>
+
+      <note>
+        <para><database>WHEN NOT MATCHED</database> should be interpreted from the point of view of
+        the <emphasis>source</emphasis> (the relation in the <database>USING</database> clause).
+        That is: if a source record doesn't have a match in the target table, the
+        <database>INSERT</database> clause is executed. Conversely, records in the target table
+        without a matching source record don't trigger any action.</para>
+      </note>
+
+      <warning>
+        <para>If the <database>WHEN MATCHED</database> clause is present and multiple source records
+        match the same record in the target table, the <database>UPDATE</database> clause is
+        executed for all the matching source records, each update overwriting the previous one. This
+        is non-standard behaviour: SQL-2003 specifies that in such a case an exception must be
+        raised.</para>
+      </warning>
     </section>
 
     <section id="langrefupd21-select">
@@ -6912,6 +6945,9 @@ refer to the current context.-->
       <section id="langrefupd21-join">
         <title><database>JOIN</database></title>
 
+        <!--For all JOIN types:
+Include the use of aliases ([as] bla) in the syntax.-->
+
         <section id="langrefupd21-join-amb-fields">
           <title>Ambiguous field names rejected</title>
 
@@ -6952,9 +6988,9 @@ refer to the current context.-->
           <formalpara>
             <title>Description</title>
 
-            <para>Firebird 2.0 supports <database>CROSS JOIN</database>, which performs a full set
-            multiplication on the tables involved. Previously you had to achieve this by joining on
-            a tautology (a condition that is always true) or by using the comma syntax, now
+            <para>Firebird 2.0 and up support <database>CROSS JOIN</database>, which performs a full
+            set multiplication on the tables involved. Previously you had to achieve this by joining
+            on a tautology (a condition that is always true) or by using the comma syntax, now
             deprecated.</para>
           </formalpara>
 
@@ -6964,7 +7000,6 @@ refer to the current context.-->
             <para><blockquote>
                 <programlisting>SELECT ... 
    FROM <replaceable>table1</replaceable> CROSS JOIN <replaceable>table2</replaceable>
-   [WHERE ...]
    ...</programlisting>
 
                 <para><emphasis role="bold">Note:</emphasis> If you use <database>CROSS
@@ -6987,6 +7022,96 @@ order by Men.age, Women.age
 --   select * from Men, Women
 --   order by Men.age, Women.age</programlisting>
               </blockquote></para>
+          </formalpara>
+        </section>
+
+        <section id="langrefupd21-join-namedcolsjoin">
+          <title>Named colums <database>JOIN</database></title>
+
+          <formalpara>
+            <title>Added in</title>
+
+            <para>2.1</para>
+          </formalpara>
+
+          <formalpara>
+            <title>Description</title>
+
+            <para>A named colums join performs an equi-join (with <quote>=</quote>) on the columns
+            named in the <database>USING</database> clause. These columns must exist in both
+            tables.</para>
+          </formalpara>
+
+          <formalpara>
+            <title>Syntax</title>
+
+            <para><blockquote>
+                <programlisting>SELECT ...
+   FROM <replaceable>table1</replaceable> [<replaceable>&lt;join_type&gt;</replaceable>] JOIN <replaceable>table2</replaceable>
+   USING <replaceable>colname</replaceable> [, <replaceable>colname</replaceable> ...]
+   ...
+
+<replaceable>&lt;join_type&gt;</replaceable>  ::=  INNER | {LEFT | RIGHT | FULL} [OUTER]<!--?--></programlisting>
+              </blockquote></para>
+          </formalpara>
+
+          <formalpara>
+            <title>Example</title>
+
+            <para><blockquote>
+                <programlisting></programlisting>
+              </blockquote></para>
+          </formalpara>
+
+          <formalpara>
+            <title>Notes</title>
+
+            <para></para>
+          </formalpara>
+        </section>
+
+        <section id="langrefupd21-join-natural">
+          <title>Natural <database>JOIN</database></title>
+
+          <formalpara>
+            <title>Added in</title>
+
+            <para>2.1</para>
+          </formalpara>
+
+          <formalpara>
+            <title>Description</title>
+
+            <para>A natural join performs an automatic equi-join (with <quote>=</quote>) on all the
+            columns that exist in both tables. If there are no common column names, a <link
+            linkend="langrefupd21-join-crossjoin"><database>CROSS JOIN</database></link> is
+            produced.</para>
+          </formalpara>
+
+          <formalpara>
+            <title>Syntax</title>
+
+            <para><blockquote>
+                <programlisting>SELECT ...
+   FROM <replaceable>table1</replaceable> NATURAL [<replaceable>&lt;join_type&gt;</replaceable>] JOIN <replaceable>table2</replaceable>
+   ...
+
+<replaceable>&lt;join_type&gt;</replaceable>  ::=  LEFT | RIGHT<!--FULL, INNER, OUTER... ?--></programlisting>
+              </blockquote></para>
+          </formalpara>
+
+          <formalpara>
+            <title>Example</title>
+
+            <para><blockquote>
+                <programlisting></programlisting>
+              </blockquote></para>
+          </formalpara>
+
+          <formalpara>
+            <title>Notes</title>
+
+            <para></para>
           </formalpara>
         </section>
       </section>
@@ -7833,7 +7958,7 @@ select name, phone from proofreaders</programlisting>
         <title>Syntax</title>
 
         <para><blockquote>
-            <programlisting>UPDATE [TRANSACTION <replaceable>name</replaceable>] {<replaceable>tablename</replaceable> | <replaceable>viewname</replaceable>} [<replaceable>alias</replaceable>]
+            <programlisting>UPDATE [TRANSACTION <replaceable>name</replaceable>] {<replaceable>tablename</replaceable> | <replaceable>viewname</replaceable>} [[AS] <replaceable>alias</replaceable>]
    SET <replaceable>col</replaceable> = <replaceable>newval</replaceable> [, <replaceable>col</replaceable> = <replaceable>newval</replaceable> ...]
    [WHERE {<replaceable>search-conditions</replaceable> | CURRENT OF <replaceable>cursorname</replaceable>}]
    [PLAN <replaceable>plan_items</replaceable>]
