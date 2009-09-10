@@ -323,7 +323,9 @@
 
         <para>Creation of a snapshot is usually quite a fast operation, but some
         delay could be expected under high load (especially in the Classic
-        Server).</para>
+        Server).  For guidelines to minimising the impact of monitoring under 
+        such conditions, see <link linkend="rnfb210-mon-perfguide">Performance 
+        Guidelines</link>, below.</para>
 
         <para>A valid database connection is required in order to retrieve the
         monitoring data. The monitoring tables return information about the attached
@@ -417,23 +419,106 @@ WITH RECURSIVE HEAD AS
 
       <section id="rnfb210-mon-cnclqry" xreflabel="Cancel a Running Query"><!-- Level 2 section -->
         <title>Cancel a Running Query</title>
-          <para>Runaway and long-running queries can now be cancelled <emphasis>from a 
-          separate connection</emphasis>.</para>
-          <para>There is no API function call directed at this feature.  It will be up 
-          to the SysAdmin (SYSDBA or Owner) to make use of the data available in the 
-          monitoring tables and devise an appropriate mechanism for reining in the rogue 
-          statements.</para>
-          <para><emphasis role="bold">Example</emphasis></para>
-          <para>As a very rough example, the following statement will kill all 
-          statements currently running in the database, other than any that belong to 
-          the <emphasis>separate</emphasis> connection that the SysAdmin is using 
-          himself:</para>
-          <programlisting>
+        <para>Runaway and long-running queries can now be cancelled <emphasis>from a
+        separate connection</emphasis>.</para>
+        <para>There is no API function call directed at this feature.  It will be up
+        to the SysAdmin (SYSDBA or Owner) to make use of the data available in the
+        monitoring tables and devise an appropriate mechanism for reining in the rogue
+        statements.</para>
+        <para><emphasis role="bold">Example</emphasis></para>
+        <para>As a very rough example, the following statement will kill all
+        statements currently running in the database, other than any that belong to
+        the <emphasis>separate</emphasis> connection that the SysAdmin is using
+        himself:</para>
+        <programlisting>
 delete from mon$statements
   where mon$attachment_id &lt;&gt; current_connection
-          </programlisting>
+        </programlisting>
+      </section>
+
+      <section id="rnfb210-mon-perfguide"><!-- Level 2 section -->
+        <title>Performance Guidelines for Using MON$ Under Load</title>
+        <para>The monitoring is implemented around two cornerstones: shared memory and
+        notifications.</para>
+        <section id="rnfb210-mon-perfguide01"><!-- Level 3 section -->
+          <title>Shared Memory</title>
+          <para>All server processes share some region of memory where the information about
+          current activity is stored. The information consists of multiple variable-length
+          items describing the details of various activities. All items belonging to a
+          particular process are grouped into a single cluster, enabling them to be processed
+          as a whole.</para>
+          <para>Collection of the monitoring information and population of the tables do not
+          happen in real time. Instead, server processes write their data into the shared memory 
+          only when explicitly asked to. Upon writing, the newer clusters supersede the old 
+          ones. Then, when the shared memory region is being read, the reading process scans 
+          all the clusters and performs garbage collection, removing clusters that belong to 
+          dead processes and compacting
+          the shared memory space.</para>
         </section>
+        <section id="rnfb210-mon-perfguide02"><!-- Level 3 section -->
+          <title>Notifications</title>
+          <para>Every server process has a flag that indicates its capability to react to someone's
+          monitoring request as soon as it arrives. When some user connection runs a query against
+          some monitoring table, the worker process of that connection sends a broadcast notification
+          to other processes, requesting an up-to-date information. Those processes react to this
+          request by updating their clusters inside the shared memory region and clearing their
+          <quote>ready</quote> flags.</para>
+          <para>Once every notified process has finished its update, the requesting process reads
+          the shared memory region, filters the necessary tags according to its user permissions,
+          transforms the internal representation into records and fields and populates the in-memory
+          monitoring tables cache.</para>
+          <para>Any processes that have been idle since the last monitoring exchange have their
+          <quote>ready</quote> flag clear, indicating that they have nothing to update in the
+          shared memory. The <emphasis>clear</emphasis> flag means they will be ignored by the
+          notification broadcast and will be exempt from making the next round trip.</para>
+          <para>The <quote>ready</quote> flag is set as soon as something significant changes
+          inside the process and the process starts responding to monitoring requests again.</para>
+        </section>
+
+        <section id="rnfb210-mon-perfguide03"><!-- Level 3 section -->
+          <title>Locking</title>
+          <para>While coordinating the write/read operations, the requester holds an exclusive lock
+          that affects all user connections that are currently active as well as any connections with
+          attachments in the process of being established.</para>
+          <para>Multiple simultaneous monitoring requests are serialized.</para>
+        </section>
+
+        <section id="rnfb210-mon-perfguide04"><!-- Level 3 section -->
+          <title>Limitations and Known Issues</title>
+          <orderedlist>
+            <listitem>
+              <para>In a heavily loaded system running Classic, monitoring requests may take
+              noticeable time to execute. In the meantime, other activity (both running statements
+              and new connection attempts) may be blocked until the monitoring request completes.</para>
+              <note>
+                <para>Improved in v2.1.3.</para>
+              </note>
+            </listitem>
+
+            <listitem>
+              <para>Sometimes, an out-of-memory condition can cause monitoring requests to fail,
+              or cause other worker processes to swap. A major source of this problem is the fact
+              that every record in MON$STATEMENTS has a blob MON$SQL_TEXT which is created for the
+              duration of the monitoring transaction.</para>
+              <para>In V.2.1.x, every blob occupies &lt;page size&gt; bytes of memory, even if its
+              actual content is smaller. When the number of prepared statements in the system is
+              huge, it becomes possible to exhaust memory and get this failure.</para>
+            </listitem>
+
+            <listitem>
+              <para>Another possible source of this memory exhaustion could be the temporary
+              (in practice, very short-lived) growth of the transaction pool into which the monitoring
+              data are cached while the clusters are being merged into a single fragment.</para>
+              <note>
+                <para>There is no relief for this condition in v.2.1.3.  However, it has been
+                improved for v.2.5.0.</para>
+              </note>
+            </listitem>
+          </orderedlist>
+        </section>
+      </section>
     </section>
+
     <section id="rnfb210-svrinfo" xreflabel="More Context Information"><!-- Level 1 section -->
       <title>More Context Information</title>
         <para>More context information about the server and database ('SYSTEM') is

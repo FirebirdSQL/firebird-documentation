@@ -139,6 +139,9 @@
           <listitem>
             <para><xref linkend="rnfb210-dataresult"/><!-- Data Type of an Aggregation Result --></para>
           </listitem>
+          <listitem>
+            <para><xref linkend="rnfb210-dml-datetimetyping"/><!-- A Useful Trick with Date Literals --></para>
+          </listitem>
         </orderedlist>
       </listitem>
     </itemizedlist>
@@ -842,13 +845,19 @@ INSERT INTO &lt;table&gt;
 
     <section id="rnfb210-blbvchar" xreflabel="Text BLOB Compatibility"><!-- Level 2 section -->
       <sectioninfo>
-        <title>BLOB Subtype 1 Compatibility with VarChar</title>
+        <title>BLOB Subtype 1 Compatibility with VARCHAR</title>
         <author><firstname>A.</firstname><surname>dos Santos Fernandes</surname></author>
       </sectioninfo>
       <para><emphasis role="bold">(v.2.1)</emphasis> At various levels of evaluation, the engine now treats text
-      BLOBs that are within the 32,765-byte string size limit as though they were varchars.  Operations that now
+      BLOBs that are within the 32,765-byte string size limit as though they were VARCHARs.  Operations that now
       allow text BLOBs to behave like strings are assignments, conversions and concatenations, as well as the
       functions CAST, LOWER, UPPER, TRIM and SUBSTRING.</para>
+      <warning>
+        <title>Note Carefully!</title>
+        <para>SUBSTRING(), when applied to a text BLOB, now returns a text BLOB as its
+        result, instead of the VARCHAR result that was implemented previously.  This change has the 
+        potential to break expressions in existing client and PSQL code.</para>
+      </warning>
     </section>
 
     <section id="rnfb20x-blob-compare" xreflabel="Compare BLOB=BLOB"><!-- Level 2 section -->
@@ -868,7 +877,7 @@ INSERT INTO &lt;table&gt;
       NULL when it should do so.</para>
     </section>
 
-    <section id="rnfb210-dsqlchanges-blobsort" xreflabel="Sorting on BLOBs"><!-- Level 3 section -->
+    <section id="rnfb210-dsqlchanges-blobsort" xreflabel="Sorting on BLOBs"><!-- Level 2 section -->
       <sectioninfo>
         <title>Sorting on BLOB and ARRAY Columns is Restored</title>
         <author>
@@ -1054,26 +1063,60 @@ DATEDIFF ( MILLISECOND, timestamp '01.01.2000 02:00:00.0000', timestamp '01.01.2
         </programlisting>
       </section>
 
-      <section id="rnfb20x-dml-substring" xreflabel="Expression Arguments for SUBSTRING()"><!-- Level 3 section -->
-        <sectioninfo>
-          <title>Expression Arguments for SUBSTRING()</title>
-          <author><firstname>O.</firstname><surname>Loa, D. Yemanov</surname></author>
-        </sectioninfo>
-        <para><emphasis role="bold">(V.2.0.x)</emphasis> The built-in function SUBSTRING() can now take arbitrary
-        expressions in its parameters.</para>
+      <section id="rnfb20x-dml-substring-changes"><!-- Level 3 section -->
 
-        <para>Formerly, the inbuilt SUBSTRING() function accepted only constants as its second and third arguments
-        (start position and length, respectively). Now, the arguments can be anything that resolves to a value,
-        including host parameters, function results, expressions, subqueries, etc.</para>
-        <note>
-          <para>The length of the resulting column is the same as the length of the first argument. This means that,
-          in the following</para>
-          <programlisting>
-x = varchar(50);
-substring(x from 1 for 1);
-          </programlisting>
-          <para>the new column has a length of 50, not 1. (Thank the SQL standards committee!)</para>
-        </note>
+        <section id="rnfb20x-dml-substring" xreflabel="Expression Arguments for SUBSTRING()"><!-- Level 4 section -->
+          <sectioninfo>
+            <title>Expression Arguments for SUBSTRING()</title>
+            <author><firstname>O.</firstname><surname>Loa, D. Yemanov</surname></author>
+          </sectioninfo>
+          <para><emphasis role="bold">(V.2.0.x)</emphasis> The built-in function SUBSTRING() can now take arbitrary
+          expressions in its parameters.</para>
+
+          <para>Formerly, the inbuilt SUBSTRING() function accepted only constants as its second and third arguments
+          (start position and length, respectively). Now, those arguments can be anything that resolves to a value,
+          including host parameters, function results, expressions, subqueries, etc.</para>
+          <tip>
+            <para>If your attempts to use this feature fail with <quote>invalid token</quote> errors, bear in mind 
+            that expression arguments often need to be enclosed in brackets!</para>
+          </tip>
+        </section>
+
+        <section id="rnfb20x-dml-substring2"><!-- Level 4 section -->
+          <title>Changes to Results Returned from SUBSTRING()</title>
+          <para><emphasis role="bold">(V.2.1.x)</emphasis> To conform with standards, the character length of
+          the result of applying SUBSTRING() to a VARCHAR or CHAR is now a VARCHAR of the same character length
+          declared for or deduced from the value in the first argument.</para>
+
+          <para>In Firebird 2.0 and 1.5, the returned value was a CHAR with the same character length as
+          the declared or implied value of the first argument, too.  That implementation could become a bug in
+          Firebird 2.0 under conditions where the input string was a CHAR and the FOR argument was presented
+          as an expression whose result was not known at the point where memory was prepared to receive the
+          result string.  The V.2.1 change addresses that.</para>
+
+          <para>It is not necessary to redefine any PSQL variables you have declared to receive the results
+          from SUBSTRING().  It is still correct to declare its size just big enough to accommodate the 
+          actual data returned.  Just be sure that any FOR argument that is an expression cannot resolve to 
+          an integer that is larger than the number of characters declared for your variable.</para>
+
+          <important>
+            <title>GOTCHA for BLOBs</title>
+            <para>Clearly, a text BLOB, being of indeterminate character length, cannot fit into a paradigm that
+            populates a string of known maximum dimension. Therefore, the result returned from applying
+            SUBSTRING() to a text BLOB is not a VARCHAR() as previously, but a text BLOB.</para>
+            <para>This change can break existing PSQL and expression code.</para>
+            <itemizedlist>
+              <listitem>
+                <para>Watch out for overflows! Take particular care with CASTs and concatenations.</para>
+              </listitem>
+              <listitem>
+                <para>Pay attention to memory usage when assigning to temporary BLOBs in loops!  The engine
+                allocates a minimum of one database page of memory for each temporary BLOB, regardless of its
+                actual size.</para>
+              </listitem>
+            </itemizedlist>
+          </important>
+        </section>
       </section>
     </section>
 
@@ -1136,9 +1179,9 @@ conditions for columns to be used without qualifiers at a higher scope level.</p
         WHERE A.FieldID = TableA.FieldID)
         </programlisting>
         <note>
-        <para>In Firebird it is possible to provide an alias in an update statement, but many other database vendors
-        do not support it. These SQL statements will improve the interchangeability of Firebird's SQL with other SQL
-        database products.</para>
+        <para>In Firebird it is possible to provide an alias in an update statement.  Although many other 
+        database vendors do not support it, this capability should help those developers who have requested 
+        it to make Firebird's SQL more interchangeable with SQL database products that do support it.</para>
         </note>
         </listitem>
         <listitem><para>This example did not run correctly in Firebird 1.5 and earlier:</para>
@@ -1159,7 +1202,8 @@ conditions for columns to be used without qualifiers at a higher scope level.</p
 
       <listitem>
         <orderedlist type="a">
-        <listitem><para>This failed in Firebird 1.5, but is possible in Firebird 2:</para>
+        <listitem><para>This would except with a syntax error in Firebird 1.5, but is 
+        possible in Firebird 2:</para>
         <programlisting>
     SELECT
       (SELECT RDB$RELATION_NAME FROM RDB$DATABASE)
@@ -1343,7 +1387,8 @@ conditions for columns to be used without qualifiers at a higher scope level.</p
         <listitem><para>The number of columns in the column list should be the same as the number of
     columns from the query expression.</para></listitem>
         <listitem><para>The optimizer can handle a derived table very efficiently.  However, if the
-    derived table is involved in an inner join and contains a subquery, then no join order can be made.</para></listitem>
+    derived table is involved in an inner join and contains a subquery, then no join order can be 
+    established and performance will suffer.</para></listitem>
       </itemizedlist>
     </section><!-- level 2 -->
 
@@ -1441,10 +1486,9 @@ conditions for columns to be used without qualifiers at a higher scope level.</p
           <title>Improved Type Coercion in UNIONs</title>
           <author><firstname>A.</firstname><surname>Brinkman</surname></author>
         </sectioninfo>
-        <para>Automatic type coercion logic between subsets of a union is now more intelligent.
-    Resolution of the data type of the result of an aggregation over values of
-    compatible data types, such as case expressions and columns at the same
-    position in a union query expression, now uses smarter rules.</para>
+        <para>Automatic resolution of the data type of the result of an aggregation over 
+        values of compatible data types, such as case expressions and columns at the 
+        same position in a union query expression, now uses smarter rules.</para>
 
         <para><emphasis role="bold">Syntax Rules</emphasis></para>
 
@@ -1537,11 +1581,19 @@ conditions for columns to be used without qualifiers at a higher scope level.</p
         </programlisting>
 
         <note>
-        <para><emphasis role="bold">Points to note</emphasis></para>
-
+        <title>Points to note</title>
         <orderedlist>
-        <listitem><para>Because the DISTINCT predicate considers that two NULL values are not distinct, it never
-        evaluates to the truth value UNKNOWN.  Like the IS [NOT] NULL predicate, it can only be True or False.</para>
+        <listitem>
+          <para>Because the DISTINCT predicate considers that two NULL values are not distinct, it never
+          evaluates to the truth value UNKNOWN.  Like the IS [NOT] NULL predicate, it can only be True or
+          False.</para>
+          <tip>
+            <title>Read More About NULL</title>
+            <para>For more understanding of the way NULL comparisons are evaluated, please read
+            the <emphasis>Firebird Null Guide</emphasis>, available through
+            the <ulink url="http://firebirdsql.org/index.php?op=doc#category_1">Documentation Index</ulink> at
+            the Firebird website.</para>
+          </tip>
         </listitem>
         <listitem><para>The NOT DISTINCT predicate can be optimized using an index, if one is available.</para>
         </listitem>
@@ -1575,8 +1627,8 @@ conditions for columns to be used without qualifiers at a higher scope level.</p
         </sectioninfo>
         <para>Placement of nulls in an ordered set has been changed to accord with the SQL standard that null ordering
         be consistent, i.e. if ASC[ENDING] order puts them at the bottom, then DESC[ENDING] puts them at the top;
-        or vice-versa. This applies only to databases created under the new on-disk structure, since it needs to use
-        the index changes in order to work.</para>
+        or vice-versa. This applies only to databases created under an on-disk structure of 11 or higher, since it 
+        needs to use the index changes in order to work.</para>
 <!-- inserted in 2.0.1 -->
         <important>
           <para>If you override the default nulls placement, no index can be used for sorting.  That is, no index
@@ -1729,43 +1781,6 @@ conditions for columns to be used without qualifiers at a higher scope level.</p
           </section><!-- 4 -->
         </section><!-- 3 -->
 
-        <section id="rnfb20x-dml-datetimetyping"><!-- Level 3 section -->
-          <sectioninfo>
-            <title>A Useful Trick with Date Literals</title>
-            <author><firstname>H.</firstname><surname>Borrie</surname></author>
-          </sectioninfo>
-          <para>In days gone by, before the advent of context variables like CURRENT_DATE, CURRENT_TIMESTAMP, et al., we 
-          had <firstterm>predefined date literals</firstterm>, such as 'NOW', 'TODAY', 'YESTERDAY' and so on.  These
-          predefined date literals survive in Firebird's SQL language set and are still useful.</para>
-          <para>In InterBase 5.x and lower, the following statement was <quote>legal</quote> and returned a DATE value (
-          remembering that the DATE type then was what is now TIMESTAMP):</para>
-          <programlisting>
-select 'NOW' from rdb$database /* returns system date and time */
-          </programlisting>
-          <para>In a database of ODS 10 or higher, that statement returns the string 'NOW'.  We have had to learn to
-          cast the date literal to get the result we want:</para>
-          <programlisting>
-select cast('NOW' as TIMESTAMP) from rdb$database
-          </programlisting>
-
-          <para>For a long time&mdash;probably since IB 6&mdash; there has been an undocumented
-          <quote>short expression syntax</quote> for casting not just the predefined date/time literals but 
-          <emphasis>any</emphasis> date literals.  Actually, it is defined in the standard.  Most of us were just not 
-          aware that it was available.  It takes the form
-          <filename>&lt;data type&gt; &lt;date literal&gt;</filename>.  Taking the CAST example above, the short syntax 
-          would be as follows:</para>
-          <programlisting>
-select TIMESTAMP 'NOW'
-          </programlisting>
-          <para>This short syntax can participate in other expressions.  The following example illustrates a date/time
-          arithmetic operation on a predefined literal:</para>
-          <programlisting>
-update mytable
-  set OVERDUE = 'T'
-  where DATE 'YESTERDAY' - DATE_DUE > 10
-          </programlisting>
-        </section><!-- 3 -->
-
         <section id="rnfb20x-dml-context-ns"><!-- Level 3 section -->
         <sectioninfo>
           <title>New System Functions to Retrieve Context Variables</title>
@@ -1782,7 +1797,7 @@ update mytable
     RDB$GET_CONTEXT( &lt;namespace&gt;, &lt;variable&gt; )
        </programlisting>
 
-       <para>These functions are really a form of external function that exists inside the database intead of being 
+       <para>These functions are really a form of external function that exists inside the database instead of being
        called from a dynamically loaded library.  The following declarations are made automatically by the engine at
        database creation time:</para>
 
@@ -2309,6 +2324,43 @@ PLAN ( { &lt;stream_retrieval&gt; | &lt;sorted_streams&gt; | &lt;joined_streams&
 
       </orderedlist>
     </section>
+
+    <section id="rnfb210-dml-datetimetyping" xreflabel="A Useful Trick with Date Literals"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>A Useful Trick with Date Literals</title>
+        <author><firstname>H.</firstname><surname>Borrie</surname></author>
+      </sectioninfo>
+      <para>In days gone by, before the advent of context variables like CURRENT_DATE, CURRENT_TIMESTAMP, et al., we
+      had <firstterm>predefined date literals</firstterm>, such as 'NOW', 'TODAY', 'YESTERDAY' and so on.  These
+      predefined date literals survive in Firebird's SQL language set and are still useful.</para>
+      <para>In InterBase 5.x and lower, the following statement was <quote>legal</quote> and returned a DATE value (
+      remembering that the DATE type then was what is now TIMESTAMP):</para>
+      <programlisting>
+select 'NOW' from rdb$database /* returns system date and time */
+      </programlisting>
+      <para>In a database of ODS 10 or higher, that statement returns the string 'NOW'.  We have had to learn to
+      cast the date literal to get the result we want:</para>
+      <programlisting>
+select cast('NOW' as TIMESTAMP) from rdb$database
+      </programlisting>
+
+      <para>For a long time&mdash;probably since IB 6&mdash; there has been an undocumented
+      <quote>short expression syntax</quote> for casting not just the predefined date/time literals but
+      <emphasis>any</emphasis> date literals.  Actually, it is defined in the standard.  Most of us were just not
+      aware that it was available.  It takes the form
+      <filename>&lt;data type&gt; &lt;date literal&gt;</filename>.  Taking the CAST example above, the short syntax
+      would be as follows:</para>
+      <programlisting>
+select TIMESTAMP 'NOW' from rdb$database
+      </programlisting>
+      <para>This short syntax can participate in other expressions.  The following example illustrates a date/time
+      arithmetic operation on a predefined literal:</para>
+      <programlisting>
+update mytable
+  set OVERDUE = 'T'
+  where DATE 'YESTERDAY' - DATE_DUE > 10
+      </programlisting>
+    </section><!-- 2 -->
 
   </section>
 
