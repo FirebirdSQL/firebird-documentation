@@ -1,0 +1,970 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<chapter id="rnfb210-global">
+  <chapterinfo>
+    <title>Miglioramenti di Firebird 2.1</title>
+  </chapterinfo>
+
+  <para>Alcuni miglioramenti e modifiche sono stati effettuati in Firebird
+  2.1, per avvicinare lo sviluppo del motore alle modifiche architetturali
+  pianificate per Firebird 3.</para>
+
+  <note>
+    <para>A meno di indicazione contraria, si tratta di modifiche e
+    miglioramenti a partire dalla versione v.2.1 e sucessive.</para>
+  </note>
+
+  <!-- FORCED WRITES ON LINUX -->
+
+  <section id="rnfb210-global-fwrites"
+           xreflabel="Forced Writes on Linux Now Works!">
+    <!-- sect1 -->
+
+    <sectioninfo>
+      <title>Finalmente funzionano le Forced Writes su Linux!</title>
+
+      <author>
+        <firstname>A.</firstname>
+
+        <surname>Peshkov</surname>
+      </author>
+    </sectioninfo>
+
+    <para>Per la massima sicurezza dei database, si usa configurare il server
+    in modalità a scritture sincrone (mettendo a <emphasis>ON</emphasis> le
+    c.d.<emphasis> Forced Writes</emphasis>). Questo funzionamento, fortemente
+    raccomandato nei sistemi installati presso i clienti, fa in modo che le
+    chiamate di sistema atte a scrivere, cioè <command>write()</command>,
+    proseguano solo dopo aver effettivamente e completamente effettuato la
+    scrittura fisica sul disco. Di conseguenza, questo garantisce che dopo un
+    COMMIT, tutti i dati modificati dalla transazione siano fisicamente sul
+    disco, e non in attesa in qualche memoria tampone del sistema
+    opertativo.</para>
+
+    <para>La sua implementazione su Linux è molto semplice - invocare prima la
+    procedura <command>fcntl(dbFile, F_SETFL, O_SYNC)</command>.</para>
+
+    <para>
+      <emphasis>Nonostante ciò, succedeva che i database su Linux fossero
+      rovinati ugualmente.</emphasis>
+    </para>
+
+    <section id="rnfb210-global-fwrites-frnscs">
+      <!-- sect2 -->
+
+      <title>Un po' di dettagli tecnici</title>
+
+      <para>Alcuni test su Linux mostrarono che impostando o meno O_SYNC
+      scrivendo file non cambiavano per nulla le prestazioni! Bene, si poteva
+      pensare di avere un sistema operativo veloce. Invece no: è un problema
+      documentato del kernel di Linux!</para>
+
+      <para>Stando al manuale di Linux, <quote>Su Linux, questo comando (cioè
+      fcntl(fd, F_SETFL, flags)) può solo cambiare i flag O_APPEND, O_ASYNC,
+      O_DIRECT, O_NOATIME, e O_NONBLOCK</quote>. Sebbene non sia documentato
+      in nessun posto a me noto, qualsiasi tentativo di impostare ogni altro
+      flag oltre a quelli citati nel manuale (come appunto O_SYNC, ad esempio)
+      oltre a non funzionare, fcntl() non riporta nemmeno nessun messaggio o
+      stato di errore.</para>
+
+      <para>Per le versioni di Firebird e Interbase fino a questo punto,
+      significa che le Forced Writes su Linux non hanno
+      <emphasis>mai</emphasis> funzionato. Su Windows invece funzionano (e
+      hanno funzionato) correttamente. Sembra inoltre che tal problema non
+      abbia influenzato altri sistemi operativi, sebbene non si possa
+      garantirlo. Per essere sicuri bisogna controllare se l'implementazione
+      di <command>fcntl()</command> nel proprio sistema operativo è in grado
+      di impostare il flag O_SYNC.</para>
+
+      <para>La tecnica usata adesso, introdotta nella versione Beta 2 di
+      Firebird 2.1, è quella di riaprire il file. Questo dovrebbe garantire la
+      corretta operatività in ogni sistema operativo, premesso che la chiamata
+      di sistema <command>open()</command> funzioni correttamente sotto questo
+      aspetto. Apparentemente finora nessuno ha mostrato questo tipo di
+      problemi.</para>
+
+      <para>Il team di sviluppo di Firebird non si riesce a spiegare perchè un
+      tale buco possa rimanere irrisolto per due anni dopo essere stato
+      immesso nel <ulink
+      url="http://bugzilla.kernel.org/show_bug.cgi?id=5994">Linux kernel's
+      bug-tracker</ulink>. Apparentemente, in Linux un problema documentato
+      diventa una caratteristica...</para>
+    </section>
+
+    <section id="rnfb210-global-fwrites-fixold">
+      <!-- sect2 -->
+
+      <title>Soluzione rapida per le versioni di Firebird precedenti</title>
+
+      <para>Questo è un suggerimento per una soluzione rapida al problema per
+      le versioni precedenti di Firebird: usare l'opzione <quote>sync</quote>
+      su ogni partizione montata con un database Firebird installato. Un
+      esempio di una linea in /etc/fstab:</para>
+
+      <literallayout>
+  /dev/sda9    /usr/database    ext3    noatime,sync     1   2
+      </literallayout>
+    </section>
+  </section>
+
+  <!-- RAW DEVICES -->
+
+  <section id="rnfb210-global-rawdevice" xreflabel="Databases on Raw Devices">
+    <!-- Level 1 section -->
+
+    <sectioninfo>
+      <title>Database su periferiche fisiche</title>
+
+      <author>
+        <firstname>A.</firstname>
+
+        <surname>Peshkov</surname>
+      </author>
+    </sectioninfo>
+
+    <para>Quando un database in modo Forced Writes cresce rapidamente, l'I/O
+    del sistema di file può degradare molto le prestazioni. Su Linux, che è
+    privo delle chiamate a sistema per far crescere in modo efficiente la
+    dimensione del database, le prestazioni con le Forced Writes possono
+    essere fino a tre volte più lente che con la scrittura asincrona.</para>
+
+    <para>In presenza di tali condizioni, le prestazioni possono essere molto
+    migliorate scavalcando completamente il sistema operativo e recuperando il
+    database direttamente su una periferica disco fisica. Infatti, un database
+    Firebird può essere ricreato su un qualsiasi tipo di periferica a
+    blocchi.</para>
+
+    <section id="rnfb210-global-rawdevice-moveit">
+      <!-- Level 2 section -->
+
+      <title>Spostare un database su una periferica fisica</title>
+
+      <para>Spostare un database su una periferica fisica è semplice come
+      recuperare una copia direttamente su una partizione non formattata nel
+      sistema di dischi locale. Ad esempio,</para>
+
+      <programlisting>
+ gbak -c miacopia.fbk /dev/sda7
+      </programlisting>
+
+      <para>recupera la copia di nome <database>miacopia.fbk</database> nel
+      terzo disco logico della partizione estesa del primo disco rigido SCSI o
+      SATA (disk0).</para>
+
+      <note>
+        <para>Il database non ha altro nome che il nome della periferica
+        stessa; nell'esempio dato il <quote>nome del database</quote> è
+        proprio '/dev/sda7'.</para>
+      </note>
+    </section>
+
+    <section id="rnfb210-global-rawdevice-nbak">
+      <!-- Level 2 section -->
+
+      <title>Gestione particolare di nbak/nbackup</title>
+
+      <para>Per evitare che il file differenziale del programma di utilità
+      fisico <command>nbackup</command> venga scritto nel direttorio /dev/,
+      bisogna attribuirgli un nome file completo in modo esplicito. Questo si
+      ottiene usando ad esempio ISQL, attraverso il seguente comando:</para>
+
+      <programlisting>
+# isql /dev/sda7
+SQL&gt; alter database add difference file '/tmp/dev_sda7';
+      </programlisting>
+
+      <section id="rnfb210-global-rawdevice-nbak-dbsize">
+        <!-- Level 3 section -->
+
+        <para>Al fine di mantenere la copia fatta con nbak entro dimensioni
+        ragionevoli, è utile sapere quanto spazio del disco è stato al momento
+        occupato. Lo switch '-s' di nbackup riporta la dimensione del databse
+        in <emphasis>pagine di database</emphasis>.</para>
+
+        <programlisting>
+# nbackup -s -l /dev/sda7
+77173
+        </programlisting>
+
+        <para>Non va confuso il risultato qui dato con il numero di blocchi
+        occupati nella periferica, e quindi la dimensione di pagina con la
+        dimensione del blocco fisico della periferica. Il valore riportato,
+        77173, è il numero di pagine di database occupate. La dimensione
+        fisica (in bytes) si calcola con (numero delle pagine * dimensione
+        della pagina). Se non si conosce la dimensione di pagine, si può
+        interrogare l'header del database con gstat -h:</para>
+
+        <literallayout>
+  # gstat -h /dev/sda7
+  Database "/dev/sda7"
+  Database header page information:
+          Flags                   0
+          Checksum                12345
+          Generation              43
+          Page size               4096  &lt;———
+          ODS version             11.1
+   . . . . . . .
+        </literallayout>
+      </section>
+
+      <!-- sect3 -->
+
+      <section id="rnfb210-global-rawdevice-nbak-examples">
+        <!-- Level 3 section -->
+
+        <title>Esempi dell'uso di nbackup su una periferica fisica</title>
+
+        <orderedlist>
+          <listitem>
+            <para>Si può utilizzare uno script per fare la copia, usando
+            direttamente lo switch '-s' per ottenere l'output. Ad
+            esempio,</para>
+
+            <programlisting>
+# DbFile=/dev/sda7
+# DbSize=`nbackup -L $DbFile -S` || exit 1
+# dd if=$DbFile ibs=4k count=$DbSize | # compress and record DVD
+# nbackup -N $DbFile
+            </programlisting>
+          </listitem>
+
+          <listitem>
+            <para>Usando nbackup, si può fare una copia fisica direttamente
+            col comando:</para>
+
+            <programlisting>
+# nbackup -B 0 /dev/sda7 /tmp/lvl.0
+            </programlisting>
+          </listitem>
+        </orderedlist>
+      </section>
+
+      <!-- sect3 -->
+    </section>
+
+    <!-- sect2 -->
+
+    <section id="rnfb210-global-rawdevice-further">
+      <!-- Level 2 section -->
+
+      <title>Ulteriori informazioni sulle periferiche fisiche</title>
+
+      <para>Sebbene non siano noti problemi specifici ad oggi sull'uso delle
+      periferiche fisiche per i database, bisogna tenere presente che</para>
+
+      <itemizedlist>
+        <listitem>
+          <para>la crescita reale e potenziale di un database fisico non è
+          molto ovvia per un utente finale rispetto a quello che invece viene
+          gestito dal file system di un sistema operativo. Se l'ambiente di
+          installazione dal cliente è fuori dalla propria diretta gestione, è
+          necessario assicurarsi di lasciare documentazione adeguata per ogni
+          sistema di monitoraggio che possa risulatare utile</para>
+        </listitem>
+
+        <listitem>
+          <para>gli esperti in Windows potrebbero provare i database su
+          periferica fisica su Windows . Non è una delle priorità del progetto
+          valutare come si possa ottenere su quel tipo di piattaforma,
+          tuttavia se si crede di conoscere un modo per farlo, si prega di
+          riferire ogni tentativo (riuscito o meno) nel proprio laboratorio
+          windows alla lista degli sviluppatori firebird-devel.</para>
+        </listitem>
+
+        <listitem>
+          <tip>
+            <para>Gestite le periferiche fisiche con aliases.conf. In quel
+            modo, avendo la necessità di riconfigurare l'hardware, non è
+            necessario riconfigurare tutte le stringhe di connessione intutto
+            il codice.</para>
+          </tip>
+        </listitem>
+      </itemizedlist>
+    </section>
+
+    <!-- sect2 -->
+  </section>
+
+  <!-- sect1 -->
+
+  <!-- REMOTE INTERFACE -->
+
+  <section id="rnfb210-global-remote" xreflabel="Remote Interface Improvement">
+    <!-- Level 1 section -->
+
+    <sectioninfo>
+      <title>Miglioramenti nel protocollo di connessione remota</title>
+
+      <author>
+        <firstname>V. Khorsun,</firstname>
+
+        <surname>D. Yemanov</surname>
+      </author>
+    </sectioninfo>
+
+    <para>
+      <ulink url="http://tracker.firebirdsql.org/browse/CORE-971">Richiesta di
+      miglioramento CORE-971</ulink>
+    </para>
+
+    <para>Il protocollo remoto è stato modificato per non rallentare in
+    presenza di reti a basse prestazioni, ed, in generale, migliorato. Per
+    ottenere ciò, si effettua una maggior raccolta dei pacchetti, insieme alla
+    ottimizzazione della trasmissione usando un po' di memoria tampone. Queste
+    modifiche hanno dimostrato con test reali circa il 50% in meno di API
+    roundtrips, che pertanto sono collegate a circa il 40% in meno di TCP
+    roundtrips.</para>
+
+    <para>In Firebird 2.1 l'interfaccia remota limita la dimensione del
+    pacchetto usato in risposta alle varie chiamate isc_XXX_info alla
+    dimensione realmente usata dai dati contenuti, mentre prima reinviava
+    tutto il pacchetto intero al client, anche se solo 10 bytes erano
+    effettivamente riempiti. In quest'ultimo caso l'interfaccia remota di
+    Firebird 2.1 invia un pacchetto di soli 10 bytes.</para>
+
+    <para>Alcuni utenti potrenno vedere benefici da queste modifiche,
+    specialmente con client connessi attraverso Internet con applicazioni
+    two-tier.</para>
+
+    <para>I cambiamenti possono essere riassunti con</para>
+
+    <orderedlist numeration="loweralpha">
+      <listitem>
+        <para>Spedizione accorpata dei pacchetti. Richiede che sia il server
+        che il client siano di versione 2.1, e si abilita a fronte di accordo
+        positivo sul protocollo. Alcuni pacchetti di certi tipi sono ritardati
+        accorpandoli col pacchetto successivo. Ad esempio, in questa categoria
+        di operazioni ricadono gli statement di allocate e deallocate.)</para>
+      </listitem>
+
+      <listitem>
+        <para>recupero anticipato di parti di informazione di statement o
+        altre richieste e mantenedole nel client per una (probabile)
+        successiva chiamata API. Questo è implementato solo dalla parte
+        client, ma beneficia dei ridotti round trips descritti in (a) su cui
+        fa affidamento.</para>
+
+        <para>Funziona con ogni versione di server, dando un discreto
+        beneficio anche ad applicazioni scritte male, sebbene il meglio non è
+        previsto venga dato con server precedenti alla versione 2.1.</para>
+      </listitem>
+
+      <listitem>
+        <para>Dimensione ridotta delle risposte dal server (eliminati gli zero
+        finali). Poichè questa parte è solo sul server, richiede che sia una
+        versione 2.1 ed un qualsiasi client. Anche i client vecchi pertanto
+        funzionano con i server Firebird 2.1 possono godere di alcuni benefici
+        dalla riduzione dei round trips, sebbene queste vecchie interfaccie, a
+        differenza delle nuove, rispondono sempre con grossi pacchetti per la
+        isc_dsql_prepare().</para>
+      </listitem>
+
+      <listitem>
+        <para>Un altro risparmio nel round-trip, chiamato <quote>defer
+        execute</quote> (esecuzione ritardata), in cui le richieste SELECT
+        vengono trattenute dal momento immediatamente precedente alla
+        <filename>isc_dsql_execute</filename> fino alla chiamata API dello
+        stesso statement. Il beneficio diventa visibile sopratutto quando c'è
+        una gran quantità di richieste SELECT il cui risultato riempie uno o
+        due pacchetti di rete.</para>
+
+        <para>Questo funziona solo se il client ed il server sono v.2.1 o
+        superiore.</para>
+
+        <note>
+          <para>Un possibile effetto collaterale potrebbe avvenire se fallisse
+          l'<filename>isc_dsql_execute</filename> con una eccezione, tale
+          eccezione viene allora riportata al client in risposta alla chiamata
+          API che viene <emphasis>in quel momento</emphasis> eseguita; in
+          altre parole, invece di essere riportato l'errore dalla
+          <filename>isc_dsql_execute</filename> verrebbe riportato da
+          <filename>isc_dsql_fetch</filename>,
+          <filename>isc_dsql_info</filename>, o qualsiasi altra chiamata API
+          attualmente richiesta dalla chiamata
+          <filename>op_execute</filename>.</para>
+
+          <para>Nella maggior parte dei casi, l'effetto collaterale sarebbe
+          trasparente: potrebbe mostrarsi nel caso in cui un qualche errore
+          avvenga con valori default per parametri o variabili PSQL e verrebbe
+          allora evidenziato come un vettore di eccezioni dove le eccezioni
+          sono inviate in un'insolita sequenza.</para>
+        </note>
+      </listitem>
+    </orderedlist>
+
+    <para>Le modifiche funzionano sia con TCP/IP che con NetBEUI. Sono
+    compatibili con le versioni precedenti, pertanto le applicazioni esistenti
+    restano funzionali. Tuttavia, usando un strato software che implementa una
+    propria versione del protocollo remoto, come Jaybird JDBC driver ed il
+    FirebirdClient .NET driver, il codice esistente non è in grado di
+    abilitare questi miglioramenti a meno di non aggiornare anche gli strati
+    software intermedi.</para>
+  </section>
+
+  <!-- A P I -->
+
+  <section id="rnfb210-global-api">
+    <!-- Level 1 section -->
+
+    <title>Modifiche alle API</title>
+
+    <section id="rnfb210-global-api-xsqlvar">
+      <!-- Level 2 section -->
+
+      <sectioninfo>
+        <title>XSQLVAR</title>
+
+        <author>
+          <firstname>A.</firstname>
+
+          <surname>dos Santos Fernandes</surname>
+        </author>
+      </sectioninfo>
+
+      <para>Per passare l'identificatore del set di caratteri della
+      connessione oppure il set di caratteri di un BLOB, quando il set di
+      caratteri della connessione è NONE, si usa l'elemento
+      <filename>XSQLVAR::sqlscale</filename> dei BLOB di tipo testo.</para>
+    </section>
+  </section>
+
+  <!-- OPTIMIZATION -->
+
+  <section id="rnfb210-global-optim">
+    <!-- Level 1 section -->
+
+    <title>Ottimizzazione</title>
+
+    <section id="rnfb210-global-optim1">
+      <!-- Level 2 section -->
+
+      <sectioninfo>
+        <title>Ottimizzazione per scansioni multiple degli indici</title>
+
+        <author>
+          <firstname>V.</firstname>
+
+          <surname>Khorsun</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink
+        url="http://tracker.firebirdsql.org/browse/CORE-1069">Caratteristica
+        richiesta CORE-1069</ulink>
+      </para>
+
+      <para>Nel caso in cui più di un indice deve essere letto a causa di
+      congiunzioni AND, è stata operata una ottimizzazione.</para>
+    </section>
+
+    <section id="rnfb210-global-optim2">
+      <!-- Level 2 section -->
+
+      <sectioninfo>
+        <title>Ottimizzate varie operazioni bitmap</title>
+
+        <author>
+          <firstname>V.</firstname>
+
+          <surname>Khorsun</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink
+        url="http://tracker.firebirdsql.org/browse/CORE-1070">Caratteristica
+        richiesta CORE-1070</ulink>
+      </para>
+
+      <para>Nel caso in cui i valori sono per lo più consecutivi, sono state
+      ottimizzate le operazioni bitmap (set, test e clear).</para>
+    </section>
+  </section>
+
+  <!-- CONFIGURATION AND TUNING -->
+
+  <section id="rnfb210-global-cfg">
+    <!-- Level 2 section -->
+
+    <title>Configurazione e regolazione</title>
+
+    <section id="rnfb210--global-lckmgr">
+      <!-- Level 3 section -->
+
+      <sectioninfo>
+        <title>Aumentati i limiti ed i default del Lock Manager</title>
+
+        <author>
+          <firstname>D.</firstname>
+
+          <surname>Yemanov</surname>
+        </author>
+      </sectioninfo>
+
+      <para><ulink
+      url="http://tracker.firebirdsql.org/browse/CORE-958">Caratteristiche
+      richieste CORE-958</ulink> e <ulink
+      url="http://tracker.firebirdsql.org/browse/CORE-937">CORE-937</ulink></para>
+
+      <itemizedlist>
+        <listitem>
+          <para>è stato aumentato il <emphasis role="bold">massimo numero di
+          hash slot</emphasis> da 2048 a 65,536. Poichè il valore da usare
+          deve essere un numero primo, il massimo supportato è 65,521 (il più
+          grande numero primo inferiore a 65,536). Il valore minimo è
+          101.</para>
+        </listitem>
+
+        <listitem>
+          <para>il nuovo <emphasis role="bold">numero di default per gli hash
+          slots</emphasis> è stato impostato a 1009</para>
+        </listitem>
+
+        <listitem>
+          <para>la <emphasis role="bold">dimensione della tabella di
+          lock</emphasis> di default è stata aumentata a 1 Mb su tutte le
+          piattaforme</para>
+        </listitem>
+      </itemizedlist>
+    </section>
+
+    <section id="rnfb210-global-pgsz">
+      <!-- Level 3 section -->
+
+      <sectioninfo>
+        <title>Sconsigliate le dimensioni di pagina di 1K e 2K</title>
+
+        <author>
+          <firstname>D.</firstname>
+
+          <surname>Yemanov</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink
+        url="http://tracker.firebirdsql.org/browse/CORE-969">Caratteristica
+        richiesta CORE-969</ulink>
+      </para>
+
+      <para>Sono sconsigliate le dimensioni di pagina da 1K e da 2K perchè
+      sono inefficienti.</para>
+
+      <note>
+        <para>Questa restrizione alle pagine piccole si applica ai database
+        nuovi (ODS 11 e oltre). Ci si può collegare alle vecchie basi di dati
+        indipendentemente dalla loro dimensione di pagina.</para>
+      </note>
+    </section>
+
+    <section id="rnfb210-global-dskchunk"
+             xreflabel="Enlarge Disk Allocation Chunks">
+      <!-- Level 3 section -->
+
+      <sectioninfo>
+        <title>Problemi in allocazione su disco</title>
+
+        <author>
+          <firstname>V.</firstname>
+
+          <surname>Khorsun</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink
+        url="http://tracker.firebirdsql.org/browse/CORE-1229">Caratteristica
+        richiesta CORE-1229</ulink>
+      </para>
+
+      <para>Fino a Firebird 2.1, non essendoci regole particolari
+      nell'allocare lo spazio per le pagine dei file di database, a causa
+      delle dipendenze delle pagine che gestisce autonomamente, per servire la
+      strategia di <quote>careful write</quote>, ha sempre scritto le nuove
+      pagine appena allocate in ordine qualsiasi.</para>
+
+      <para>Per i database con ODS 11.1 e successive, i server Firebird a
+      partire dalla versione 2.1 usano un algoritmo per allocare lo spazio su
+      disco, per risolvere due problemi riconosciuti associati al sistema
+      precedente:</para>
+
+      <orderedlist>
+        <listitem>
+          <para>
+            <emphasis role="bold">Disastri provocati da condizioni di disco
+            pieno</emphasis>
+          </para>
+
+          <para>Nel momento in cui la memoria tampone ha tante pagine
+          <quote>sporche</quote> (dirty pages) e Firebird ha necessità di
+          chiedere lo spazio per una nuova pagina per scriverle, se non c'è
+          abbastanza spazio su disco per soddisfare la richiesta, ci sono
+          problemi in presenza di un ordine non determinato delle scritture.
+          Infatti, in tale situazione, succede spesso che l'amministratore del
+          sistema decida di scollegare il database per dargli in qualche modo
+          più spazio su disco, ma in tal modo le pagine sporche ancora nella
+          memoria tampone vanno perse. Questo comporta seri disastri alla
+          struttura del database.</para>
+        </listitem>
+
+        <listitem>
+          <para>
+            <emphasis role="bold">Frammentazione del file</emphasis>
+          </para>
+
+          <para>Allocando lo spazio su disco a pezzettini relativamente
+          piccoli, si ha una significativa frammentazione del file di database
+          al livello del file system, peggiorando le prestazioni delle
+          scansioni grandi, come per esempio quelle di un backup.</para>
+        </listitem>
+      </orderedlist>
+
+      <section id="rnfb210-global-dskchunk-alg">
+        <!-- Level 4 section -->
+
+        <title>La soluzione</title>
+
+        <para>Per risolvere il problema sono state introdotte alcune regole e
+        razionalizzazioni per gestire l'allocazione delle nuove pagine in
+        funzione dello spazio disponibile.</para>
+
+        <orderedlist numeration="loweralpha">
+          <listitem>
+            <para>Si scrive su disco ogni nuova pagina allocata immediatamente
+            prima di tornare al motore. Se la pagina non può essere scritta,
+            l'allocazione non avviene: il bit PIP non viene cancellato e si
+            segnala l'appropriato errore di I/O. Il dataase non si rovina
+            poichè è garantito che tutte le pagine sporche nella memoria hanno
+            spazio su disco allocato e possono essere pertanto scritte senza
+            errori.</para>
+
+            <para>Poichè questa modifica aggiunge una scrittura in più per
+            ogni pagina allocata, ci sarebbe un peggioramento nelle
+            prestazioni. Invece le pagine vengono allocate in blocchi fino a
+            128 Kb e Firebird tiene traccia del numero di queste pagine così
+            <quote>inizializzate</quote> nel PIP header.</para>
+
+            <note>
+              <para>Una pagina che è stata allocata, rilasciata e
+              sucessivamente riallocata è spazio <quote>riservato</quote>, nel
+              senso che non è necessaria nessuna verifica ulteriore per
+              inizializzarla. Pertanto una pagina da allocare è soggetta alla
+              doppia scrittura se e solo se non è mai stata allocata
+              prima.</para>
+            </note>
+          </listitem>
+
+          <listitem>
+            <para>Per risolvere la frammentazione del file, Firebird ora usa
+            le chiamate alle API del file system per
+            <firstterm>preallocare</firstterm> lo spazio su disco a
+            <quote>pezzettoni</quote>.</para>
+
+            <para>La preallocazione permette di evitare disastri in caso di
+            <quote>disco pieno</quote>. Ci sono buone possibilità che il
+            database abbia abbastanza spazio preallocato per terminare le
+            operazioni per dare all'amministratore il tempo di creare più
+            spazio su disco.</para>
+
+            <important>
+              <para>
+                <emphasis role="bold">Per Windows solamente (per il
+                momento)</emphasis>
+              </para>
+
+              <para>Attualmente, solo Windows ha pubbliche tali chiamate API,
+              pertanto per il momento questoaspetto è supportato pienamente
+              solo nella versione Windows di Firebird. Tuttavia, nelle
+              versioni più recenti, sono state aggiunte simili utilità alla
+              Linux API, facendo ritenere che in futuro tali funzioni saranno
+              disponibili per un file system popolare come
+              <firstterm>ext3</firstterm>.</para>
+            </important>
+          </listitem>
+        </orderedlist>
+      </section>
+
+      <section id="rnfb210-global-dskchunk-confparam">
+        <!-- Level 4 section -->
+
+        <title>Il parametro di configurazione DatabaseGrowthIncrement</title>
+
+        <para>Per un miglior controllo della preallocazione dello spazio su
+        disco, è stato aggiunto a <filename>firebird.conf</filename> il nuovo
+        parametro <firstterm>DatabaseGrowthIncrement</firstterm>. Rappresenta
+        il limite superiore della dimensione del blocco preallocato in
+        bytes.</para>
+
+        <important>
+          <para>Si prega di leggere attentamente i dettagli riguardo tale
+          configurazione, in <xref linkend="rnfb210-fbconf-dbgrowth" /> nel
+          capitolo relativo ai <quote>Nuovi parametri e modifiche alla
+          configurazione</quote>.</para>
+        </important>
+      </section>
+
+      <!-- sect4 -->
+    </section>
+
+    <section id="rnfb210-global-fscache">
+      <!-- Level 3 section -->
+
+      <sectioninfo>
+        <title>Neutralizzare la cache del filesystem su Superserver</title>
+
+        <author>
+          <firstname>V.</firstname>
+
+          <surname>Khorsun</surname>
+        </author>
+      </sectioninfo>
+
+      <para><ulink
+      url="http://tracker.firebirdsql.org/browse/CORE-1381">Caratteristica
+      richiesta CORE-1381</ulink> e <ulink
+      url="http://tracker.firebirdsql.org/browse/CORE-1480">CORE-1480</ulink></para>
+
+      <para>Per la memoria tampone delle pagine, Firebird usa e gestisce un
+      suo proprio sistema di cache in memoria. Il sistema operativo, a sua
+      volta, potrebbe avere parte degli stessi dati gestiti nella memoria
+      tampone propria del filesystem. Configurando Firebird ad usare una
+      memoria cache relativamente grande rispetto alla memoria disponibile e
+      ad usare le Forced Writes, questa duplicazione della memoria cache può
+      consumare così tante risorse disponibili da non dare nessun
+      beneficio.</para>
+
+      <para>Inoltre, se il sistema operativo cerca di gestire un file
+      grandissimo, può spostare la cache delle pagine di Firebird addirittura
+      in swap, provocando un'intensa (e inutile) paginazione su disco. In
+      pratica, se la dimensione della cache delle pagine di Firebird
+      Superserver è oltre l'80% della RAM disponibile, la gestione delle
+      risorse potrebbe risultare insostenibile.</para>
+
+      <note>
+        <para>La cache del filesystem è utile nelle scritture su disco, ma
+        solo con Forced Writes disabilitate (OFF), che non è raccomandato
+        nella maggior parte delle situazioni.</para>
+      </note>
+
+      <para>Adesso Superserver, sia su Windows che POSIX, ha un nuovo
+      parametro di configurazione, <command>MaxFileSystemCache</command>, per
+      (dis)abilitare la cache del filesystem. Può permettere di avere più
+      memoria libera per altre operazioni (es. l'ordinamento) e, dove ci sono
+      molti database, può ridurre le richieste di risorse all'host.</para>
+
+      <note>
+        <para>Per la versione Classic non c'è scappatoia.</para>
+      </note>
+
+      <para>Per dettagli sul parametro <command>MaxFileSystemCache</command>,
+      vedere <xref linkend="rnfb210-fbconf-fscache" />.</para>
+    </section>
+  </section>
+
+  <!-- OTHER -->
+
+  <section id="rnfb210-global-other">
+    <!-- Level 1 section -->
+
+    <title>Altri miglioramenti globali</title>
+
+    <section id="rnfb210-global-other1">
+      <!-- Level 2 section -->
+
+      <sectioninfo>
+        <title>Razionalizzazione della Garbage Collection</title>
+
+        <author>
+          <firstname>V.</firstname>
+
+          <surname>Khorsun</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink
+        url="http://tracker.firebirdsql.org/browse/CORE-1071">Caratteristica
+        richiesta CORE-1071</ulink>
+      </para>
+
+      <para>Il processo di raccolta in background leggeva tutte le versioni
+      precedenti dei record su una pagina, comprese quelle create da
+      transazioni attive. Poichè queste ultime non vanno considrate per la
+      garbage collection, era una perdita di tempo leggerle.</para>
+    </section>
+
+    <section id="rnfb210-global-other2">
+      <!-- Level 2 section -->
+
+      <sectioninfo>
+        <title>Immediato rilascio dei file esterni</title>
+
+        <author>
+          <firstname>V.</firstname>
+
+          <surname>Khorsun</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink
+        url="http://tracker.firebirdsql.org/browse/CORE-961">Caratteristica
+        richiesta CORE- 961</ulink>
+      </para>
+
+      <para>Il motore ora rilascia i file esterni non appena sono rilasciate
+      da qualsiasi richiesta degli utenti.</para>
+    </section>
+
+    <section id="rnfb210-global-other3">
+      <!-- Level 2 section -->
+
+      <sectioninfo>
+        <title>Sincronizzazione degli oggetti nella cache metadata DSQL per il
+        Classic server</title>
+
+        <author>
+          <firstname>A.</firstname>
+
+          <surname>dos Santos Fernandes</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink url="http://tracker.firebirdsql.org/browse/CORE-976">Richiesta
+        CORE-976</ulink>
+      </para>
+
+      <para>Dettagli assenti.</para>
+    </section>
+
+    <section id="rnfb210-global-other4">
+      <!-- Level 2 section -->
+
+      <sectioninfo>
+        <title>Miglioramenti sui BLOB</title>
+
+        <author>
+          <firstname>A.</firstname>
+
+          <surname>dos Santos Fernandes</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink url="http://tracker.firebirdsql.org/browse/CORE-969">Richiesta
+        CORE-1169</ulink>
+      </para>
+
+      <para>La conversione tra il blob temporanea ed il tipo di blob
+      destinazione avviene solo alla materializzazione e non prima.</para>
+    </section>
+
+    <section id="rnfb210-global-other5">
+      <!-- Level 2 section -->
+
+      <sectioninfo>
+        <title>Flag di tipo per le Stored Procedures</title>
+
+        <author>
+          <firstname>D.</firstname>
+
+          <surname>Yemanov</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink url="http://tracker.firebirdsql.org/browse/CORE-779">Richiesta
+        CORE-779</ulink>
+      </para>
+
+      <para>È stato introdotto un flag di tipo per le stored procedure,
+      aggiungendo la colonna RDB$PROCEDURE_TYPE alla tabella RDB$PROCEDURES. I
+      possibili valori sono:</para>
+
+      <variablelist>
+        <varlistentry>
+          <term>- 0 o NULL -</term>
+
+          <listitem>
+            <para>procedura compatibile (non viene effettuato nessun
+            controllo)</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>- 1 -</term>
+
+          <listitem>
+            <para>SELECT procedure (una procedura che contiene almeno uno
+            statement SUSPEND)</para>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>- 2 -</term>
+
+          <listitem>
+            <para>EXECUTE procedure (non ci sono statement SUSPEND, e pertanto
+            non è possibile usarla in una SELECT)</para>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+    </section>
+
+    <section id="rnfb210-global-other6">
+      <!-- sect2 -->
+
+      <sectioninfo>
+        <title>Informazioni utili per il Core Dump su Linux</title>
+
+        <author>
+          <firstname>A.</firstname>
+
+          <surname>Peshkov</surname>
+        </author>
+      </sectioninfo>
+
+      <para>
+        <ulink url="http://tracker.firebirdsql.org/browse/CORE-1558">Richiesta
+        CORE-1558</ulink>
+      </para>
+
+      <para>Il server, normalmente, dopo un problema grave (bugcheck) cerca di
+      proseguire le operazioni. Il parametro di configurazione BugcheckAbort
+      fa in modo invece di chiamare immediatamente la funzione
+      <command>abort()</command> e creare un file di core dump. Poichè il
+      bugcheck è il risultato di un problema non riconosciuto dal server,
+      continuare le operazioni con un problema non risolto non dovrebbe essere
+      comunque possibile, id il file di core dump può dare informazioni utili
+      per il debug.</para>
+
+      <para>Nelle distribuzioni più recenti di Linux, quando un'applicazione
+      abortisce per default non viene più fatto il core dump core. Gli utenti
+      hanno spesso problemi nell'ottenerlo. Le regole diverse tra Classic e
+      Superserver, oltre all'inconsistenza tra gli strumenti di gestione del
+      sistema operativo tra ditribuzione e distribuzione, rendono pressochè
+      impossibile aiutare l'utente generico con una qualsiasi <quote>regola
+      generale</quote>.</para>
+
+      <para>Pertanto è stato aggiunto, al Classic e al Superserver su Linux,
+      codice per neutralizzare questi problemi ed automatizzare la generazione
+      di un file di core dump all'abort() causato da BUGCHECK. Il server
+      Firebird esegue il necessario 'cwd' (change working directory) ad una
+      locazione scrivibile (/tmp) e imposta la dimensione limite del file di
+      core in modo tale che il limite 'soft' eguagli il limite 'hard'.</para>
+
+      <note>
+        <para>Nelle versioni normali, cioè <quote>release</quote>, il sistema
+        automatico di core dump viene attivato solo se in
+        <filename>firebird.conf</filename> viene impostato a true il parametro
+        BugcheckAbort. Nelle versioni <quote>debug</quote>, è sempre
+        attivo.</para>
+
+        <para>Per (dis)abilitare questo sistema, non va dimenticato che il
+        server Firebird va fatto ripartire, così come ad ogni modifica dei
+        parametri.</para>
+      </note>
+    </section>
+  </section>
+</chapter>

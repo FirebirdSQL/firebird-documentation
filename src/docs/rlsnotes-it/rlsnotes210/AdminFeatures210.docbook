@@ -1,0 +1,671 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<chapter id="rnfb210-admin">
+  <chapterinfo>
+    <title>Caratteristiche amministrative</title>
+  </chapterinfo>
+
+  <para>Firebird gradualmente aggiunge sempre nuove caratteristiche per
+  snellire l'amministrazione delle basi di dati. Firebird 2.1 vede
+  l'introduzione di una nuova famiglia di tabelle di sistema attraverso le
+  quali gli amministratori possono monitorare all'istante le transazioni e i
+  comandi attivi in una base di dati. Questi strumenti adottano una nuova
+  caratteristica del DDL della versione 2.1, <xref
+  linkend="rnfb210-globaltemp" /> per dare queste istantanee.</para>
+
+  <section id="rnfb210-mon" xreflabel="Monitoring Tables">
+    <!-- Level 1 section == release versione FB 2.1.3 == traduzione allineata-->
+
+    <sectioninfo>
+      <title>Tabelle di monitoraggio</title>
+
+      <author>
+        <firstname>Dmitry</firstname>
+
+        <surname>Yemanov</surname>
+      </author>
+    </sectioninfo>
+
+    <para>Firebird 2.1 presenta la possibilità di monitorare dalla parte del
+    server l'attività esistente relativa ad un certo database. Il motore offre
+    un insieme di cosidette <quote>tabelle virtuali</quote> che danno
+    all'utente una fotografia delle attività in corso per una certa base di
+    dati.</para>
+
+    <para>La parola <quote>virtuale</quote> significa che il la tabella in
+    questione non è materializzata se non quando esplicitamente richiesto.
+    Tuttavia, il relativo metadata è stabilmente accessibile e consultabile
+    nello schema.</para>
+
+    <note>
+      <para>Le tabelle virtuali di monitoraggio esistono solo per i database
+      con la ODS 11.1 (e successive), pertanto la migrazione con un ciclo di
+      backup e restore è necessaria prima di poter utilizzare questa
+      caratteristica.</para>
+    </note>
+
+    <section id="rnfb210-mon-cncpt">
+      <title>L'idea</title>
+
+      <para>Il punto chiave del sistema di monitoraggio è un'istantanea delle
+      attività (<firstterm>activity snapshot</firstterm>). Essa rappresenta lo
+      stato corrente del database, comprese una serie di informazioni sul DB
+      stesso, sui collegamenti e gli utenti attivi, le transazioni, i comandi
+      preparati ed in esecuzione, ed altro ancora.</para>
+
+      <para>Questa istantanea viene creata nel momento stesso in cui una
+      qualsiasi delle tabelle di monitoraggio viene richiesta in una data
+      transazione e viene conservata fino al termine della transazione, in
+      modo tale che le interrogazioni multitabellari (esempio quelle
+      master-slave) a tali tabelle possano riportare sempre una vista
+      consistente dei dati.</para>
+
+      <para>In altre parole, le tabelle di monitoraggio si comportano sempre
+      come in una transazione snapshot table stability
+      (<quote>consistency</quote>), anche se la transazione è partita con un
+      livello di isolamento più basso.</para>
+
+      <para>Per rinfrescare l'istantanea (o snapshot) la transazione corrente
+      dovrebbe essere terminata e le tabelle di monitoraggio vanno
+      reinterrogate nel contesto di una nuova transazione.</para>
+
+      <section id="rnfb212-mon-multi">
+        <sectioninfo>
+          <title>Monitoraggio di connessioni multiple</title>
+
+          <author>
+            <firstname>D.</firstname>
+
+            <surname>Yemanov</surname>
+          </author>
+        </sectioninfo>
+
+        <para>Nelle versioni 2.1.0 e 2.1.1, un utente generico (non SYSDBA)
+        con più di una connessione avrebbe potuto monitorare solo quanto
+        appartenente alla CURRENT_CONNECTION. A partire dalla 2.1.2 <ulink
+            url="http://tracker.firebirdsql.org/browse/CORE-2233">
+            <emphasis>(miglioria CORE-2233)</emphasis>
+          </ulink>, un untente generico (non SYSDBA) può controllare tutte le
+        sue connessioni attive contemporaneamente.</para>
+      </section>
+    </section>
+
+    <section id="rnfb210-mon-scrty">
+      <title>Scopo e sicurezza</title>
+
+      <itemizedlist>
+        <listitem>
+          <para>L'accesso alle tabelle di monitoraggio è permesso in DSQL e
+          PSQL.</para>
+        </listitem>
+
+        <listitem>
+          <para>Il monitoraggio completo è permesso a SYSDBA e al proprietario
+          del database.</para>
+        </listitem>
+
+        <listitem>
+          <para>Gli utenti normali sono vincolati alle informazioni relative
+          alla propria connessione, cioè le altre connessioni sono a loro
+          invisibili.</para>
+        </listitem>
+      </itemizedlist>
+    </section>
+
+    <section id="rnfb210-mon-mtdta">
+      <title>Metadata</title>
+
+      <variablelist>
+        <varlistentry>
+          <term>MON$DATABASE (database collegato)</term>
+
+          <listitem>
+            <literallayout>
+- MON$DATABASE_NAME (database pathname o alias)
+- MON$PAGE_SIZE (page size)
+- MON$ODS_MAJOR (parte intera del numero di versione ODS)
+- MON$ODS_MINOR (parte frazionaria del numero di versione ODS)
+- MON$OLDEST_TRANSACTION (numero della Oldest Interesting Transaction)
+- MON$OLDEST_ACTIVE (numero della Oldest Active Transaction)
+- MON$OLDEST_SNAPSHOT (numero dell'Oldest Snapshot Transaction)
+- MON$NEXT_TRANSACTION (successivo numero di transazione)
+- MON$PAGE_BUFFERS (numero di pagine allocate in cache)
+- MON$SQL_DIALECT (dialetto SQL del database)
+- MON$SHUTDOWN_MODE (tipo di shutdown attuale)
+    0: online
+    1: multi-user shutdown
+    2: single-user shutdown
+    3: full shutdown
+- MON$SWEEP_INTERVAL (intervallo sweep)
+- MON$READ_ONLY (flag di sola lettura)
+- MON$FORCED_WRITES (flag forced writes attivo)
+- MON$RESERVE_SPACE (flag per spazio riservato)
+- MON$CREATION_DATE (data ed ora di creazione)
+- MON$PAGES (numero di pagine allocate su disco)
+- MON$BACKUP_STATE (stato attuale di backup fisico)
+    0: normal
+    1: stalled
+    2: merge
+- MON$STAT_ID (ID della statistica)
+  </literallayout>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>MON$ATTACHMENTS (connessioni correnti)</term>
+
+          <listitem>
+            <literallayout>
+- MON$ATTACHMENT_ID (ID della connessione)
+- MON$SERVER_PID (server process ID)
+- MON$STATE (stato della connesione)
+    0: idle
+    1: active
+- MON$ATTACHMENT_NAME (nome della connessione)
+- MON$USER (nome utente)
+- MON$ROLE (ruolo della connessione)
+- MON$REMOTE_PROTOCOL (nome del protocollo remoto)
+- MON$REMOTE_ADDRESS (indirizzo remoto)
+- MON$REMOTE_PID (ID del processo client remoto)
+- MON$REMOTE_PROCESS (pathname del processo client remoto)
+- MON$CHARACTER_SET_ID (character set della connesione)
+- MON$TIMESTAMP (data ed ora della connesione)
+- MON$GARBAGE_COLLECTION (flag per la garbage collection)
+- MON$STAT_ID (ID della statistica)
+  </literallayout>
+          </listitem>
+
+          <listitem>
+            <itemizedlist>
+              <listitem>
+                <para>Le colonne MON$REMOTE_PID e MON$REMOTE_PROCESS sono
+                valorizzate solo se il client è di versione successiva alla
+                2.1.</para>
+              </listitem>
+
+              <listitem>
+                <para>La colonna MON$REMOTE_PROCESS può contenere un valore
+                che non è un path se un'applicazione ha specificato un nome di
+                processo personalizzato attraverso un DPB.</para>
+              </listitem>
+
+              <listitem>
+                <para>La colonna MON$GARBAGE_COLLECTION indica se è permesso
+                il GC da questa connesione, come specificato dal DPB in
+                <emphasis>isc_attach_database</emphasis>.</para>
+              </listitem>
+            </itemizedlist>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>MON$TRANSACTIONS (transazioni in essere)</term>
+
+          <listitem>
+            <literallayout>
+- MON$TRANSACTION_ID (ID della transazione)
+- MON$ATTACHMENT_ID (ID della connesione)
+- MON$STATE (stato della transazione)
+    0: idle (stato dopo la prepare, prima dell'inizio dell'esecuzione e dopo la chiusura del cursore)
+    1: active (stato durante l'esecuzione e lettura del cursore)
+- MON$TIMESTAMP (data ed ora di start della transazione)
+- MON$TOP_TRANSACTION (top transaction: vedi sotto)
+- MON$OLDEST_TRANSACTION (numero della Oldest Interesting Transaction locale)
+- MON$OLDEST_ACTIVE (numero della Oldest Active Transaction locale)
+- MON$ISOLATION_MODE (isolation mode)
+    0: consistency
+    1: concurrency
+    2: read committed record version
+    3: read committed no record version
+- MON$LOCK_TIMEOUT (timeout per il lock)
+    -1: attesa infinita
+    0: nessuna attesa
+    N: timeout impostato ad N secondi
+- MON$READ_ONLY (flag di sola lettura)
+- MON$AUTO_COMMIT (flag di auto-commit)
+- MON$AUTO_UNDO (flag di auto-undo: vedi sotto)
+- MON$STAT_ID (ID della statistica)
+  </literallayout>
+          </listitem>
+
+          <listitem>
+            <itemizedlist>
+              <listitem>
+                <para>MON$TOP_TRANSACTION è il limite superiore usato dalla
+                transazione di sweep quando avanza l'OIT globale. Tutte le
+                transazioni oltre la soglia dell'OIT sono considerate attive.
+                Normalmente è equivalente al MON$TRANSACTION_ID ma i COMMIT
+                RETAINING oppure i ROLLBACK RETAINING possono bloccare il
+                MON$TOP_TRANSACTION in stallo quando si incrementa l'ID della
+                transazione.</para>
+              </listitem>
+
+              <listitem>
+                <para>MON$AUTO_UNDO indica lo stato di auto-undo impostato per
+                la transazione, cioè, se è stato impostato un SAVEPOINT a
+                livello di transazione. L'esistenza di un tale punto di
+                salvataggio a livello di transazione permettte di cancellare
+                le modifiche effettuate con ROLLBACK e la transazione viene
+                semp'licemente committata. Se il punto di salvataggio non
+                esiste oppure esiste ma il numero di modifiche è esorbitante,
+                allora viene eseguito un ROLLBACK e la transazione viene
+                marchiata nel TIP come <quote>dead</quote>.</para>
+              </listitem>
+            </itemizedlist>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>MON$STATEMENTS (statement preparati)</term>
+
+          <listitem>
+            <literallayout>
+- MON$STATEMENT_ID (ID dello statement)
+- MON$ATTACHMENT_ID (ID della connessione)
+- MON$TRANSACTION_ID (ID della transazione)
+- MON$STATE (stato dello statement)
+    0: idle
+    1: active
+- MON$TIMESTAMP (data ed ora di inizio dello statement)
+- MON$SQL_TEXT (testo dello statement, quando appropriato)
+- MON$STAT_ID (ID della statistica)
+  </literallayout>
+          </listitem>
+
+          <listitem>
+            <itemizedlist>
+              <listitem>
+                <para>La colonna MON$SQL_TEXT contiene NULL per gli statement
+                di GDML</para>
+              </listitem>
+
+              <listitem>
+                <para>Le colonne MON$TRANSACTION_ID e MON$TIMESTAMP contengono
+                valori validi solo per gli statement attivi</para>
+              </listitem>
+
+              <listitem>
+                <para>Il PLAN ed i valori di eventuali parametri non sono al
+                momento disponibili</para>
+              </listitem>
+            </itemizedlist>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>MON$CALL_STACK (call stack delle richieste PSQL attive)</term>
+
+          <listitem>
+            <literallayout>
+- MON$CALL_ID (ID della chiamata)
+- MON$STATEMENT_ID (ID dello statement DSQL di primo livello)
+- MON$CALLER_ID (ID del chiamante)
+- MON$OBJECT_NAME (nome dell'oggetto PSQL)
+- MON$OBJECT_TYPE (tipo dell'oggetto PSQL)
+- MON$TIMESTAMP (data ed ora di inizio della richiesta)
+- MON$SOURCE_LINE (numero di linea del sorgente SQL)
+- MON$SOURCE_COLUMN (numero di colonna del sorgente SQL)
+- MON$STAT_ID (ID della statistica)
+  </literallayout>
+          </listitem>
+
+          <listitem>
+            <itemizedlist>
+              <listitem>
+                <para>La colonna MON$STATEMENT_ID raggruppa gli stack di
+                chiamate per statement DSQL di primo livello che hanno
+                cominciato la catena di chiamate. Tale ID rappresenta una
+                registrazione di statement attivo nella tabella
+                MON$STATEMENTS.</para>
+              </listitem>
+
+              <listitem>
+                <para>Le colonne MON$SOURCE_LINE e MON$SOURCE_COLUMN
+                contengono informazioni relative alla linea ed alla colonna
+                del sorgente PSQL attualmente in esecuzione</para>
+              </listitem>
+            </itemizedlist>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>MON$IO_STATS (statistiche di I/O)</term>
+
+          <listitem>
+            <literallayout>
+- MON$STAT_ID (ID della statistica)
+- MON$STAT_GROUP (gruppo della statistica)
+    0: database
+    1: attachment
+    2: transaction
+    3: statement
+    4: call
+- MON$PAGE_READS (numero di pagine lette)
+- MON$PAGE_WRITES (numero di pagine scritte)
+- MON$PAGE_FETCHES (numero di pagine cercate)
+- MON$PAGE_MARKS (numero di pagine con modifiche pendenti, cioè non ancora scritte)
+  </literallayout>
+          </listitem>
+        </varlistentry>
+
+        <varlistentry>
+          <term>MON$RECORD_STATS (statistiche a livello di record)</term>
+
+          <listitem>
+            <literallayout>
+- MON$STAT_ID (ID della statistica)
+- MON$STAT_GROUP (gruppo della statisca)
+    0: database
+    1: attachment
+    2: transaction
+    3: statement
+    4: call
+- MON$RECORD_SEQ_READS (numero di record letti sequenzialmente)
+- MON$RECORD_IDX_READS (numero di record letti da indice)
+- MON$RECORD_INSERTS (numero di record inseriti)
+- MON$RECORD_UPDATES (numero di record aggiornati)
+- MON$RECORD_DELETES (numero di record cancellati)
+- MON$RECORD_BACKOUTS (numero di record dove una nuova versione 
+   di record primaria esistente o di una sua modifica è cancellata da un 
+   rollback o dal richiamo di un punto di salvataggio)
+- MON$RECORD_PURGES (numero di record in cui la catena di record version
+     sta per essere pulita delle versioni non più necessarie all'OAT
+    o da transazioni più recenti)
+- MON$RECORD_EXPUNGES (numeo di record in cui la catena di record version
+     sta per essere eliminata a causa di cancellazioni in transazioni più vecchie
+     della OAT)
+  </literallayout>
+          </listitem>
+        </varlistentry>
+      </variablelist>
+
+      <note>
+        <para>Le descrizioni testuali dei valori di tutti gli stati e modi
+        esistenti si trova nella tabella di sistema RDB$TYPES.</para>
+      </note>
+    </section>
+
+    <section id="rnfb210-mon-usge">
+      <title>Uso</title>
+
+      <para>La creazione di uno snapshot (istantanea) è normalmente
+      un'operazione veloce, ma ci potrebbe essere un certo ritardo in caso di
+      notevole carico di lavoro (specialmente nel Classic Server). Le linee
+      guida per minimizzare l'impatto del monitoraggio in tali condizioni,
+      vedere oltre nelle <link linkend="rnfb210-mon-perfguide">linee guida
+      sulle prestazioni</link>.</para>
+
+      <para>Per ricevere i dati di monitoraggio occorre essere connessi in
+      modo valido ad un database. Le tabelle di monitoraggio danno
+      informazioni solo sul database connesso. Se ci si connette a più
+      database sullo stesso server, ognuno deve essere connesso e monitorato
+      separatamente.</para>
+
+      <para>Le variabili di sistema <filename>CURRENT_CONNECTION</filename> e
+      <filename>CURRENT_TRANSACTION</filename> possono essere utilizzate per
+      filtrare i dati relativi rispettivamente alla attuale connessione o
+      transazione del chiamante. Queste variabili corrispondono infatti alle
+      colonne ID delle tabelle di monitoraggio appropriate.</para>
+
+      <para>
+        <emphasis role="bold">Esempi</emphasis>
+      </para>
+
+      <para>Per quanto spiegato finora, al fine di ottenere prove
+      significative, è bene sperimentare su un databasse con più connessioni
+      attive e collegandosi come SYSDBA o come proprietario del
+      database.</para>
+
+      <orderedlist>
+        <listitem>
+          <para>Ottenere gli ID di tutti i processi di un Classic Server che
+          al momento caricano la CPU</para>
+
+          <programlisting>
+SELECT MON$SERVER_PID
+  FROM MON$ATTACHMENTS
+  WHERE MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION
+  AND MON$STATE = 1
+</programlisting>
+        </listitem>
+
+        <listitem>
+          <para>Ottenere informazioni sulle applicazioni client</para>
+
+          <programlisting>
+SELECT MON$USER, MON$REMOTE_ADDRESS,
+    MON$REMOTE_PID,
+    MON$TIMESTAMP
+  FROM MON$ATTACHMENTS
+  WHERE MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION
+</programlisting>
+        </listitem>
+
+        <listitem>
+          <para>Recuperare il livello di isolamento della transazione
+          attuale</para>
+
+          <programlisting>
+SELECT MON$ISOLATION_MODE
+  FROM MON$TRANSACTIONS
+  WHERE MON$TRANSACTION_ID = CURRENT_TRANSACTION
+</programlisting>
+        </listitem>
+
+        <listitem>
+          <para>Recuperare gli statement che sono attivi al momento</para>
+
+          <programlisting>
+SELECT ATT.MON$USER,
+ ATT.MON$REMOTE_ADDRESS,
+ STMT.MON$SQL_TEXT,
+ STMT.MON$TIMESTAMP
+  FROM MON$ATTACHMENTS ATT
+    JOIN MON$STATEMENTS STMT
+ON ATT.MON$ATTACHMENT_ID = STMT.MON$ATTACHMENT_ID
+  WHERE ATT.MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION
+    AND STMT.MON$STATE = 1
+</programlisting>
+        </listitem>
+
+        <listitem>
+          <para>Listare gli stack delle chiamate per tutte le
+          connesioni</para>
+
+          <programlisting>
+WITH RECURSIVE HEAD AS
+  (
+     SELECT CALL.MON$STATEMENT_ID,
+CALL.MON$CALL_ID,
+CALL.MON$OBJECT_NAME,
+CALL.MON$OBJECT_TYPE
+     FROM MON$CALL_STACK CALL
+ WHERE CALL.MON$CALLER_ID IS NULL
+     UNION ALL
+ SELECT CALL.MON$STATEMENT_ID,
+  CALL.MON$CALL_ID,
+  CALL.MON$OBJECT_NAME,
+  CALL.MON$OBJECT_TYPE
+ FROM MON$CALL_STACK CALL
+   JOIN HEAD
+     ON CALL.MON$CALLER_ID = HEAD.MON$CALL_ID
+  )
+  SELECT MON$ATTACHMENT_ID,
+   MON$OBJECT_NAME,
+   MON$OBJECT_TYPE
+  FROM HEAD
+    JOIN MON$STATEMENTS STMT
+ON STMT.MON$STATEMENT_ID = HEAD.MON$STATEMENT_ID
+    WHERE STMT.MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION
+</programlisting>
+        </listitem>
+      </orderedlist>
+    </section>
+
+    <section id="rnfb210-mon-cnclqry" xreflabel="Cancel a Running Query">
+      <title>Cancellare una query già lanciata</title>
+
+      <para>Le query interminabili e lunghe possono essere bloccate e
+      cancellate <emphasis>da una connessione separata</emphasis>.</para>
+
+      <para>Non c'è nessuna primitiva API dedicata a questa funzione. Sarà
+      compito dell'amministratore del database (SYSDBA o il proprietario)
+      utilizzare le informazioni provenienti dalle tabelle di monitoraggio e
+      determinare un appropriato meccanismo per mettere in riga gli statement
+      fuori controllo.</para>
+
+      <para>
+        <emphasis role="bold">Esempio</emphasis>
+      </para>
+
+      <para>Come esempio molto grezzo, col seguente comando si terminano tutti
+      gli statement attualmente in esecuzione sul database tranne quelli che
+      girano sulla connessione <emphasis>separata</emphasis> che viene usata
+      dall'amministratore stesso che ha lanciato il comando:</para>
+
+      <programlisting>
+delete from mon$statements
+  where mon$attachment_id &lt;&gt; current_connection
+    </programlisting>
+    </section>
+
+    <section id="rnfb210-mon-perfguide">
+      <title>Guida alle prestazioni nell'uso delle tabelle MON$ sotto
+      stress</title>
+
+      <para>Il monitoraggio è basato su due fondamenti: la memoria condivisa e
+      le notifiche.</para>
+
+      <section id="rnfb210-mon-perfguide01">
+        <title>Memoria condivisa</title>
+
+        <para>Tutti i processi del server condividono alcune regioni di
+        memoria dove sono memorizzate le informazioni delle attività in corso.
+        Tali informazioni sono costituite da elementi multipli a lunghezza
+        variabile che descrivono i dettagli delle varie attività. Tutti gli
+        oggetti appartenenti ad un particolare processo sono raggruppati
+        insieme in un unico blocco per essere processati come un
+        tutt'uno.</para>
+
+        <para>La raccolta delle informazioni di monitoraggio ed il popolamento
+        delle tabelle non avviene in tempo reale, in quanto i processi server
+        scrivono i loro dati nella memoria condivisa solo quando gli viene
+        esplicitamente richiesto di farlo. Alla scrittura, i nuovi blocchi
+        sostituiscono quelli vecchi. Quindi, quando viene letta la regione di
+        memoria condivisa, il processo di lettura ispeziona tutti i blocchi
+        rimuovendo la <quote>spazzatura</quote>, cioè eliminando i blocchi che
+        appartengono a processi terminati e ricompattando lo spazio della
+        memoria condivisa.</para>
+      </section>
+
+      <section id="rnfb210-mon-perfguide02">
+        <title>Notifiche</title>
+
+        <para>Ogni processo del server ha un indicatore della sua possibilità
+        di rispondere ad una richiesta di monitoraggio nel momento stesso in
+        cui viene fatta. Quando una connessione utente lancia una
+        interrogazione su una qualunque tabella di monitoraggio, il processo
+        attivo su quella connessione notifica a tutti gli altri processi una
+        richiesta di informazioni aggiornate. Tali processi rispondono
+        aggiornando i loro blocchi nella regione di memoria condivisa,
+        spegnendo poi l'indicatore di <quote>pronto</quote> alle richieste di
+        monitoraggio.</para>
+
+        <para>Una volta che tutti i processi notificati hanno terminato
+        l'aggiornamento dei blocchi, il processo richiedente legge la memoria
+        condivisa, filtra i vari elementi in funzione dei permessi
+        dell'utente, trasforma la rappresentazione interna dei dati in campi
+        di registrazioni e riempie in memoria le tabelle di
+        monitoraggio.</para>
+
+        <para>Tutti i processi che sono rimasti inattivi dopo l'ultimo
+        monitoraggio rimangono coll'indicatore di <quote>pronto</quote>
+        spento, indicando che non hanno nulla da aggiornare nella memoria
+        condivisa. L'indicatore <emphasis>spento</emphasis> significa che
+        verranno ignorati dalle notifiche e pertanto che sono esentati
+        dall'effettuare il prossimo giro di aggiornamenti.</para>
+
+        <para>L'indicatore di <quote>pronto</quote> viene acceso non appena
+        avviene qualcosa di sognificativo nell'ambito del processo e pertanto
+        ritornerà a rispondere alle richieste di monitoraggio.</para>
+      </section>
+
+      <section id="rnfb210-mon-perfguide03">
+        <title>Blocchi</title>
+
+        <para>Per coordinare tutte le operazioni di lettura/scrittura, il
+        richiedente pone un blocco esclusivo che influenza sia tutte le
+        connessioni utente attive al momento sia quelle in corso per essere
+        stabilite.</para>
+
+        <para>Richieste multiple contenporanee di monitoraggio sono accodate
+        in serie.</para>
+      </section>
+
+      <section id="rnfb210-mon-perfguide04">
+        <title>Limitazioni e problemi noti</title>
+
+        <orderedlist>
+          <listitem>
+            <para>In un server Classic estremamente caricato, le richieste di
+            monitoraggio possono richiedere parecchio tempo per l'esecuzione.
+            Nel frattempo, altre attività (sia nuove interrogazioni che
+            tentativi di connessione) potrebbero essere bloccati fino al
+            termine della richiesta di monitoraggio.</para>
+
+            <note>
+              <para>Migliorato nellav2.1.3.</para>
+            </note>
+          </listitem>
+
+          <listitem>
+            <para>Talvolta, particolari condizioni di scarsa memoria possono
+            far fallire alcune richieste di monitoraggio, oppure provocaro lo
+            swap su disco di altri processi attivi. La causa principale di
+            questo problema è il fatto che ogni record di MON$STATEMENTS ha un
+            blob MON$SQL_TEXT che resta per tutto il periodo della transazione
+            di monitoraggio.</para>
+
+            <para>Nella V.2.1.x, ogni blob occupa una intera pagina di
+            memoria, anche se il suo effettivo contenuto è più piccolo Quando
+            c'è un elevato numero di frasi preparate nel sistema, diventa
+            possibile esaurire tutta la memoria ed ottenere dei
+            fallimenti.</para>
+          </listitem>
+
+          <listitem>
+            <para>Un'altra possibile causa di esaurimento della memoria
+            potrebbe essere la temporanea (per un tempo molto breve, in
+            realtà) crescita della memoria in cui i dati sono messi mentre si
+            provvede ad unificarli in un solo blocco.</para>
+
+            <note>
+              <para>Al momento non c'è soluzione per la v.2.1.3. Tuttavia è
+              stato migliorato per la v.2.5.0.</para>
+            </note>
+          </listitem>
+        </orderedlist>
+      </section>
+    </section>
+  </section>
+
+  <section id="rnfb210-svrinfo" xreflabel="More Context Information">
+    <title>Altre informazioni sul contesto</title>
+
+    <para>Ci sono altre informazioni disponibili sul contesto relativamente al
+    server, attraverso statement di SELECT della funzione RDB$GET_CONTEXT col
+    parametro 'SYSTEM', inclusa la versione del motore.</para>
+
+    <para>
+      <emphasis role="bold">Example</emphasis>
+    </para>
+
+    <programlisting>
+SELECT RDB$GET_CONTEXT('SYSTEM', 'ENGINE_VERSION')
+  FROM RDB$DATABASE
+  </programlisting>
+
+    <para>Per informazioni dettagliate sull'uso di queste chiamate, far
+    riferimento alle più recenti vesioni delle note di rilascio di Firebird
+    v.2.0.</para>
+  </section>
+</chapter>

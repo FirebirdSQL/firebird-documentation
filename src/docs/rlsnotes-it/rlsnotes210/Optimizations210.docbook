@@ -1,0 +1,338 @@
+<chapter id="rnfb210-optimi">
+  <chapterinfo>
+    <title>Indexing &amp; Optimizations</title>
+  </chapterinfo>
+
+  <section id="rnfb210-optmz"><!-- Level 1 section -->
+    <title>Optimizations in V.2.1</title>
+    <para>Optimization improvements in v.2.1 include:</para>
+    <variablelist>
+      <varlistentry>
+        <term><emphasis role="bold">(v.2.1)</emphasis> Economising on Indexed Reads for MIN() and MAX()</term>
+        <para>Improvement <ulink url="http://tracker.firebirdsql.org/browse/CORE-1389">CORE-1389</ulink> (D. Yemanov)</para>
+        <listitem>
+          <para>Indexed MIN/MAX aggregates would produce three indexed reads instead of the expected single read.  So,
+          with an ASC index on the non-nullable COL, the query</para>
+          <literallayout class="monospaced">
+  SELECT MIN(COL) FROM TAB
+          </literallayout>
+          <para>should be completely equivalent, to</para>
+          <literallayout class="monospaced">
+  SELECT FIRST 1 COL FROM TAB
+  ORDER BY 1 ASC
+          </literallayout>
+          <para>with both performing a single record read.  However, formerly, the first query required three indexed
+          reads while the second one required just the expected single read.  Now, they both resolve to a single
+          read.</para>
+          <para>The same optimization applies to the MAX() function when mapped to a DESC index.</para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </section>
+
+  <section id="rnfb20x-optimi-user-plans"><!-- Level 1 section -->
+    <sectioninfo>
+      <title>Improved PLAN Clause</title>
+      <author><firstname>D.</firstname><surname>Yemanov</surname></author>
+    </sectioninfo>
+    <para><emphasis role="bold">(V.2.0.x)</emphasis> A PLAN clause optionally allows you to provide your own
+    instructions to the engine and have it ignore the plan supplied by the optimizer.  Firebird 2 enhancements allow
+    you to specify more possible paths for the engine.  For example:</para>
+    <programlisting>
+   PLAN (A ORDER IDX1 INDEX (IDX2, IDX3))
+    </programlisting>
+    <para>For more details, please refer to the topic <xref linkend="rnfb20x-dml-plans"/> in the DML chapter. </para>
+
+  </section>
+
+  <section id="rnfb20x-optimi-optimizer"><!-- Level 1 section -->
+    <title>Optimizer Improvements</title>
+    <para>This section represents a collection of changes done in Firebird 2 to optimize many aspects of
+    performance.</para>
+    <section id="rnfb20x-optimi-ods-all"><!-- Level 2 section -->
+      <title>For All Databases</title>
+      <para>The first group of changes affect all databases, including those not yet upgraded to ODS 11.x.</para>
+
+        <section id="rnfb20x-optimi-ods-all-general"><!-- Level 3 section -->
+          <sectioninfo>
+            <title>Some General Improvements</title>
+            <author><firstname>O. Loa,</firstname><surname>D. Yemanov</surname></author>
+          </sectioninfo>
+          <itemizedlist>
+            <listitem>
+              <para>Much faster algorithms to process the dirty pages tree</para>
+              <para>Firebird 2 offers a more efficient processing of the list of modified pages, a.k.a. the dirty
+              pages tree.  It affects all kinds of batch data modifications performed in a single transaction and
+              eliminates the known issues with performance getting slower when using a buffer cache of &gt;10K
+              pages.</para>
+              <para>This change also improves the overall performance of data modifications.</para>
+            </listitem>
+            <listitem>
+              <para>Increased maximum page cache size to 128K pages (2GB for 16K page size)</para>
+            </listitem>
+          </itemizedlist>
+        </section><!-- sect3 -->
+
+        <section id="rnfb20x-optimi-ods-all-optimizer-in-or"><!-- Level 3 section -->
+          <sectioninfo>
+            <title>Faster Evaluation of IN() and OR</title>
+            <author><firstname>O.</firstname><surname>Loa</surname></author>
+          </sectioninfo>
+          <para>Constant IN predicate or multiple OR booleans are now evaluated faster.</para>
+          <para> Sparse bitmap operations were optimized to handle multiple OR booleans or an
+          IN (&lt;constant list&gt;) predicate more efficiently, improving performance of these operations.</para>
+        </section><!-- sect3 -->
+
+        <section id="rnfb20x-optimi-ods-all-optimizer-unique"><!-- Level 3 section -->
+          <sectioninfo>
+            <title>Improved UNIQUE Retrieval</title>
+            <author><firstname>A.</firstname><surname>Brinkman</surname></author>
+          </sectioninfo>
+          <para>The optimizer will now use a more realistic cost value for unique retrieval.</para>
+        </section><!-- sect3 -->
+
+        <section id="rnfb20x-optimi-ods-all-optimizer-not"><!-- Level 3 section -->
+          <sectioninfo>
+            <title>More Optimization of NOT Conditions</title>
+            <author><firstname>D.</firstname><surname>Yemanov</surname></author>
+          </sectioninfo>
+          <para>NOT conditions are simplified and optimized via an index when possible.</para>
+          <para><emphasis role="bold">Example</emphasis></para>
+          <programlisting>
+        (NOT NOT A = 0) -&gt; (A = 0)
+        (NOT A &gt; 0) -&gt; (A &lt;= 0)
+          </programlisting>
+        </section><!-- sect3 -->
+
+        <section id="rnfb20x-optimi-ods-all-having"><!-- Level 3 section -->
+          <title>Distribute HAVING Conjunctions to the WHERE Clause</title>
+          <para>If a HAVING clause or any outer-level select refers to a field being grouped by, this conjunct
+          is distributed deeper in the execution path than the grouping, thus allowing an index scan to be used.
+          In other words, it allows the HAVING clause not only be treated as the WHERE clause in this case, but
+          also be optimized the same way.</para>
+
+          <para><emphasis role="bold">Examples</emphasis></para>
+          <programlisting>
+  select rdb$relation_id, count(*)
+  from rdb$relations
+  group by rdb$relation_id
+  having rdb$relation_id > 10
+
+  select * from ( <!-- correction below in 2.0.1 -->
+    select rdb$relation_id, count(*)
+    from rdb$relations
+    group by rdb$relation_id
+    ) as grp (id, cnt)
+  where grp.id > 10
+          </programlisting>
+          <para>In both cases, an index scan is performed instead of a full scan.</para>
+        </section><!-- sect3 -->
+
+        <section id="rnfb20x-optimi-ods-all-union"><!-- Level 3 section -->
+          <title>Distribute UNION Conjunctions to the Inner Streams</title>
+          <para>Distribute UNION conjunctions to the inner streams when possible.</para>
+        </section><!-- sect3 -->
+
+        <section id="rnfb20x-optimi-ods-all-cross"><!-- Level 3 section -->
+          <title>Improved Handling of CROSS JOIN and Merge/SORT</title>
+          <para>Improved cross join and merge/sort handling</para>
+        </section><!-- Level 3 -->
+
+        <section id="rnfb20x-optimi-mixed"><!-- Level 3 section -->
+          <title>Better Choice of Join Order for Mixed Inner/Outer Joins</title>
+          <para> reasonable join order for intermixed inner and outer joins</para>
+        </section><!-- Level 3 -->
+
+        <section id="rnfb20x-optimi-merge"><!-- Level 3 section -->
+          <title>Equality Comparison on Expressions</title>
+          <para>MERGE PLAN may now be generated for joins using equality comparsion on expressions</para>
+        </section><!-- Level 3 -->
+      </section><!-- Level 2 -->
+
+      <section id="rnfb20x-optimi-ods-eleven"><!-- Level 2 section -->
+        <title>For ODS 11 Databases only</title>
+        <para>This group of optimizations affects databases that were created or restored under Firebird 2 or
+        higher.</para>
+  
+        <section id="rnfb20x-optimi-ods-eleven-segment"><!-- Level 3 section -->
+          <title>Segment-level Selectivities are Used</title>
+          <para>See <xref linkend="rnfb20x-indexing-per-segment"/>.</para>
+        </section>
+
+        <section id="rnfb20x-optimi-ods-eleven-isnull"><!-- Level 3 section -->
+          <title>Better Support for IS NULL and STARTING WITH</title>
+          <para>Previously, IS NULL and STARTING WITH predicates were optimized separately from others,
+          thus causing non-optimal plans in complex ANDed/ORed boolean expressions. From v2.0 and ODS11,
+          these predicates are optimized in a regular way and hence benefit from all possible optimization
+          strategies.</para>
+        </section>
+
+        <section id="rnfb20x-optimi-ods-eleven-or-and"><!-- Level 3 section -->
+          <title>Matching of Both OR and AND Nodes to Indexes</title>
+          <para>Complex boolean expressions consisting of many AND/OR predicates are now entirely mapped to available
+          indices if at all possible.  Previously, such complex expressions could be optimized badly.</para>
+        </section>
+
+        <section id="rnfb20x-optimi-ods-eleven-joinorder"><!-- Level 3 section -->
+          <title>Better JOIN Orders</title>
+          <para>Cost estimations have been improved in order to improve JOIN orders.</para>
+        </section>
+
+        <section id="rnfb20x-optimi-ods-eleven-outer-join"><!-- Level 3 section -->
+          <title>Indexed Order Enabled for Outer Joins</title>
+          <para>It is now possible for indexed order to be utilised for outer joins, i.e. navigational walk.</para>
+        </section><!-- Level 3 -->
+      </section><!-- Level 2 -->
+    </section><!-- Level 1 -->
+
+    <section id="rnfb20x-indexing" xreflabel="Indexing Enhancements"><!-- sect1 -->
+      <sectioninfo>
+        <title>Enhancements to Indexing</title>
+      </sectioninfo>
+
+      <section id="rnfb20x-indexing-limits"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>252-byte index length limit is gone</title>
+          <author><firstname>A.</firstname><surname>Brinkman</surname></author>
+        </sectioninfo>
+
+        <para>New and reworked index code is very fast and tolerant of large
+        numbers of duplicates. The old aggregate key length limit of 252 bytes is
+        removed. Now the limit depends on page size: the maximum size of the key
+        in bytes is 1/4 of the page size (512 on 2048, 1024 on 4096, etc.)</para>
+
+        <para>A 40-bit record number is included on <quote>non leaf-level
+        pages</quote> and duplicates (key entries) are sorted by this
+        number.</para>
+      </section><!-- sect2 -->
+
+      <section id="rnfb20x-indexing-expression"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Expression Indexes</title>
+            <author><firstname>O.</firstname><surname>Loa, D. Yemanov, A. Karyakin</surname></author>
+        </sectioninfo>
+
+        <para>Arbitrary expressions applied to values in a row in dynamic DDL can
+        now be indexed, allowing indexed access paths to be available for search
+        predicates that are based on expressions.</para>
+
+        <para><emphasis role="bold">Syntax Pattern</emphasis></para>
+        <programlisting>
+CREATE [UNIQUE] [ASC[ENDING] | DESC[ENDING]] INDEX &lt;index name&gt;
+  ON &lt;table name&gt;
+  COMPUTED BY ( &lt;value expression&gt; )
+        </programlisting>
+
+        <para><emphasis role="bold">Examples</emphasis></para>
+
+        <para>1.</para>
+
+        <programlisting>
+CREATE INDEX IDX1 ON T1
+  COMPUTED BY ( UPPER(COL1 COLLATE PXW_CYRL) );
+COMMIT;
+/*  */
+SELECT * FROM T1
+  WHERE UPPER(COL1 COLLATE PXW_CYRL) = 'ÔÛÂÀ'
+-- PLAN (T1 INDEX (IDX1))
+        </programlisting>
+
+        <para>2.</para>
+
+        <programlisting>
+CREATE INDEX IDX2 ON T2
+  COMPUTED BY ( EXTRACT(YEAR FROM COL2) || EXTRACT(MONTH FROM COL2) );
+COMMIT;
+/*  */
+SELECT * FROM T2
+  ORDER BY EXTRACT(YEAR FROM COL2) || EXTRACT(MONTH FROM COL2)
+-- PLAN (T2 ORDER IDX2)
+        </programlisting>
+
+        <note>
+          <orderedlist>
+            <listitem>
+              <para>The expression used in the predicate must match
+              <emphasis>exactly</emphasis> the expression used in the index
+              declaration, in order to allow the engine to choose an indexed
+              access path. The given index will not be available for any retrieval
+              or sorting operation if the expressions do not match.</para>
+            </listitem>
+
+            <listitem>
+              <para>Expression indices have exactly the same features and
+              limitations as regular indices, except that, by definition, they
+              cannot be composite (multi-segment).</para>
+            </listitem>
+          </orderedlist>
+        </note>
+      </section><!-- sect2 -->
+
+      <section id="rnfb20x-indexing-nullkeys"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Changes to Null keys handling</title>
+          <author><firstname>V.</firstname><surname>Khorsun, A. Brinkman</surname></author>
+        </sectioninfo>
+
+        <itemizedlist>
+          <listitem>
+            <para>Null keys are now bypassed for uniqueness checks. (V. Khorsun)</para>
+
+            <para>If a new key is inserted into a unique index, the engine skips
+            all NULL keys before starting to check for key duplication. It means a
+            performance benefit as, from v.1.5 on, NULLs have not been considered
+            as duplicates.</para>
+          </listitem>
+
+          <listitem>
+            <para>NULLs are ignored during the index scan, when it makes sense to
+            ignore them. (A. Brinkman).</para>
+
+            <para>Prevously, NULL keys were always scanned for all predicates.
+            Starting with v.2.0, NULL keys are usually skipped before the scan
+            begins, thus allowing faster index scans.</para>
+
+            <note>
+              <para>The predicates IS NULL and IS NOT DISTINCT FROM still require
+              scanning of NULL keys and they disable the aforementioned
+              optimization.</para>
+            </note>
+          </listitem>
+        </itemizedlist>
+      </section><!-- sect2 -->
+
+      <section id="rnfb20x-indexing-compression"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Improved Index Compression</title>
+            <author><firstname>A.</firstname><surname>Brinkman</surname></author>
+        </sectioninfo>
+
+        <para>A full reworking of the index compression algorithm has made a
+        manifold improvement in the performance of many queries.</para>
+      </section><!-- sect2 -->
+
+      <section id="rnfb20x-indexing-per-segment" xreflabel="Selectivity Maintenance per Segment"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Selectivity Maintenance per Segment</title>
+            <author><firstname>D.</firstname><surname>Yemanov, A. Brinkman</surname></author>
+        </sectioninfo>
+
+        <para>Index selectivities are now stored on a per-segment basis. This
+        means that, for a compound index on columns (A, B, C), three selectivity
+        values will be calculated, reflecting a full index match as well as all
+        partial matches. That is to say, the selectivity of the multi-segment
+        index involves those of segment A alone (as it would be if it were a
+        single-segment index), segments A and B combined (as it would be if it
+        were a double-segment index) and the full three-segment match (A, B, C),
+        i.e., all the ways a compound index can be used.</para>
+
+        <para>This opens more opportunities to the optimizer for clever access
+        path decisions in cases involving partial index matches.</para>
+
+        <para>The per-segment selectivity values are stored in the column
+        RDB$STATISTICS of table RDB$INDEX_SEGMENTS. The column of the same name in
+        RDB$INDICES is kept for compatibility and still represents the total index
+        selectivity, that is used for a full index match.</para>
+      </section><!-- sect2 -->
+    </section><!-- sect1 -->
+  </chapter>
