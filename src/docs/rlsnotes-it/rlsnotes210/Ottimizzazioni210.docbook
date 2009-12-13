@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<chapter id="rnfb210-optimi">
+  <chapterinfo>
+    <title>Indici e ottimizzazioni</title>
+  </chapterinfo>
+
+  <section id="rnfb210-optmz">
+    <title>Ottimizzazioni in V.2.1</title>
+
+    <para>I miglioramenti nell'ottimizzatore in v.2.1 includono:<!--MIMMO == versione 2.1.3 == traduzione in corso--></para>
+
+    <variablelist>
+      <varlistentry>
+        <term><emphasis role="bold">(v.2.1)</emphasis> Riduzione nelle letture
+        dagli indici per MIN() e MAX()</term>
+
+        <para>Vedi <ulink
+        url="http://tracker.firebirdsql.org/browse/CORE-1389">CORE-1389</ulink>
+        (D. Yemanov)</para>
+
+        <listitem>
+          <para>Le aggregazioni MIN/MAX indicizzate costringevano a tre
+          letture degli indici mentre invece basta una sola. Così, con un
+          indice ascendente sulla colonna non annullabile COL, la query</para>
+
+          <literallayout class="monospaced">
+  SELECT MIN(COL) FROM TAB
+          </literallayout>
+
+          <para>avrebbe dovuto essere completamente equivalente a</para>
+
+          <literallayout class="monospaced">
+  SELECT FIRST 1 COL FROM TAB
+  ORDER BY 1 ASC
+ </literallayout>
+
+          <para>effettuando entrambi una sola lettura di record. Tuttavia, la
+          prima query richiedeva tre letture indicizzate mentre la seconda
+          effettuava solo l'unica lettura prevista. Ora entrambe effettuano
+          una sola lettura.</para>
+
+          <para>La stessa ottimizzazione si applica alla funzione MAX() se
+          collegata ad un indice DESC.</para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </section>
+
+  <section id="rnfb20x-optimi-user-plans">
+    <sectioninfo>
+      <title>Clausola PLAN migliorata</title>
+
+      <author>
+        <firstname>D.</firstname>
+
+        <surname>Yemanov</surname>
+      </author>
+    </sectioninfo>
+
+    <para><emphasis role="bold">(V.2.0.x)</emphasis> Una clausola PLAN
+    permette opzionalmente di specificare le istruzioni di accesso ai dati al
+    il motore e di fargli ignorare quelle calcolate dall'ottimizzatore. I
+    miglioramenti in Firebird 2 permettono di specificare altri percorsi
+    possibili al motore. Ad esempio:</para>
+
+    <programlisting>
+   PLAN (A ORDER IDX1 INDEX (IDX2, IDX3))
+    </programlisting>
+
+    <para>Per altri dettagli, fare riferimento all'argomento <xref
+    linkend="rnfb20x-dml-plans" /> nel capitolo del DML.</para>
+  </section>
+
+  <section id="rnfb20x-optimi-optimizer">
+    <title>Miglioramenti all'ottimizzatore</title>
+
+    <para>Questa sezione presenta l'insieme delle modifiche effettuate in
+    Firebird 2 per migliorarne le prestazioni.</para>
+
+    <section id="rnfb20x-optimi-ods-all">
+      <title>Per tutti i database</title>
+
+      <para>Il primo gruppo di modifiche influenza versione ODS del database,
+      inclusi pertanto quelli non ancora aggiornati alla ODS 11.x.</para>
+
+      <section id="rnfb20x-optimi-ods-all-general">
+        <sectioninfo>
+          <title>Miglioramenti vari</title>
+
+          <author>
+            <firstname>O. Loa,</firstname>
+
+            <surname>D. Yemanov</surname>
+          </author>
+        </sectioninfo>
+
+        <itemizedlist>
+          <listitem>
+            <para>Algoritmi più rapidi nel gestire l'albero delle pagine
+            <quote>sporche</quote></para>
+
+            <para>Firebird 2 offre una gestione più efficiente delle pagine
+            modificate, il cosiddetto <quote>albero delle pagine
+            sporche</quote>. Ciò influenza tutti i tipi di modifiche dei dati
+            effettuate in una singola transazione ed elimina alcuni noti
+            problemi di rallentamento delle prestazione quando si ha una
+            buffer di cache maggiore di 10K pagine.</para>
+
+            <para>Questo inoltre migliora le prestazioni in generale nella
+            modifica dei dati.</para>
+          </listitem>
+
+          <listitem>
+            <para>La cache delle pagine è stata aumentata a 128K pagine (2GB
+            nel caso di pagine da 16Kbyte)</para>
+          </listitem>
+        </itemizedlist>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-all-optimizer-in-or">
+        <sectioninfo>
+          <title>Calcoli più veloci per IN() ed OR</title>
+
+          <author>
+            <firstname>O.</firstname>
+
+            <surname>Loa</surname>
+          </author>
+        </sectioninfo>
+
+        <para>Il predicato IN con costanti o più valori booleani in OR fra
+        loro sono calcolati più rapidamente.</para>
+
+        <para>Le operazioni con mappe di bit sparsi sono state ottimizzate per
+        gestire i predicati OR e IN (&lt;lista di costanti&gt;) più
+        efficacemente, migliorando le prestazioni su queste operazioni.</para>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-all-optimizer-unique">
+        <sectioninfo>
+          <title>Ricerca su UNIQUE migliorato</title>
+
+          <author>
+            <firstname>A.</firstname>
+
+            <surname>Brinkman</surname>
+          </author>
+        </sectioninfo>
+
+        <para>L'ottimizzatore ora usa un costo più realistico per accedere
+        attraverso un indice UNIQUE.</para>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-all-optimizer-not">
+        <sectioninfo>
+          <title>Altre ottimizzazioni sulle condizioni NOT</title>
+
+          <author>
+            <firstname>D.</firstname>
+
+            <surname>Yemanov</surname>
+          </author>
+        </sectioninfo>
+
+        <para>Le condizioni con NOT sono state semplificate ed ottimizzate
+        attraverso l'uso di un indice quando possibile.</para>
+
+        <para>
+          <emphasis role="bold">Esempio</emphasis>
+        </para>
+
+        <programlisting>
+        (NOT NOT A = 0) -&gt; (A = 0)
+        (NOT A &gt; 0) -&gt; (A &lt;= 0)
+          </programlisting>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-all-having">
+        <title>Distribuzione di HAVING alla clausola WHERE</title>
+
+        <para>Se la clausola HAVING o una SELECT di livello più esterno
+        riferiscono ad un campo da raggruppare, questa congiunzione viene
+        distribuita più in profondità nel percorso esecutivo rispetto al
+        raggruppamento, permettendo così la scansione di un indice. In altre
+        parole, permette alla clausola HAVING non solo di essere utilizzata in
+        questo caso come una WHERE, ma anche di essere ottimizzata allo stesso
+        modo.</para>
+
+        <para>
+          <emphasis role="bold">Esempi</emphasis>
+        </para>
+
+        <programlisting>
+  select rdb$relation_id, count(*)
+  from rdb$relations
+  group by rdb$relation_id
+  having rdb$relation_id &gt; 10
+
+  select * from ( 
+    select rdb$relation_id, count(*)
+    from rdb$relations
+    group by rdb$relation_id
+    ) as grp (id, cnt)
+  where grp.id &gt; 10
+          </programlisting>
+
+        <para>In entrambi questi casi, si effettua una scansione attraverso
+        l'indice invece che una lettura completa.</para>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-all-union">
+        <title>Distribuzione di UNION ai percorsi interni</title>
+
+        <para>Questo tipo di distribuzione viene fatto sempre che ne esista la
+        possibilità.</para>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-all-cross">
+        <title>CROSS JOIN e MERGE/SORT</title>
+
+        <para>Gestione migliorata per cross join e merge/sort,</para>
+      </section>
+
+      <section id="rnfb20x-optimi-mixed">
+        <title>Ordine delle join con INNER e OUTER insieme</title>
+
+        <para>Quando ci sono più JOIN sia INNER che OUTER mescolate fra loro
+        si cerca di raggrupparle nel modo migliore possibile</para>
+      </section>
+
+      <section id="rnfb20x-optimi-merge">
+        <title>Espressioni con uguaglianze</title>
+
+        <para>Ora possono essere generati MERGE PLAN nelle join che
+        confrontano per uguaglianza le espressioni.</para>
+      </section>
+    </section>
+
+    <section id="rnfb20x-optimi-ods-eleven">
+      <title>Per i soli database in ODS 11</title>
+
+      <para>Questo gruppo di ottimizzazioni influenza solo i database creati o
+      recuperati in sotto Firebird 2 o successivi.</para>
+
+      <section id="rnfb20x-optimi-ods-eleven-segment">
+        <title>Uso della selettività a livello di segmento</title>
+
+        <para>Vedere <xref linkend="rnfb20x-indexing-per-segment" />.</para>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-eleven-isnull">
+        <title>Supporto migliore per IS NULL e STARTING WITH</title>
+
+        <para>Prima, i predicati IS NULL e STARTING WITH venivano ottimizzati
+        separatamente dagli altri, provocando PLAN non ottimali in certe
+        espressioni booleane complesse con molti AND e OR. A partire dalla 2.0
+        con ODS11, questi predicati sono gestiti in modo normale e pertanto
+        possono beneficiare di tutte le possibili strategie di
+        ottimizzazione.</para>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-eleven-or-and">
+        <title>Utilizzo degli indici per OR ed AND</title>
+
+        <para>Espressioni booleane complesse con molti predicati AND ed OR ora
+        possono sfruttare a pieno l'utilizzo di sottostanti indici se
+        possibile. Precedentemente, tali espressioni complesse potevano essere
+        ottimizzate malamente.</para>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-eleven-joinorder">
+        <title>Miglior ordinamento per le JOIN</title>
+
+        <para>Si è lavorato per migliorare la stima del costo per migliorare
+        l'ordine delle JOIN.</para>
+      </section>
+
+      <section id="rnfb20x-optimi-ods-eleven-outer-join">
+        <title>Nelle OUTER JOIN abilitato l'accesso indicizzato</title>
+
+        <para>Si può utilizzare un accesso indicizzato nelle OUTER JOIN, cioè
+        un attraversamento guidato.</para>
+      </section>
+    </section>
+  </section>
+
+  <section id="rnfb20x-indexing" xreflabel="Indexing Enhancements">
+    <title>Miglioramenti agli indici</title>
+
+    <section id="rnfb20x-indexing-limits">
+      <sectioninfo>
+        <title>Superato il limite a 252-byte per indice</title>
+
+        <author>
+          <firstname>A.</firstname>
+
+          <surname>Brinkman</surname>
+        </author>
+      </sectioninfo>
+
+      <para>Il codice, in parte nuovo ed in parte rifatto, che gestisce gli
+      indici è molto più veloce e tollera un gran numero di duplicazioni. Il
+      vecchio limite per le chiavi aggregate di 252 bytes è stato rimosso. Ora
+      il limite dipende dalla dimensione della pagina: la dimensione massima
+      della chiave in byte è 1/4 della dimensione della pagina (512 su 2048,
+      1024 su 4096, ecc.)</para>
+
+      <para>Un numero di record a 40-bit viene incluso nei rami (<quote>non
+      leaf-level pages</quote>) ed i duplicati nelle chiavi sono ordinati
+      secondo questo numero.</para>
+    </section>
+
+    <section id="rnfb20x-indexing-expression">
+      <sectioninfo>
+        <title>Espressioni negli indici</title>
+
+        <author>
+          <firstname>O.</firstname>
+
+          <surname>Loa, D. Yemanov, A. Karyakin</surname>
+        </author>
+      </sectioninfo>
+
+      <para>Si possono indicizzare le righe attraverso espressioni arbitrarie
+      in DDL dinamico applicate ai valori della riga, permettendo ai predicati
+      di ricerca percorsi di accesso basati su espressioni.</para>
+
+      <para>
+        <emphasis role="bold">Sintassi</emphasis>
+      </para>
+
+      <programlisting>
+CREATE [UNIQUE] [ASC[ENDING] | DESC[ENDING]] INDEX &lt;nome indice&gt;
+  ON &lt;nome tabella&gt;
+  COMPUTED BY ( &lt;espressione&gt; )
+        </programlisting>
+
+      <para>
+        <emphasis role="bold">Esempi</emphasis>
+      </para>
+
+      <para>1.</para>
+
+      <programlisting>
+CREATE INDEX IDX1 ON T1
+  COMPUTED BY ( UPPER(COL1 COLLATE PXW_CYRL) );
+COMMIT;
+/*  */
+SELECT * FROM T1
+  WHERE UPPER(COL1 COLLATE PXW_CYRL) = 'ÔÛÂÀ'
+-- PLAN (T1 INDEX (IDX1))
+        </programlisting>
+
+      <para>2.</para>
+
+      <programlisting>
+CREATE INDEX IDX2 ON T2
+  COMPUTED BY ( EXTRACT(YEAR FROM COL2) || EXTRACT(MONTH FROM COL2) );
+COMMIT;
+/*  */
+SELECT * FROM T2
+  ORDER BY EXTRACT(YEAR FROM COL2) || EXTRACT(MONTH FROM COL2)
+-- PLAN (T2 ORDER IDX2)
+        </programlisting>
+
+      <note>
+        <orderedlist>
+          <listitem>
+            <para>L'espressione usata nel predicato della condizione deve
+            essere <emphasis>identico</emphasis> all'espressione usata nella
+            dichiarazione dell'indice, affinché il motore possa scegliere il
+            percorso con accesso indicizzato. L'indice definito non sarebbe
+            utilizzabile per l'accesso o l'ordinamento se le espressioni sono
+            diverse.</para>
+          </listitem>
+
+          <listitem>
+            <para>Le espressioni per gli indici hanno le stesse
+            caratteristiche e limitazioni degli altri indici, eccetto il fatto
+            che, per definizione, non possono essere composite o multi
+            segmento.</para>
+          </listitem>
+        </orderedlist>
+      </note>
+    </section>
+
+    <section id="rnfb20x-indexing-nullkeys">
+      <sectioninfo>
+        <title>Modifiche alla gestione dei NULL</title>
+
+        <author>
+          <firstname>V.</firstname>
+
+          <surname>Khorsun, A. Brinkman</surname>
+        </author>
+      </sectioninfo>
+
+      <itemizedlist>
+        <listitem>
+          <para>Le chiavi a NULL sono ignorate per il controllo di unicità.
+          (V. Khorsun)</para>
+
+          <para>Se un nuovo valore è introdotto in un indice univoco, il
+          motore salta tutte le chiavi a NULL prima di verificare se la chiave
+          è duplicata. Questo da' un miglioramento nelle prestazioni, in
+          quanto a partire dalla v.1.5, i NULL non vengono più considerati
+          duplicati.</para>
+        </listitem>
+
+        <listitem>
+          <para>I NULL sono ignorati nello scorrimento dell'indice, quando ha
+          senso ignorarli. (A. Brinkman)</para>
+
+          <para>Precedentemente, le chiavi a NULL erano sempre lette per tutti
+          i predicati. A partire dalla v.2.0, le chiavi a NULL sono
+          generalmente ignorate all'inizio della scansione, permettendo una
+          scansione dell'indice più veloce.</para>
+
+          <note>
+            <para>I predicati IS NULL e IS NOT DISTINCT FROM richiedono ancora
+            comunque la l'accesso alle chiavi a NULL, e pertanto disabilitano
+            la summenzionata ottimizzazione.</para>
+          </note>
+        </listitem>
+      </itemizedlist>
+    </section>
+
+    <section id="rnfb20x-indexing-compression">
+      <sectioninfo>
+        <title>Miglioramenti nella compressione degli indici</title>
+
+        <author>
+          <firstname>A.</firstname>
+
+          <surname>Brinkman</surname>
+        </author>
+      </sectioninfo>
+
+      <para>L'algoritmo che comprime gli indici è stato completamente rifatto
+      migliorando grandemente le prestazioni di moltissime query.</para>
+    </section>
+
+    <section id="rnfb20x-indexing-per-segment"
+             xreflabel="Selectivity Maintenance per Segment">
+      <sectioninfo>
+        <title>Manutenzione della selettività per segmento</title>
+
+        <author>
+          <firstname>D.</firstname>
+
+          <surname>Yemanov, A. Brinkman</surname>
+        </author>
+      </sectioninfo>
+
+      <para>Le selettività degli indici sono ora memorizzate per ogni
+      segmento. Questo significa che per un indice composito sulle colonne (A,
+      B, C), vengono calcolati tre indici di selettività, che riflettono sia
+      un riscontro totale sull'indice che tutti i parziali. Sarebbe a dire che
+      la selettività dell'indice multi segmento coinvolge sia quella del solo
+      segmento A (come sarebbe se ci fosse un indice a segmento unico), dei
+      segmenti A e B insieme (come sarebbe se ci fosse in indice con segmento
+      doppio) ed il riscontro con tutti e tre i segmenti (A, B, C);
+      praticamente in tutti i modi si possa usare un indice composto.</para>
+
+      <para>Questo lascia più opportunità all'ottimizzatore per migliori
+      decisioni sui percorsi da utilizzare nei casi in cui si cerchino
+      riscontri su indici parziali.</para>
+
+      <para>I valori di selettività per segmento sono memorizzati nella
+      colonna RDB$STATISTICS della tabella RDB$INDEX_SEGMENTS. La colonna con
+      lo stesso nome in RDB$INDICES è mantenuta per sola compatibilità e
+      tuttora rappresenta l'indice di selettività totale, che viene usato per
+      un riscontro su tutto l'indice.</para>
+    </section>
+  </section>
+</chapter>
