@@ -24,3 +24,11 @@ NOTE: If you still find the file "optional.jar" in the lib folder,
 
 Don't forget: you may also need to download files for manual/tools.
 Look at the readme there.
+
+
+On Linux you can type in the command line (if you are in manual/lib folder)
+
+$ wget http://www.firebirdsql.org/doclibs/ALLJARS.ZIP
+$ unzip ALLJARS.ZIP
+
+
