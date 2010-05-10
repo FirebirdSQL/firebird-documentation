@@ -27,6 +27,9 @@ $ wget http://www.firebirdsql.org/doctools/docbook-stylesheets.zip
 $ unzip docbook-dtd.zip
 $ unzip docbook-stylesheets.zip
 
+or run the script (make shure you are in the tools dir)
+
+$sh get_tools_linux.sh
 
 
 
