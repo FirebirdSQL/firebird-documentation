@@ -24,7 +24,9 @@ On unixes like linux
 $ cd tools 
 $ wget http://www.firebirdsql.org/doctools/docbook-dtd.zip
 $ wget http://www.firebirdsql.org/doctools/docbook-stylesheets.zip
-$ unzip *.zip
+$ unzip docbook-dtd.zip
+$ unzip docbook-stylesheets.zip
+
 
 
 
