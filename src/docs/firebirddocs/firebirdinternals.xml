@@ -78,7 +78,7 @@
         a 4Kb page size allocates a total of 0xa1 pages (161 pages) for the system tables,
         indices and the various database overhead pages.</para>
 
-        <section>
+        <section id="fbint-structure-single">
             <title>Single File Databases</title>
 
             <para>A single file Firebird database consists of a number of pages, each the
@@ -103,7 +103,7 @@
             on. There is a discussion of each page type below.</para>
         </section>
 
-        <section>
+        <section id="fbint-structure-multi">
             <title>Multiple File Databases</title>
 
             <para>A multiple file Firebird database is almost identical to the single file
@@ -112,7 +112,7 @@
             page (page type 0x01) at the start of the file.</para>
         </section>
 
-        <section>
+        <section id="fbint-structure-shadow">
             <title>Shadow Files</title>
 
             <para>Shadow files are additional files that can be used by single and
@@ -1074,7 +1074,7 @@ SQL&gt; quit;</screen>
 00001000  02 00 39 30 31 00 00 00  00 00 00 00 a1 00 00 00  Standard Header
 00001010  a1 00 00 00                                       pip_min (low endian)
 00001014  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  pip_bits[]
-00001024  00 00 00 00  fe ff ff ff ff ff ff ff ff ff ff ff
+00001024  00 00 00 00 fe ff ff ff  ff ff ff ff ff ff ff ff
 </screen>
 
         <para>In the above, we see that pip_min has the value 0x000000a1 and the following
@@ -1098,10 +1098,9 @@ SQL&gt; quit;</screen>
     <section id="fbint-page-3">
         <title>Transaction Inventory Page - Type 0x03</title>
 
-        <para>Every database has at least one Transaction Inventory Page (TIP) with the
-        first one always being page 1, just after the database header page. If more are
-        required, the current PIP points to the next PIP by way of the very last bit on
-        the page itself.</para>
+        <para>Every database has at least one Transaction Inventory Page (TIP). If more
+        are required, the current PIP points to the next PIP by way of the very last bit
+        on the page itself.</para>
 
         <para>The highest possible transaction number is 2,147,483,647 or 0x7fffffff in a
         32 bit system. Once you hit this transaction, no more can be created and the
@@ -1359,9 +1358,9 @@ RDB$PAGE_NUMBER RDB$PAGE_SEQUENCE RDB$RELATION_ID
     </section>
 
     <section id="fbint-page-5">
-        <title>Data Page - Type 0x05 - TODO</title>
+        <title>Data Page - Type 0x05 - YOU ARE HERE</title>
 
-        <para>A data page belongs exclusively to a single table. The page starts opff, as
+        <para>A data page belongs exclusively to a single table. The page starts off, as
         usual, with the standard page header and is followed by an array of pairs of
         unsigned two byte values representing the 'table of contents' for this page. This
         array fills from the top of the page (lowest address, increasing) while the actual
@@ -1381,8 +1380,6 @@ RDB$PAGE_NUMBER RDB$PAGE_SEQUENCE RDB$RELATION_ID
         USHORT dpg_length;
     } dpg_rpt[1];
 };
-
-#define DPG_SIZE    (sizeof (Ods::data_page) - sizeof (Ods::data_page::dpg_repeat))
 </programlisting>
 
         <formalpara>
@@ -1430,9 +1427,9 @@ RDB$PAGE_NUMBER RDB$PAGE_SEQUENCE RDB$RELATION_ID
         <formalpara>
             <title>Dpg_count</title>
 
-            <para>Two bytes, unsigned. Offset 0x14 on the page. The number of record
-            fragments on this page. In other words, the number of entries in the dpg_rpt
-            array.</para>
+            <para>Two bytes, unsigned. Offset 0x14 on the page. The number of records (or
+            record fragments) on this page. In other words, the number of entries in the
+            dpg_rpt array.</para>
         </formalpara>
 
         <formalpara>
@@ -1462,66 +1459,810 @@ RDB$PAGE_NUMBER RDB$PAGE_SEQUENCE RDB$RELATION_ID
 
             <para>Two bytes, unsigned. The length of this record fragment in bytes.</para>
         </formalpara>
+
+        <para>The raw record data is structured into a header and the data.</para>
+
+        <section>
+            <title>Record Header</title>
+
+            <para>Each record's data is preceeded by a record header. The format of the
+            header is shown below. Note that there are two different record headers, one
+            for fragmented records and the other for unfragmented records.</para>
+
+            <screen>// Record header for unfragmented records.
+struct rhd {
+    SLONG rhd_transaction;
+    SLONG rhd_b_page;
+    USHORT rhd_b_line;
+    USHORT rhd_flags;
+    UCHAR rhd_format;
+    UCHAR rhd_data[1];
+};
+
+/* Record header for fragmented record */
+struct rhdf {
+    SLONG rhdf_transaction;
+    SLONG rhdf_b_page;
+    USHORT rhdf_b_line;
+    USHORT rhdf_flags;
+    UCHAR rhdf_format;
+    SLONG rhdf_f_page;
+    USHORT rhdf_f_line;
+    UCHAR rhdf_data[1];
+};
+</screen>
+
+            <para>Both headers are identical up to the rhd_format field. In the case of an
+            unfragmented record there are no more fields in the header while the header
+            for a fragmented record has a few more fields. How to tell the difference? See
+            the details of the rdf_flags field below.</para>
+
+            <formalpara>
+                <title>Rhd_transaction</title>
+
+                <para>Four bytes, signed. Offset 0x00 in the header. This is the id of the
+                transaction that created this record.</para>
+            </formalpara>
+
+            <formalpara>
+                <title>Rhd_b_page</title>
+
+                <para>Four bytes, signed. Offset 0x04 in the header. This is the record's
+                back pointer page.</para>
+            </formalpara>
+
+            <formalpara>
+                <title>Rhd_b_line</title>
+
+                <para>Two bytes, unsigned. Offset 0x08 in the header. This is the record's
+                back line pointer.</para>
+            </formalpara>
+
+            <formalpara>
+                <title>Rhd_flags</title>
+
+                <para>Two bytes, unsigned. Offset 0x0a in the header. The flags for this
+                record or record fragment. The flags are discussed below.</para>
+            </formalpara>
+
+            <formalpara>
+                <title>Rhd_format</title>
+
+                <para>One byte, unsigned. Offset 0x0c in the header. The record format
+                version.</para>
+            </formalpara>
+
+            <formalpara>
+                <title>Rhd_data</title>
+
+                <para>Unsigned byte data. Offset 0x0d in the header. This is the start of
+                the compressed data. For a fragmented record header, this field is not
+                applicable.</para>
+            </formalpara>
+
+            <para>The following only apply to the fragmented record header. For an
+            unfragmented record, the data begins at offset 0x0d. Fragmented records store
+            their data at offset 0x16.</para>
+
+            <formalpara>
+                <title>Rhdf_f_page</title>
+
+                <para>Four bytes, signed. Offset 0x10 (Padding bytes inserted). The page
+                number on which the next fragment of this record can be found.</para>
+            </formalpara>
+
+            <formalpara>
+                <title>Rhdf_f_line</title>
+
+                <para>Two bytes, unsigned. Offset 0x14. The line number on which the next
+                fragment for this record can be found.</para>
+            </formalpara>
+
+            <formalpara>
+                <title>Rhdf_data</title>
+
+                <para>Unsigned byte data. Offset 0x16 in the header. This is the start of
+                the compressed data for this record fragment.</para>
+            </formalpara>
+
+            <screen>const USHORT rhd_deleted        = 1;        /* record is logically deleted */
+const USHORT rhd_chain            = 2;        /* record is an old version */
+const USHORT rhd_fragment        = 4;        /* record is a fragment */
+const USHORT rhd_incomplete        = 8;        /* record is incomplete */
+const USHORT rhd_blob            = 16;        /* isn't a record but a blob */
+const USHORT rhd_stream_blob    = 32;        /* blob is a stream mode blob */
+const USHORT rhd_delta            = 32;        /* prior version is differences only */
+const USHORT rhd_large            = 64;        /* object is large */
+const USHORT rhd_damaged        = 128;        /* object is known to be damaged */
+const USHORT rhd_gc_active        = 256;        /* garbage collecting dead record version */
+</screen>
+        </section>
+
+        <section>
+            <title>Record Data</title>
+
+            <para>Record data is always compressed, even if it cannot actually be
+            compressed. The compression is a type know as Run Length Encoding (RLE) where
+            a sequence of repeating characters is reduced to a control character that
+            determines the repeat count followed by the actual character to be repeated.
+            Where data cannot be compressed, the control character indicates that "the
+            next 'n' characters are to be output unchanged'.</para>
+
+            <para>The control character is a negative value where it indicates a repeating
+            character and is a positive byte where the following data must be copied
+            exactly. The actual value of the control character tells the expansion code
+            how many times to repeat the next byte or how many of the following bytes are
+            output unchanged.</para>
+
+            <para>The data in a record is not compressed based on data found in a
+            previously inserted record - it cannot be. If you have the word 'Firebird' in
+            two records, it will be stored in full in both.</para>
+
+            <para>Repeating short strings sich as 'abcabcabc' are also not compressed.
+            (Maybe an enhancement for the future?)</para>
+
+            <para>Once the compression of the data in a column has been expanded, the data
+            consists of three parts - a field header, the actual data and, if necessary,
+            some padding bytes.</para>
+
+            <para>The following section shows a worked example of an examination of a
+            table and it's data.</para>
+        </section>
+
+        <section>
+            <title>A Worked Example</title>
+
+            <para>The shows an internal examination of a Firebird Data Page. For this very
+            simple example, the following code was executed to create a test table and
+            load it with some character data:</para>
+
+            <screen>SQL&gt; CREATE TABLE NORMAN(A VARCHAR(100));
+SQL&gt; COMMIT;
+
+SQL&gt; INSERT INTO NORMAN VALUES ('Firebird');
+SQL&gt; INSERT INTO NORMAN VALUES ('Firebird Book');
+SQL&gt; INSERT INTO NORMAN VALUES ('666');
+SQL&gt; INSERT INTO NORMAN VALUES ('abcabcabcabcabcabcabcabcd');
+SQL&gt; INSERT INTO NORMAN VALUES ('AaaaaBbbbbbbbbbCccccccccccccccDD');
+SQL&gt; COMMIT;
+
+SQL&gt; INSERT INTO NORMAN VALUES (NULL);
+SQL&gt; COMMIT;
+</screen>
+
+            <para>We now have a table and some data inserted by a pair of different
+            transactions, where is the table (and data) stored in the database? First of
+            all we need the relation id for the new table. We get this from
+            <database>RDB$RELATIONS</database> as follows:</para>
+
+            <screen>SQL&gt; SELECT RDB$RELATION_ID FROM RDB$RELATIONS
+CON&gt; WHERE RDB$RELATION_NAME = 'NORMAN';
+
+RDB$RELATION_ID
+===============
+            129</screen>
+
+            <para>Given the relation id, we can interrogate <database>RDB$PAGES</database>
+            to find out where out pointer page (page type 0x04) lives in the
+            database:</para>
+
+            <screen>SQL&gt; SELECT * FROM RDB$PAGES 
+CON&gt; WHERE RDB$RELATION_ID = 129
+CON&gt; AND RDB$PAGE_TYPE = 4;
+
+RDB$PAGE_NUMBER RDB$RELATION_ID RDB$PAGE_SEQUENCE RDB$PAGE_TYPE
+=============== =============== ================= =============
+            162             129                 0             4
+</screen>
+
+            <para>From the above query, we see that page number 162 in the database is
+            where the pointer page for this table is to be found. As described above, the
+            pointer page holds the list of all the page numbers that belong to this table.
+            If we look at the pointer page for our table, we see the following:</para>
+
+            <screen>tux&gt; ./fbdump ../blank.fdb -p 162
+
+Page Buffer allocated. 4096 bytes at address 0x804b008
+Page Offset = 663552l
+
+DATABASE PAGE DETAILS
+=====================
+        Page Type:          4
+        Sequence:           0
+        Next:               0
+        Count:              1
+        Relation:           129
+        Min Space:          0
+        Max Space:          0
+
+        Page[0000]:         166
+
+Page Buffer freed from address 0x804b008
+</screen>
+
+            <para>We can see from the above that this is indeed the pointer page (type
+            0x04) for our table (relation is 129) . The count value shows that there is a
+            single data page for this table and that page is page 166. If we now dump page
+            166 we can see the following:</para>
+
+            <screen>tux&gt; ./fbdump ../blank.fdb -p 166
+Page Buffer allocated. 4096 bytes at address 0x804b008
+Page Offset = 679936l
+
+
+DATABASE PAGE DETAILS
+=====================
+        Page Type:          5
+        Sequence:           0
+        Relation:           130
+        Count:              6
+        Page Flags:         0: Not an Orphan Page:Page has space:No Large Objects
+
+        Data[0000].offset:  4064
+        Data[0000].length:  30
+
+        Data[0000].header
+        Data[0000].header.transaction:  343
+        Data[0000].header.back_page:    0
+        Data[0000].header.back_line:    0
+        Data[0000].header.flags:     0000:No Flags Set
+        Data[0000].header.format:
+        Data[0000].hex:     01 fe fd 00 0a 08 00 46 69 72 65 62 69 72 64 a4
+                            00
+        Data[0000].ASCII:    .  .  .  .  .  .  .  F  i  r  e  b  i  r  d  .
+                             .
+
+        Data[0001].offset:  4028
+        Data[0001].length:  35
+
+        Data[0001].header
+        Data[0001].header.transaction:  343
+        Data[0001].header.back_page:    0
+        Data[0001].header.back_line:    0
+        Data[0001].header.flags:     0000:No Flags Set
+        Data[0001].header.format:
+        Data[0001].hex:     01 fe fd 00 0f 0d 00 46 69 72 65 62 69 72 64 20
+                            42 6f 6f 6b a9 00
+        Data[0001].ASCII:    .  .  .  .  .  .  .  F  i  r  e  b  i  r  d
+                             B  o  o  k  .  .
+
+        Data[0002].offset:  4004
+        Data[0002].length:  24
+
+        Data[0002].header
+        Data[0002].header.transaction:  343
+        Data[0002].header.back_page:    0
+        Data[0002].header.back_line:    0
+        Data[0002].header.flags:     0000:No Flags Set
+        Data[0002].header.format:
+        Data[0002].hex:     01 fe fd 00 02 03 00 fd 36 9f 00
+        Data[0002].ASCII:    .  .  .  .  .  .  .  .  6  .  .
+
+        Data[0003].offset:  3956
+        Data[0003].length:  47
+
+        Data[0003].header
+        Data[0003].header.transaction:  343
+        Data[0003].header.back_page:    0
+        Data[0003].header.back_line:    0
+        Data[0003].header.flags:     0000:No Flags Set
+        Data[0003].header.format:
+        Data[0003].hex:     01 fe fd 00 1b 19 00 61 62 63 61 62 63 61 62 63
+                            61 62 63 61 62 63 61 62 63 61 62 63 61 62 63 64
+                            b5 00
+        Data[0003].ASCII:    .  .  .  .  .  .  .  a  b  c  a  b  c  a  b  c
+                             a  b  c  a  b  c  a  b  c  a  b  c  a  b  c  d
+                             .  .
+
+        Data[0004].offset:  3920
+        Data[0004].length:  36
+
+        Data[0004].header
+        Data[0004].header.transaction:  343
+        Data[0004].header.back_page:    0
+        Data[0004].header.back_line:    0
+        Data[0004].header.flags:     0000:No Flags Set
+        Data[0004].header.format:
+        Data[0004].hex:     01 fe fd 00 03 20 00 41 fc 61 01 42 f7 62 01 43
+                            f2 63 02 44 44 bc 00
+        Data[0004].ASCII:    .  .  .  .  .     .  A  .  a  .  B  .  b  .  C
+                             .  c  .  D  D  .  .
+
+        Data[0005].offset:  3896
+        Data[0005].length:  22
+
+        Data[0005].header
+        Data[0005].header.transaction:  345
+        Data[0005].header.back_page:    0
+        Data[0005].header.back_line:    0
+        Data[0005].header.flags:     0000:No Flags Set
+        Data[0005].header.format:
+        Data[0005].hex:     01 ff 97 00 00 00 00 00 00
+        Data[0005].ASCII:    .  .  .  .  .  .  .  .  .
+Page Buffer freed from address 0x804b008
+
+</screen>
+
+            <para>We can see from the above, the records appear in the order we inserted
+            them. Do not be misled - if I was to delete one or more records and then
+            insert new ones, Firebird could reuse some or all of the newly deleted space,
+            so record 1, for example, might appear in the "wrong" place in a dump as
+            above.</para>
+
+            <note>
+                <para>This is a rule of relational databases, you can never know the order
+                that data will be returned by a SELECT statement unless you specifically
+                use an ORDER BY.</para>
+            </note>
+
+            <para>We can see from the above that Firebird doesn't attempt to compress data
+            based on the contents of previous records. The word 'Firebird' appears in full
+            each and every time it is used.</para>
+
+            <para>We can see, however, that data that has repeating characters - for
+            example '666' and 'AaaaaBbbbbbbbbbCccccccccccccccDD' - do get compressed - but
+            records with repeating consecutive strings of characters do not get
+            compressed.</para>
+        </section>
+
+        <section>
+            <title>Examining The Data</title>
+
+            <para>Looking into how the compression works for the above example is the next
+            step.</para>
+
+            <section>
+                <title>Uncompressed Data</title>
+
+                <para>The first record we inserted is 'uncompressed' in that it has no
+                repeating characters. It is represented internally as follows:</para>
+
+                <screen>        Data[0000].offset:  4064
+        Data[0000].length:  30
+
+        Data[0000].header
+        Data[0000].header.transaction:  343
+        Data[0000].header.back_page:    0
+        Data[0000].header.back_line:    0
+        Data[0000].header.flags:     0000:No Flags Set
+        Data[0000].header.format:
+        Data[0000].hex:     01 fe fd 00 0a 08 00 46 69 72 65 62 69 72 64 a4
+                            00
+        Data[0000].ASCII:    .  .  .  .  .  .  .  F  i  r  e  b  i  r  d  .
+                             .
+</screen>
+
+                <para>The offset indicates where on the page this piece of data is to be
+                found. This value is relative to the the start of the page and is the
+                location of the first byte of the record header.</para>
+
+                <para>The length is the size of the compressed data piece and includes the
+                size of the header as well as the data itself.</para>
+
+                <para>In the above, the record header details have been translated into
+                meaningful comments. The data itself starts at the location labelled
+                'Data[0000].hex:'.</para>
+            </section>
+
+            <section>
+                <title>Compressed Data</title>
+
+                <para>Record number 4 has quite a lot of compression applied to it. The
+                stored format of the record's data is as follows:</para>
+
+                <screen>        Data[0004].offset:  3920
+        Data[0004].length:  36
+
+        Data[0004].header
+        Data[0004].header.transaction:  343
+        Data[0004].header.back_page:    0
+        Data[0004].header.back_line:    0
+        Data[0004].header.flags:     0000:No Flags Set
+        Data[0004].header.format:
+        Data[0004].hex:     01 fe fd 00 03 20 00 41 fc 61 01 42 f7 62 01 43
+                            f2 63 02 44 44 bc 00
+        Data[0004].ASCII:    .  .  .  .  .     .  A  .  a  .  B  .  b  .  C
+                             .  c  .  D  D  .  .</screen>
+
+                <para>If we ignore the translated header details and concentrate on the
+                data only, we see that it starts with a control byte. The first byte in
+                the data is always a control byte.</para>
+
+                <para>In this case, the byte is positive and has the value 0x01, so the
+                following one byte is to be copied to the output. The output appears as
+                follws at this point with ASCII characters below hex values, unprintable
+                characters are shows as a dot:</para>
+
+                <screen>        fe
+         .</screen>
+
+                <para>After the unchanged byte, we have another control byte with value
+                0xfd which is negative and represents minus 3. This means that we must
+                repeat the byte following the control byte abs(-3) times. The data now
+                looks like this:</para>
+
+                <screen>        fe 00 00 00
+         .  .  .  .</screen>
+
+                <para>Again, we have a control byte of 0x03. As this is positive the next
+                0x03 bytes are copied to the output unchanged giving us the
+                following:</para>
+
+                <screen>        fe 00 00 00 20 00 41
+         .  .  .  .     .  A</screen>
+
+                <para>The next byte is another control byte and as it is negative (0xfc or
+                -4) we repeat the next character 4 times. The data is now:</para>
+
+                <screen>        fe 00 00 00 20 00 41 61 61 61 61
+         .  .  .  .     .  A  a  a  a  a</screen>
+
+                <para>Repeat the above process of reading a control byte and outputting
+                the appropriate characters accordingly until we get the following:</para>
+
+                <screen>        fe 00 00 00 20 00 41 61 61 61 61 42 62 62 62 62 62 62 62 62 62 43  
+         .  .  .  .     .  A  a  a  a  a  B  b  b  b  b  b  b  b  b  b  C
+
+        63 63 63 63 63 63 63 63 63 63 63 63 63 63 44 44
+         c  c  c  c  c  c  c  c  c  c  c  c  c  c  D  D</screen>
+
+                <note>
+                    <para>I've had to split the above over a couple of lines to prevent it
+                    wandering off the page when rendered as a PDF file.</para>
+                </note>
+
+                <para>We then have another control byte of 0xbc which is -68 and indicates
+                that we need 68 copies of the following byte (0x00). This is the 'padding'
+                at the end of our actual data (32 bytes in total) to make up the full 100
+                bytes of the VARCHAR(100) data type.</para>
+            </section>
+
+            <section>
+                <title>Null</title>
+
+                <para>The final record inserted into the table is the one with no data, it
+                is NULL. The internal storage is as follows:</para>
+
+                <screen>        Data[0005].offset:  3896
+        Data[0005].length:  22
+
+        Data[0005].header
+        Data[0005].header.transaction:  345
+        Data[0005].header.back_page:    0
+        Data[0005].header.back_line:    0
+        Data[0005].header.flags:     0000:No Flags Set
+        Data[0005].header.format:
+        Data[0005].hex:     01 ff 97 00 00 00 00 00 00
+        Data[0005].ASCII:    .  .  .  .  .  .  .  .  .</screen>
+
+                <para>We can see that in the record header, the transaction id is
+                different to the other records we inserted. This is because we added a
+                COMMIT before we inserted this row.</para>
+            </section>
+        </section>
     </section>
 
     <section id="fbint-page-6">
-        <title>Index Root Page - Type 0x06 - TODO</title>
+        <title>Index Root Page - Type 0x06</title>
 
-        <para></para>
+        <para>Every table in the database has an Index Root Page which holds data that
+        describes the indexes for that table. Even tables that have no indices defined
+        have an index root page.</para>
 
         <para>The C code representation of an index root page is:</para>
 
         <programlisting>struct index_root_page
 {
     pag irt_header;
-    USHORT irt_relation;        /* relation id (for consistency) */
-    USHORT irt_count;            /* Number of indices */
+    USHORT irt_relation;
+    USHORT irt_count;
     struct irt_repeat {
-        SLONG irt_root;            /* page number of index root */
+        SLONG irt_root;
         union {
-            float irt_selectivity;    /* selectivity of index - NOT USED since ODS11 */
-            SLONG irt_transaction;    /* transaction in progress */
+            float irt_selectivity;
+            SLONG irt_transaction;
         } irt_stuff;
-        USHORT irt_desc;        /* offset to key descriptions */
-        UCHAR irt_keys;            /* number of keys in index */
+        USHORT irt_desc;
+        UCHAR irt_keys;
         UCHAR irt_flags;
     } irt_rpt[1];
 };
-
-/* key descriptor */
-
-struct irtd_ods10 {
-    USHORT irtd_field;
-    USHORT irtd_itype;
-};
-
-struct irtd : public irtd_ods10 {
-    float irtd_selectivity;
-};
-
-// irtd_itype
-const USHORT irt_unique        = 1;
-const USHORT irt_descending    = 2;
-const USHORT irt_in_progress= 4;
-const USHORT irt_foreign    = 8;
-const USHORT irt_primary    = 16;
-const USHORT irt_expression    = 32;
-
-const int STUFF_COUNT        = 4;
-const SLONG END_LEVEL        = -1;
-const SLONG END_BUCKET        = -2;
 </programlisting>
+
+        <formalpara>
+            <title>Irt_header</title>
+
+            <para>The page starts with a standard page header. The flags byte - pag_flags
+            - is not used on this page type.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_relation</title>
+
+            <para>Two bytes, unsigned. Offset 0x10 on the page. The relation id. This is
+            the value of RDB$RELATIONS.RDB$RELATION_ID.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_count</title>
+
+            <para>Two bytes, unsigned. Offset 0x12 on the page. The number of indices
+            defined for this table. If there are no indices defined this counter will show
+            the value zero. (Every table in the database has an Index Root Page regardless
+            of whether or not it has any indices defined.)</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_rpt</title>
+
+            <para>This is an array of index descriptors. The array begins at offset 0x14
+            on the page with the descriptor for the first index defined for the table.
+            Descriptors are added to the 'top' of the array so the next index defined will
+            have its descriptor at a higher page address than the previous descriptor. The
+            descriptor entries consist of the following 6 fields (irt_root through
+            irt_flags). Each descriptor is 0x0b bytes long.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_root</title>
+
+            <para>Four bytes, signed. Offset 0x00 in each descriptor array entry. This
+            field is the page number where the root page for the individual index (page
+            type 0x07) is located.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_selectivity</title>
+
+            <para>From ODS version 11.0, this field is no longer used as selectivity has
+            been moved to the index field descriptors (see below). Offset 0x04 in each
+            descriptor array entry. This is the same offset as for irt_transaction below.
+            In ODS versions below 11.0 this field holds the index selectivity in floating
+            point format.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_transaction</title>
+
+            <para>Four bytes, signed. Offset 0x04 in each descriptor array entry - the
+            same offset as irt_selectivity above. Normally this field will be zero but if
+            an index is in the process of being created, the transaction id will be found
+            here.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_desc</title>
+
+            <para>Two bytes, unsigned. Offset 0x08 in each descriptor array entry. This
+            field holds the offset, from the start of the page, to the index field
+            descriptors which are located at the bottom end (ie, highest addresses) of the
+            page. To calculate the starting address, add the value in this field to the
+            address of the start of the page.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_keys</title>
+
+            <para>One byte, unsigned. Offset 0x0a in each descriptor array entry. This
+            defines the number of keys (columns) in this index.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irt_flags</title>
+
+            <para>One byte, unsigned. Offset 0x0b in each descriptor array entry. The
+            flags define various attributes for this index, these are encoded into various
+            bits in the field, as follows:</para>
+        </formalpara>
+
+        <itemizedlist spacing="compact">
+            <listitem>
+                <para>Bit 0 : Index is unique (set) or not (unset).</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 1 : Index is descending (set) or ascending (unset).</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 2 : Index [creation?] is in progress (set) or not
+                (unset).</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 3 : Index is a foreign key index (set) or not (unset).</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 4 : Index is a primary key index (set) or not (unset).</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 5 : Index is expression based (set) or not (unset).</para>
+            </listitem>
+        </itemizedlist>
+
+        <para>Each descriptor entry in the array holds an offset to a list of key
+        descriptors. These start at the highest address on the page and extend towards the
+        lowest address. (The array of index descriptors (irt_rpt) starts at a low address
+        on the page and increases upwards. At some point, they will meet and the page will
+        be full.</para>
+
+        <para>The index field descriptors are defined as follows:</para>
+
+        <formalpara>
+            <title>Irtd_field</title>
+
+            <para>Two bytes, unsigned. Offset 0x00 in each field descriptor. This field
+            defines the field number of the table that makes up 'this' field in the index.
+            This number is equivalent to
+            <database>RDB$RELATION_FIELDS.RDB$FIELD_ID</database>.</para>
+        </formalpara>
+
+        <formalpara>
+            <title>Irtd_itype</title>
+
+            <para>Two bytes, unsigned. Offset 0x02 in each field descriptor. This
+            determines the data type of the appropriate field in the index. The allowed
+            values in this field are:</para>
+        </formalpara>
+
+        <itemizedlist spacing="compact">
+            <listitem>
+                <para>0 : field is numeric, but does not include 64 bit integers.</para>
+            </listitem>
+
+            <listitem>
+                <para>1 : field is string data.</para>
+            </listitem>
+
+            <listitem>
+                <para>3 : Field is a byte array.</para>
+            </listitem>
+
+            <listitem>
+                <para>4 : Field is metadata.</para>
+            </listitem>
+
+            <listitem>
+                <para>5 : Field is a date.</para>
+            </listitem>
+
+            <listitem>
+                <para>6 : Field is a time.</para>
+            </listitem>
+
+            <listitem>
+                <para>7 : Field is a timestamp.</para>
+            </listitem>
+
+            <listitem>
+                <para>8 : field is numeric - added for 64 bit integer support.</para>
+            </listitem>
+        </itemizedlist>
+
+        <para>You may note from the above that an irtd_itype with value 2 is not
+        permitted.</para>
+
+        <formalpara>
+            <title>Irtd_selectivity</title>
+
+            <para>Four bytes, floating point format. Offset 0x04 in each field descriptor.
+            This field holds the selectivity of this particular column in the index. This
+            applies to ODS 11.0 onwards. In pre ODS 11.0 databases, this field is not part
+            of the index filed descriptors and selectivity is applied to the index as a
+            whole. See irt_selectivity above.</para>
+        </formalpara>
+
+        <para>The following commands have been executed to create a table and a pair of
+        indices (via constraints):</para>
+
+        <screen>tux&gt; isql test_database
+Database:  test_database
+
+SQL&gt; CREATE TABLE CONFIGREVISIONSTORE (
+CON&gt;    CONFIGTABLENAME     VARCHAR(64) NOT NULL,
+CON&gt;    CONFIGTYPEID        VARCHAR(64) NOT NULL,
+CON&gt;    CFG_VERSION         VARCHAR(64) NOT NULL,
+CON&gt;    REVISIONID          VARCHAR(64) NOT NULL,
+CON&gt;    CREATIONTIME        TIMESTAMP NOT NULL,
+CON&gt;    LOCALAVAILABLETIME  TIMESTAMP NOT NULL
+CON&gt; );
+
+SQL&gt; ALTER TABLE CONFIGREVISIONSTORE 
+CON&gt; ADD CONSTRAINT PK_CONFIGREVISIONSTORE 
+CON&gt; PRIMARY KEY (CONFIGTABLENAME, CONFIGTYPEID, REVISIONID);
+
+SQL&gt; ALTER TABLE CONFIGREVISIONSTORE 
+CON&gt; ADD CONSTRAINT FK_CONFIGREVISIONS 
+CON&gt; FOREIGN KEY (REVISIONID) REFERENCES CONFIGREVISIONS (REVISIONID);
+</screen>
+
+        <para>The Index Root Page for the above table shows the following when dumped in
+        hex:</para>
+
+        <screen>0023d000  06 00 39 30 06 00 00 00  00 00 00 00 00 00 00 00  Standard header
+0023d010  d5 00                                             Irt_relation
+0023d012  02 00                                             Irt_count
+
+0023d014  eb 13 05 00                                       Irt_root[0]
+0023d018  00 00 00 00                                       Irt_transaction[0]
+0023d01c  e8 0f                                             Irt_desc[0]
+0023d01e  03                                                Irt_keys[0]
+0023d01f  11                                                Irt_flags[0]
+
+0023d020  2e 10 05 00                                       Irt_root[1]
+0023d024  00 00 00 00                                       Irt_transaction[1]
+0023d028  e0 0f                                             Irt_desc[1]
+0023d02a  01                                                Irt_keys[1]
+0023d02b  08                                                Irt_flags[1]
+</screen>
+
+        <para>We can see that the table has two defined indices (irt_count = 0x02) and the
+        first of these has three columns (irt_keys[0] = 0x03) while the second only has
+        one column (irt_keys[1] = 0x01).</para>
+
+        <para>Looking at irt_flags[0] we can see the value 0x11. In binary, this is 0001
+        0001 and shows bits 0 and 4 are both set. Consulting the description of irt_flags
+        above, we see that this index is a unique (bit 0 set) primary key (bit 4 set)
+        index. Similarly, for irt_flags[1] we see that only bit 3 is set to indicate that
+        this index is a foreign key index.</para>
+
+        <para>This matches with the definitions used to create the two indices as shows
+        above - one is a primary key while the other is a foreign key.</para>
+
+        <para>Also visible in the above dump is the fact that the first index has its list
+        of field descriptors stored at a higher address on the page than the second index.
+        Offset 0x0fe8 as opposed to 0x0fe0.</para>
+
+        <para>Adding these two offsets to the page start address (0x0023d000) gives the
+        physical addresses on the page where the descriptor lists begin - 0x0023dfe8 for
+        index 0, and 0x0023dfe0 for index 1.</para>
+
+        <para>Looking at the data stored for the primary key index address 0x0023dfe8, we
+        see the following:</para>
+
+        <screen>0023dfe8  00 00                                             irtd_field[0]
+0023dfea  01 00                                             irtd_itype[0]
+0023dfec  00 00 00 00                                       irtd_selectivity[0]
+
+0023dff0  01 00                                             irtd_field[1]
+0023dff2  01 00                                             irtd_itype[1]
+0023dff4  00 00 00 00                                       irtd_selectivity[1]
+
+0023dff8  03 00                                             irtd_field[2]
+0023dffa  01 00                                             irtd_itype[2]
+0023dffc  00 00 00 00                                       irtd_selectivity[2]</screen>
+
+        <para>As we can see from the above, there are three separate entries - one for
+        each field in the index - all have irtd_itype set to 0x01 which indicates VARCHAR
+        data types. Similar details exists at address 0x0023dfe0 for the remaining index,
+        as shown below.</para>
+
+        <screen>0023dfe0  03 00                                             irtd_field[0]
+0023dfe2  01 00                                             irtd_itype[0]
+0023dfe4  00 00 00 00                                       itrd_selectivity[0]
+</screen>
     </section>
 
     <section id="fbint-page-7">
         <title>Index B-Tree Page - Type 0x07 - TODO</title>
 
-        <para></para>
+        <para>As described above for the Index Root Page (type 0x06) each index defined
+        for a table has a root page from which the index data can be read etc. The Index
+        Root Page field irt_root points to the first page (the root page - just to confuse
+        matters slightly) in the index. That page will be a type 0x07 Index B-Tree Page,
+        as will all the other pages that make up this index.</para>
+
+        <!--Ok, I have a feeling that each level of an index b tree page is different. We might need to explain all of them. Root - branch - leaf.
+We also need a lot more investigation into prefix compression and the decoding of the data in a btr_nodes[] array.-->
+
+        <para>Indices do not share pages. Each index has its own range of dedicated pages
+        in the database.</para>
 
         <para>The C code representation of a index b-tree page is:</para>
 
-        <programlisting>// B-tree page ("bucket")
-struct btree_page
+        <programlisting>struct btree_page
 {
     pag btr_header;
     SLONG btr_sibling;
@@ -1538,16 +2279,45 @@ struct btree_page
         <formalpara>
             <title>Btr_header</title>
 
-            <para>The page starts off with a standard page header.</para>
+            <para>The page starts off with a standard page header. The pag_flags byte is
+            used on these pages. The bits used and why are:</para>
         </formalpara>
+
+        <itemizedlist spacing="compact">
+            <listitem>
+                <para>Bit 0 : set means do not garbage collect this page.</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 1 : set means this page is not propogated upwards.</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 3 : set means that this page/bucket is part of a descending
+                index.</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 4 : set means that non-leaf nodes will contain record number
+                information.</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 5 : set means that large keys are permitted/used.</para>
+            </listitem>
+
+            <listitem>
+                <para>Bit 6 : set means that the page contains index jiump nodes.</para>
+            </listitem>
+        </itemizedlist>
 
         <formalpara>
             <title>Btr_sibling</title>
 
             <para>Four bytes, signed. Bytes 0x10 - 0x13 on the page. This is the page
-            number of the next page of this index. The values on the next page are higher
-            than all of those on this page. A value of zero here indicates that this is
-            the final page in the index.</para>
+            number of the next page of this index. The values on the next page are
+            <emphasis>higher</emphasis> than all of those on this page. A value of zero
+            here indicates that this is the final page in the index.</para>
         </formalpara>
 
         <formalpara>
@@ -1555,8 +2325,8 @@ struct btree_page
 
             <para>Four bytes, signed. Bytes 0x14 - 0x17 on the page. This is the page
             number of the previous page of this index. The values on the previous page are
-            lower than all of those on this page. A value of zero here indicates that this
-            is the first page in the index.</para>
+            <emphasis>lower</emphasis> than all of those on this page. A value of zero
+            here indicates that this is the first page in the index.</para>
         </formalpara>
 
         <formalpara>
@@ -1591,8 +2361,8 @@ struct btree_page
         <formalpara>
             <title>Btr_level</title>
 
-            <para>One byte, unsigned. Byte 0x21 on the page. The index level. Level 0
-            indicates that this is a leaf node</para>
+            <para>One byte, unsigned. Byte 0x21 on the page. The index level. Level zero
+            indicates a leaf node.</para>
         </formalpara>
 
         <formalpara>
@@ -1643,7 +2413,32 @@ struct btree_page
 
         <!--This section needs a lot of expansion!-->
 
-        <para></para>
+        <para>Following the Index Root Page example, we can now hexdump and inspect the
+        Primary Key index for our example table. We see from the Index Root page that the
+        actual root of the index is on page 0x0513eb in the database. A dump of that page
+        results in the following:</para>
+
+        <screen>513eb000  07 70 39 30 02 00 00 00  00 00 00 00 00 00 00 00  Standard header
+513eb010  00 00 00 00                                       Btr_sibling
+513eb014  00 00 00 00                                       Btr_left_sibling
+513eb018  1f 00 00 00                                       Btr_prefix_total
+513eb01c  d5 00                                             Btr_relation
+513eb01e  a6 00                                             Btr_length
+513eb020  00                                                Btr_id
+513eb021  02                                                Btr_level
+</screen>
+
+        <para>This looks like it is the final page in this particular index as it has no
+        siblings, left or right. There also doesn't appear to be much space used on the
+        page as btr_length is showing that only 0xa6 bytes have been used on this page,
+        however, btr_level is 2 so we are not looking at a leaf node. (And we know that
+        this is actually the root node for the entire index since the page we dumped is
+        the root page for the index.)</para>
+
+        <para>Following on from the above, we have the various index nodes, starting at
+        offset 0x22, as follows:</para>
+
+        <screen></screen>
     </section>
 
     <section id="fbint-page-8">
