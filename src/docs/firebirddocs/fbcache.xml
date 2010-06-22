@@ -17,7 +17,7 @@
             <surname>Dunbar</surname>
         </author>
 
-        <edition>05 January 2010 – Document version 1.0</edition>
+        <edition>21 June 2010 – Document version 1.1</edition>
     </articleinfo>
 
     <section id="fbcache-intro">
@@ -45,16 +45,18 @@
     <section id="fbcache-cache">
         <title>The Firebird Cache</title>
 
-        <para>Everything in the database is organized as fixed sized pages of known
+        <para>Everything in the database is organised as fixed sized pages of known
         structure - there are nine different types of pages. The page cache is the
         intermediate between the "working" parts of the database and the disk.</para>
 
-        <para>When it starts, Firebird reads the database header page first, then the
-        first pointer page of a system table called RDB$PAGES. That table tells it where
-        to find the other tables - both metadata and data.</para>
+        <para>When initially started, Firebird reads the database header page, then the
+        first pointer page of a system table called RDB$PAGES from which it then knows
+        where to find the pointer pages, amongst other things, for the system and user
+        tables within the database.</para>
 
-        <para>As the <emphasis>application</emphasis> starts, Firebird reads pointer pages
-        which tell it where to find the data pages for tables and index pages. All the
+        <para>As soon as the <emphasis>application</emphasis> accesses the database and
+        begins a transaction, Firebird reads the pointer pages telling it where to find
+        the data pages for the tables involved in the application's transactions. All the
         pages go into the cache and stay there until the cache is completely full. When
         there's no place to put the next page, Firebird releases the <emphasis>least
         recently used</emphasis> page - <emphasis>not</emphasis> the first one read, but
@@ -93,7 +95,7 @@
         <formalpara>
             <title>MONS$STAT_ID</title>
 
-            <para>The statistic id. </para>
+            <para>The statistic id.</para>
         </formalpara>
 
         <formalpara>
@@ -105,23 +107,23 @@
 
         <itemizedlist spacing="compact">
             <listitem>
-                <para>0 : The database as a whole.</para>
+                <para>0: The database as a whole.</para>
             </listitem>
 
             <listitem>
-                <para>1 : Attachments.</para>
+                <para>1: Attachments.</para>
             </listitem>
 
             <listitem>
-                <para>2 : Transactions.</para>
+                <para>2: Transactions.</para>
             </listitem>
 
             <listitem>
-                <para>3 : Statements.</para>
+                <para>3: Statements.</para>
             </listitem>
 
             <listitem>
-                <para>4 : Calls.</para>
+                <para>4: Calls.</para>
             </listitem>
         </itemizedlist>
 
@@ -190,10 +192,11 @@ CON&gt; WHERE MON$STAT_GROUP = 0;
 
         <para>We can assume, therefore, that although a small number of pages have been
         read into the cache, there is nothing we can do to avoid that. When the database
-        is started up, various pages must be read and the cache must be filled, so
-        physical reads will be a necessity. However, once in the cache it appears that
-        these pages are being accessed quite frequently given that there have been
-        approximately 103 reads from cache for every physical read.</para>
+        is started up the cache is empty, when applications connect and access the
+        database, various pages must be read and the cache must be filled, so physical
+        reads will be a necessity. In this example, it appears that once pages are in the
+        cache they are being accessed quite frequently given that there have been
+        approximately 103 cache reads for every physical read.</para>
 
         <para>Of the 529 updated pages - and these are system as well as user pages - 526
         have been written back to the physical discs but three still remain in cache, as
@@ -215,7 +218,7 @@ CON&gt; WHERE MON$STAT_GROUP = 1;
 </screen>
 
         <para>Interpretation of the above statistics is exactly the same as for the
-        database as a whole. </para>
+        database as a whole.</para>
 
         <para>We can further diagnose the statistics by individual transactions, as
         follows:</para>
@@ -236,7 +239,7 @@ CON&gt; WHERE MON$STAT_GROUP = 2;
                   0                   0                   1                   0
 </screen>
 
-        <para>And finally, by individual statements:</para>
+        <para>And, by individual statements:</para>
 
         <screen>SQL&gt; SELECT MON$PAGE_READS, MON$PAGE_WRITES, MON$PAGE_FETCHES, MON$PAGE_MARKS
 CON&gt; FROM MON$IO_STATS
@@ -263,39 +266,36 @@ CON&gt; WHERE MON$STAT_GROUP = 3;
                   7                   0                 613                   0
 </screen>
 
-        <para>Unfortunately, it appears that it isn't possible to determine the statistics
-        for your own session. You can find your attachment id from
-        <database>CURRENT_CONNECTION</database> and use that in a query against
-        <database>MON$TRANSACTIONS</database> and/or <database>MON$STATEMENTS</database>
-        but there doesn't appear to be any method of joining the transaction or statement
-        to the columns in the <database>MON$IO_STATS</database> table itself.</para>
+        <para>Finally, it is possible - and probably most useful - to determine the
+        statistics for your own session. You can find your attachment id from
+        <database>CURRENT_CONNECTION</database> and use that in a query that joins with
+        <database>MON$IO_STATS</database> using the <database>MON$STAT_ID</database>
+        column.</para>
 
-        <screen>SQL&gt; SELECT MON$ATTACHMENT_ID, MON$TRANSACTION_ID
-CON&gt; FROM MON$TRANSACTIONS
-CON&gt; WHERE MON$ATTACHMENT_ID = CURRENT_CONNECTION;
+        <screen>SQL&gt; SET LIST;
 
-MON$ATTACHMENT_ID MON$TRANSACTION_ID
-================= ==================
-              156               1068
-              156               1067
+SQL&gt; SELECT T.MON$ATTACHMENT_ID, T.MON$TRANSACTION_ID,
+CON&gt; IO.MON$PAGE_READS, IO.MON$PAGE_WRITES, 
+CON&gt; IO.MON$PAGE_FETCHES, IO.MON$PAGE_MARKS
+CON&gt; FROM MON$TRANSACTIONS AS T
+CON&gt; JOIN MON$IO_STATS as IO
+CON&gt; ON (IO.MON$STAT_ID = T.MON$STAT_ID)
+CON&gt; WHERE T.MON$ATTACHMENT_ID = CURRENT_CONNECTION;
 
+MON$ATTACHMENT_ID               12
+MON$TRANSACTION_ID              218
+MON$PAGE_READS                  5
+MON$PAGE_WRITES                 0
+MON$PAGE_FETCHES                66
+MON$PAGE_MARKS                  0
 
-SQL&gt; SELECT MON$TRANSACTION_ID, MON$STATEMENT_ID
-CON&gt; FROM MON$STATEMENTS
-CON&gt; WHERE MON$ATTACHMENT_ID = CURRENT_CONNECTION;
-
-MON$TRANSACTION_ID MON$STATEMENT_ID
-================== ================
-              1067                5
-            &lt;null&gt;                7
-            &lt;null&gt;                9
-            &lt;null&gt;               11
+MON$ATTACHMENT_ID               12
+MON$TRANSACTION_ID              217
+MON$PAGE_READS                  0
+MON$PAGE_WRITES                 0
+MON$PAGE_FETCHES                1
+MON$PAGE_MARKS                  0
 </screen>
-
-        <para>We can see from the above two queries that it is quite simple to determine
-        your own session's transactions and statements, but getting from the transaction
-        or statements id to a specific set of statistics in
-        <database>MON$IO_STATS</database> doesn't appear possible.</para>
     </section>
 
     <appendix id="fbcache-dochist">
@@ -305,7 +305,7 @@ MON$TRANSACTION_ID MON$STATEMENT_ID
         class="directory">manual</filename> module in our CVS tree; see <ulink
         url="http://sourceforge.net/cvs/?group_id=9028">http://sourceforge.net/cvs/?group_id=9028
         </ulink>. The full URL of the CVS log for this file can be found at <ulink
-        url="http://firebird.cvs.sourceforge.net/viewvc/firebird/manual/src/docs/firebirddocs/fbcache.xml?view=log"
+        url="http://firebird.cvs.sourceforge.net/viewvc/firebird/manual/src/docs/firebirddocs/ fbcache.xml?view=log"
         userlevel="">http://firebird.cvs.sourceforge.net/viewvc/firebird/
         manual/src/docs/firebirddocs/fbcache.xml?view=log</ulink></para>
 
@@ -322,6 +322,20 @@ MON$TRANSACTION_ID MON$STATEMENT_ID
                         by Ann Harrison.</para>
                     </revdescription>
                 </revision>
+
+                <revision>
+                    <revnumber>1.1</revnumber>
+
+                    <date>21 June 2010</date>
+
+                    <authorinitials>ND</authorinitials>
+
+                    <revdescription>
+                        <para>Amended to include the fact that it <emphasis>is</emphasis>
+                        possible to extract the statistics for the current connection.
+                        Contrary to what was said before.</para>
+                    </revdescription>
+                </revision>
             </revhistory></para>
     </appendix>
 
@@ -331,9 +345,11 @@ MON$TRANSACTION_ID MON$STATEMENT_ID
         <para>The contents of this Documentation are subject to the Public Documentation
         License Version 1.0 (the <quote>License</quote>); you may only use this
         Documentation if you comply with the terms of this License. Copies of the License
-        are available at <ulink
-        url="http://www.firebirdsql.org/pdfmanual/pdl.pdf">http://www.firebirdsql.org/pdfmanual/ pdl.pdf</ulink> (PDF) and <ulink
-        url="http://www.firebirdsql.org/manual/pdl.html">http://www.firebirdsql.org/manual/pdl.html</ulink> (HTML).</para>
+        are available at 
+        <ulink url="http://www.firebirdsql.org/pdfmanual/pdl.pdf">
+         http://www.firebirdsql.org/pdfmanual/pdl.pdf</ulink> (PDF) and 
+        <ulink url="http://www.firebirdsql.org/manual/pdl.html">
+         http://www.firebirdsql.org/manual/pdl.html</ulink> (HTML).</para>
 
         <para>The Original Documentation is titled <citetitle>Firebird Database Cache
         Buffer</citetitle>.</para>
@@ -341,7 +357,7 @@ MON$TRANSACTION_ID MON$STATEMENT_ID
         <para>The Initial Writer of the Original Documentation is: Norman Dunbar using
         data supplied by Ann Harrison.</para>
 
-        <para>Copyright (C) 2009. All Rights Reserved. Initial Writer contact:
+        <para>Copyright (C) 2010. All Rights Reserved. Initial Writer contact:
         NormanDunbar at users dot sourceforge dot net.</para>
     </appendix>
 </article>
