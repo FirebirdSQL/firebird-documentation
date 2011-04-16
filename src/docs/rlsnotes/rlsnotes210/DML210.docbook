@@ -74,6 +74,9 @@
         <para><xref linkend="rnfb20x-dml-cast"/><!-- Improvement in CAST() Behaviour --></para>
       </listitem>
       <listitem>
+        <para><xref linkend="rnfb210-dml-domaincast"/><!-- CAST(x as <domain-name>) --></para>
+      </listitem>
+      <listitem>
         <para><xref linkend="rnfb20x-dml-substring"/><!-- Expression Arguments for SUBSTRING() --></para>
       </listitem>
       <listitem>
@@ -850,19 +853,55 @@ INSERT INTO &lt;table&gt;
       </sectioninfo>
       <para><emphasis role="bold">(v.2.1)</emphasis> At various levels of evaluation, the engine now treats text
       BLOBs that are within the 32,765-byte string size limit as though they were VARCHARs.  Operations that now
-      allow text BLOBs to behave like strings are assignments, conversions and concatenations, as well as the
-      functions CAST, LOWER, UPPER, TRIM and SUBSTRING.</para>
-      <warning>
-        <title>Note Carefully!</title>
-        <para>SUBSTRING(), when applied to a text BLOB, now returns a text BLOB as its
-        result, instead of the VARCHAR result that was implemented previously.  This change has the 
-        potential to break expressions in existing client and PSQL code.</para>
-      </warning>
+      allow text BLOBs to behave like strings are:</para>
+      <itemizedlist>
+        <listitem>
+          <para>Assignments, conversions and concatenations (|| operator)</para>
+        </listitem>
+        <listitem>
+          <para>Operators &#x003D; <!-- EQUALS SIGN -->,
+          &lt;&gt;, <!-- not equal to -->
+          &gt;, <!-- greater than -->
+          &lt;, <!-- less than -->
+          &gt;&#x003D;, <!-- greater than or equal -->
+          &lt;&#x003D;, <!-- less than or equal -->
+          BETWEEN, IS [NOT] DISTINCT FROM
+          </para>
+        </listitem>
+        <listitem>
+          <para>Functions CAST, BIT_LENGTH, CHAR[ACTER]_LENGTH, OCTET_LENGTH,
+          LEFT, RIGHT, HASH, LOWER, UPPER, LPAD, RPAD, TRIM, OVERLAY, 
+          REPLACE, POSITION, REVERSE, MINVALUE, MAXVALUE, SUBSTRING</para>
+          <warning>
+            <title>Note Carefully!</title>
+            <para>SUBSTRING(), when applied to a text BLOB, now returns a text BLOB as its
+            result, instead of the VARCHAR result that was implemented previously.  This change
+            has the potential to break expressions in existing client and PSQL code.</para>
+            <para>If the FOR argument is absent, the BLOB returned will be no greater than
+            32,767 bytes, even if the end of the string  was not reached.</para>
+          </warning>
+        </listitem>
+        <listitem>
+          <para>Existential predicators IN, ANY/SOME, ALL</para>
+        </listitem>
+        <listitem>
+          <para>Search predicators CONTAINING, STARTING [WITH], LIKE</para>
+          <important>
+            <para>The predicating expression must not resolve to more than 32,767 bytes!</para>
+          </important>
+        </listitem>
+        <listitem>
+          <para>A LIST expression.  Note that, prior to v.2.1.4, the last part of the result may 
+          be truncated, an effect that applies to native VARCHAR columns also.</para>
+        </listitem>
+      </itemizedlist>
+
     </section>
 
     <section id="rnfb20x-blob-compare" xreflabel="Compare BLOB=BLOB"><!-- Level 2 section -->
         <title>Full Equality Comparisons Between BLOBs</title>
-        <para><emphasis role="bold">(v.2.0.x)</emphasis> Comparison can be performed on the entire content of a text BLOB.</para>
+        <para><emphasis role="bold">(v.2.0.x)</emphasis> Comparison can be performed on the entire content
+        of a text BLOB.</para>
       </section>
 
     <section id="rnfb210-dml-dbkey" xreflabel="RDB$DB_KEY Returns NULL in Outer Joins"><!-- Level 2 section -->
@@ -895,8 +934,8 @@ INSERT INTO &lt;table&gt;
       <important>
         <para>This reversion to <quote>bad old behaviour</quote> does not in any way imply that such queries will
         magically return correct results.  A BLOB cannot be converted to a sortable type and so, as previously, DISTINCT
-        sortings and ORDER BY arguments that involve BLOBs, will use the BLOB_ID.  As before, GROUP BY arguments that 
-        are BLOB types will prepare successfully, but will cause run-time exceptions.</para>
+        sortings and ORDER BY arguments that involve BLOBs, will use the BLOB_ID.  GROUP BY arguments that
+        are BLOB types will prepare successfully, but the aggregation will be non-existent.</para>
       </important>
     </section>
 
@@ -1062,6 +1101,42 @@ DATEDIFF ( MILLISECOND, timestamp '01.01.2000 02:00:00.0000', timestamp '01.01.2
   SELECT CAST(? AS INT) FROM RDB$DATABASE
         </programlisting>
       </section>
+      
+      <section id="rnfb210-dml-domaincast" xreflabel="CAST(x as &lt;domain-name&gt;)"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>CAST(x as &lt;domain-name&gt;)</title>
+          <author><firstname>A.</firstname><surname>dos Santos Fernandes</surname></author>
+        </sectioninfo>
+        <para><emphasis role="bold">(V.2.1.x)</emphasis> Casting of compatible values or expressions can now 
+        be made to a domain, after the manner of variable declarations in procedural SQL.</para>
+        <para><emphasis role="bold">Syntax Pattern</emphasis></para>
+        <programlisting>
+CAST (&lt;value&gt; | &lt;expression&gt; AS &lt;builtin-data-type&gt; | &lt;domain-name&gt; | TYPE OF &lt;domain-name&gt;)
+        </programlisting>
+        <para><emphasis role="bold">Examples</emphasis></para>
+        <programlisting>
+CREATE DOMAIN DOM AS INTEGER;
+...
+SELECT CAST (10.44 AS TYPE OF DOM) AN_INTEGER
+  FROM RDB$DATABASE;
+  
+AN_INTEGER
+----------
+        10
+...
+SELECT CAST (3.142/2 AS DOM) AN_INTEGER
+  FROM RDB$DATABASE;
+  
+AN_INTEGER
+----------
+         2 
+        </programlisting>
+        <note>
+          <para>Directly casting to &lt;domain-name&gt; applies any default or constraint defined for the
+          domain.  TYPE OF &lt;domain-name&gt; gets only the data type of the domain and ignores any other 
+          attributes.</para>
+        </note>
+      </section>
 
       <section id="rnfb20x-dml-substring-changes"><!-- Level 3 section -->
 
@@ -1110,9 +1185,11 @@ DATEDIFF ( MILLISECOND, timestamp '01.01.2000 02:00:00.0000', timestamp '01.01.2
                 <para>Watch out for overflows! Take particular care with CASTs and concatenations.</para>
               </listitem>
               <listitem>
-                <para>Pay attention to memory usage when assigning to temporary BLOBs in loops!  The engine
-                allocates a minimum of one database page of memory for each temporary BLOB, regardless of its
-                actual size.</para>
+                <para>In v.2.1.x sub-releases prior to v.2.1.4, pay attention to memory usage when assigning to 
+                temporary BLOBs in loops!  The engine formerly allocated a minimum of one database page of memory 
+                for each temporary BLOB, regardless of its actual size.  The implementation was improved in
+                v.2.1.4 (see  tracker ticket
+            <ulink url="http://tracker.firebirdsql.org/browse/CORE-1658">CORE-1658</ulink>).</para>
               </listitem>
             </itemizedlist>
           </important>
