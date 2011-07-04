@@ -17,7 +17,7 @@
   <xsl:param name="fb-home.url"   select="'http://www.firebirdsql.org'"/>
   <xsl:param name="fb-home.title" select="'Firebird Home'"/>
 
-  <xsl:param name="fb-docindex.url"   select="'http://www.firebirdsql.org/?op=doc'"/>
+  <xsl:param name="fb-docindex.url"   select="'http://www.firebirdsql.org/en/documentation/'"/>
   <xsl:param name="fb-docindex.title" select="'Firebird Documentation Index'"/>
 
   <xsl:param name="runinhead.bold"   select="1"/>
