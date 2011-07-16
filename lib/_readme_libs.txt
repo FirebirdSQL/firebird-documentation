@@ -26,9 +26,14 @@ Don't forget: you may also need to download files for manual/tools.
 Look at the readme there.
 
 
-On Linux you can type in the command line (if you are in manual/lib folder)
 
-$ wget http://www.firebirdsql.org/doclibs/ALLJARS.ZIP
-$ unzip ALLJARS.ZIP
+Linux shortcut
+--------------
 
+On Linux, instead of visiting the site with a browser, you can cd
+to the manual/lib folder and type at the command prompt:
 
+  $ wget http://www.firebirdsql.org/doclibs/ALLJARS.ZIP
+  $ unzip ALLJARS.ZIP
+
+This will download and unzip the Java libraries for you.
