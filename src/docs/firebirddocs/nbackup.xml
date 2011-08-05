@@ -10,7 +10,7 @@
       <firstname>Paul</firstname>
       <surname>Vinkenoog</surname>
     </author>
-    <edition>? Xxx 20?? – Document version 1.2</edition>
+    <edition>?? Aug 2011 – Document version 1.2</edition>
   </articleinfo>
   <section id="nbackup-intro">
     <title>Introduction</title>
@@ -76,6 +76,7 @@
         </listitem>
         <listitem>
           <para>nbackup can only back up local databases.</para>
+          <!--Deze bewering aanpassen als ik info toevoeg over de Service Manager-route in 2.5+-->
         </listitem>
       </itemizedlist>
       <para>We'll discuss nbackup's various functions extensively in the following sections.</para>
@@ -93,7 +94,9 @@
       <para>Under heavy-load circumstances in some environments, nbackup 2.0.3 and below may cause
       problems that will lead to deadlocks or even corrupted databases. While these problems aren't
       common, they are serious enough to warrant upgrading to Firebird 2.0.4 or higher if you want
-      to use nbackup comfortably.</para>
+      to use nbackup comfortably. If it concerns large databases under Posix, upgrading to at least
+      2.0.6, 2.1.3 or 2.5 is advised.</para>
+      <!--CORE-2316-->
     </warning>
     <section id="nbackup-backups-full">
       <title>Full backups</title>
@@ -311,6 +314,22 @@
         </section>
       </section>
     </section>
+    <section id="nbackup-backups-rawdevices">
+      <title>Backing up raw-device databases</title>
+      <para>Firebird databases need not be files; they can also be placed on a so-called
+      <firstterm>raw device</firstterm>, for instance a disk partition without a file system. The
+      question where the <link linkend="nbackup-backups-workings">delta</link> has to be placed in
+      such cases was at first overlooked during the development of
+      <application>nbackup</application>. On Posix systems, if the database was located at e.g.
+      <filename class="devicefile">/dev/hdb5</filename>, it could happen that the delta was created
+      as <filename>/dev/hdb5.delta</filename>. In light of the nature and purpose of the
+      <filename>/dev</filename> directory and its often limited available space, this is
+      undesirable.</para>
+      <para>As of Firebird 2.1, nbackup refuses to operate on raw-device databases unless an
+      explicit location for the delta file has been set. The way to do this is discussed in <link
+      linkend="nbackup-deltafile"><citetitle>Setting the delta file</citetitle></link>, later on in
+      this manual.</para>
+    </section>
     <section id="nbackup-backups-dbtriggers">
       <title>Suppressing database triggers (Firebird 2.1+)</title>
       <para>Firebird 2.1 introduced the concept of <firstterm>database triggers</firstterm>. To keep
@@ -464,7 +483,9 @@
         <parameter>-F</parameter> for Fixup. After all, it doesn't fix anything; it only
         <emphasis>unlocks</emphasis> the database. The <parameter>-N</parameter> (uNlock) flag on
         the other hand performs not only an unlock, but also a fixup (integration of mutations into
-        the main file). But we'll have to live with that.</para>
+        the main file). But we'll have to live with that. Come to think of it: you
+        <emphasis>can</emphasis> read <parameter>-F</parameter> as
+        <emphasis>Flag-only</emphasis>.</para>
       </note>
     </section>
     <section id="nbackup-lock-unlock-extrainfo">
@@ -513,14 +534,37 @@
         parameters added to the command will be completely ignored.</para>
       </note>
     </section>
+    <section id="nbackup-lock-unlock-rawdevices">
+      <title>Locking raw-device databases</title>
+      <para>As discussed in <link linkend="nbackup-backups-rawdevices"><citetitle>Backing up
+      raw-device databases</citetitle></link>, problems can arise if a delta has to be created for a
+      database located on a raw device. Therefore, in Firebird 2.1 and up, nbackup refuses to
+      operate on raw-device databases unless an explicit location for the delta file has been set
+      previously. For the procedure, see <link linkend="nbackup-deltafile"><citetitle>Setting the
+      delta file</citetitle></link>, a little further down.</para>
+      <para>There's also another problem if you lock and copy a raw device: you don't know the
+      actual size of the database! The raw device may be 10 GB, but the database might only take up
+      200 MB of that space. To prevent having to copy the entire device just to be on the safe side
+      – possibly wasting huge amounts of time and space – Firebird 2.1 has introduced a new
+      parameter for nbackup: <parameter>-S</parameter>. This parameter is only valid in combination
+      with <parameter>-L</parameter> and when it is present, nbackup writes the database size in
+      pages to <systemitem>stdout</systemitem> after locking the database. Because the size is given
+      in pages, it has to be multiplied by the database page size in order to get the actual number
+      of bytes to be copied. Or, if you use the <filename>dd</filename> copy utility, you could
+      specify the page size as <parameter>(i)bs</parameter> and the output of
+      <filename>nbackup</filename> <parameter>-L</parameter> <parameter>-S</parameter> as
+      <parameter>count</parameter>.</para>
+    </section>
   </section>
   <section id="nbackup-deltafile">
     <title>Setting the delta file</title>
-    <para>By default, the delta file lives in the same directory as the database itself. It also has
-    the same name as the database file, but with <filename class="extension">.delta</filename>
-    appended. There is usually no reason to change this, but it can be done if need be – though not
-    via <application>nbackup</application> itself. Make a connection to the database with any client
-    that allows you to enter your own SQL statements and give the command:</para>
+    <para>By default, the delta file lives in the same directory as the database itself. The file
+    name is also the same, but with <filename class="extension">.delta</filename> appended. This is
+    usually not a problem, but sometimes it is desirable or even necessary to change the location,
+    e.g. when the database is stored on a raw device. Nbackup itself has no provision for setting
+    the location; this must be done through SQL.</para>
+    <para>Make a connection to the database with any client that allows you to enter your own SQL
+    statements and give the command:</para>
     <blockquote>
       <programlisting>alter database add difference file '<replaceable>path-and-filename</replaceable>'</programlisting>
     </blockquote>
@@ -530,11 +574,15 @@
     <blockquote>
       <programlisting>alter database drop difference file</programlisting>
     </blockquote>
+    <para>You can also specify a custom delta location while creating a new database:</para>
+    <blockquote>
+      <programlisting>create database '<replaceable>path-and-dbname</replaceable>' difference file '<replaceable>path-and-deltaname</replaceable>'</programlisting>
+    </blockquote>
     <note>
       <title>Notes</title>
       <itemizedlist>
         <listitem>
-          <para>If you specify a bare file name with <database>ADD DIFFERENCE FILE</database>, the
+          <para>If you specify a bare file name with <database>[ADD] DIFFERENCE FILE</database>, the
           delta will likely <emphasis>not</emphasis> be created in the same directory as the
           database, but in the current directory as seen from the server. On Windows this may e.g.
           be the system directory. The same logic applies to relative paths.</para>
@@ -600,19 +648,35 @@
         </revision>
         <revision>
           <revnumber>1.2</revnumber>
-          <date>?? Xcc 20??</date>
+          <date>?? Aug 2011</date>
           <authorinitials>PV</authorinitials>
           <revdescription>
             <para>Document source formatting: Changed max. line length to 100, without open
             lines.</para>
-            <para><citetitle>A word on the inner workings</citetitle>: Small edit (image -&gt;
-            impression).</para>
-            <para><citetitle>Incremental backups</citetitle>: Edited Warning: mentioned fix in
-            2.1.1.</para>
-            <para><citetitle>Suppressing database triggers</citetitle>: Small edit at end of
-            para.</para>
+            <para><citetitle>Making and restoring backups</citetitle>: Extended warning: advised at
+            least 2.0.6, 2.1.3 or 2.5 for large databases under Posix.</para>
+            <para><citetitle>Making and restoring backups :: A word on the inner
+            workings</citetitle>: Small edit (image -&gt; impression).</para>
+            <para><citetitle>Making and restoring backups :: Incremental backups</citetitle>: Edited
+            Warning: mentioned fix in 2.1.1.</para>
+            <para><citetitle>Making and restoring backups :: Backing up raw-device
+            databases</citetitle>: New section.</para>
+            <para><citetitle>Making and restoring backups :: Suppressing database
+            triggers</citetitle>: Small edit at end of para.</para>
+            <para><citetitle>Locking and unlocking :: Restoring a backup made after <quote>nbackup
+            -L</quote></citetitle>: Added sentence to Note about reading <parameter>-F</parameter>
+            as Flag-only.</para>
+            <para><citetitle>Locking and unlocking :: Locking raw-device databases</citetitle>: New
+            section.</para>
+            <para><citetitle>Setting the delta file</citetitle>: 1st para largely rewritten; now
+            refers to raw-device databases. Split off last sentence into a para of its own. Added
+            info (para + programlisting) about setting delta with <database>CREATE
+            DATABASE</database>. 1st listitem in Notes: <database>ADD</database> -&gt;
+            <database>[ADD]</database>.</para>
             <para><citetitle>Document history</citetitle>: Changed ulink to CVS (both text and url);
             now points directly to document.</para>
+            <para><citetitle>License notice</citetitle>: End year in copryright mention now
+            2011.</para>
           </revdescription>
         </revision>
       </revhistory></para>
@@ -629,7 +693,7 @@
     <para>The Original Documentation is titled <citetitle>Firebird's nbackup
     tool</citetitle>.</para>
     <para>The Initial Writer of the Original Documentation is: Paul Vinkenoog.</para>
-    <para>Copyright (C) 2005–2008. All Rights Reserved. Initial Writer contact: paulvink at users
+    <para>Copyright (C) 2005–2011. All Rights Reserved. Initial Writer contact: paulvink at users
     dot sourceforge dot net.</para>
   </appendix>
 </article>
