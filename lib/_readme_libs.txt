@@ -9,17 +9,24 @@ downloaded ALLJARS.ZIP, unzip it here. Don't use "Unzip to..."
 because that may create a subfolder and make the jars untraceable
 for the build program.
 
-NOTE: Tools.jar has been left out of ALLJARS.ZIP because it's
+LATEST (26 September 2011):
+      xercesImpl.jar has been added to the libraries. We need
+      this to be able to use xincludes.
+      You can download xercesImpl.jar separately from the server
+      or download and unzip the latest ALLJARS.ZIP
+
+OLDER NOTES:
+    - Tools.jar has been left out of ALLJARS.ZIP because it's
       rather big and not everybody needs it. Download it only if
       your PDF builds fail with a message about tools.jar not
       being found.
 
-NOTE: If you have downloaded ALLJARS.ZIP, look at the timestamps
+    - If you have downloaded ALLJARS.ZIP, look at the timestamps
       of the JAR files on the server. If some JARs are newer than
       ALLJARS.ZIP, download them and install them over the versions
       extracted from the ZIP.
 
-NOTE: If you still find the file "optional.jar" in the lib folder,
+    - If you still find the file "optional.jar" in the lib folder,
       delete it!
 
 Don't forget: you may also need to download files for manual/tools.
