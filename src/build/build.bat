@@ -14,7 +14,7 @@ goto exit
 set cp=..\..\lib\ant-launcher.jar
 set class=org.apache.tools.ant.launch.Launcher
 
-"%JAVA_HOME%\bin\java.exe" -showversion -Xmx100000000 -classpath %cp% -Dant.home=..\.. %class% %1 %2 %3 %4 %5 %6 %7 %8 %9
+"%JAVA_HOME%\bin\java.exe" -showversion -Xmx300000000 -classpath %cp% -Dant.home=..\.. %class% %1 %2 %3 %4 %5 %6 %7 %8 %9
 
 
 :exit
