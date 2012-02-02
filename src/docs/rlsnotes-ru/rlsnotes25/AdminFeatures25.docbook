@@ -1,0 +1,676 @@
+﻿  <chapter id="rnfb25-admin">
+    <chapterinfo>
+      <title>Административные возможности</title>
+    </chapterinfo>
+
+    <section id="rnfb25-prvlgs" xreflabel="RDB$ADMIN Role"><!-- Level 1 section -->
+      <sectioninfo>
+        <title>Новая системная роль RDB$ADMIN</title>
+        <author>
+          <firstname>Александр</firstname>
+          <surname>Пешков</surname>
+        </author>
+      </sectioninfo>
+      <para>Для предоставления привилегий SYSDBA другим пользователям была
+      добавлена новая предопределенная системная роль RDB$ADMIN. Любой пользователь,
+      получивший права на роль RDB$ADMIN в конкретной базе, при подключении к
+      этой базе с ролью RDB$ADMIN приобретает все права SYSDBA.</para>
+
+      <para>Для выдачи прав на эту роль нужно подключиться к базе данных под
+      учетной записью SYSDBA и дать права на роль RDB$ADMIN пользователю так же,
+      как и на любую другую роль. После этого пользователь может использовать ее
+      при соединении с базой данных как и любую другую роль.</para>
+
+      <important>
+        <para>Если при соединении с базой данных в DPB (параметрах соединения) 
+        была указана другая роль, то она <emphasis role="bold">не</emphasis> 
+        будет автоматически заменена на роль RDB$ADMIN и, соответственно,
+        пользователь в этом соединении не будет обладать правами SYSDBA.</para>
+      </important>
+
+      <para>Следующий пример показывает предоставление прав SYSDBA пользователям
+      User1 и Admins\ADMIN. Второй пользователь в данном примере - это обычный
+      пользователь Windows (имеет смысл при использовании Trusted Authetication):</para>
+
+      <programlisting>GRANT RDB$ADMIN TO User1;
+GRANT RDB$ADMIN TO "Admins\ADMIN";</programlisting>
+
+      <section id="rnfb25-prvlgs-multi"><!-- Level 2 section -->
+        <title>Несколько баз данных и суперпользователи</title>
+        <para>Следует иметь в виду, что владение ролью RDB$ADMIN не превращает 
+        обычного пользователя в SYSDBA. Она лишь дает пользователю те же права 
+        над объектами, что и у SYSDBA, <emphasis role="bold">в той базе данных,
+        в которой ему были выданы права на эту роль</emphasis>.</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Если пользователю нужны права администратора в нескольких 
+            базах данных, то права на роль RDB$ADMIN должны быть ему явно даны 
+            в <emphasis role="bold">каждой</emphasis> из этих баз.</para>
+          </listitem>
+          <listitem>
+            <para>Если права администратора нужны нескольким пользователям, то 
+            каждому из них должны быть выданы права на роль RDB$ADMIN.</para>
+          </listitem>
+          <listitem>
+            <para>Пользователь, получивший в базе данных роль RDB$ADMIN, может 
+            дать права на нее другим пользователям. При этом необязательно 
+            указывать WITH ADMIN OPTION (для права предоставлять эту роль другим) 
+            или WITH GRANT OPTION (для выдачи разрешений на объекты другим 
+            пользователям не будучи владельцем этих объектов) - эти опции 
+            устанавливаются неявно (автоматически).</para>
+          </listitem>
+        </itemizedlist>
+      </section>
+
+      <section id="rnfb25-prvlgs-suprusr"><!-- Level 2 section -->
+        <title>Суперпользователи ОС</title>
+        <para>На платформах POSIX пользователь <firstterm>root</firstterm> 
+        всегда имеет права SYSDBA, но в ОС Windows администраторы домена не 
+        имели таких прав до версии Firebird 2.1. В версии Firebird 2.1 был 
+        добавлен новый конфигурационный параметр <firstterm>Authentication</firstterm>,
+        позволяющий администраторам Windows автоматически получать права SYSDBA 
+        при использовании Trusted Authentication (аутентификации средствами ОС).
+        На платформах POSIX механизм не поменялся, а в ОС Windows, начиная с версии 
+        2.5, пользователи ОС получают права SYSDBA, только если соединились с ролью 
+        RDB$ADMIN (если она указана явно или предоставлена автоматически - см. ниже).</para>
+
+        <important>
+          <title>Trusted Authentication теперь по умолчанию отключена!</title>
+          <para>Параметр <firstterm>Authentication</firstterm> в <filename>firebird.conf</filename> 
+          теперь (начиная с версии 2.1.3) по умолчанию имеет значение <firstterm>native</firstterm>. 
+          Для разрешения Trusted Authentication его надо явно установить равным 
+          <firstterm>trusted</firstterm> или <firstterm>mixed</firstterm>.</para>
+        </important>
+
+        <section id="rnfb25-prvlgs-win"><!-- Level 3 section -->
+          <title>Автоматическое получение прав администраторами Windows</title>
+
+          <para>Для получения привилегий SYSDBA администраторами домена Windows 
+          необходимо разрешить Trusted Authentication на сервере Firebird, а сам 
+          администратор домена должен получить роль RDB$ADMIN. 
+          <link linkend="rnfb25-prvlgs">Метод</link>, описанный выше для обычных 
+          пользователей, применим и для администраторов - каждому из них надо 
+          дать права на роль RDB$ADMIN в каждой из баз данных.</para>
+          <para>Тем не менее можно сконфигурировать сервер таким образом, чтобы
+          роль RDB$ADMIN автоматически предоставлялась администраторам при 
+          подключении к базе данных (как на POSIX серверах для пользователей 
+          с правами root). Новый оператор ALTER ROLE предназначен для этой (и 
+          только для этой) цели.</para>
+
+          <section id="rnfb25-prvlgs-automap-altrole"><!-- Level 4 section -->
+            <title>Оператор ALTER ROLE</title>
+            <para>Для автоматического предоставления роли RDB$ADMIN администраторам 
+            Windows при включенной Trusted Authentication нужно подключиться к 
+            любой базе данных c правами SYSDBA и выполнить следующий запрос:</para>
+            <programlisting>ALTER ROLE RDB$ADMIN SET AUTO ADMIN MAPPING;</programlisting>
+
+            <para>Чтобы вернуть режим по умолчанию (без автоматического 
+            предоставления роли RDB$ADMIN администраторам Windows), выполните 
+            следующий запрос:</para>
+            <programlisting>ALTER ROLE RDB$ADMIN DROP AUTO ADMIN MAPPING;</programlisting>
+          </section><!-- 4 -->
+
+          <section id="rnfb25-prvlgs-automap-api"><!-- Level 4 section -->
+            <title>Команды Services API</title>
+            <para>Эти же действия поддерживаются и в Services API двумя командами:
+            <command>isc_action_svc_set_mapping</command> для включения автоматического 
+            предоставления роли RDB$ADMIN и <command>isc_action_svc_drop_mapping</command> 
+            для отключения автоматического предоставления роли. Эти команды также 
+            поддерживаются в утилите <emphasis>fbsvcmgr</emphasis>.</para>
+          </section><!-- 4 -->
+        </section><!-- 3 -->
+      </section><!-- 2 -->
+
+      <section id="rnfb25-prvlgs-super"><!-- Level 2 section -->
+        <title>Использование RDB$ADMIN для управления пользователями</title>
+        <para>Новая команда DDL <command>ALTER USER</command> позволяет 
+        обычному пользователю Firebird (не обладающему правами SYSDBA) изменять 
+        свой пароль и/или персональные данные (имя пользователя и др.) 
+        Пользователи с правами SYSDBA могут также создавать и удалять 
+        пользователей. Более подробно это описано в разделе 
+        <link linkend="rnfb25-ddl-crtusr">CREATE/ALTER/DROP USER</link>.</para>
+
+        <para>Поскольку база данных <firstterm>security2.fdb</firstterm> имеет 
+        ODS 11.2 (или должна обновиться до нее), то в ней уже определена также 
+        и роль RDB$ADMIN. Так как никто (включая SYSDBA) не имеет возможности 
+        подключиться к базе данных пользователей, существуют следующие способы, 
+        позволяющие предоставлять роль RDB$ADMIN (и возможность создавать и 
+        удалять пользователей) в базе данных <firstterm>security2.fdb</firstterm>
+        обычным пользователям:</para>
+
+        <orderedlist>
+          <listitem>
+            <para>Использовать параметр GRANT ADMIN ROLE в операторах
+            CREATE USER или ALTER USER.</para>
+
+            <note>
+              <title>Примечания</title>
+              <para>Обратите внимание, что GRANT ADMIN ROLE и REVOKE ADMIN ROLE 
+              являются не операторами GRANT/REVOKE, а параметрами операторов 
+              CREATE USER и ALTER USER.</para>
+            </note>
+
+            <para><emphasis role="bold">Примеры</emphasis></para>
+
+            <para>Предоставление прав на роль RDB$ADMIN пользователю <emphasis>alex</emphasis>
+            в базе данных пользователей:</para>
+            <literallayout>ALTER USER alex GRANT ADMIN ROLE;</literallayout>
+
+            <para>Аннулирование прав на роль RDB$ADMIN у пользователя <emphasis>alex</emphasis>
+            в базе данных пользователей:</para>
+            <literallayout>ALTER USER alex REVOKE ADMIN ROLE;</literallayout>
+
+            <para>Удаление пользователя <emphasis>alex</emphasis></para>
+            <literallayout>DROP USER alex;</literallayout>
+          </listitem>
+
+          <listitem>
+            <para>Использование утилиты <emphasis>gsec</emphasis> с новым 
+            ключом <command>-admin</command>. Ключ имеет один аргумент: YES
+            для предоставления пользователю прав на роль RDB$ADMIN или NO для 
+            ее аннулирования прав. Более подробное описание смотрите в разделе 
+            <link linkend="rnfb25-util-gsec-adminrole">Выдача прав на роль
+            RDB$ADMIN пользователям Firebird</link> главы <emphasis>Утилиты 
+            командной строки</emphasis>.</para>
+          </listitem>
+
+          <listitem>
+            <para>Использование нового SPB параметра <command>isc_spb_sec_admin</command>,
+            назначающего роль RDB$ADMIN пользователям в базе данных <emphasis>security2.fdb</emphasis>.
+            Более подробное описание смотрите в разделе <link linkend="rnfb25-apiods-api-spbadmingrant">
+            Параметр isc_spb_sec_admin</link> главы <emphasis>Изменения в Firebird API и ODS</emphasis>.
+            Утилита <emphasis>fbsvmgr</emphasis> также поддерживает использование этого параметра.</para>
+          </listitem>
+        </orderedlist>
+      </section><!-- 2 -->
+    </section><!-- 1 -->
+
+    <section id="rnfb25-trace"><!-- Level 1 section -->
+      <sectioninfo>
+        <title>Сервисы трассировки и аудита</title>
+        <author>
+          <firstname>Владислав</firstname>
+          <surname>Хорсун</surname>
+        </author>
+      </sectioninfo>
+      <para>Новые средства трассировки и аудита первоначально основывались на 
+      TraceAPI, разработанном Николаем Самофатовым - разработчиком Red Soft 
+      Database (коммерческого продукта, основанного на коде Firebird).</para>
+
+      <section id="rnfb25-trace-oview"><!-- Level 2 section -->
+        <title>Обзор возможностей</title>
+        <para>Новые средства трассировки и аудита  позволяют серверу 
+        отслеживать и записывать в лог такие события, как подключение и 
+        отключение к базе данных, старт и завершение транзакций, выполнение 
+        запросов и другие операции.</para>
+        
+        <para>Трассировка всегда происходит в отдельной сессии, каждая 
+        сессия имеет собственную конфигурацию, состояние и вывод.</para>
+
+        <para>Сервер Firebird имеет фиксированный список событий, которые могут
+        отслеживаться. Существует два способа трассировки: <firstterm>системный
+        аудит</firstterm> и <firstterm>пользовательская трассировка</firstterm>,
+        и в зависимости от способа трассировки сервер формирует список событий
+        для сессии. Каждой сессии присваивается уникальный номер - ID, и при
+        старте сессии Services Manager выводит сообщение с этим ID:
+        <quote>Trace session ID nnnn started</quote>.</para>
+      </section>
+
+      <section id="rnfb25-trace-audit"><!-- Level 2 section -->
+        <title>Системный аудит</title>
+        <para>Сессию системного аудита запускает сам сервер. События, которые 
+        будут отслеживаться в этой сессии, задаются в конфигурационном файле и 
+        читаются при старте сессии.</para>
+
+        <para>Новый параметр AuditTraceConfigFile в файле конфигурации
+        <filename>firebird.conf</filename> задает имя и расположение файла с
+        настройками системного аудита. По умолчанию этот параметр пустой, что
+        означает отсутствие сессий системного аудита. Запущено может быть не
+        более одной системной сессии аудита.</para>
+
+        <section id="rnfb25-trace-conf"><!-- Level 3 section -->
+          <para>Файл конфигурации системного аудита содержит список отслеживаемых 
+          событий и указывает размещение логов трассировки для каждого события. 
+          Это позволяет достаточно гибко настроить параметры аудита различных 
+          событий для любой базы данных, при этом логирование будет осуществляться 
+          в отдельные файлы. Файл с шаблоном настроек <filename>fbtrace.conf</filename>
+          находится в корневом каталоге Firebird и содержит полный список доступных
+          событий с форматом, правилами и синтаксисом для написания файла 
+          конфигурации аудита слежения.</para>
+
+          <tip>
+            <para>Файл <filename>fbtrace.conf</filename> содержит большое 
+            количество комментариев, разъясняющих назначение и синтаксис 
+            каждого параметра. По мере выпуска субрелизов будут добавляться 
+            новые события (и параметры для них) и средства для улучшения 
+            возможностей трассировки.</para>
+          </tip>
+        </section><!-- sect 3 -->
+      </section><!-- sect 2 -->
+
+      <section id="rnfb25-trace-user"><!-- Level 2 section -->
+        <title>Пользовательская трассировка</title>
+        <para>Для управления сессиями пользовательской трассировки добавлены 
+        пять новых функций Services API:</para>
+        <itemizedlist spacing="compact">
+          <listitem>
+            <para>isc_action_svc_trace_start - запуск</para>
+          </listitem>
+          <listitem>
+            <para>isc_action_svc_trace_stop - остановка</para>
+          </listitem>
+          <listitem>
+            <para>isc_action_svc_trace_suspend - пауза</para>
+          </listitem>
+          <listitem>
+            <para>isc_action_svc_trace_resume - возобновление</para>
+          </listitem>
+          <listitem>
+            <para>isc_action_svc_trace_list - получение списка запущенных сессий</para>
+          </listitem>
+        </itemizedlist>
+        <para>Синтаксис функций подробно описан в разделе <link 
+        linkend="rnfb25-apiods-api-svctrace">Новые сервисы трассировки</link> 
+        главы <emphasis>Изменения в Firebird API и ODS</emphasis>.</para>
+
+        <section id="rnfb25-trace-user-sssn"><!-- Level 3 section -->
+          <title>Сессии пользовательской трассировки</title>
+          <para>При запуске сессии пользовательской трассировки из приложения 
+          задаются ее имя (необязательный параметр) и конфигурация (обязательный 
+          параметр). Конфигурация сессии представляет собой текстовый файл, 
+          составленный в соответствии с правилами и синтаксисом (за исключением 
+          параметров, связанных с выводом), приведенными в файле шаблона 
+          <filename>fbtrace.conf</filename>.</para>
+          <note>
+            <para>Очевидно, файл конфигурации хранится не на сервере, а на 
+            клиентском компьютере, с которого запускаеся сессия пользовательской 
+            трассировки. Например, утилита командной строки <link 
+            linkend="rnfb25-trace-user-cmdline">fbsvcmgr</link> позволяет
+            указать файл конфигурации с помощью параметра trc_cfg.</para>
+          </note>
+
+          <para>Вывод сессии пользовательской трассировки сохраняется во 
+          временные файлы, каждый размером в 1 МБ. После прочтения файла 
+          приложением он автоматически удаляется. По умолчанию максимальный 
+          размер файла вовода ограничен 10 МБ. Он может быть изменен в большую 
+          или меньшую сторону с помощью параметра <emphasis>MaxUserTraceLogSize</emphasis> 
+          в файле <filename>firebird.conf</filename>.</para>
+
+          <para>После запуска сессии пользовательской трассировки чтение ее 
+          вывода осуществляется вызовом из приложения функции <emphasis>isc_service_query()</emphasis>. 
+          Сервис может генерировать вывод быстрее, чем приложение может
+          прочитать его. Если общий размер вывода достигает значения ограничения 
+          MaxUserTraceLogSize, то сервер автоматически приостанавливает сессию
+          слежения. После того, как приложение завершит чтение файла (размером 1 МБ),
+          он удаляется, работоспособность восстанавливается и сервер
+          автоматически запускает приостановленную ранее сессию.</para>
+
+          <para>Когда приложению нужно остановить сессию, достаточно просто послать
+          запрос на отсоединение от сервиса. В качестве альтернативы приложение
+          может использовать функции <command>isc_action_svc_trace_*</command>
+          для остановки, паузы или возобновления сессии трассировки.</para>
+        </section><!-- sect3 -->
+
+        <section id="rnfb25-trace-user-who"><!-- Level 3 section -->
+          <title>Управление сессиями пользовательской трассировки</title>
+          <para>Любой пользователь может инициировать и управлять сессией 
+          трассировки. Обычный пользователь может управлять сессиями только 
+          в своих соединениях и не может управлять сессиями, начатыми другими 
+          пользователями. Администраторы могут управлять любыми сессиями.</para>
+        </section><!-- sect3 -->
+
+        <section id="rnfb25-trace-user-abend"><!-- Level 3 section -->
+          <title>Аварийное завершение</title>
+          <para>Если все процессы Firebird остановлены, то ни одна из сессий 
+          не сохраняется. Это означает, что при закрытии процесса Superserver 
+          или Superclassic (остановки службы или завершения сервера, работающего 
+          как приложение) все запущенные сессии пользовательской трассировки 
+          будут полностью остановлены и команда <quote>resume</quote> не сможет 
+          их возобновить. Эта ситуация не распространяется, конечно, на Classic Server,
+          так как каждое подключение к нему создает отдельный серверный процесс.</para>
+        </section><!-- sect3 -->
+
+        <section id="rnfb25-trace-user-samples"><!-- Level 3 section -->
+          <title>Пример конфигурации для сессии пользовательской трассировки</title>
+          <para>Следующие примеры служат основой для составления текстов 
+          конфигурации для сессий пользовательской трассировки.</para>
+
+          <orderedlist numeration="loweralpha">
+            <listitem>
+              <para>Трассировка событий компиляции, выполнения и освобождения 
+              всех операторов для соединения с номером 12345</para>
+              <programlisting>&lt;database mydatabase.fdb&gt;
+	enabled                true
+	connection_id          12345
+	log_statement_prepare  true
+	log_statement_free     true
+	log_statement_start    true
+	log_statement_finish   true
+	time_threshold         0
+&lt;/database&gt;</programlisting>
+            </listitem>
+
+            <listitem>
+              <para>Трассировка выполнения операторов INSERT, UPDATE, DELETE и 
+              вложенных вызовов процедур и триггеров с показом соответствующих 
+              планов (PLAN) и  статистики во всех подключениях заданного 
+              пользователя к базе данных <quote>mydatabase.fdb</quote>.</para>
+              <programlisting>&lt;database mydatabase.fdb&gt;
+	enabled                true
+	include_filter         %(INSERT|UPDATE|DELETE)%
+	log_statement_finish   true
+	log_procedure_finish   true
+	log_trigger_finish     true
+	print_plan             true
+	print_perf             true
+	time_threshold         0
+&lt;/database&gt;</programlisting>
+            </listitem>
+          </orderedlist>
+        </section><!-- sect3 -->
+
+        <section id="rnfb25-trace-user-cmdline"><!-- Level 3 section -->
+          <title>Пользовательская трассирова с помощью командной строки</title>
+          <para>Для трассировки в интерактивном режиме была добавлена новая 
+          утилита командной строки fbtracemgr. Синтаксис ее ключей и параметров
+          подробно описан в главе <link linkend="rfb25-util-tracemgr">Утилиты
+          командной строки</link>.</para>
+
+          <para>Кроме того, для отправки запросов из командной строки может быть
+          использована общая утилита сервисов fbsvcmgr, как показано в примерах ниже.</para>
+
+          <orderedlist numeration="loweralpha">
+            <listitem><!-- a -->
+              <para>Запуск сессии с названием <quote>My trace</quote>, использованием 
+              конфигурационного файла <filename>fbtrace.conf</filename> и выводом 
+              результатов на экран:</para>
+
+              <literallayout class="monospaced">
+  fbsvcmgr service_mgr action_trace_start trc_name &quot;My trace&quot; trc_cfg fbtrace.conf
+              </literallayout>
+              <para>Для остановки этой сессии нажмите Ctrl+C в окне консоли <emphasis>fbsvcmgr</emphasis>.</para>
+            </listitem>
+
+            <listitem><!-- b -->
+              <para>Получение списка запущенных сессий пользовательской трассировки:</para>
+              <literallayout class="monospaced">
+  fbsvcmgr service_mgr action_trace_list
+              </literallayout>
+            </listitem>
+
+            <listitem><!-- c -->
+              <para>Приостановка сессии с ID 1</para>
+              <literallayout class="monospaced">
+  fbsvcmgr service_mgr action_trace_suspend trc_id 1
+              </literallayout>
+            </listitem>
+
+            <listitem><!-- d -->
+              <para>Возобновление ранее приостановленной сессии с ID 1</para>
+              <literallayout class="monospaced">
+  fbsvcmgr service_mgr action_trace_resume trc_id 1
+              </literallayout>
+            </listitem>
+
+            <listitem><!-- e -->
+              <para>Остановка сессии с ID 1</para>
+              <literallayout class="monospaced">
+  fbsvcmgr service_mgr action_trace_stop trc_id 1
+              </literallayout>
+              <tip>
+                <para>Чтобы узнать ID нужной сессии, выведите список сессий в 
+                другом окне консоли.</para>
+              </tip>
+            </listitem>
+          </orderedlist>
+        </section><!-- sect3 -->
+      </section><!-- sect2 -->
+
+      <section id="rnfb25-trace-scope"><!-- sect2 -->
+        <title>Область видимости сессий в Windows</title>
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2588">CORE-2588</ulink></para>
+        <para>В Windows использование трассировки вызывает конфликты, если 
+        запущено несколько экземпляров сервера в разных сессиях Windows и 
+        разрешено запускать трассировку в глобальном пространстве имен. Поэтому
+        область видимости трассировки ограничена только процессами, доступными 
+        в текущей сессии Windows.</para>
+      </section>
+
+      <section id="rnfb25-trace-usecase"><!-- Level 2 section -->
+        <title>Примеры использования</title>
+        <para>Существуют три основных варианта использования:</para>
+        <orderedlist>
+          <listitem>
+            <para><emphasis role="bold">Постоянный аудит активности сервера</emphasis></para>
+            <para>Это серверный системный аудит. Администратор создает или 
+            редактирует файл конфигурации аудита, указывает его имя в параметре
+            <emphasis>AuditTraceConfigFile</emphasis> в файле
+            <filename>firebird.conf</filename> и перезапускает сервер Firebird.
+            Позже администратор может приостановить, возобновить или
+            остановить эту сессию аудита без перезапуска Firebird.</para>
+            <important>
+              <para>Чтобы внесенные в конфигурацию аудита изменения стали 
+              доступны серверу, необходим перезапуск Firebird.</para>
+            </important>
+          </listitem>
+
+          <listitem>
+            <para><emphasis role="bold">Интерактивная трассировка некоторых или 
+            всех событий в некоторых или во всех базах данных</emphasis></para>
+            <para>Приложение (например, утилита <emphasis>fbtracemgr</emphasis>)
+            запускает сессию пользовательской трассировки, читает ее вывод и 
+            отображает на экране в реальном времени. Пользователь может 
+            приостановливать, восстанавливать и остановить трассировку.</para>
+          </listitem>
+
+          <listitem>
+            <para><emphasis role="bold">Сбор сведений об активности сервера за 
+            длительный период времени (за несколько часов и даже за целый день) 
+            для дальнейшего анализа.</emphasis></para>
+
+            <para>Приложение, запустившее сессию пользовательской трассировки, 
+            регулярно читает ее вывод и сохраняет его в один или несколько файлов.
+            Сессия должна быть остановлена вручную из этого приложения или из 
+            другого.</para>
+          </listitem>
+        </orderedlist>
+      </section><!-- sect2 -->
+
+      <section id="rnfb25-trace-plugin"><!-- Level 2 section -->
+        <title>Плагины для трассировки</title>
+        <para>Новое API для трассировки находится в стадии разработки и будет 
+        предоставлять возможность обработки событий с помощью внешних плагинов.
+        API аудита уже есть в Firebird 2.5, но оно будет меняться в следующих
+        суб-релизах, поэтому пока не документировано. Стандартный плагин
+        трассировки представлен файлом <filename>fbtrace.dll (fbtrace.so)</filename>,
+        расположенном в каталоге <filename>\plugins</filename>.</para>
+      </section>
+    </section><!-- sect1 -->
+
+    <section id="rnfb25-mon"><!-- Level 1 section -->
+      <sectioninfo>
+        <title>Улучшения мониторинга</title>
+        <author>
+          <firstname>Дмитрий</firstname>
+          <surname>Еманов</surname>
+        </author>
+      </sectioninfo>
+      <para>Firebird 2.5 содержит ряд улучшений мониторинга базы данных, новые
+      таблицы с данными о контекстных переменных и использовании памяти в 
+      базах данных с ODS 11.2 и выше. Кроме того, стало возможно закрытие 
+      клиентского соединения из другого подключения через MON$-таблицы.</para>
+      
+      <section id="rnfb25-mon-useraccess"><!-- Level 2 section -->
+        <title>Расширенный доступ для обычных пользователей</title>
+        <para>Ранее непривилегированные пользователи могли получать информацию,
+        относящуюся только к своему текущему соединению. Теперь они могут получать
+        информацию о всех соединениях, выполненных под своей учетной записью.</para>
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2233">CORE-2233</ulink></para>
+        <note>
+          <title>Примечания</title>
+          <orderedlist>
+            <listitem>
+              <para>В приложениях, конечные пользователи которого осуществляют
+              соединение с базой данных под одним и тем же пользователем Firebird
+              (например, сервера приложений в трехзвенной архитектуре или
+              клиент-серверные приложения с реализацией разделения прав на
+              прикладном уровне), нужно обратить внимание на вопросы
+              производительности и конфиденциальности данных при предоставлении
+              результатов мониторинга конечным пользователям.</para>
+            </listitem>
+            <listitem>
+              <para>Это же расширение было реализовано в версии 2.1.2.</para>
+            </listitem>
+          </orderedlist>
+        </note>
+      </section>
+
+      <section id="rnfb25-mon-mtdta"><!-- Level 2 section -->
+        <title>Изменения в метаданных мониторинга баз данных с ODS 11.2</title>
+        <note>
+          <para>Метаданные для ODS 11.1 описаны в документации к версии 2.1.</para>
+       </note>
+
+       <important>
+         <title>Изменение кодировки в метаданных мониторинга</title>
+         <para>Набор символов (CHARACTER SET) системного домена RDB$FILE_NAME2,
+         который используется в MON$-таблицах для определения столбцов, 
+         относящихся к спецификации файлов, был изменен с NONE на UNICODE_FSS.
+         Это касается столбцов MON$DATABASE_NAME, MON$ATTACHMENT_NAME 
+         и MON$REMOTE_PROCESS. Это изменение соответствует новому способу 
+         обработки строковых параметров (в т.ч. имен файлов) в DPB.</para>
+         <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2551">CORE-2551</ulink></para>
+       </important>
+
+       <variablelist>
+         <varlistentry>
+           <term>MON$MEMORY_USAGE (использование памяти)</term>
+           <listitem>
+             <literallayout>
+      - MON$STAT_ID (ID статистики)
+      - MON$STAT_GROUP (вид статистики)
+          0: база данных
+          1: соединение
+          2: транзакция
+          3: оператор
+          4: вызов
+      - MON$MEMORY_USED (количество используемой памяти, байт)
+          Информация о высокоуровневом распределении памяти, выполненном 
+          сервером. Может быть полезна для отслеживания утечек памяти и 
+          чрезмерного потребления памяти в соединениях, процедурах и т.д.
+      - MON$MEMORY_ALLOCATED (количество памяти, выделенной ОС, байт)
+          Информация о низкоуровневом распределении памяти, выполненном 
+          менеджером памяти Firebird - объем памяти, выделенный операционной
+          системой, что позволяет контролировать физическое потребление памяти.</literallayout>
+             <note>
+               <para>Не все записи этой таблицы имеют ненулевые значения, только
+               MON$DATABASE и связанные с выделением памяти объекты имеют
+               ненулевое значение. Малые выделения памяти здесь не фиксируются,
+               а вместо этого добавляются к пулу памяти базы данных.</para>
+             </note>
+             <literallayout>
+
+      - MON$MAX_MEMORY_USED (максимальное количество байт, используемое данным объектом)
+      - MON$MAX_MEMORY_ALLOCATED (максимальное количество байт, выделенное ОС данному объекту)
+             </literallayout>
+           </listitem>
+         </varlistentry>
+
+         <varlistentry>
+           <term>MON$CONTEXT_VARIABLES (контекстные переменные)</term>
+           <listitem>
+             <literallayout>
+      - MON$ATTACHMENT_ID (ID соединения)
+          Содержит корректное значение только для контекстных переменных уровня
+          соединения, для переменных уровня транзакции устанавливается в NULL.
+      - MON$TRANSACTION_ID (ID транзакции)
+          Содержит корректное значение только для контекстных переменных уровня
+          транзакции, для переменных уровня соединения устанавливается в NULL.
+      - MON$VARIABLE_NAME (имя контекстной переменной)
+      - MON$VARIABLE_VALUE (значение контекстной переменной)
+             </literallayout>
+           </listitem>
+         </varlistentry>
+       </variablelist>
+       <note>
+         <title>Использование памяти в MON$STATEMENTS и MON$STATE</title>
+         <para>Статистика использования памяти в MON$STATEMENTS и MON$STATE
+         представляет фактическое потребление ее процессором.</para>
+         <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1583">CORE-1583</ulink></para>
+       </note>
+      </section>
+
+      <section id="rnfb25-mon-usg"><!-- Level 2 section -->
+        <title>Примеры использования</title>
+
+        <para><emphasis role="bold">Примеры</emphasis></para>
+
+        <para>TOP-10 операторов, отсортированных по расходу памяти:</para>
+        <programlisting>SELECT FIRST 10
+  STMT.MON$ATTACHMENT_ID,
+  STMT.MON$SQL_TEXT,
+  MEM.MON$MEMORY_USED
+FROM MON$MEMORY_USAGE MEM
+  NATURAL JOIN MON$STATEMENTS STMT
+  ORDER BY MEM.MON$MEMORY_USED DESC</programlisting>
+
+        <para>Список всех контекстных переменных текущего соединения:</para>
+        <programlisting>SELECT
+  VAR.MON$VARIABLE_NAME,
+  VAR.MON$VARIABLE_VALUE
+FROM MON$CONTEXT_VARIABLES VAR
+  WHERE VAR.MON$ATTACHMENT_ID = CURRENT_CONNECTION</programlisting>
+
+        <section id="rnfb25-mon-trmntclnt"><!-- Level 3 section -->
+          <title>Завершение запросов и соединений</title>
+          <para>Таблицы мониторинга доступны только для чтения. Однако в сервер
+          встроен механизм для удаления (и только удаления) записей в таблицах 
+          MON$STATEMENTS и MON$ATTACHMENTS, что позволяет, соответственно, 
+          завершить активный запрос и закрыть соединение с базой данных 
+          (последнее доступно только в базах данных с ODS 11.2).</para>
+
+          <para>Отмена всех активных запросов для заданного соединения:</para>
+          <programlisting>DELETE FROM MON$STATEMENTS
+  WHERE MON$ATTACHMENT_ID = 32</programlisting>
+
+          <note>
+            <itemizedlist>
+              <listitem>
+                <para>Попытка отмены запросов не выполняется, если в соединении
+                в настоящее время нет никаких выполняющихся операторов.</para>
+              </listitem>
+              <listitem>
+                <para>После отмены запросов их вызов API-функции вернет 
+                ошибку с кодом <firstterm>isc_cancelled</firstterm>.</para>
+              </listitem>
+              <listitem>
+                <para>Последующие запросы в данном соединении не запрещены.</para>
+              </listitem>
+            </itemizedlist>
+          </note>
+
+          <para>Отключение всех соединений, за исключением своего (текущего):</para>
+          <programlisting>DELETE FROM MON$ATTACHMENTS
+  WHERE MON$ATTACHMENT_ID &lt;&gt; CURRENT_CONNECTION</programlisting>
+
+          <note>
+            <itemizedlist>
+              <listitem>
+                <para>Вся текущая активность в соединении немедленно
+                прекращается и все активные транзакции откатываются.</para>
+              </listitem>
+              <listitem>
+                <para>Закрытое соединение вернет приложению ошибку с кодом
+                <firstterm>isc_att_shutdown</firstterm>.</para>
+              </listitem>
+              <listitem>
+                <para>Последующие попытки использовать это соединение
+                (т.е. использовать его handle в API-вызовах) вернут ошибки.</para>
+              </listitem>
+            </itemizedlist>
+          </note>
+         </section>
+      </section>
+    </section>
+  </chapter>

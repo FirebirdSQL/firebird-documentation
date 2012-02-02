@@ -1,0 +1,477 @@
+﻿  <chapter id="rnfb25-engine" xreflabel="Changes in the Firebird Engine">
+    <chapterinfo>
+      <title>Изменения в ядре Firebird</title>
+    </chapterinfo>
+    <para>Главной целью этой версии была переработка многопоточной архитектуры
+    ядра Firebird, чтобы использовать преимущества симметричной многопроцессорной
+    архитектуры (SMP) на многопроцессорных аппаратных средствах. Это значительно
+    улучшает масштабируемость архитектуры Superserver, когда происходит
+    одновременная работа с несколькими базами данных, но самое главное –
+    это появление новой архитектуры <quote>Superclassic</quote>, которая
+    заложит основы многопоточной архитектуры Firebird 3.</para>
+
+    <section id="rnfb25-engine-threading"><!-- sect1 -->
+      <sectioninfo>
+        <title>Новая многопоточная архитектура</title>
+        <authorgroup>
+          <author><firstname>Дмитрий</firstname><surname>Еманов</surname></author>
+          <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+          <author><firstname>Александр</firstname><surname>Пешков</surname></author>
+          <author><firstname>а также</firstname><surname></surname></author>
+          <author><firstname>Николай</firstname><surname>Самофатов</surname></author>
+          <author><firstname>Роман</firstname><surname>Симаков</surname></author>
+        </authorgroup>
+      </sectioninfo>
+      <para>В архитектуре SuperServer были сделаны два основных усовершествования:</para>
+
+      <orderedlist>
+        <listitem>
+          <para>При работе с несколькими базами данных потоки теперь равномерно
+          распределяются на все доступные процессоры, т.е. потоки, работающие с
+          разными базами данных могут выполняться на разных процессорах.</para>
+          <note>
+            <para>По умолчанию параметр <quote>CpuAffinity</quote> по прежнему 
+            привязывает сервер в режиме SuperServer к одному процессору. Для 
+            лучшей масштабируемости при работе с несколькими базами данных 
+            необходимо изменить значение этого параметра в файле <filename>firebird.conf</filename>.</para>
+          </note>
+        </listitem>
+        <listitem>
+          <para>Небольшое улучшение масштабируемости при работе с одной базой 
+          данных на аппаратных средствах с поддержкой SMP.</para>
+        </listitem>
+      </orderedlist>
+
+      <para>В архитектуре Classic Server изменения более существенны:</para>
+      <orderedlist>
+        <listitem>
+          <para>Сервер в режиме Classic Server теперь может быть многопоточным. 
+          По-прежнему остается один рабочий поток на каждый процесс, но теперь 
+          возможно использование отдельных потоков для параллельных задач, таких 
+          как асинхронное отключение, чистка (sweep), межпроцессные коммуникации 
+          с менеджером блокировок и т.д.</para>
+        </listitem>
+        <listitem>
+          <para>На платформе POSIX сервисы в режиме Classic Server теперь тоже 
+          запускаются в потоках, а не в отдельных процессах, как раньше.</para>
+          <note>
+            <para>На платформе Windows сервисы в режиме Classic Server стали 
+            запускаться в потоках уже в версии 2.1.</para>
+          </note>
+        </listitem>
+        <listitem>
+          <para>Embedded-библиотека (libfbembed.so - на платформе POSIX и 
+          fbembed.dll - на платформе Windows) теперь тоже поддерживает 
+          многопоточность и безопасность потоков и может быть использована 
+          в многопоточных приложениях.</para>
+        </listitem>
+        <listitem>
+          <para>Тесты подтверждают, что производительность архитектуры 
+          Classic Server в этой версии существенно выросла в сравнении с 
+          предыдущими версиями.</para>
+        </listitem>
+      </orderedlist>
+
+      <section id="rnfb25-threading-superclassic"><!-- sect2 -->
+        <title><quote>Superclassic</quote></title>
+        <para>Созданная многопоточная модель для архитектуры Classic Server была 
+        выделена в новый режим <quote>Superclassic</quote> из-за возможности 
+        обрабатывать несколько работающих потоков (отдельных или объединенных в пул) 
+        внутри одного серверного процесса. Новая архитектура сохраняет все 
+        особенности архитектуры Classic Server с небольшими отличиями:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Безопасное выключение (shutdown) сервера доступно для всех платформ</para>
+          </listitem>
+          <listitem>
+            <para>Новая архиектура более производительна, чем Classic Server – примерно на 15-20%, согласно TPC-тестам</para>
+          </listitem>
+          <listitem>
+            <para>Новая архитектура использует меньше ресурсов ядра (хотя расход памяти не уменьшился)</para>
+          </listitem>
+          <listitem>
+            <para>При сбое основного процесса Superclassic происходит закрытие всех установленных соединений</para>
+          </listitem>
+          <listitem>
+            <para>Известные ограничения Services API, существующие для архитектуры
+            Classic Server (такие как невозможность получить список соединений и 
+            активных пользователей), не накладываются на архитектуру SuperClassic.</para>
+          </listitem>
+          <listitem>
+            <para>На платформе POSIX режим Superclassic не требует использования [x]inetd.</para>
+          </listitem>
+        </itemizedlist>
+        <note>
+          <title>Изменена архитектура встраиваемого сервера (Embedded)</title>
+          <itemizedlist>
+            <listitem>
+              <para>Встраиваемая библиотека сервера на платформе Windows (fbembed.dll)
+              теперь использует архитектуру Superclassic, а не Superserver как раньше.
+              Блокировка файла базы данных (которая запрещала устанавливать несколько 
+              соединений с одной и той же базой данных из разных процессов) заменена 
+              глобальной блокировкой, позволяющей одновременные соединения к одной и
+              той же базе данных из разных процессов. Это позволяет облегчить отладку
+              таких приложений, позволяет использовать стандартные утилиты (gbak, gstat) и т.д.</para>
+            </listitem>
+            <listitem>
+              <para>Одно и то же соединение может быть использовано в нескольких параллельных потоках 
+              (ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2498">CORE-2498</ulink>).</para>
+            </listitem>
+          </itemizedlist>
+        </note>
+
+        <section id="rnfb25-threading-superclassic01"><!-- sect3 -->
+          <title>Примечания к использованию</title>
+
+          <section id="rnfb25-threading-superclassic01win"><!-- sect4 -->
+            <title>Windows</title>
+            <para>На платформе Windows архитектуры Classic Server и Superclassic 
+            представлены одним файлом <filename>fb_inet_server.exe</filename> 
+            и выбор архитектуры осуществляется параметром командной строки 
+            (по умолчанию используется Classic Server).</para>
+            
+            <para>Чтобы запустить сервер в режиме Superclassic, используйте 
+            параметр <filename>-m[ulti-threaded]</filename>. Запуск сервера в 
+            качестве сервиса будет выглядеть следующим образом:</para>
+            <programlisting>instsvc install -multithreaded</programlisting>
+            
+            <para>Запуск сервера в качестве приложения будет выглядеть следующим образом:</para>
+            <programlisting>fb_inet_server -a -m</programlisting>
+          </section><!-- sect4 -->
+
+          <section id="rnfb25-threading-superclassic01psx"><!-- sect4 -->
+            <title>POSIX</title>
+            <para>Для платформы POSIX архитектура Superclassic представлена новым
+            исполняемым файлом <filename>fb_smp_server</filename>. Он запускает
+            прослушивающий процесс (listener), обрабатывающий запросы на соединение,
+            но не требует наличия и использования <emphasis>[x]inetd</emphasis>.</para>
+            
+            <para>Процесс <filename>fb_smp_server</filename> использует многопоточное 
+            ядро, представленное библиотекой <filename>libfbembed.so</filename>, 
+            в соответствии с требованиями OSRI. Пакет Classic Server также содержит 
+            файл <filename>fbguard</filename> (Guardian), который для архитектуры 
+            Superclassic запускает процесс <filename>fb_smp_server</filename> - 
+            аналогично тому, как в режиме Superserver запускается процесс 
+            <filename>fbserver</filename> при установленном Guardian-е.</para>
+            
+            <para>Несмотря на то, что архитектуры SuperClassic и Classic Server
+            поставляются в одном инсталляционном пакете, режимом по умолчанию
+            (т.е. активным после установки пакета) является режим Classic Server.
+            Для изменения архитектуры сервера на SuperClassic завершите все
+            акивные процессы Firebird и воспользуйтесь интерактивным скриптом
+            <filename>changeMultiConnectMode.sh</filename>, который находится в
+            подкаталоге <filename>bin</filename>. На запрос
+            <programlisting>Which option would you like to choose: multi-(process|thread) [process] ?</programlisting>
+            введите символ <quote>m</quote> для выбора режима SuperClassic или
+            символ <quote>p</quote> для выбора режима Classic Server. Более
+            подробную информацию см. <ulink url="http://web.firebirdsql.org/pop/pop_instSuperClassic.html">тут</ulink>.</para>
+          </section><!-- sect 4 end -->
+        </section><!-- sect 3 end -->
+      </section><!-- sect 2 end -->
+    </section><!-- sect 1 end -->
+
+    <section id="rnfb25-engine-thrdsafe"><!-- Level 1 section -->
+      <sectioninfo>
+        <authorgroup>
+          <author><firstname>Дмитрий</firstname><surname>Еманов</surname></author>
+          <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+          <author><firstname>Александр</firstname><surname>Пешков</surname></author>
+        </authorgroup>
+        <title>Потокобезопасная клиентская библиотека</title>
+      </sectioninfo>
+      <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-707">CORE-707</ulink></para>
+      <para>Клиентские библиотеки, включая библиотеку Embedded, теперь могут
+      использоваться в многопоточных приложениях без необходимости какой-либо
+      дополнительной синхронизации на уровне приложения.</para>
+    </section>
+
+    <section id="rnfb25-engine-other"><!-- Level 1 section -->
+      <title>Усовершенствования</title>
+
+      <section id="rnfb25-engine-dscnnct"><!-- Level 2 section -->
+        <sectioninfo>
+          <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+          <title>Немедленное обнаружение разорванных соединений в режиме Classic Server</title>
+        </sectioninfo>
+
+        <para>Сервер в режиме Classic теперь немедленно обнаруживает, что какой-то 
+        из запущенных дочерних процессов потерял связь с клиентским приложением. 
+        В таком случае он завершает любую незаконченную активность, откатывает
+        все активные транзакции и закрывает сетевое соединение.</para>
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-818">CORE-818</ulink></para>
+      </section>
+
+      <section id="rnfb25-engine-optmz"><!-- Level 2 section -->
+        <title>Оптимизации</title>
+
+        <section id="rnfb25-engine-optmz01"><!-- Level 3 section -->
+          <sectioninfo>
+            <title>Извлечение данных</title>
+            <author><firstname>Дмитрий</firstname><surname>Еманов</surname></author>
+          </sectioninfo>
+          <para>Усовершенствован механизм обработки данных при запросах,
+          не обращающихся к полям таблиц, например, в запросах типа
+          <command>SELECT COUNT(*) FROM TABLE</command>.</para>
+          <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1598">CORE-1598</ulink></para>
+        </section>
+
+        <section id="rnfb25-engine-optmz02"><!-- Level 3 section -->
+          <sectioninfo>
+             <title>Использование памяти для BLOB</title>
+            <author><firstname>Адриано</firstname><surname>дос Сантос Фернандес</surname></author>
+          </sectioninfo>
+          <para>Оптимизирован расход памяти, выделяемый под временные BLOB-ы.</para>
+          <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1658">CORE-1658</ulink></para>
+        </section>
+
+        <section id="rnfb25-engine-optmz03"><!-- Level 3 section -->
+          <sectioninfo>
+            <title>Повышение производительности Update</title>
+            <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+          </sectioninfo>
+
+          <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2672">CORE-2672</ulink></para>
+
+          <para>Целью данного усовершенствования было уменьшить количество
+          операций записи, выполняемых сервером при осуществлении процедуры
+          <quote>careful write</quote> при изменениях данных. Ранее при
+          выполнении массовых изменений (особенно при многократном
+          редактировании одной и той же записи в одной и той же транзакции)
+          количество операций записи на диск было очень большим, а в худшем
+          случае страница данных могла записываться на диск после создания
+          каждой новой версии записи.</para>
+
+          <para>Решение проблемы заключается в предотвращении циклических ссылок
+          (зависимостей, вызывающих необходимость незамедлительной записи на
+          диск) между страницами с новыми и старыми версиями записей.</para>
+        </section><!-- Level 3 -->
+
+      </section><!-- Level 2 -->
+
+      <section id="rnfb25-engine-cachesize"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Увеличен максимальный размер кеша в 64-битных версиях сервера</title>
+          <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+        </sectioninfo>
+
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1687">CORE-1687</ulink></para>
+        <para>Предыдущие 64-битные версии Firebird не могли использовать более
+        2GB (16K * 128 K) кеша. Теперь 64-битные версии Firebird могут быть
+        настроены так, чтобы поместить целиком в кеш даже базы данных более 2GB,
+        при наличии соответствующих ресурсов (свободной памяти). Это может быть
+        очень полезно в высоконагруженных информационных системах с большим
+        количеством чтений.</para>
+
+        <para>Теоретический максимальный размер кеша для 64-битных версий
+        Firebird равен 2^31 - 1 (2,147,483,647) страниц.</para>
+
+      </section><!-- Level 2 -->
+
+      <section id="rnfb25-engine-dbdftloc"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Размещение баз данных</title>
+          <author><firstname>Александр</firstname><surname>Пешков</surname></author>
+        </sectioninfo>
+
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1643">CORE-1643</ulink></para>
+        <para>Конфигурационный параметр <emphasis>DatabaseAccess</emphasis>
+        получил еще одно назначение: если значение параметра равно Restrict, то
+        первый каталог из перечисленного списка допустимых каталогов будет
+        использоваться как каталог по умолчанию при создании новых баз данных и
+        при поиске файлов баз данных, если не указан полный путь к ним и нет
+        соответствующего псевдонима (alias).</para>
+
+        <para>Алгоритм поиска аналогичен алгоритму поиска внешних таблиц
+        (external tables) из списка каталогов параметра ExternalFileAccess и
+        выглядит следующим образом:</para>
+        <orderedlist>
+          <listitem>
+            <para>Сначала файл базы данных ищется во всех каталогах из списка Restrict.</para>
+          </listitem>
+          <listitem>
+            <para>Если файл не найден:</para>
+            <itemizedlist>
+              <listitem>
+                <para>Если выполняется оператор CREATE DATABASE, то база данных
+                будет создана в первом каталоге из списка Restrict.</para>
+              </listitem>
+              <listitem>
+                <para>Иначе будет возвращена ошибка.</para>
+              </listitem>
+            </itemizedlist>
+          </listitem>
+        </orderedlist>
+
+        <note>
+          <title>Текущий каталог</title>
+          <para>Текущий каталог по-прежнему используется при поиске файла базы
+          данных, если при <emphasis role="bold">локальном</emphasis> соединении
+          не был указан полный путь к нему. Но при сетевом соединении (TCP)
+          не рекомендуется соединяться без указания псевдонима (alias) или
+          полного пути файла, поскольку, например, в Windows текущим каталогом
+          при определенных условиях может быть <command>%system%</command>.</para>
+        </note>
+      </section><!-- Level 2 -->
+
+      <section id="rnfb25-engine-embddll"><!-- Level 2 section -->
+        <sectioninfo>
+          <author><firstname>Адриано</firstname><surname>дос Сантос Фернандес</surname></author>
+          <title>Расположение DLL-файлов в Embedded под Windows</title>
+        </sectioninfo>
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1814">CORE-1814</ulink></para>
+
+        <para>Механизм определения корневого каталога в версии Embedded на
+        платформе Windows изменен для избежания проблемы <quote>Ад DLL</quote>.
+        До сих пор корневым считался каталог, содержащий исполняемый файл самого
+        приложения. Но теперь корневым считается каталог, в котором расположен
+        файл <filename>fbembed.dll</filename>.</para>
+      </section>
+
+      <section id="rnfb25-engine-exttblio"><!-- Level 2 section -->
+        <sectioninfo>
+          <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+          <title>Поддержка больших внешних таблиц</title>
+        </sectioninfo>
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2492">CORE-2492</ulink></para>
+
+        <para>Предыдущие версии Firebird при работе с файлами внешних таблиц
+        использовали 32-битные функции ввода/вывода, что ограничивало размер
+        файла 2 GB. Теперь используются 64-битные функции ввода/вывода, если
+        они поддерживаются файловой системой, что позволяет использовать файлы
+        намного больше 2 GB.</para>
+      </section>
+      
+      <section id="rnfb25-engine-stats64">
+        <sectioninfo>
+          <title>Корректная обработка 64-битных значений в функциях получения статистики</title>
+          <authorgroup>
+            <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+            <author><firstname>Александр</firstname><surname>Пешков</surname></author>
+          </authorgroup>
+        </sectioninfo>
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2619">CORE-2619</ulink></para>
+        <para>В предыдущих версиях в функциях получения статистики 64-битные
+        значения обрабатывались некорректно. Решение проблемы заключается в
+        двух изменениях:</para>
+        
+        <orderedlist numeration="loweralpha">
+          <listitem><!-- a -->
+            <para>Чтобы в функциях работы со статистикой использовать 64-битные
+            числа, был изменен внутренний класс <command>AtomicCounter</command>.</para>
+          </listitem>
+          <listitem><!-- b -->
+            <para>В утилиты <emphasis>isql</emphasis> и <emphasis>qli</emphasis>
+            были внесены изменения для поддержки 64-битных чисел.</para>
+          </listitem>
+        </orderedlist>
+
+        <important>
+          <title>Несовместимость со старыми версиями клиентских библиотек</title>
+
+          <para>Чтобы 32-битные утилиты могли работать с 64-битным сервером,
+          были добавлены новые API-функции и структуры (<command>struct perf64</command>
+          и <command>perf64_xxx</command>) и изменены утилиты <emphasis>isql</emphasis>
+          и <emphasis>qli</emphasis> для поддержки нового API. Это значит, что
+          утилиты <emphasis>isql</emphasis> и <emphasis>qli</emphasis> версии 
+          2.5 несовместимы со старыми версиями клиентских библиотек.</para>
+        </important>
+      </section>
+
+      <section id="rnfb25-engine-udf"><!-- Level 2 section -->
+        <sectioninfo>
+          <author><firstname>Адриано</firstname><surname>дос Сантос Фернандес</surname></author>
+          <title>Самозащита от некорректных UDF-функций</title>
+        </sectioninfo>
+
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1937">CORE-1937</ulink></para>
+        <para>Если строковая UDF-функция возвращает указатель на память, выделенную
+        не тем же менеджером памяти, что используется сервером Firebird, использование
+        ключевого слова FREE_IT в объявлении функции может вызвать порчу памяти
+        и вызвать падение сервера. Теперь для самозащиты от таких некорректных
+        UDF-функций сервер:</para>
+
+        <orderedlist>
+          <listitem>
+            <para>выявляет такие UDF-функции и возвращает ошибку при их вызове</para>
+          </listitem>
+          <listitem>
+            <para>требует наличия обновленной библиотеки <emphasis>ib_util</emphasis>
+            во всех режимах работы сервера, включая Embedded.</para>
+          </listitem>
+        </orderedlist>
+      </section>
+
+      <section id="rnfb25-engine-dgnstcs"><!-- Level 2 section -->
+        <title>Диагностика</title>
+        <section id="rnfb25-engine-dgnstcs01"><!-- Level 2 section -->
+          <sectioninfo>
+            <author><firstname>Claudio</firstname><surname>Valderrama</surname></author>
+            <title>Диагностика транзакций</title>
+          </sectioninfo>
+          <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1600">CORE-1600</ulink></para>
+
+          <para>Улучшена диагностика и сообщения об ошибках при некорректно
+          заполненном TPB (блок параметров транзакции) в следующих случаях:</para>
+          <itemizedlist>
+            <listitem>
+              <para>несовместимые параметры одного типа, указанные вместе,
+              например, <command>WAIT</command> и <command>NOWAIT</command>, или
+              <command>READ COMMITTED</command> и <command>SNAPSHOT</command>,
+              или <command>READ ONLY</command> и <command>WRITE</command></para>
+            </listitem>
+            <listitem>
+              <para>неприменимые параметры, например, <command>[NO] RECORD VERSION</command>
+              вместе с уровнем изоляции <command>SNAPSHOT</command></para>
+            </listitem>
+            <listitem>
+              <para>некорректный порядок параметров резервирования таблиц,
+              например, <command>PROTECTED READ &lt;таблица&gt;</command>
+              вместо <command>READ &lt;TABLE&gt; PROTECTED</command></para>
+            </listitem>
+          </itemizedlist>
+        </section>
+        
+        <section id="rnfb25-engine-dgnstcs02"><!-- Level 2 section -->
+          <sectioninfo>
+            <author><firstname>Александр</firstname><surname>Пешков</surname></author>
+            <title>Сообщения об ошибках доступа</title>
+          </sectioninfo>
+          <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1234">CORE-1234</ulink></para>
+          <para>В сообщениях об ошибках доступа теперь указываются и название таблицы, и название поля.</para>
+        </section>
+        
+        <section id="rnfb25-engine-dgnstcs03">
+          <sectioninfo>
+            <title>Усовершенствования сообщений</title>
+            <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+          </sectioninfo>
+
+          <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2587">CORE-2587</ulink></para>
+          <para>В случаях, когда процесс сервера не может выделить область памяти,
+          которая уже используется другим процессом сервера в параллельной сессии
+          Windows, теперь выдается более подробное диагностическое сообщение:</para>
+    <literallayout class="monospace">
+  Database is probably already opened by another engine instance in another Windows session.
+    </literallayout>
+        </section>
+      </section>
+
+      <section id="rnfb25-engine-mtdta"><!-- Level 2 section -->
+        <title>Усовершенствования метаданных</title>
+
+        <section id="rnfb25-engine-mtdta01"><!-- Level 3 section -->
+          <sectioninfo>
+            <author><firstname>Адриано</firstname><surname>дос Сантос Фернандес</surname></author>
+            <title>Сохранение Default Collation для набора символов</title>
+          </sectioninfo>
+          <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-789">CORE-789</ulink></para>
+
+          <para>Последовательность сортировки (collation), которая используется
+          по умолчанию для набора символов, теперь можно изменить с помощью нового
+          оператора <link linkend="rnfb25-ddl-altrchrset">ALTER CHARACTER SET</link>.
+          При этом установленное значение записывается в поле RDB$DEFAULT_COLLATE_NAME
+          системной таблицы RDB$CHARACTER_SETS и сохраняется после backup/restore.</para>
+        </section>
+      </section>
+    </section>
+  </chapter>

@@ -1,0 +1,644 @@
+﻿<chapter id="rnfb25-psql">
+  <chapterinfo>
+    <title>Процедурный язык (PSQL)</title>
+  </chapterinfo>
+  <para>В процедурный язык (PSQL) Firebird (используемый в триггерах, хранимых
+  процедурах и динамически выполняемых блоках) внесено несколько существенных
+  изменений; наиболее важные - новые возможности оператора EXECUTE STATEMENT и
+  автономные транзакции.</para>
+
+  <section id="rnfb25-psql-links"><!-- Level 1 section -->
+    <title>Ссылки</title>
+    <itemizedlist spacing="compact"><!-- Outer -->
+      <listitem>
+        <para><link linkend="rnfb25-psql-auton">Автономные транзакции</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-psql-colmtyp">Использование типа поля таблицы для переменной PSQL</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-psql-imprvmts01">Использование подзапросов в PSQL-выражениях</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-psql-exctstmnt">Расширение оператора EXECUTE STATEMENT</link></para>
+        <itemizedlist spacing="compact"><!-- Outer -1 -->
+          <listitem>
+            <para><link linkend="rnfb25-psql-cntxt">Особенности использования</link></para>
+            <itemizedlist><!-- Outer -2 -->
+              <listitem>
+                <para><link linkend="rnfb25-psql-authntctn">Аутентификация</link></para>
+              </listitem>
+              <listitem>
+                <para><link linkend="rnfb25-psql-trnsctns">Режим работы транзакции</link></para>
+              </listitem>
+              <listitem>
+                <para><link linkend="rnfb25-psql-inhrtprvs">Наследование привилегий</link></para>
+              </listitem>
+            </itemizedlist><!-- Outer -2 -->
+          </listitem>
+          <listitem>
+            <para><link linkend="rnfb25-psql-extqry">Запросы к внешним базам данных</link></para>
+          </listitem>
+          <listitem>
+            <para><link linkend="rnfb25-psql-dynex">EXECUTE STATEMENT с динамическими параметрами</link></para>
+          </listitem>
+          <listitem>
+            <para><link linkend="rnfb25-psql-exctstmnt-exmpls">Примеры использования EXECUTE STATEMENT</link></para>
+          </listitem>
+        </itemizedlist><!-- Outer -1 -->
+      </listitem>
+    </itemizedlist><!-- Outer -->
+  </section><!-- sect 1 -->
+
+  <section id="rnfb25-psql-auton"><!-- Level 1 section -->
+    <sectioninfo>
+    <title>Автономные транзакции</title>
+      <author>
+        <firstname>Адриано</firstname>
+        <surname>дос Сантос Фернандес</surname>
+      </author>
+    </sectioninfo>
+    <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1409">CORE-1409</ulink></para>
+    <para>Это нововведение позволяет выполнять часть кода в PSQL-модуле в автономной (отдельной) транзакции.
+    Это может быть удобно, например, когда необходимо вызвать исключение, но не хочется отменять произведенные
+    в базе данных изменения. Также автономные транзакции позволяют журналировать (логировать) все действия -
+    независимо от способа завершения клиентской транзакции.</para>
+
+    <para>Новая транзакция создается с таким же уровнем изоляции, как и у запустившей ее транзакции.
+    Любое исключение, возникшее в блоке кода, выполняющегося в автономной транзакции, вызовет откат
+    всех произведенных в нем изменений. Если выполнение этого блока кода доходит до конца без ошибок,
+    то автономная транзакция подтверждается.</para>
+    <warning>
+      <para>Поскольку автономная транзакция независима от запустившей ее транзакции, нужно очень
+      осторожно использовать эту функциональность во избежание блокировок (deadlocks).</para>
+    </warning>
+    <para><emphasis role="bold">Синтаксис</emphasis></para>
+    <programlisting>
+IN AUTONOMOUS TRANSACTION
+DO
+  &lt;простой оператор | составной оператор&gt;
+    </programlisting>
+
+    <para><emphasis role="bold">Пример использования</emphasis></para>
+    <programlisting>
+create table log (
+  logdate timestamp,
+  msg varchar(60)
+);
+
+create exception e_conn 'Connection rejected';
+
+set term !;
+
+create trigger t_conn on connect
+as
+begin
+  if (current_user = 'BAD_USER') then
+  begin
+    in autonomous transaction
+    do
+    begin
+      insert into log (logdate, msg) values (current_timestamp, 'Connection rejected');
+    end
+
+    exception e_conn;
+  end
+end!
+
+set term ;!
+    </programlisting>
+  </section>
+
+  <section id="rnfb25-psql-colmtyp"><!-- Level 1 section -->
+    <sectioninfo>
+    <title>Использование типа поля таблицы для переменной PSQL</title>
+      <author>
+        <firstname>Адриано</firstname>
+        <surname>дос Сантос Фернандес</surname>
+      </author>
+    </sectioninfo>
+    <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1356">CORE-1356</ulink></para>
+    <para>В версии 2.0 появилась возможность использования доменов в качестве типов переменных в PSQL.
+    Теперь стало возможным для этих целей использовать тип поля таблицы или представления.</para>
+
+    <para><emphasis role="bold">Синтаксис</emphasis></para>
+    <programlisting>
+    data_type ::=
+         &lt;builtin_data_type&gt;
+       | &lt;domain_name&gt;
+       | TYPE OF &lt;domain_name&gt;
+       | TYPE OF COLUMN &lt;table or view&gt;.&lt;column&gt;
+    </programlisting>
+
+    <note>
+      <para>TYPE OF COLUMN получает только тип поля. Любые ограничения
+      (constraints) или значения по умолчанию этого поля игнорируются.</para>
+    </note>
+
+    <para><emphasis role="bold">Примеры</emphasis></para>
+    <programlisting>
+CREATE TABLE PERSON (
+  ID INTEGER,
+  NAME VARCHAR(40)
+  );
+
+CREATE PROCEDURE SP_INS_PERSON (
+  ID TYPE OF COLUMN PERSON.ID,
+  NAME TYPE OF COLUMN PERSON.NAME
+  )
+  AS
+DECLARE VARIABLE NEW_ID TYPE OF COLUMN PERSON.ID;
+BEGIN
+  INSERT INTO PERSON (ID, NAME)
+    VALUES (:ID, :NAME)
+    RETURNING ID INTO :NEW_ID;
+END
+    </programlisting>
+  </section><!-- sect1 -->
+
+  <section id="rnfb25-psql-exctstmnt"><!-- Level 1 section -->
+    <title>Расширение оператора EXECUTE STATEMENT</title>
+    <para>В начале этой главы дается подробное описание нового расширенного
+    синтаксиса PSQL-оператора EXECUTE STATEMENT, а далее описываются новые 
+    возможности и особенности их использования.</para>
+
+    <programlisting>
+[FOR] EXECUTE STATEMENT &lt;query_text&gt; [(&lt;входные параметры&gt;)]
+    [ON EXTERNAL [DATA SOURCE] &lt;строка соединения&gt;]
+    [WITH {AUTONOMOUS | COMMON} TRANSACTION]
+    [AS USER &lt;имя пользователя&gt;]
+    [PASSWORD &lt;пароль&gt;]
+    [ROLE &lt;роль&gt;]
+    [WITH CALLER PRIVILEGES]
+    [INTO &lt;переменные&gt;]
+    </programlisting>
+    <note>
+      <para>Приведенный порядок необязательных предложений не является строго
+      фиксированным. Предложения не могут повторяться.</para>
+    </note>
+
+    <section id="rnfb25-psql-cntxt"><!-- Level 2 section -->
+      <title>Особенности использования</title>
+      <para>Если не указаны предложения ON EXTERNAL DATA SOURCE и AS USER, то
+      оператор EXECUTE STATEMENT будет выполнен в контексте текущего соединения
+      (CURRENT_CONNECTION). В остальных случаях оператор будет выполнен в
+      отдельном соединении.</para>
+
+      <section id="rnfb25-psql-authntctn"><!-- Level 3 section -->
+        <title>Аутентификация</title>
+        <para>Для выполнения оператора в отдельном соединении (например, для
+        выполнения запроса к внешнему источнику данных) требуется произвести
+        аутентификацию, для настройки которой предназначены предложения AS USER
+        и PASSWORD. Однако, в некоторых случаях они могут быть пропущены:</para>
+
+        <orderedlist enumeration="loweralpha">
+          <listitem>
+            <para>На платформе Windows для запросов в текущем соединении
+            (т.е. CURRENT_CONNECTION, без обращения к внешним источникам данных)
+            будет использована Trusted Authentication, если она уже используется
+            в текущем соединении и параметр &lt;имя пользователя&gt; не указан,
+            равен Null или совпадает с CURRENT_USER.</para>
+          </listitem>
+          <listitem>
+            <para>Если используется соединение с внешним источником данных и
+            параметр &lt;строка соединения&gt; указывает на текущую базу данных
+            (CURRENT_CONNECTION), то будет использована учетная запись текущего
+            пользователя (CURRENT_USER).</para>
+          </listitem>
+          <listitem>
+            <para>Если используется соединение с внешним источником данных и
+            параметр &lt;строка соединения&gt; указывает на базу данных,
+            отличную от текущей, будет использована учетная запись операционной
+            системы, под которой запущен сам процесс Firebird.</para>
+          </listitem>
+        </orderedlist>
+        <para>Во всех остальных случаях, когда предложение PASSWORD пропущено,
+        в DPB (блок параметров соединения) будет присутствовать только параметр
+        isc_dpb_user_name и будет использован традиционный механизм аутентификации.</para>
+      </section>
+
+      <section id="rnfb25-psql-trnsctns"><!-- Level 3 section -->
+        <title>Режим работы транзакции</title>
+        <para>В новом синтаксисе есть необязательное предложение, позволяющее
+        управлять транзакцией, в которой будет выполняться оператор:
+        WITH COMMON | AUTONOMOUS TRANSACTION, режим WITH COMMON TRANSACTION
+        используется по умолчанию.</para>
+        
+        <para>Поведение оператора при использовании WITH COMMON TRANSACTION будет следующим:</para>
+
+        <orderedlist numeration="loweralpha">
+          <listitem>
+            <para>При соединении с внешним источником данных:</para>  
+            <itemizedlist>
+              <listitem>
+                <para>при первом (в контексте текущей транзакции) соединении с
+                внешним источником данных будет запущена новая транзакция с
+                такими же параметрами (уровень изоляции и т.д.), как у текущей
+                транзакции (CURRENT_TRANSACTION);</para>
+              </listitem>
+              <listitem>
+                <para>при следующих (в контексте текущей транзакции) соединениях
+                с этим же внешним источником данных будет использована ранее
+                запущенная транзакция.</para>
+              </listitem>
+            </itemizedlist>
+          </listitem>
+          <listitem>
+            <para>При выполнении оператора в контексте текущего соединения
+            будет использована текущая транзакция (CURRENT_TRANSACTION).</para>
+          </listitem>
+        </orderedlist>
+
+        <para>При использовании предложения WITH AUTONOMOUS TRANSACTION оператор
+        всегда будет выполняться в новой транзакции, запущенной с такими же
+        параметрами, как у текущей транзакции (CURRENT_TRANSACTION). Эта
+        транзакция будет подтверждена, если оператор выполнится без ошибок, или
+        отменена, если во время выполнения оператора возникли ошибки.</para>
+      </section>
+
+      <section id="rnfb25-psql-inhrtprvs"><!-- Level 3 section -->
+        <sectioninfo>
+        <title>Наследование привилегий</title>
+          <author>
+            <firstname>Владислав</firstname>
+            <surname>Хорсун</surname>
+          </author>
+        </sectioninfo>
+        <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1928">CORE-1928</ulink></para>
+        <para>По замыслу исходная реализация оператора EXECUTE STATEMENT изолирует
+        исполняемый код от привилегий доступа вызвавшей его хранимой процедуры
+        или триггера и работает с привилегиями пользователя CURRENT_USER. В целом
+        стратегия правильная, поскольку уменьшает уязвимость при выполнении
+        произвольных операторов. Однако в защищенном окружении или в случаях,
+        когда безопасность является некритичной, эта стратегия может накладывать
+        нежелательные ограничения.</para>
+
+        <para>Добавление необязательного предложения WITH CALLER PRIVILEGES
+        позволяет выполняемому коду (оператору EXECUTE STATEMENT) наследовать
+        привилегии доступа вызвавшей его хранимой процедуры или триггера.
+        При подготовке (prepare) оператора будут учитываться все имеющиеся
+        привилегии хранимой процедуры или триггера. Результат будет таким же,
+        как если бы исполняемый оператор был вызван хранимой процедурой или
+        триггером непосредственно (т.е. без оператора EXECUTE STATEMENT).</para>
+        <important>
+          <para>Предложение WITH CALLER PRIVILEGES не может использоваться
+          совместно с предложением ON EXTERNAL DATA SOURCE.</para>
+        </important>
+
+      </section>
+    </section>
+
+    <section id="rnfb25-psql-extqry"><!-- Level 2 section -->
+      <sectioninfo>
+      <title>Запросы к внешним базам данных</title>
+        <author>
+          <firstname>Владислав</firstname>
+          <surname>Хорсун</surname>
+        </author>
+      </sectioninfo>
+      <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1853">CORE-1853</ulink></para>
+      <para>Оператор EXECUTE STATEMENT теперь позволяет выполнять запросы к
+      внешним базам данных с помощью предложения ON EXTERNAL DATA SOURCE.</para>
+
+      <section id="rnfb25-psql-extqry01"><!-- Level 3 section -->
+        <title>Параметр &lt;строка соединения&gt;</title>
+        <para>Параметр &lt;строка соединения&gt; представляет собой обычную
+        строку соединения с базой данных, аналогично передаваемой в API-функцию
+        isc_attach_database(), и имеет следующий формат:</para>
+        <literallayout class="monospaced">
+   [ &lt;имя сервера&gt; [ / &lt;номер порта&gt; ] : ] &lt;путь к базе данных&gt;
+        </literallayout>
+      </section>
+
+      <section id="rnfb25-psql-extqry02"><!-- Level 3 section -->
+        <title>Набор символов</title>
+        <para>Соединение с внешней базой данных использует тот же самый набор
+        символов, что и в текущем соединении (CURRENT_CONNECTION).</para>
+      </section>
+
+      <section id="rnfb25-psql-extqry03"><!-- Level 3 section -->
+        <title>Привилении доступа</title>
+        <para>Если внешний источник данных находится на другом сервере, то
+        предложения AS USER &lt;имя пользователя&gt; и PASSWORD &lt;пароль&gt;
+        являются обязательными, а предложение ROLE &lt;роль&gt; является
+        опциональным. Предложение WITH CALLER PRIVILEGES недопустимо, если
+        внешний источник данных находится на другом сервере.</para>
+      </section>
+
+      <note>
+        <para>В версии 2.5 нет возможности использовать двухфазные транзакции для внешних соединений.</para>
+      </note>
+      
+      <section id="rnfb25-psql-extqry04"><!-- Level 3 section -->
+        <title>Использование внешнего соединения</title>
+        <para>При использовании предложения ON EXTERNAL [ DATA SOURCE ], параметр
+        &lt;строка соединения&gt; которого содержит значение отличное от Null,
+        оператор всегда будет выполняться в отдельном соединении (отличном от
+        CURRENT_CONNECTION) – независимо от того, с какой базой данных и на
+        каком сервере происходит соединение. Кроме того, внешнее соединение
+        будет установлено и при выполнении оператора EXECUTE STATEMENT с
+        использованием предложения AS USER, параметр &lt;имя пользвоателя&gt;
+        которого отличается от CURRENT_USER.</para>
+        
+        <para>Установленное внешнее соединение будет <quote>жить</quote>
+        (т.е. существовать и при необходимости использоваться) до тех пор, пока
+        существует хотя бы одна транзакция, использующая его, и закрывается
+        независимо от способа завершения последней транзакции – COMMIT или
+        ROLLBACK. Если последняя транзакция, использующая внешнее соединение,
+        подтверждается с помощью CommitRetaining или отменяется с помощью
+        RollbackRetaining, то внешнее соединение не закрывается.</para>
+        
+        <para>Все локальные коннекты к серверу (в рамках одного процесса сервера)
+        используют общий пул внешних соединений, т.е. установленные внешние
+        соединения могут повторно использоваться. При этом, если оператор
+        EXECUTE STATEMENT выполняется в режиме WITH COMMON TRANSACTION, возможно
+        также повторное использование транзакции – подробнее читайте раздел
+        <link linkend="rnfb25-psql-trnsctns">Режим работы транзакции</link>.</para>
+        
+        <para>Внешние соединения с одной и той же базой данных на одном и том же
+        сервере, но с разной строкой соединения (параметром предложения ON EXTERNAL),
+        считаются разными соединениями – т.е. при использовании разных протоколов,
+        портов, имен или IP-адресов сервера, а также алиасов баз данных – будут
+        установлены отдельные внешние соединения. При соединении с внешним
+        источником с одной и той же строкой соединения, но под разными учетными
+        записями (AS USER), также будут созданы отдельные внешние соединения.</para>
+      </section>      
+    </section>
+
+    <section id="rnfb25-psql-dynex"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>EXECUTE STATEMENT с динамическими параметрами</title>
+        <authorgroup>
+          <author><firstname>Владислав</firstname><surname>Хорсун</surname></author>
+          <author><firstname>Александр</firstname><surname>Пешков</surname></author>
+       </authorgroup>
+      </sectioninfo>
+      <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-1221">CORE-1221</ulink></para>
+
+      <para>Новые расширения позволяют использовать оператор EXECUTE STATEMENT с
+      динамическими параметрами аналогично параметризованному DSQL-оператору.
+      Текст самого запроса тоже может быть передан в качестве параметра.</para>
+
+      <section id="rnfb-psql-dynex-syntax"><!-- Level 3 section -->
+        <title>Синтаксис</title>
+        <para>Механизм использует некоторые соглашения, чтобы облегчить парсинг
+        (синтаксический разбор) запроса и дать возможность использования именованных
+        параметров в стиле аналогично некоторым популярным клиентским инструментам
+        (типа Delphi). Родной синтаксис API, использующий неименованные параметры
+        в указанном порядке, тоже поддерживается. Но совместное использование
+        именованных и неименованных параметров невозможно.</para>
+
+        <section id="rnfb-psql-dynex-syntax01"><!-- Level 4 section -->
+          <title>Новый оператор связывания</title>
+          <para>При реализации поддержки динамических параметров появилась необходимость
+          ввести новый оператор присваивания для связывания во время выполнения
+          именованных параметров с их значениями. Новый оператор подобен оператору
+          присваивания в языке Pascal: <quote>:=</quote>.</para>
+        </section>
+
+        <section id="rnfb-psql-dynex-syntax02"><!-- Level 4 section -->
+          <title>Синтаксис присвоения параметрам значений</title>
+
+          <literallayout class="monospaced">
+    &lt;входные параметры&gt; ::=
+      &lt;именованный параметр&gt; | &lt;входные параметры&gt;, &lt;именованный параметр&gt;
+
+    &lt;именованный параметр&gt; ::=
+      &lt;имя параметра&gt; := &lt;выражение&gt;
+          </literallayout>
+          <para>Пример использования <emphasis role="bold">именованных входных параметров</emphasis></para>
+          <para>Следующий PSQL-блок передает текст запроса через параметр и
+          использует именованные входные параметры:</para>
+          <programlisting>
+EXECUTE BLOCK AS
+  DECLARE S VARCHAR(255);
+  DECLARE N INT = 100000;
+  BEGIN
+  /* Обычное присвоение текста запроса строковой переменной */
+    S = 'INSERT INTO TTT VALUES (:a, :b, :a)';
+
+    WHILE (N > 0) DO
+    BEGIN
+      /* Каждая итерация цикла передает текст запроса и
+         связывает значения с именованными параметрами */
+
+      EXECUTE STATEMENT (:S) (a := CURRENT_TRANSACTION, b := CURRENT_CONNECTION)
+      WITH COMMON TRANSACTION;
+      N = N - 1;
+    END
+  END
+          </programlisting>
+          <para>Пример использования <emphasis role="bold">неименованных входных параметров</emphasis></para>
+          <para>Следующий PSQL-блок использует неименованные входные параметры и
+          передает их значения непосредственно по порядку:</para>
+          <programlisting>
+EXECUTE BLOCK AS
+  DECLARE S VARCHAR(255);
+  DECLARE N INT = 100000;
+  BEGIN
+    S = 'INSERT INTO TTT VALUES (?, ?, ?)';
+
+    WHILE (N &gt; 0) DO
+    BEGIN
+      EXECUTE STATEMENT (:S) (CURRENT_TRANSACTION, CURRENT_CONNECTION, CURRENT_TRANSACTION);
+      N = N - 1;
+    END
+  END
+          </programlisting>
+          <note>
+            <para>Обратите внимание, что если текст запроса передается
+            через параметр и одновременно используюся динамические параметры,
+            то текст запроса должен быть заключен в скобки:</para>
+            <literallayout class="monospaced">
+    EXECUTE STATEMENT (:sql) (p1 := 'abc', p2 := 0) ...
+            </literallayout>
+          </note>
+        </section><!-- Level 4 -->
+      </section><!-- Level 3 -->
+    </section><!-- Level 2 -->
+
+    <section id="rnfb25-psql-exctstmnt-exmpls"><!-- Level 2 section -->
+      <title>Примеры использования EXECUTE STATEMENT</title>
+      <para>Следующие примеры демонстрируют различные варианты применения
+      новых возможностей оператора EXECUTE STATEMENT.</para>
+
+      <section id="rnfb25-psql-exctstmnt-exmpls01"><!-- Level 3 section -->
+        <title>Тесты соединений и транзакций</title>
+
+        <section id="rnfb25-psql-exctstmnt-exmpls01a"><!-- Level 4 section -->
+          <title>Повторное использование соединений и транзакций</title>
+          <para>Выполните этот PSQL-блок несколько раз в одной и той же
+          транзакции – он создает три новых соединения к текущей базе данных и
+          повторно использует их при каждом следующем вызове. Транзакции также
+          используются повторно.</para>
+          <programlisting>
+EXECUTE BLOCK
+  RETURNS (CONN INT, TRAN INT, DB VARCHAR(255))
+AS
+  DECLARE I INT = 0;
+  DECLARE N INT = 3;
+  DECLARE S VARCHAR(255);
+BEGIN
+  SELECT A.MON$ATTACHMENT_NAME FROM MON$ATTACHMENTS A
+   WHERE A.MON$ATTACHMENT_ID = CURRENT_CONNECTION
+    INTO :S;
+
+  WHILE (i &lt; N) DO
+  BEGIN
+    DB = TRIM(CASE i - 3 * (I / 3)
+      WHEN 0 THEN '\\.\' WHEN 1 THEN 'localhost:' ELSE '' END) || :S;
+
+    FOR EXECUTE STATEMENT
+      'SELECT CURRENT_CONNECTION, CURRENT_TRANSACTION
+      FROM RDB$DATABASE'
+      ON EXTERNAL :DB
+      AS USER 'sysdba' PASSWORD 'masterkey' -- просто пример
+      WITH COMMON TRANSACTION
+      INTO :CONN, :TRAN
+    DO SUSPEND;
+
+    i = i + 1;
+  END
+END
+          </programlisting>
+        </section>
+
+        <section id="rnfb25-psql-exctstmnt-exmpls01b"><!-- Level 4 section -->
+          <title>Открытие нового соедиения</title>
+          <para>Выполните этот PSQL-блок несколько раз в одной и той же
+          транзакции – он создает три новых соединения с текущей базой данных
+          при каждом вызове.</para>
+          <programlisting>
+EXECUTE BLOCK
+  RETURNS (CONN INT, TRAN INT, DB VARCHAR(255))
+AS
+  DECLARE I INT = 0;
+  DECLARE N INT = 3;
+  DECLARE S VARCHAR(255);
+BEGIN
+  SELECT A.MON$ATTACHMENT_NAME
+    FROM MON$ATTACHMENTS A
+  WHERE A.MON$ATTACHMENT_ID = CURRENT_CONNECTION
+   INTO :S;
+
+  WHILE (i &lt; N) DO
+  BEGIN
+    DB = TRIM(CASE i - 3 * (I / 3)
+      WHEN 0 THEN '\\.\'
+      WHEN 1 THEN 'localhost:'
+      ELSE '' END) || :S;
+
+    FOR EXECUTE STATEMENT
+    'SELECT CURRENT_CONNECTION, CURRENT_TRANSACTION FROM RDB$DATABASE'
+      ON EXTERNAL :DB
+      WITH AUTONOMOUS TRANSACTION -- обратите внимание на автономную транзакцию
+      INTO :CONN, :TRAN
+    DO SUSPEND;
+
+    i = i + 1;
+  END
+END
+          </programlisting>
+        </section><!-- 4 -->
+      </section><!-- 3 -->
+
+      <section id="rnfb25-psql-exctstmnt-exmpls02"><!-- Level 3 section -->
+        <title>Пример вычисления входного параметра</title>
+        <para>Демонстрация того, что выражение вычисляется только один раз:</para>
+        <programlisting>
+EXECUTE BLOCK
+  RETURNS (A INT, B INT, C INT)
+AS
+BEGIN
+  EXECUTE STATEMENT (
+    'SELECT CAST(:X AS INT),
+            CAST(:X AS INT),
+            CAST(:X AS INT)
+       FROM RDB$DATABASE')
+      (x := GEN_ID(G, 1))
+    INTO :A, :B, :C;
+
+  SUSPEND;
+END
+        </programlisting>
+      </section><!-- 3 -->
+
+      <section id="rnfb25-psql-exctstmnt-exmpls03"><!-- Level 3 section -->
+        <title>Тестирование скорости вставки записей</title>
+        <para>Циклическое выполнение вышеприведенных примеров использования
+        входных параметров для сравнения с непараметризованной формой оператора
+        EXECUTE STATEMENT:</para>
+        <programlisting>
+RECREATE TABLE TTT (
+  TRAN INT,
+  CONN INT,
+  ID INT);
+
+-- Прямая вставка записей:
+
+EXECUTE BLOCK AS
+  DECLARE N INT = 100000;
+BEGIN
+  WHILE (N &gt; 0) DO
+  BEGIN
+    INSERT INTO TTT VALUES (CURRENT_TRANSACTION, CURRENT_CONNECTION, CURRENT_TRANSACTION);
+    N = N - 1;
+  END
+END
+
+-- Вставка записей с помощью подготовленного динамического
+-- оператора с использованием именованных входных параметров:
+
+EXECUTE BLOCK AS
+  DECLARE S VARCHAR(255);
+  DECLARE N INT = 100000;
+BEGIN
+  S = 'INSERT INTO TTT VALUES (:a, :b, :a)';
+
+  WHILE (N &gt; 0) DO
+  BEGIN
+    EXECUTE STATEMENT (:S)
+      (a := CURRENT_TRANSACTION, b := CURRENT_CONNECTION)
+    WITH COMMON TRANSACTION;
+    N = N - 1;
+  END
+END
+
+-- Вставка записей с помощью подготовленного динамического
+-- запроса с использованием неименованных входных параметров:
+
+EXECUTE BLOCK AS
+DECLARE S VARCHAR(255);
+DECLARE N INT = 100000;
+BEGIN
+  S = 'INSERT INTO TTT VALUES (?, ?, ?)';
+
+  WHILE (N &gt; 0) DO
+  BEGIN
+    EXECUTE STATEMENT (:S) (CURRENT_TRANSACTION, CURRENT_CONNECTION, CURRENT_TRANSACTION);
+    N = N - 1;
+  END
+END
+        </programlisting>
+      </section><!-- Level 3 -->
+    </section><!-- Level 2 -->
+  </section><!-- Level 1 -->
+
+    <section id="rnfb25-psql-imprvmts01"><!-- Level 2 -->
+      <sectioninfo>
+        <title>Использование подзапросов в PSQL-выражениях</title>
+        <author><firstname>Адриано</firstname><surname>дос Сантос Фернандес</surname></author>
+      </sectioninfo>
+
+      <para>Ссылка в трекере: <ulink url="http://tracker.firebirdsql.org/browse/CORE-2580">CORE-2580</ulink></para>
+      <para>Появилась возможность использовать подзапросы в PSQL-выражениях
+      (ранее для этого приходилось использовать SELECT...INTO и промежуточную
+      переменную). Примеры:</para>
+      <programlisting>
+var = (select ... from ...);
+if ((select ... from ...) = 1) then
+if (1 = any (select ... from ...)) then
+if (1 in (select ... from ...)) then
+      </programlisting>
+    </section><!-- Level 2 -->
+</chapter>
