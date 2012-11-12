@@ -954,6 +954,89 @@ int main(int argc, char *argv[])
 
       </section><!-- sect2 -->
 
+<!-- The following section was added at v.2.5.2 -->
+      <section id="rnfb25-apiods-api-svcrembackup"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Back Up to or Restore from a Remote Backup File</title>
+          <author><firstname>Alex</firstname><surname>Peshkov</surname></author>
+        </sectioninfo>
+        <para>Introduced in v.2.5.2 was the ability to run <emphasis>gbak</emphasis> at 
+        the server side reading from or writing to a <emphasis>gbak</emphasis> backup file 
+        located at a remote client.  This is an especially efficient way to do backups and restores
+        across an Internet connection.</para>
+        
+        <para>The simplest way to use this feature is with the command-line tool 
+        <emphasis>fbsvcmgr</emphasis> which provides a quick-and-dirty interface for Services API calls 
+        without the need to write your own client application.</para> 
+        
+        <section id="rnfb25-apiods-api-svcrembackup-backup"><!-- Level 3 section -->
+          <title>Remote Backup</title>
+          <para>To back up a remote database using <emphasis>fbsvcmgr</emphasis>, enter a command
+          with the following pattern:</para>
+          <programlisting>
+fbsvcmgr remotehost:service_mgr -user sysdba -password XXX \
+  action_backup -dbname some.fdb -bkp_file stdout &gt;some.fbk
+          </programlisting>
+        </section>
+        <section id="rnfb25-apiods-api-svcrembackup-restore"><!-- Level 3 section -->
+          <title>Restore from a Remote Backup File</title>
+          <para>To restore a database from a remotely located backup file 
+          using <emphasis>fbsvcmgr</emphasis>, enter a command with the following pattern:</para>
+          <programlisting>
+fbsvcmgr remotehost:service_mgr -user sysdba -password XXX \
+  action_restore -dbname some.fdb -bkp_file stdin &lt;some.fbk
+          </programlisting>
+        </section>
+        <note>
+          <para>The <quote>verbose</quote> (-v[erify]) switch cannot be used when performing 
+          backup because the data channel from server to client is used to deliver blocks of 
+          data from the backup file. If you try to use it you will get an error message.</para>
+          <para>When restoring a database, verbose mode may be used without limitations.</para>
+        </note>
+        
+        <section id="rnfb25-apiods-api-svcrembackup-svcsapi"><!-- Level 3 section -->
+          <title>Writing Your Own Utility Code</title>
+          <para>If you want to perform a remote backup or restore from your own program, use
+          the Services API.</para>
+          
+          <section id="rnfb25-apiods-api-svcrembackup-svcsapi-bkp"><!-- Level 4 section -->
+            <title>Backup</title>
+            <para>Backup is very simple - Data, returned by repeating calls
+            to <function>isc_service_query()</function> tagged
+            with <function>isc_info_svc_to_eof</function>, are a stream representing an image of
+            the backup file. Just pass <quote>stdout</quote> to the server
+            as the backup file name, using <function>isc_info_svc_to_eof</function> tag in the
+            <function>isc_service_query()</function> call. </para>
+          </section>
+          
+          <section id="rnfb25-apiods-api-svcrembackup-svcsapi-rstr"><!-- Level 4 section -->
+            <title>Restore</title>
+            <para>Restore is not so straightforward.  The client sends the new spb parameter
+            <function>isc_info_svc_stdin</function> to the server in 
+            the <function>isc_service_query()</function> call. If the service needs some 
+            data in <emphasis>stdin</emphasis>, it returns <function>isc_info_svc_stdin</function> 
+            in the query results, followed by 4-byte value representing the number of bytes it 
+            is ready to accept from client. (Zero value means no more data is needed right now.)</para>
+            <important>
+              <para>The client should not send more data than is requested
+              by the server: it will throw the error <quote>Size of data is more than 
+              requested</quote>.</para>
+            </important>
+            
+            <para>Data are sent in the next <function>isc_service_query()</function> call, in the 
+            <function>send_items</function> block, using the traditional form of the 
+            <function>isc_info_svc_line</function> tag: isc_info_svc_line, 2 bytes length, data. 
+            When the server needs the next portion, it reverts to returning a non-zero value for 
+            <function>isc_info_svc_stdin</function> from <function>isc_service_query()</function>.</para>
+            
+            <tip>
+              <para>A sample of using the Services API for remote backup and restore can be found in 
+              the source code of <emphasis>fbsvcmgr</emphasis>.</para>
+            </tip>
+          </section>
+        </section>
+      </section>
+
       <section id="rnfb25-apiods-api-spbadds"><!-- Level 2 section -->
         <sectioninfo>
           <title>Other Services API Additions</title>
