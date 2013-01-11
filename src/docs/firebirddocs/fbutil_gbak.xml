@@ -15,7 +15,7 @@
       <surname>Dunbar</surname>
     </author>
 
-    <edition>11 October 2011 - Document version 1.6</edition>
+    <edition>11 January 2013 - Document version 1.7</edition>
   </articleinfo>
 
   <section id="gbak-intro">
@@ -378,6 +378,16 @@ gbak:general options are:
         line.</para>
       </note>
 
+      <note>
+        <para>You may, if you wish, send the output to standard output rather
+        than a backup file. In this case, you must specify stdout as the dump
+        file name. This is not really of much use, unless you wish to pipe the
+        dump through a tool to modify it in some way. You can pipe the output
+        directly to a <application>gbak</application> restore operation to
+        clone a database without needing an intermediate dump file. An example
+        is given later in this manual.</para>
+      </note>
+
       <para>When carrying out a backup of a database, the following switches,
       in addition to the common ones above, will be of use:</para>
 
@@ -540,6 +550,16 @@ gbak:general options are:
         <userinput>-r[ecreate_database]</userinput> in order to make your
         intentions clear. The database will be restored to whatever file name
         is specified as the second file name on the command line..</para>
+      </note>
+
+      <note>
+        <para>You may, if you wish, read the dump data directly from standard
+        input rather than a backup file. In this case, you must specify stdin
+        as the dump file name. You could pipe a
+        <application>gbak</application> dump operation directly to a
+        <application>gbak</application> restore operation to clone a database
+        without needing an intermediate dump file. An example is given later
+        in this manual.</para>
       </note>
 
       <para>When carrying out a restore or replacement of a database, the
@@ -926,7 +946,7 @@ tux&gt; gbak -replace -verify -y restore.log employee.fbk employee.restore.test
         object, such as CHECK constraints) is stored in a blob, as is the
         "compiled" BLR code. When you restore a database, the BLR is not
         recreated: the same BLR is used until next time you recreate or alter
-        the object. </para>
+        the object.</para>
 
         <para>Historically, the engine did not do the right thing regarding
         the transliteration of strings embedded in the source and the BLR. In
@@ -939,7 +959,7 @@ tux&gt; gbak -replace -verify -y restore.log employee.fbk employee.restore.test
         these system table records. This very old bug affects user blobs, too,
         if they have been stored using character set NONE and the client is
         configured to read a specified character set to which the stored data
-        could not be transliterated. </para>
+        could not be transliterated.</para>
 
         <para>In v.2.1 there were scripts in <filename
         class="directory">../misc</filename> that you could run to repair the
@@ -947,7 +967,7 @@ tux&gt; gbak -replace -verify -y restore.log employee.fbk employee.restore.test
         errors in blobs in your user data. The repair switches were added to
         the <application>gbak</application> restore code in v.2.5 to do the
         same corrections to meta data and data, respectively, during the
-        process of restoring a database for upgrade. </para>
+        process of restoring a database for upgrade.</para>
       </blockquote>
     </section>
   </section>
@@ -1286,6 +1306,44 @@ tuxrep&gt; gstat -h employee|grep -i attributes
 </screen>
     </section>
 
+    <section id="gbak-recipies-clone-nodump">
+      <title>Create a Database Clone Without a Dump File.</title>
+
+      <para>You may use <application>gbak</application> to create a clone of a
+      database, on the same server, without needing to create a potentially
+      large dump file. To do this, you pipe the output of a
+      <application>gbak</application> backup directly to the input of a
+      <application>gbak</application> restore, as follows.</para>
+
+      <screen>tux&gt; # Clone a test database to the same server, without requiring a dump file.
+tux&gt; gbak -backup emptest stdout | gbak -replace stdin emptest_2
+</screen>
+
+      <para>You will notice that the output file name for the backup is
+      <parameter>stdout</parameter> and the input file name for the restore is
+      <parameter>stdin</parameter>. This ability to pipe standard output of
+      one process to the standard input of another, is how you can avoid
+      creating an intermediate dump file. The commands above assume that there
+      are suitable alias names set up for both emptest and emptest_2. If not,
+      you will need to supply the full path to the two databases rather than
+      the alias.</para>
+
+      <para>The <userinput>-replace</userinput> option on the restore process
+      will overwrite the database name specified - as an alias or as a full
+      path - if it exists and will create it anew if it doesn't. You may also
+      use the <userinput>-recreate overwrite</userinput> option as an
+      alternative. Both have the same result.</para>
+
+      <para>If you don't want to overwrite any existing databases, use
+      <userinput>-create</userinput> which will only create a database if it
+      doesn't already exist, and will exit with an error if it does. In POSIX
+      compatible systems, the error code in <varname>$?</varname> is 1 in this
+      case.</para>
+
+      <para>Further examples of backing up and restoring remote databases over
+      ssh, using the stdin and stdout file names, can be seen below.</para>
+    </section>
+
     <section id="gbak-recipies-shadows">
       <title>Backup &amp; Restore With &amp; Without Shadow Files.</title>
 
@@ -1357,7 +1415,7 @@ SQL&gt; quit;
 
       <para>Firebird's <application>gbak</application> utility can make
       backups of a remote database. To do this, you need to connect to the
-      service manager running on the database, this is normally called
+      service manager running on the remote server, this is normally called
       <emphasis>service_mgr</emphasis>. The following example shows the
       Firebird <database>employee</database> database on server
       <emphasis>tuxrep</emphasis> being backed up from the server
@@ -1426,6 +1484,106 @@ tux&gt; gbak -replace -service tux:service_mgr /backups/remote_backup.fbk employ
           <userinput>-service \\server_name\service_mgr</userinput>.</para>
         </listitem>
       </itemizedlist>
+    </section>
+
+    <section id="gbak-recipies-remote-ssh">
+      <title>Remote Backups and Restores Using SSH</title>
+
+      <para>As shown above, you can use the special file names stdin and
+      stdout to backup and restore a database to a separate database on the
+      same server. However, you can also use the same tools, over an SSH
+      connection to a remote server, and pass the backup of one database
+      directly to a restoration of a separate one.</para>
+
+      <para>The first example copies a local database to a remote server where
+      Firebird is running and the firebird user has its environment set up so
+      that the gbak tool is on $PATH by default, on login.</para>
+
+      <note>
+        <para>In each of the following examples, the <userinput>-user
+        sysdba</userinput> and <userinput>-password whatever</userinput>
+        parameters on the command lines have been replaced by {...}. When
+        executing these commands, any remote <application>gbak</application>
+        commands will require to have them specified unless the firebird user
+        on the remote database(s) has <envar>ISC_USER</envar> and
+        <envar>ISC_PASSWORD</envar> defined in the
+        <filename>.profile</filename> or <filename>.bashrc </filename>(or
+        equivalent) login files. However, that is a
+        <emphasis>seriously</emphasis> bad idea and incredibly
+        insecure.</para>
+      </note>
+
+      <screen>tux&gt; # Clone a test database to a different server, without requiring a dump file.
+tux&gt; gbak -backup employee stdout | \
+ssh firebird@tuxrep "gbak {...} -replace stdin emptest"
+</screen>
+
+      <para>When the above is executed, you will be prompted for a password
+      for the remote firebird user on server tuxrep, assuming that you don't
+      have a proper SSH key-pair already set up and active. The command will
+      replace the local database according to the alias name emptest but you
+      can, if required, supply full path names for the databases. The
+      following shows an example of the above being executed.</para>
+
+      <screen>tux&gt; # Clone a test database to a different server, without requiring a dump file.
+tux&gt; gbak -backup employee stdout | \
+ssh firebird@tuxrep "gbak {...} -replace stdin emptest"
+
+firebird@tuxrep's password:
+</screen>
+
+      <para>As you can see, there's not much in the way of output, but you can
+      connect remotely and check:</para>
+
+      <screen>tux&gt; isql {...} tuxrep:emptest
+
+Database:  tuxrep:emptest
+
+SQL&gt; show database;
+
+Database: tuxrep:emptest
+        Owner: SYSDBA                         
+PAGE_SIZE 4096
+...
+</screen>
+
+      <para>The next example, shows a remote database being backed up to a
+      local one, in a similar manner.</para>
+
+      <screen>tux&gt; ssh firebird@tuxrep "gbak -backup {...} emptest stdout" | \
+gbak -create stdin data/tuxrep_emptest.fdb
+
+firebird@tuxrep's password: 
+
+tux&gt; ls data
+
+employee.fdb  tuxrep_emptest.fdb
+</screen>
+
+      <para>You can see that a new <filename>tuxrep_emptest.fdb</filename>
+      database has been created. Does it work? Checking with
+      <application>isql</application> shows that it does.</para>
+
+      <screen>tux&gt; isql data/tuxrep_emptest.fdb
+
+Database:  data/tuxrep_emptest.fdb
+
+SQL&gt; quit;
+</screen>
+
+      <para>The final example shows how to backup a remote database on one
+      server, to a remote database on another.</para>
+
+      <screen>tux&gt; ssh firebird@tuxrep "gbak -backup {...} emptest stdout" |  \
+ssh firebird@tuxqa "gbak -create {...} stdin data/tuxrep_empqa.fdb"
+
+firebird@tuxrep's password: 
+firebird@tuxqa's password
+
+tux&gt; ssh firebird@tuxqa "ls data"
+
+employee.fdb  tuxrep_empqa.fdb
+</screen>
     </section>
 
     <section id="gbak-recipies-external-tools">
@@ -1615,112 +1773,133 @@ tux&gt; gbak -backup employee /backups/${FILENAME}.fbk -y /logs/${FILENAME}.log 
     userlevel="">http://firebird.cvs.sourceforge.net/viewvc/firebird/
     manual/src/docs/firebirddocs/fbutil_gbak.xml?view=log</ulink></para>
 
-   <para><revhistory>
-      <revision>
-        <revnumber>1.0</revnumber>
+    <para><revhistory>
+        <revision>
+          <revnumber>1.0</revnumber>
 
-        <date>10 October 2009</date>
+          <date>10 October 2009</date>
 
-        <authorinitials>ND</authorinitials>
+          <authorinitials>ND</authorinitials>
 
-        <revdescription>
-          <para>Created as a chapter in the Command Line Utilities
-          manual.</para>
-        </revdescription>
-      </revision>
+          <revdescription>
+            <para>Created as a chapter in the Command Line Utilities
+            manual.</para>
+          </revdescription>
+        </revision>
 
-      <revision>
-        <revnumber>1.1</revnumber>
+        <revision>
+          <revnumber>1.1</revnumber>
 
-        <date>20 October 2009</date>
+          <date>20 October 2009</date>
 
-        <authorinitials>ND</authorinitials>
+          <authorinitials>ND</authorinitials>
 
-        <revdescription>
-          <para>More minor updates and converted to a stand alone
-          manual.</para>
-        </revdescription>
-      </revision>
+          <revdescription>
+            <para>More minor updates and converted to a stand alone
+            manual.</para>
+          </revdescription>
+        </revision>
 
-      <revision>
-        <revnumber>1.2</revnumber>
+        <revision>
+          <revnumber>1.2</revnumber>
 
-        <date>24 November 2009</date>
+          <date>24 November 2009</date>
 
-        <authorinitials>ND</authorinitials>
+          <authorinitials>ND</authorinitials>
 
-        <revdescription>
-          <para>Corrected the section on <userinput>-y
-          Suppress_output</userinput> plus corrected the formatting of various
-          screen dumps. They had been reformatted as text at some
-          point.</para>
-        </revdescription>
-      </revision>
+          <revdescription>
+            <para>Corrected the section on <userinput>-y
+            Suppress_output</userinput> plus corrected the formatting of
+            various screen dumps. They had been reformatted as text at some
+            point.</para>
+          </revdescription>
+        </revision>
 
-      <revision>
-        <revnumber>1.3</revnumber>
+        <revision>
+          <revnumber>1.3</revnumber>
 
-        <date>24 June 2010</date>
+          <date>24 June 2010</date>
 
-        <authorinitials>ND</authorinitials>
+          <authorinitials>ND</authorinitials>
 
-        <revdescription>
-          <para>Added a bit more details to the
-          <userinput>-o[ne_at_a_time]</userinput> restore option to explain
-          transactions.</para>
-        </revdescription>
-      </revision>
+          <revdescription>
+            <para>Added a bit more details to the
+            <userinput>-o[ne_at_a_time]</userinput> restore option to explain
+            transactions.</para>
+          </revdescription>
+        </revision>
 
-      <revision>
-        <revnumber>1.4</revnumber>
+        <revision>
+          <revnumber>1.4</revnumber>
 
-        <date>09 August 2010</date>
+          <date>09 August 2010</date>
 
-        <authorinitials>ND</authorinitials>
+          <authorinitials>ND</authorinitials>
 
-        <revdescription>
-          <para>Noted that <application>gbak</application> defaults to running
-          a backup or recover according to the first file name parameter
-          supplied.</para>
+          <revdescription>
+            <para>Noted that <application>gbak</application> defaults to
+            running a backup or recover according to the first file name
+            parameter supplied.</para>
 
-          <para>A few minor formatting errors, URLs and some examples were
-          corrected.</para>
+            <para>A few minor formatting errors, URLs and some examples were
+            corrected.</para>
 
-          <para>Also added an example of a meta data only backup and
-          restore.</para>
-        </revdescription>
-      </revision>
+            <para>Also added an example of a meta data only backup and
+            restore.</para>
+          </revdescription>
+        </revision>
 
-      <revision>
-        <revnumber>1.5</revnumber>
+        <revision>
+          <revnumber>1.5</revnumber>
 
-        <date>31 March 2011</date>
+          <date>31 March 2011</date>
 
-        <authorinitials>ND</authorinitials>
+          <authorinitials>ND</authorinitials>
 
-        <revdescription>
-          <para>Updated the <userinput>-z</userinput> option to indicate that
-          it <emphasis>does</emphasis> carry out a backup.</para>
-        </revdescription>
-      </revision>
+          <revdescription>
+            <para>Updated the <userinput>-z</userinput> option to indicate
+            that it <emphasis>does</emphasis> carry out a backup.</para>
+          </revdescription>
+        </revision>
 
-      <revision>
-        <revnumber>1.6</revnumber>
+        <revision>
+          <revnumber>1.6</revnumber>
 
-        <date>11 October 2011</date>
+          <date>11 October 2011</date>
 
-        <authorinitials>ND</authorinitials>
+          <authorinitials>ND</authorinitials>
 
-        <revdescription>
-          <para>Updated to cover Firebird 2.5 changes.</para>
+          <revdescription>
+            <para>Updated to cover Firebird 2.5 changes.</para>
 
-          <para>Corrected description of
-          <userinput>-g[arbage_collect]</userinput> switch.</para>
+            <para>Corrected description of
+            <userinput>-g[arbage_collect]</userinput> switch.</para>
 
-          <para>Lots of spelling mistakes corrected.</para>
-        </revdescription>
-      </revision>
-  </revhistory></para>
+            <para>Lots of spelling mistakes corrected.</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>1.7</revnumber>
+
+          <date>11 January 2013</date>
+
+          <authorinitials>ND</authorinitials>
+
+          <revdescription>
+            <para>Updated to document the use of the stdin and stdout file
+            names in backups and restores, which allow backups to be written
+            to or read from standard input and standard output.</para>
+
+            <para>A section was added on the use of the above to clone
+            databases without requiring an intermediate dump file. An
+            additional section was also added to show how, using the above in
+            conjunction with SSH, backup and/or restore operations could be
+            carried out on databases where one or both of the databases in
+            question, are remote.</para>
+          </revdescription>
+        </revision>
+      </revhistory></para>
   </appendix>
 
   <appendix id="gbak-license">
