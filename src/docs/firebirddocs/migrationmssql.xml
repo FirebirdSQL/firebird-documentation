@@ -478,10 +478,6 @@ END </programlisting>
     <para>MS SQL has more environment variables than <application>Firebird</application> does, but
     the most common ones (identity retrieval and user name retrieval) can be found. The only
     important variable missing is the row count of the latest operation.</para>
-    <para>An important difference is that <application>Firebird</application> 1.0 does not support
-    the MS SQL <database>CASE</database> statement. You can sometimes use a stored procedure in its
-    stead, which promotes reusability and eases maintenance. Starting at 1.5, Firebird fully
-    supports <database>CASE</database>.</para>
     <para>A minor difference is that MS SQL does not use a delimiter between statement. This can be
     the source of some tricky bugs, specially when using many parenthesis.
     <application>Firebird</application> requires that every statement end in a semicolon ; so errors
@@ -556,63 +552,6 @@ END </programlisting>
         <programlisting>IF (something = 'unknown')
   THEN something = 'uuhhh.....';
   ELSE something = 'I know! I know!';  </programlisting>
-      </sect3>
-      <sect3>
-        <title><database>CASE</database></title>
-        <para>Firebird 1.0 doesn't have a <database>CASE</database> statement, so you'll need to do
-        some manual conversion work if it is used in your MS-SQL database.</para>
-        <para>You can <link linkend="migration-mssql-end-of-case-sect">skip this section</link> if
-        you're using Firebird 1.5 or up, since these versions fully support the
-        <database>CASE</database> syntax.</para>
-        <para>The <database>CASE</database> statement can be used as a <code>switch</code> statement
-        in C or a <code>case</code> statement in Pascal to change one value for another. This can
-        usually be translated to <application>Firebird</application> 1.0 as a stored procedure
-        returning some value.</para>
-        <programlisting>/* This is the original MS SQL
-   statement, using the * traditional pubs database. */
-CREATE PROCEDURE list_states 
-AS 
-SELECT 
-  CASE state 
-    WHEN 'CA' THEN 'California'
-    WHEN 'UT' THEN 'Utah' 
-    ELSE 'unknown' 
-  END 
-FROM authors </programlisting>
-        <programlisting>/* This is how it can be converted to Firebird. */ 
-/* Isolate the CASE statement. */
-CREATE PROCEDURE get_state_name ( state_code char(2) ) 
-RETURNS ( state_name varchar(64) ) 
-AS
-BEGIN 
- IF (state_code = 'CA') THEN state_name = 'California';
- ELSE IF (state_code = 'UT') THEN state_name = 'Utah'; 
- ELSE state_name = 'unknown'; 
-END 
-
-/* This is the selectable stored procedure. */ 
-CREATE PROCEDURE list_states 
-RETURNS (state varchar(64))
-AS
-DECLARE VARIABLE short_state CHAR(2);
-BEGIN 
-  FOR SELECT state FROM authors INTO :short_state DO 
-  BEGIN 
-    EXECUTE PROCEDURE get_state_name :short_state
-    RETURNING_VALUES :state; 
-    SUSPEND; 
-  END 
-END </programlisting>
-        <!-- To test the above script, execute first: CREATE TABLE authors ( state char(2), au_lname varchar(40) ) insert into authors values ('UT', 'pepe') insert into authors values ('CA', 'pide') insert into authors values ('CA', 'la') insert into authors values ('MI', 'papa') Test with: select * from list_states -->
-        <para>Three things should be noted from the example above. First, the conversion is trivial.
-        Second, it is however quite verbose. Third, using a stored procedure allows for greater
-        flexibility, and makes maintenance easier. Suppose the <database>CASE</database> statement
-        for the state occurs in twelve different procedures, and a new state was added; or that you
-        misspelled a state name; or any other change. It is clearly beneficial to abstract this
-        conversion, trivial as it may seem, into its own stored procedure.</para>
-        <para>Again: as from version 1.5, Firebird fully supports the <database>CASE</database>
-        statement, so no conversion is needed there.<anchor
-        id="migration-mssql-end-of-case-sect" /></para>
       </sect3>
       <sect3>
         <title><database>WHILE</database></title>
