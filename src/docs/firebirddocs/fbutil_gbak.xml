@@ -751,6 +751,13 @@ gbak:general options are:
           <para>Use the services manager on a remote database to restore a
           remote database. The servicename is currently always the text
           <userinput>service_mgr</userinput>.</para>
+
+          <note>
+            <para>You can use this option to connect to a locally hosted
+            database as well. If you do, restoring a backup using this option
+            can run quicker than accessing the database directly. See the
+            section below on speeding up restores.</para>
+          </note>
         </listitem>
 
         <listitem>
@@ -893,7 +900,9 @@ tux&gt; gbak -replace -verify -y restore.log employee.fbk employee.restore.test
       <para>The second option is to backup the database using the
       <userinput>-se[rvice]</userinput> option. Although this is used to
       perform remote backups, it can be used locally as well. Using this
-      option can help speed up your backups.</para>
+      option can help speed up your backups. It simply avoids the data being
+      copied over the TCP network which can slow down the actions of the
+      backup.</para>
 
       <screen>tux&gt; gbak -backup -service tux:service_mgr employee /backups/employee.fbk</screen>
 
@@ -1009,6 +1018,27 @@ tux&gt; gbak -replace -verify -y restore.log employee.fbk employee.restore.test
         process of restoring a database for upgrade.</para>
       </blockquote>
     </section>
+
+    <section>
+      <title>Speeding up the Restore</title>
+
+      <para>The restoration of a database, from a backup, can be made to
+      execute quicker if the <userinput>-se[rvice]</userinput> option is used.
+      Although this is used to perform remote restores, it can be used locally
+      as well. It simply avoids the data being copied over the TCP network
+      which can slow down the actions of the restore.</para>
+
+      <screen>tux&gt; gbak -replace -service tux:service_mgr /backups/employee.fbk employee
+</screen>
+
+      <para>The example above backs up the employee database, on the tux
+      server, "remotely" using the service manager. The tux server is, of
+      course, where the command is running, so it isn't really running
+      remotely at all.</para>
+
+      <para>You can, of course, combine the <userinput>-g[arbage_collect]
+      </userinput>and <userinput>-se[rvice] </userinput>options.</para>
+    </section>
   </section>
 
   <section id="gbak-security">
@@ -1122,19 +1152,25 @@ tux&gt; gbak -replace -verify -y restore.log employee.fbk employee.restore.test
       of 60 seconds, the shutdown will timeout and the database will remain
       open.</para>
 
-      <para>After the restore of the database has completed, the database will
-      automatically be opened again for use.</para>
+      <note>
+        <para>After the restore of the database has completed, the database
+        will automatically be opened again for use.</para>
+      </note>
     </section>
 
     <section id="gbak-recipies-simple">
       <title>A Simple Backup &amp; Restore</title>
+
+      <para>This example takes a backup, then immediately overwrites the
+      original database using the new backup. This is not normally a good idea
+      as the first action of a restore is to wipe out the database.</para>
 
       <screen>tux&gt; # Backup the database.
 tux&gt; gbak -backup employee /backups/employee.fbk
 
 tux&gt; # Restore the database.
 tux&gt; gfix -shut -tran 60 employee
-tux&gt; gbak -replace overwrite /backups/employee.fbk employee
+tux&gt; gbak -replace /backups/employee.fbk employee
 </screen>
     </section>
 
@@ -1152,7 +1188,8 @@ tux&gt; gbak -replace overwrite /backups/employee.fbk employee
 
       <screen>tux&gt; #Backup only the database metadata.
 tux&gt; gfix -shut -tran 60 employee
-tux&gt; gbak -backup -meta_data employee employee.meta.fbk</screen>
+tux&gt; gbak -backup -meta_data employee employee.meta.fbk
+</screen>
 
       <para>When the above dump file is restored on the production server,
       only the meta data will be present.</para>
@@ -1242,7 +1279,7 @@ Firebird environment set for version 2.1.
 
 tux&gt; # Recreate the database and upgrade the ODS.
 tux&gt; gfix -shut -tran 60 employee
-tux&gt; gbak -replace overwrite /backups/employee.2_0.fbk employee
+tux&gt; gbak -replace /backups/employee.2_0.fbk employee
 
 tux&gt; # Check new ODS version (as root user!)
 tux&gt; gstat -h employee|grep ODS
@@ -1272,7 +1309,7 @@ tux&gt; gstat -h employee | grep -i buffer
 
 tux&gt; # Restore the database &amp; change the cache size.
 tux&gt; gfix -shut -tran 60 employee
-tux&gt; gbak -replace overwrite -buffer 200 /backups/employee.fbk employee
+tux&gt; gbak -replace -buffer 200 /backups/employee.fbk employee
 
 tux&gt; # Check the new cache size (as root user!)
 tux&gt; gstat -h employee | grep -i buffer
@@ -1299,7 +1336,7 @@ tux&gt; gstat -h employee | grep -i "page size"
  
 tux&gt; # Restore the database &amp; change the page size.
 tux&gt; gfix -shut -tran 60 employee
-tux&gt; gbak -replace overwrite -page_size 8192 /backups/employee.fbk employee
+tux&gt; gbak -replace -page_size 8192 /backups/employee.fbk employee
 
 tux&gt; # Check the new page size (as root user!)
 tux&gt; gstat -h employee | grep -i "page size"
@@ -1337,7 +1374,7 @@ employee.fbk              |         19 kB |  19.3 kB/s | ETA: 00:00:00 | 100%
 
 tuxrep&gt; # Restore the employee database as read-only.
 tuxrep&gt; gfix -shut -tran 60 employee
-tuxrep&gt; gbak -replace overwrite -mode read_only employee.fbk employee
+tuxrep&gt; gbak -replace -mode read_only employee.fbk employee
 
 tuxrep&gt; # Check database mode (as root user)
 tuxrep&gt; gstat -h employee|grep -i attributes
@@ -1995,7 +2032,8 @@ tux&gt; gbak -backup employee /backups/${FILENAME}.fbk -y /logs/${FILENAME}.log 
             <para>A section has been added to explain how to speedup your
             backups. A note has been added to the
             <userinput>-service</userinput> option to explain that it's use is
-            not restriced to remote databases..</para>
+            not restriced to remote databases. Syntax errors in some examples
+            corrected.</para>
           </revdescription>
         </revision>
       </revhistory></para>
