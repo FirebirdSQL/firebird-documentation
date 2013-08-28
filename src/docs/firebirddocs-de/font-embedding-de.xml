@@ -1,0 +1,695 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article id="fontembed-de">
+  <articleinfo>
+    <title>Verwendung von nicht-westlichen Zeichensätzen in den Firebird-Dokumentationen</title>
+
+    <titleabbrev>Verwendung von nicht-westlichen Zeichensätzen</titleabbrev>
+
+    <subtitle>Eine Anleitung zum Einbetten von Schriftarten für Firebird Dokumentenersteller und Übersetzer</subtitle>
+
+    <author>
+      <firstname>Paul</firstname>
+
+      <surname>Vinkenoog</surname>
+    </author>
+
+    <othercredit class="translator">
+      <firstname>Martin</firstname>
+
+      <surname>Köditz</surname>
+
+      <contrib>Übersetzung ins Deutsche</contrib>
+    </othercredit>
+
+    <edition>20. Juli 2013 – Version 1.3.1-de - deutsche Version</edition>
+  </articleinfo>
+
+  <section id="fontembed-intro">
+    <title>Einleitung</title>
+
+    <para>Wenn Sie nicht-westliche Zeichensätze in Ihrer Firebird-Dokumentation verwenden, 
+      wird die HTML-Version wahrscheinlich gut aussehen. Moderne Browser werden kaum Probleme mit diversen Sprachen und Schriften haben, 
+      solange die notwendigen Schriftarten auf dem System vorhanden sind. Möchten Sie nun aber die PDF-Version erstellen, müssen einige Punkte beachtet werden:</para>
+
+    <procedure>
+      <step>
+        <para>Finden Sie die Schriften, die für body-Texte, Titel und Monospaced-Schriften benötigt werden.</para>
+      </step>
+
+      <step>
+        <para>Überschreiben Sie die Standard-Fonts, die in den Stylesheets angegeben sind.</para>
+      </step>
+
+      <step>
+        <para>Erstellen Sie <firstterm>Metric-Dateien</firstterm> für die Schriften, die Sie verwenden wollen.</para>
+      </step>
+
+      <step>
+        <para>Erstellen Sie eine <firstterm>FOP-Benutzerdatei</firstterm> mit den Anleitungen zum Einbetten der Schriften.</para>
+      </step>
+
+      <step>
+        <para>Erstellen Sie die PDF. Wenn alles so läuft wie es soll, führen Sie einen Commit der Schritte 2 bis 4 in das CVS durch.</para>
+      </step>
+    </procedure>
+
+    <para>Wenn Sie die erste Person sind, die eine Dokumentation in einer Sprache erstellt, müssen Sie alle o.a. Schritte durchführen. Ist dies nicht der Fall, können Sie ein existierendes Setup verwenden. 
+      Möglicherweise müssen Sie die FOP-Benutzerkonfigurationsdatei bearbeiten, da die Orte der Schriftdateien von System zu System unterschiedlich sein können. Siehe auch <link
+    linkend="fontembed-edit-embedfile"><quote>Wichtig</quote>-Kasten</link> Schritt 4.</para>
+
+    <para>Es wird vorausgesetzt, dass Sie bereits mit der Arbeit mit DocBook XML-Dateien in Ihrer eigenen Sprache vertraut sind. 
+      Speichern Sie die Dateien in einer Unicode-Codierung, beispielsweise UTF-8. XMLMind, SciTE, Windows Notepad und andere Editoren haben keine Probleme hiermit 
+      (XMLMind speichert standardmäßig in UTF-8). ConText hingegen kann Unicode nur als UTF-16 speichern, aber soweit bekannt, stellt auch das kein Problem für die Build-Tools dar.</para>
+  </section>
+
+  <section id="fontembed-pdf-creation">
+    <title>Wie werden PDF-Dateien erstellt?</title>
+
+    <para>Um die auszuführenden Schritte besser zu verstehen, folgt nun ein kurzer Überblick, wie Ihr DocBook-Quelltext zu PDF konvertiert wird.</para>
+
+    <variablelist>
+      <varlistentry>
+        <term>Schritt 1: DocBook <literal>-&gt;</literal> XSL-FO</term>
+
+        <listitem>
+          <para>Ein sogenannter <firstterm>XSL transformer</firstterm> mit dem Namen
+          Saxon liest den DocBook XML-Quelltext, wandelt ihn ins
+          <firstterm>XSL-FO</firstterm>-Format und speichert ihn im Verzeichnisbaum unter <filename
+          class="directory">manual/inter/fo</filename>. Das FO in XSL-FO
+          steht für <firstterm>Formatting Objects</firstterm>. Wie DocBook selbst,
+          ist dies ein XML-Format, jedoch anzeigeorientiert. Nachstehend ein typischer Auszug von XSL-FO:</para>
+
+          <programlisting>&lt;fo:block keep-together="always" margin-left="0pc"
+          font-family="sans-serif,Symbol,ZapfDingbats"&gt;
+  &lt;fo:block font-family="sans-serif" font-weight="bold" 
+            keep-with-next.within-column="always"
+            space-before.minimum="0.8em" space-before.optimum="1.0em"
+            space-before.maximum="1.2em" 
+            color="darkblue" text-align="start"&gt;
+    &lt;fo:block font-size="19.8pt"&gt;SQL Syntax&lt;/fo:block&gt;
+  &lt;/fo:block&gt;
+&lt;/fo:block&gt;</programlisting>
+
+          <para>Das Saxon-Tool finden Sie unter
+          <filename>manual/lib/saxon.jar</filename>. Um verstehen zu können
+          <emphasis>wie</emphasis> wir die DocBook-Teile zu XSL-FO konvertieren möchten, lädt Saxon ebenfalls die Transformations-Stylesheets. Die Standard-DocBook-Stylesheets befinden sich in <filename
+          class="directory">manual/src/docs/docbook</filename>, die eigenen Anpassungen in
+          <filename
+          class="directory">manual/src/docs/xsl</filename>.</para>
+
+          <para>In diesem ersten Schritt wird die DocBook <literal>-&gt;</literal> XSL-FO
+          Transformation vom <literal>fo</literal> build-Target ausgeführt. Wenn Sie den Befehl <quote><command>build pdf...</command></quote>
+          eingeben, wird das  <literal>fo</literal>-Ziel bereits intern aufgerufen, Sie können es jedoch auch explizit starten, um nur die XSL-FO-Dateien zu bauen, ohne die Erstellung des PDFs.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term>Schritt 2: XSL-FO <literal>-&gt;</literal> PDF</term>
+
+        <listitem>
+          <para>Die XSL-FO-Datei wird zum PDF konvertiert. Dies geschieht durch das Werkzeug Apache
+          FOP (<firstterm>Formatting Objects Processor</firstterm>). Das Ergebnis wird im Verzeichnisbaum unter <filename
+          class="directory">manual/dist/pdf</filename> gespeichert. Weder Stylesheets noch die originale DocBook-Quelle sind hiervon betroffen. Apache FOP
+          ist zu finden in <filename>manual/lib/fop.jar</filename>.</para>
+
+          <para>Dieser Schritt wird ausgeführt mittels des <literal>fo2pdf</literal>
+          build target. Auch dieses wird intern vom
+          <literal>pdf</literal> target aufgerufen. Aber auch hier können Sie die <filename
+          class="extension">.fo</filename>-Dateien selbst bearbeiten (was manchmal notwendig ist).</para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+
+    <para>Die folgenden Abschnitte, werden durch die in der Einleitung beschriebenen Schritte führen. 
+    Die Tabelle zeigt, welcher der jeweiligen Schritte den DocBook-to-PDF Erstellungsprozess beeinflusst:</para>
+
+    <blockquote>
+      <informaltable>
+        <tgroup cols="3">
+          <colspec colname="colstepnum" colwidth="*" />
+
+          <colspec colname="colstepdesc" colwidth="4*" />
+
+          <colspec colname="colstepaffects" colwidth="4*" />
+
+          <thead>
+            <row>
+              <entry align="center">Schritt</entry>
+
+              <entry align="center">Beschreibung</entry>
+
+              <entry align="center">Beeinflussungen</entry>
+            </row>
+          </thead>
+
+          <tbody>
+            <row>
+              <entry align="center">1</entry>
+
+              <entry>Finden der benötigten Schriftarten</entry>
+
+              <entry>(vorbereitender Schritt)</entry>
+            </row>
+
+            <row>
+              <entry align="center">2</entry>
+
+              <entry>Überschreiben Stylesheet-Fonts</entry>
+
+              <entry>Schritt 1: XSL-FO-Erstellung</entry>
+            </row>
+
+            <row>
+              <entry align="center">3</entry>
+
+              <entry>Erstellung der Metric-Dateien</entry>
+
+              <entry>Schritt 2: PDF-Erstellung</entry>
+            </row>
+
+            <row>
+              <entry align="center">4</entry>
+
+              <entry>Erstellung der FOP-Benutzerkonfigurationsdatei</entry>
+
+              <entry>Schritt 2: PDF-Erstellung</entry>
+            </row>
+
+            <row>
+              <entry align="center">5</entry>
+
+              <entry>PDF "bauen" und commiten</entry>
+
+              <entry>(Letzter Schritt – der eigentliche Erstellvorgang)</entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </blockquote>
+  </section>
+
+  <section id="fontembed-find-fonts">
+    <title>Schritt 1: Finden der benötigten Schriftarten</title>
+
+    <titleabbrev>1: Finden der benötigten Schriftarten</titleabbrev>
+
+    <para>Die DocBook-Stylesheets unterscheiden zwischen sechs Schrift<quote>familien</quote>: für body, title, monospaced, symbol, dingbat und
+    <quote>sans</quote> (= sans-serif) text. Sie sind wie folgt definiert:</para>
+
+    <blockquote>
+      <programlisting>body.font.family      = serif
+title.font.family     = sans-serif
+monospace.font.family = monospace
+symbol.font.family    = Symbol,ZapfDingbats
+dingbat.font.family   = serif
+sans.font.family      = sans-serif</programlisting>
+    </blockquote>
+
+    <para>Die sans.font.family wird in der Praxis nicht verwendet. Sie wird nur der Vollständigkeit halber aufgelistet. Die symbol- und dingbat-Familien werden vermutlich nicht
+      verändert. Das bringt uns dazu, passende Fonts für body, title und monospace zu finden.</para>
+
+    <para>Für englische und andere westliche Sprachen wird <quote>serif</quote>
+    zu Times New Roman im PDF, <quote>sans-serif</quote> zu
+    Helvetica/Arial und <quote>monospace</quote> zu Courier. Diese Schriftarten, ebenso der Symbol-Fonts, werden von allen Adobe PDF-Readern unterstützt.
+    Deshalb müssen westliche Docwriter keine speziellen Anstrengungen unternehmen, damit ihre Sprache korrekt dargestellt wird. Die meisten nicht-westlich orientierten Zeichen sind hingegen
+    nicht Teil der Adobe Standardfonts. Wenn Sie die Schriftarten nicht selbst einbetten, werden die Tools das PDF ohne Meckern erstellen, die unbekannten Zeichen werden jedoch durch ein
+    <quote><literal>#</literal></quote> ersetzt. Ihr Text sieht dann möglicherweise so aus: ####
+    ## #### #### ##### ## ## #####.</para>
+
+    <para>Sie sind gut beraten, Schriftarten zu verwenden, die allgemein auf Computersystem vorhanden sind, zumindest innerhalb Ihrer Lokalisierung.
+      Metrics und Konfigurationsdaten werden ins CVS committet und sind durch andere Docwriter nutzbar, jedoch nicht die Schriftarten selbst. Diese müssen auf dem System des Benutzers vorhanden
+      sein, wenn ein PDF erstellt werden soll. (Hinweis: Nur beim
+    <emphasis>Erstellen</emphasis>, nicht beim
+    <emphasis>Lesen</emphasis>!)</para>
+
+    <para>Wenn Ihre Sprache oder Schriften keinen Unterschied zwischen serifen-
+    und nicht-serifen-Fonts macht, wählen Sie die gleiche Schriftart für den body und die title-Familien – oder verwenden Sie eine Auswahl, die Ihrer Sprache angemessen ist. 
+    Versuchen Sie jedoch nicht einen anderen Font für die monospace-Familie zu verwenden, auch wenn der Unterschied zwischen proportionalen und nicht-proportionalen
+    Schriftarten in Ihrem Fall bedeutungslos scheint. Monospaced wird häufig verwendet, um Wörter in Sätzen hervorzuheben.</para>
+
+    <para>Jeder gewählte Font sollte diese Schrifteffekte unterstützen: normal,
+    italic (kursiv), bold (fett), und bold italic (fett-kursiv). (Nur wenn dies für Ihre Sprache relevant ist.) 
+    Manchmal werden diese Unterschiede innerhalb einer Font-Datei vorgehalten, manchmal sind sie über bis zu vier Dateien verstreut.
+    Nutzen Sie nur Type 1- und TrueType-Fonts.</para>
+
+    <para>Aufgrund der erheblichen Unterschiede zwischen den weltweit vorhandenen Sprachen und Schriften, ist es unmöglich eine spezifische Anweisung diesbezüglich zu geben.
+      Fühlen Sie sich frei, jederzeit Probleme oder Fragen diesbezüglich in der firebird-docs-Liste zu diskutieren.</para>
+
+    <para>Sobald Sie sich für die zu verwendenden Fonts entschieden haben, notieren Sie sich die Ablageorte der Dateien.
+      TrueType-Dateien besitzen die Erweiterung <filename
+    class="extension">.ttf</filename>, TrueType-Sammlungen <filename
+    class="extension">.ttc</filename>. Type 1-Dateien besitzen die Erweiterung
+    <filename class="extension">.pfb</filename> (der Font selbst) und
+    <filename class="extension">.pfm</filename> (die Metric-Info). Zum Einbetten von
+    Type 1-Fonts, benötigen Sie beide Dateien, die <filename class="extension">.pfb</filename> 
+    und die <filename class="extension">.pfm</filename>.</para>
+  </section>
+
+  <section id="fontembed-override-fonts">
+    <title>Schritt 2: Überschreiben der Stylesheet-Schriftarten</title>
+
+    <titleabbrev>2: Überschreiben der Stylesheet-Schriftarten</titleabbrev>
+
+    <para>Jede Font-Konfiguration wird im Verzeichnis <filename
+    class="directory">manual/config/xx</filename> platziert, wo <literal>xx</literal>
+    Ihrem Sprachcode entspricht. Wenn das Verzeichnis bisher nicht existiert, erstellen Sie es. Bearbeiten Sie die Datei
+    <filename>fo-params.txt</filename> in diesem Verzeichnis (wenn sie noch nicht existiert, kopieren Sie sie aus <filename
+    class="directory">manual/config</filename>). Angenommen Sie arbeiten an einem japanischen Setup und Sie haben folgende Schriftarten gewählt:
+    MSGothic für titles,
+    MSMincho für normal body text und WPJapanese um monospace zu ersetzen.
+    Sie würden dann die relevanten Teile der 
+    <filename>manual/config/ja/fo-params.txt</filename> wie folgt bearbeiten:</para>
+
+    <blockquote>
+      <programlisting>body.font.family=MSMincho
+title.font.family=MSGothic
+monospace.font.family=WPJapanese</programlisting>
+    </blockquote>
+
+    <para>Stellen Sie sicher, dass Sie jede veränderte Zeile unkommentieren, wenn notwendig.</para>
+
+    <para>Sobald die Zwischenausgabe der XSL-FO für japanisch erstellt wurde, wird das Dokument Referenzen für diese Schriftarten
+      enthalten, statt der Standardfonts der Stylesheets. Ein Teil der <filename
+    class="extension">.fo</filename>-Datei könnte folgendermaßen aussehen:</para>
+
+    <blockquote>
+      <programlisting>&lt;fo:block keep-together="always" margin-left="0pc"
+          font-family="MSMincho,Symbol,ZapfDingbats"&gt;
+  &lt;fo:block font-family="MSMincho" font-weight="bold" 
+            keep-with-next.within-column="always"
+            space-before.minimum="0.8em" space-before.optimum="1.0em"
+            space-before.maximum="1.2em" 
+            color="darkblue" text-align="start"&gt;
+    &lt;fo:block font-size="19.8pt"&gt;...Japanese text here...&lt;/fo:block&gt;
+  &lt;/fo:block&gt;
+&lt;/fo:block&gt;</programlisting>
+    </blockquote>
+
+    <para>Die nächsten zwei Schritte behandeln den folgenden Aspekt: Die eigentliche Erstellung des PDFs.</para>
+  </section>
+
+  <section id="fontembed-metrics">
+    <title>Schritt 3: Erstellung der Metric-Dateien</title>
+
+    <titleabbrev>3: Erstellung der Metric-Dateien</titleabbrev>
+
+    <para>Für jeden verwendeten nicht-Standardfonts, muss eine Datei mit Font-Metric-Informationen erstellt werden.
+      Apache FOP benötigt diese Infos während der XSL-FO <literal>-&gt;</literal> PDF-Konvertierung. 
+      Sie können die Metric-Dateien mit den <literal>t1metrics</literal> und
+    <literal>ttfmetrics</literal> targets Ihres Buildsystems generieren. Rufen Sie die Befehlszeile auf und wechseln Sie in das Verzeichnis
+    <filename class="directory">manual/src/build</filename>. Geben Sie folgendes Kommando ein
+    (alles in einer Zeile!):</para>
+
+    <blockquote>
+      <programlisting>build ttfmetrics
+  -Dff=<replaceable>D:\Path\To\fontfile</replaceable>.ttf -Dmf=<replaceable>filename</replaceable>.xml -Dsfx=<replaceable>xx</replaceable></programlisting>
+    </blockquote>
+
+    <para>Um die TTF-Metric-Datei zu erstellen, oder</para>
+
+    <blockquote>
+      <programlisting>build t1metrics
+  -Dff=<replaceable>D:\Path\To\fontfile</replaceable>.pfm -Dmf=<replaceable>filename</replaceable>.xml -Dsfx=<replaceable>xx</replaceable></programlisting>
+    </blockquote>
+
+    <para>für eine Type 1-Metric-Datei.</para>
+
+    <para>Bitte beachten Sie:</para>
+
+    <itemizedlist>
+      <listitem>
+        <para>Sie müssen den kompletten Pfad zu Ihrem Font angeben, jedoch nur einen Dateinamen für die Metric-Datei. Letztere wird ersetzt in
+        <filename
+        class="directory">manual/config/<replaceable>xx</replaceable></filename>,
+        mit <literal><replaceable>xx</replaceable></literal>, Ihrem Sprachcode.</para>
+      </listitem>
+
+      <listitem>
+        <para>Wählen Sie einen Dateinamen für Ihre Metric-Datei. Sinnvollerweise sollte der Name jedoch so gewählt werden, dass er Ihrem Font zugeordnet werden kann.</para>
+      </listitem>
+
+      <listitem>
+        <para>Für das <literal>t1metrics</literal> target, müssen Sie die
+        <filename class="extension">.pfm</filename>-Datei verwenden, nicht die
+        <filename class="extension">.pfb</filename>.</para>
+      </listitem>
+
+      <listitem>
+        <para>Das zweite Zeichen von <literal>t1metrics</literal> ist die Zahl <literal>1</literal> (eins), nicht der Buchstabe
+        <literal>el</literal>.</para>
+      </listitem>
+
+      <listitem>
+        <para>Alternativ zum Parameter <parameter>sfx</parameter> können Sie auch folgendes eingeben:
+        <literal>-Dmf=<replaceable>xx</replaceable>/<replaceable>filename</replaceable>.xml</literal>.
+		</para>
+      </listitem>
+    </itemizedlist>
+
+    <para>Bitte berücksichtigen Sie, dass Sie diesen Schritt für jede Schriftart wiederholen müssen, die Sie hinzufügen. Wenn die fett- und/oder kursiv-Variationen
+      in verschiedenen Dateien stecken, müssen Sie auch je eine eigene Metric-Datei erstellen.</para>
+
+    <important>
+      <para>Metric-Dateien, die mit FOP 0.20.5 erstellt wurden (was Teil des Build-Tools bis April 2007 war), sind nicht mit der aktuellen FOP-Version (0.93 or higher) 
+	nutzbar. Wenn Sie solch alte Dateien in Ihrem Verzeichnisbaum besitzen, regenieren Sie diese mit der jüngsten Tool-Version.
+	Bitte beachten Sie, dass Durchführung eines CVS-Updates, die aktuellen Metric-Dateien beinhalten kann.</para>
+    </important>
+
+    <section id="fontembed-metrics-ttc">
+      <title>Schriftarten-Sammlungen</title>
+
+      <para>Einige TrueType-Fonts werden in <filename
+      class="extension">.ttc</filename>-Dateien gepackt (TrueType collections). Das
+      <literal>ttcmetrics</literal> target ermöglicht Ihnen die Metric-Dateien für diese Fonts folgendermaßen zu erstellen:</para>
+
+      <blockquote>
+        <programlisting>build ttcmetrics -Dcf=<replaceable>D:\Path\To\collection</replaceable>.ttc 
+                   -Dfn=<replaceable>fontname</replaceable> -Dmf=<replaceable>filename</replaceable>.xml -Dsfx=<replaceable>xx</replaceable></programlisting>
+      </blockquote>
+
+      <para>Der <parameter>ff</parameter> (font file) Parameter wurde durch <parameter>cf</parameter> (collection file) ersetzt.
+      Zusätzlich gibt es den <parameter>fn</parameter> (font name) Parameter. Um herauszufinden, welche Fonts in einer Sammlung existieren, rufen Sie das
+      <literal>ttcmetrics</literal> target mit nur dem ersten Parameter auf, wie folgt:</para>
+
+      <blockquote>
+        <programlisting>build ttcmetrics -Dcf=<replaceable>D:\Path\To\collection</replaceable>.ttc</programlisting>
+      </blockquote>
+
+      <para>Die Ausgabe wird in einer Ausnahmebehandlung (exception) und einem 20 Zeilen langen Java Stack Trace resultieren. Vorher jedoch, finden Sie
+	eine Liste aller fonts, die die Sammlung beinhaltet.</para>
+    </section>
+  </section>
+
+  <section id="fontembed-fop-userconfig">
+    <title>Schritt 4: Erstellung einer FOP-Benutzerkonfigurationsdatei</title>
+
+    <titleabbrev>4: Erstellung einer FOP-Benutzerkonfigurationsdatei</titleabbrev>
+
+    <para>Dies ist der komplizierteste Schritt. Sie müssen die
+    <filename>fop-userconfig.xml</filename>-Datei bearbeiten, um FOP zu sagen:</para>
+
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>welche Schriftarten (und Variationen) eingebunden werden;</para>
+      </listitem>
+
+      <listitem>
+        <para>wo die Schriftarten gefunden werden können;</para>
+      </listitem>
+
+      <listitem>
+        <para>wo die Metric-Dateien gefunden werden können.</para>
+      </listitem>
+    </itemizedlist>
+
+    <para>Dann fangen wir mal an:</para>
+
+    <procedure>
+      <step>
+        <para>Wenn notwendig, kopieren Sie die <filename>fop-userconfig.xml</filename> aus dem allgemeinen
+         <filename class="directory">manual/config</filename>-Verzeichnis
+        in Ihr Sprachverzeichnis (e.g. <filename
+        class="directory">manual/config/ja</filename>).</para>
+      </step>
+
+      <step>
+        <para>Öffnen Sie die Datei in einem Text- oder XML-Editor und suchen Sie nach dem Eintrag
+        <literal>font-base</literal>. Ersetzen
+        <quote><literal>xx</literal></quote> durch Ihren Sprachcode, so dass die URL auf das korrekte Konfigurationsunterverzeichnis zeigt.
+        Entfernen Sie das Kommentarzeichen!</para>
+      </step>
+
+      <step>
+        <para>Wechseln Sie nun zum <sgmltag
+        class="element">&lt;fonts&gt;</sgmltag>-Element. Sie werden einige auskommentierte Beispiele finden.</para>
+      </step>
+
+      <step>
+        <para>Fügen Sie ein <sgmltag class="element">&lt;font&gt;</sgmltag>-Element für den ersten Font hinzu:</para>
+
+        <programlisting>&lt;font metrics-url="msmincho.xml" kerning="yes"
+      embed-url="file:///D:/WINNT/Fonts/MSMincho.ttf"&gt;
+  &lt;font-triplet name="MSMincho" style="normal" weight="normal"/&gt;
+&lt;/font&gt;</programlisting>
+
+        <para>Hinweise:</para>
+
+        <itemizedlist>
+          <listitem><para><literal>metrics-url</literal> 
+			zeigt auf die Font-Metric-Datei, die Sie zuvor erstellt haben und die im gleichen Verzeichnis wie 
+            <filename>fop-userconfig.xml</filename> liegt.</para>
+          </listitem>
+
+          <listitem>
+            <para><literal>embed-url</literal> muss eine URL sein, die auf die Font-Datei selbst zeigt. Aber vorsicht! Für Type 1-Fonts,
+	    müssen Sie die <filename class="extension">.pfb</filename>-Datei angeben, nicht die
+            <filename class="extension">.pfm</filename> wie Sie dies beim Erstellen der Metric-Datei taten.</para>
+
+            <important id="fontembed-edit-embedfile">
+              <para>Selbst wenn das gesamte Setup bereits existiert, kann es notwendig sein, <literal>embed-url</literal> zu bearbeiten, 
+	      da es möglich ist, dass die Schriftart bei Ihnen in einem anderen Verzeichnis liegt, als bei der Peson, die den ursprünglichen CSV-Commit des Setups durchgeführt hat.
+	      Mehr Konfigurationsänderungen sollten nicht nötig sein.</para>
+            </important>
+          </listitem>
+
+          <listitem>
+            <para>Das <literal>font-triplet name</literal> muss der gleiche sein, wie der Name, den Sie in
+	    <filename>fo-params.txt</filename> verwendet haben, um den Standardfont zu überschreiben.</para>
+
+            <!--The <font-name> near the beginning of the metrics file may be different.
+It is by this name that the font is included in the PDF.-->
+          </listitem>
+        </itemizedlist>
+      </step>
+
+      <step>
+        <para>Nun müssen Sie die Informationen für fett, kursiv und fett-kursiv hinzufügen.
+	  Häufig sind diese in verschiedenen Font-Dateien zu finden und Sie werden separate Metric-Dateien erstellt haben.
+	  Wenn dies tatsächlich der Fall ist, erhält jede Variation (fett, kursiv, fett-kursiv) ihren eigenen <sgmltag
+        class="element">&lt;font&gt;</sgmltag> Eintrag, zum Beispiel für fett-kursiv:</para>
+
+        <programlisting>&lt;font metrics-url="msmincho-bi.xml" kerning="yes"
+      embed-url="file:///D:/WINNT/Fonts/MSMinchoBI.ttf"&gt;
+  &lt;font-triplet name="MSMincho" style="italic" weight="bold"/&gt;
+&lt;/font&gt;</programlisting>
+
+        <para>Beachten Sie, dass <literal>font-triplet name</literal> identisch für jede Variation sein muss: 
+	der Name, den Sie in
+        <filename>fo-params.txt</filename> verwendet haben.</para>
+
+        <para>Manchmal existieren keine fett- oder kursiv-Varianten einer Schriftart.
+		In diesem Fall müssen Sie dieses <quote>faken</quote>, da die Zwischen-<filename class="extension">.fo</filename>-Datei 
+		diese spezifizieren. Wenn die Zwischendateien nicht existieren, werden die gefürchteten ### #### ## in der PDF erscheinen. Für jede nichtexistierende
+		Variation, muss ein <sgmltag
+        class="element">&lt;font-triplet&gt;</sgmltag>-Element hinzugefügt werden, für jede Varaiante, die stattdessen werden soll:</para>
+
+        <programlisting>&lt;font metrics-url="msmincho.xml" kerning="yes"
+      embed-url="file:///D:/WINNT/Fonts/MSMincho.ttf"&gt;
+  &lt;font-triplet name="MSMincho" style="normal" weight="normal"/&gt;
+  &lt;font-triplet name="MSMincho" style="italic" weight="normal"/&gt;
+&lt;/font&gt;</programlisting>
+
+        <para>Wenn weder fett noch kursiv existieren, erhalten Sie am Ende vier
+        <sgmltag class="element">&lt;font-triplet&gt;</sgmltag> Untereinträge im <sgmltag class="element">&lt;font&gt;</sgmltag>-Element.</para>
+      </step>
+
+      <step>
+        <para>Wiederholen Sie die Schritte 4 und 5 für jede Font-Familie, die Sie zu
+        <filename>fo-params.txt</filename> hinzugefügt haben.</para>
+      </step>
+    </procedure>
+
+    <para>Wenn alles erfolgreich war, sollten Sie nun in der Lage sein, PDFs in Ihrer Sprache zu erstellen..</para>
+
+    <important>
+      <para>Die FOP 0.20.5-Benutzerkonfigurationsdateien (die bis April 2007 verwendet wurden)
+      haben das falsche Format für unsere aktuelle FOP version (0.93 oder höher). 
+      Wenn FOP sich diesbezüglich meldet, führen Sie ein CVS-Update durch. Sollte das Dateiformat dann immer noch falsch sein, prüfen Sie die Datei
+      <filename>manual/config/fop-userconfig.xml</filename> und geben Sie Ihrer sprachabhängigen Benutzerkonfigurationsdatei die gleiche Struktur.</para>
+    </important>
+  </section>
+
+  <section id="fontembed-build-pdf">
+    <title>Schritt 5: Erstellung des PDF und Ausführung des Commits</title>
+
+    <titleabbrev>5: Erstellung des PDF und Ausführung des Commits</titleabbrev>
+
+    <para>Um Ihre Konfiguration zu testen, wird nun das PDF in Ihrer Sprache erstellt, z.B.:</para>
+
+    <blockquote>
+      <programlisting>build pdf -Drootid=qsg15-ru -Dsfx=ru</programlisting>
+    </blockquote>
+
+    <para>Untersuchen Sie das Ergebnis gründlich. Wenn Sie irgendwo im Dokument <quote>### ####
+    ##</quote>-Zeichen finden, wird Ihnen der Anzeigeort Hinweise darauf geben, was schiefgelaufen ist:</para>
+
+    <itemizedlist>
+      <listitem>
+        <para>Erscheinen die Zeichen in den titles, haben Sie möglicherweise vergessen die
+        <parameter>title.font.family</parameter> in
+	<filename>fo-params.txt</filename> zu überschreiben und/oder die fett- oder fett-kursiv-Variationen in der Datei
+        <filename>fop-userconfig.xml</filename> hinzuzufügen.</para>
+      </listitem>
+
+      <listitem>
+        <para>Wenn Sie im body erscheinen, habe Sie vermutlich die
+        <parameter>monospace.font.family</parameter> vergessen.</para>
+      </listitem>
+
+      <listitem>
+        <para>Besteht das Dokument hauptsächlich aus
+        <quote><literal>#</literal></quote>s, die titles sind hingegen OK, haben Sie wahrscheinlich die Angabe von <parameter>body.font.family</parameter> vergessen.
+        (Dies sollte Ihnen die Schamesröte ins Gesicht treiben.)</para>
+      </listitem>
+
+      <listitem>
+	<para>Wenn die Rauten an isolierten Stellen angezeigt werden, müssen Sie möglicherweise die Symbol- und/oder Dingbat-Familien überschreiben.</para>
+      </listitem>
+    </itemizedlist>
+
+    <para>Vergleichen Sie Ihr PDF mit dem englischen Original, um hilfreiche Anhaltspunkte für die Probleme zu finden.
+      Und natürlich gibt es da noch die <literal>firebird-docs</literal> list.</para>
+
+    <para>Sobald alles läuft, führen Sie einen Commit zum CVS aus:</para>
+
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>Das <filename class="directory">manual/config/xx</filename>
+        Sprachverzeichnis (sofern dies noch nicht im CVS existiert).</para>
+      </listitem>
+
+      <listitem>
+        <para>Die <filename class="extension">fo-params.txt</filename>-Datei in diesem Sprachverzeichnis.</para>
+      </listitem>
+
+      <listitem>
+        <para>Alle <filename class="extension">.xml</filename>-Metric-Dateien im Sprachverzeichnis.</para>
+      </listitem>
+
+      <listitem>
+        <para>Die <filename>fop-userconfig.xml</filename>-Datei im Sprachverzeichnis.</para>
+      </listitem>
+    </itemizedlist>
+
+    <para>Wenn Sie keine Schreibrechte für das CVS besitzen, kontaktieren Sie ein Mitglied des Unterprojektes. Dieses wird Ihnen beim Commit helfen..</para>
+  </section>
+
+  <section id="fontembed-afterword">
+    <title>Nachwort</title>
+
+    <para>Wir sind noch relativ "unbeleckt" bezüglich der Übersetzung der Firebird-Dokumente zu nicht-westlichen Schriften
+      und ich glaube, wir haben noch viel aus der Erfahrung zu lernen. Bitte übermitteln Sie jegliche Fehlerbericht, Kommentare und Vorschläge an die
+    <literal>firebird-docs</literal>-List. Viel Glück bei Ihrer docwriting-Tätigkeit und Übersetzungen – Es ist großartig, Teil diese Unterprojekts zu sein!</para>
+  </section>
+
+  <appendix id="fontembed-dochist">
+    <title>Dokumenthistorie</title>
+
+    <para>Die exakte Dateihistorie ist im <filename
+    class="directory">manual</filename>-Module unseres CVS-Baumes aufgenommen; Siehe <ulink
+    url="http://sourceforge.net/cvs/?group_id=9028">http://sourceforge.net/cvs/?group_id=9028</ulink></para>
+
+    <para><revhistory>
+        <revision>
+          <revnumber>0.1</revnumber>
+
+          <date>22 Dez 2005</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para>Erste Edition.</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>0.1.1</revnumber>
+
+          <date>23 Dez 2005</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para>Kleine Korrektur in Schritt 3-Abschnitt.</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>0.1.2</revnumber>
+
+          <date>24 Dez 2005</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para>Inkorrekter Fontname-Anforderungen entfernt; Bemerkung über Bearbeitung der embed-file URL hinzugefügt..</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>0.1.3</revnumber>
+
+          <date>25 Jan 2007</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para><citetitle>Wie wird das PDF erstellt</citetitle>: Entfernung einiger Wörte aus dem letzten Satz, direkt oberhalb der Schritte-Tabelle.</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>1.0</revnumber>
+
+          <date>18 Apr 2007</date>
+
+          <authorinitials>PV</authorinitials>
+
+          <revdescription>
+            <para><citetitle>Erstelle Metric-Dateien</citetitle> und
+            <citetitle>Erstelle eine FOP-Benutzerkonfigurationsdatei</citetitle>: Auf aktuellen Stand mit FOP 0.93 gebracht.</para>
+
+            <para><citetitle>Nachwort</citetitle>: Wortführung geändert. Wir sind keine kompletten Newbies mehr :-)</para>
+          </revdescription>
+        </revision>
+		<revision>
+          <revnumber>1.0-de</revnumber>
+
+          <date>21. Jul 2013</date>
+
+          <authorinitials>MK</authorinitials>
+
+          <revdescription>
+            <para>
+            <citetitle>Deutsche Übersetzung basierend auf der englischen Dokumentenversion 1.0.</citetitle></para>
+          </revdescription>
+        </revision>
+      </revhistory></para>
+  </appendix>
+
+  <appendix id="fontembed-license">
+    <title>Lizenzhinweis</title>
+
+    <para>Der Inhalt dieser Dokumentation unterliegt der "Public Documentation
+    License Version 1.0" (der <quote>Lizenz</quote>); die Dokumentation darf
+    nur unter Respektierung dieser Lizenz genutzt werden. Kopien der Lizenz
+    sind verfügbar unter <ulink
+    url="http://www.firebirdsql.org/pdfmanual/pdl.pdf">http://www.firebirdsql.org/pdfmanual/pdl.pdf</ulink>
+    (PDF) und <ulink
+    url="http://www.firebirdsql.org/manual/pdl.html">http://www.firebirdsql.org/manual/pdl.html</ulink>
+    (HTML).</para>
+
+    <para>Die Original-Dokumentation trägt den Titel <citetitle>Using non-Western
+    fonts in your Firebird docs</citetitle>.</para>
+
+    <para>Der ursprünglich Autor der Original-Dokumentation ist: Paul Vinkenoog.</para>
+
+    <para>Copyright (C) 2005-2007. Alle Rechte vorbehalten. Kontakt zum
+    Original-Autor: paulvink at users dot sourceforge dot net.</para>
+    
+    <para>Übersetzung ins Deutsche: Martin Köditz.</para>
+
+	<para>Übersetzung ins Deutsche Copyright (C) 2013: Alle Rechte vorbehalten. Kontakt: martin dot koeditz at it-syn dot de.</para> 
+    
+  </appendix>
+</article>
