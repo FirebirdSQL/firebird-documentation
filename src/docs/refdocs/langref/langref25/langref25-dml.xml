@@ -1671,7 +1671,8 @@ group by fieldcount</programlisting>
       the columns in the output row.</para>
 
       <para>A <quote>plain</quote> <database>SELECT</database> statement can
-      only be used in ESQL or PSQL if it returns at most one row. For multirow
+      only be used in ESQL or PSQL if it returns at most one row – in other
+      words, if it is a <emphasis>singleton</emphasis> select. For multirow
       selects, PSQL provides the <database>FOR SELECT</database> loop, which
       is discussed in the PSQL chapter. In addition, both PSQL and ESQL
       support the <database>DECLARE CURSOR</database> statement, which binds a
@@ -1709,8 +1710,8 @@ group by fieldcount</programlisting>
       <bridgehead>Examples</bridgehead>
 
       <para>In ESQL, with <varname>min_amt</varname>,
-      <varname>avg_amt</varname> and <varname>max_amt</varname> being host
-      language (e.g. C) variables:</para>
+      <varname>avg_amt</varname> and <varname>max_amt</varname> host language
+      (e.g. C) variables:</para>
 
       <blockquote>
         <programlisting>select min(amount), avg(cast(amount as float)), max(amount)
@@ -1730,10 +1731,299 @@ group by fieldcount</programlisting>
   into min_amt, avg_amt, max_amt;</programlisting>
       </blockquote>
 
-      <para>The <database>CAST</database> serves to make the average a broken
-      number. Otherwise (since <systemitem>amount</systemitem> is presumably
-      an integer field) it would be truncated to the nearest lower
-      integer.</para>
+      <para>(The <database>CAST</database> serves to make the average a broken
+      number. Otherwise – since <systemitem>amount</systemitem> is presumably
+      an integer field – it would be truncated to the nearest lower
+      integer.)</para>
+
+      <para>In a PSQL trigger:</para>
+
+      <blockquote>
+        <programlisting>select list(name, ', ')
+  from persons p
+  where p.id in (new.father, new.mother)
+  into new.parentnames;</programlisting>
+      </blockquote>
+    </section>
+
+    <section id="langref25-dml-select-from">
+      <title>The <database>FROM</database> clause</title>
+
+      <para>The <database>FROM</database> clause specifies the source(s) from
+      which the data are to be retrieved. In its simplest form, this is just a
+      single table or view. But the source can also be a selectable stored
+      procedure, a derived table or a common table expression. Multiple
+      sources can be combined using various types of joins.</para>
+
+      <para>This section concentrates on single-source selects. Joins are
+      discussed in the next section.</para>
+
+      <formalpara>
+        <title>Syntax</title>
+
+        <para><blockquote>
+            <programlisting>SELECT
+   ...
+   FROM <replaceable>&lt;source&gt;</replaceable>
+   [<replaceable>&lt;joins&gt;</replaceable>]
+   [...]
+
+<replaceable>&lt;source&gt;     </replaceable>     ::=  {<replaceable>table</replaceable>
+                          | <replaceable>view</replaceable>
+                          | <replaceable>selectable-stored-procedure</replaceable> [(<replaceable>args</replaceable>)]
+                          | <replaceable>&lt;derived-table&gt;</replaceable>
+                          | <replaceable>&lt;common-table-expression&gt;</replaceable>}
+                       [[AS] <replaceable>alias</replaceable>]
+
+<replaceable>&lt;derived-table&gt;</replaceable>   ::=  (<replaceable>select-statement</replaceable>) [[AS] <replaceable>alias</replaceable>]
+                         [(<replaceable>&lt;column-aliases&gt;</replaceable>)]
+
+<replaceable>&lt;common-table-expression&gt;</replaceable>
+                  ::=  WITH [RECURSIVE] <replaceable>&lt;cte-def&gt;</replaceable> [, <replaceable>&lt;cte-def&gt;</replaceable> ...]
+                       <replaceable>select-statement</replaceable>
+
+<replaceable>&lt;cte-def&gt;</replaceable>         ::=  <replaceable>name</replaceable> [(<replaceable>&lt;column-aliases&gt;</replaceable>)] AS (<replaceable>select-statement</replaceable>)
+
+<replaceable>&lt;column-aliases&gt;</replaceable>  ::=  <replaceable>column-alias</replaceable> [, <replaceable>column-alias</replaceable> ...]</programlisting>
+          </blockquote></para>
+      </formalpara>
+
+      <section id="langref25-dml-select-from-table-view">
+        <title>Selecting from a table or view</title>
+
+        <para>When selecting from a single table or view, the
+        <database>FROM</database> clause need not contain anything more than
+        the name. An alias may be useful or even necessary if there are
+        subselects that refer to the main select statement (as they often do –
+        subqueries like this are called <firstterm>correlated
+        subqueries</firstterm>).</para>
+
+        <bridgehead>Examples</bridgehead>
+
+        <blockquote>
+          <programlisting>select id, name, sex, age from actors
+  where state = 'Ohio'</programlisting>
+        </blockquote>
+
+        <blockquote>
+          <programlisting>select * from birds
+  where type = 'flightless'
+  order by family, genus, species</programlisting>
+        </blockquote>
+
+        <blockquote>
+          <programlisting>select firstname,
+       middlename,
+       lastname,
+       date_of_birth,
+       (select name from schools s where p.school = s.id) schoolname
+from pupils p
+where year_started = '2012'
+order by schoolname, date_of_birth</programlisting>
+        </blockquote>
+      </section>
+
+      <section id="langref25-dml-select-sp">
+        <title>Selecting from a stored procedure</title>
+
+        <para>A <firstterm>selectable stored procedure</firstterm> is a
+        procedure that:</para>
+
+        <itemizedlist spacing="compact">
+          <listitem>
+            <para>contains at least one output parameter, and</para>
+          </listitem>
+
+          <listitem>
+            <para>utilizes the <database>SUSPEND</database> keyword so the
+            caller can fetch the output rows one by one, just as when
+            selecting from a table or view.</para>
+          </listitem>
+        </itemizedlist>
+
+        <para>The output parameters of a selectable stored procedure
+        correspond to the columns of a regular table.</para>
+
+        <para>Selecting from a stored procedure without input parameters is
+        just like selecting from a table or view:</para>
+
+        <blockquote>
+          <programlisting>select * from suspicious_transactions
+  where assignee = 'John'</programlisting>
+        </blockquote>
+
+        <para>Any required input parameters must be specified after the
+        procedure name, enclosed in parentheses:</para>
+
+        <blockquote>
+          <programlisting>select name, az, alt from visible_stars('Brugge', current_date, '22:30')
+  where alt &gt;= 20
+  order by az, alt</programlisting>
+        </blockquote>
+
+        <para>Values for optional parameters (that is, parameters for which
+        default values have been defined) may be omitted or provided. However,
+        if you provide them only partly, the parameters you omit must all be
+        at the tail end.</para>
+
+        <para>Supposing that the procedure
+        <systemitem>visible_stars</systemitem> from the previous example has
+        two optional parameters: <parameter>min_magn</parameter>
+        (numeric(3,1)) and <parameter>spectral_class</parameter>
+        (varchar(12)), the following queries are all valid:</para>
+
+        <blockquote>
+          <programlisting>select name, az, alt from visible_stars('Brugge', current_date, '22:30')
+select name, az, alt from visible_stars('Brugge', current_date, '22:30', 4.0)
+select name, az, alt from visible_stars('Brugge', current_date, '22:30', 4.0, 'G')</programlisting>
+        </blockquote>
+
+        <para>But this one isn't, because there's a <quote>hole</quote> in the
+        parameter list:</para>
+
+        <blockquote>
+          <programlisting>select name, az, alt from visible_stars('Brugge', current_date, '22:30', 'G')</programlisting>
+        </blockquote>
+
+        <para>An alias for a selectable stored procedure is specified
+        <emphasis>after</emphasis> the parameter list:</para>
+
+        <blockquote>
+          <programlisting>select number,
+       (select name from contestants c where c.number = gw.number)
+from get_winners('#34517', 'AMS') gw</programlisting>
+        </blockquote>
+
+        <para>If you qualify a column (output parameter) with the full
+        procedure name, don't include the parameter list:</para>
+
+        <blockquote>
+          <programlisting>select number,
+       (select name from contestants c where c.number = get_winners.number)
+from get_winners('#34517', 'AMS')</programlisting>
+        </blockquote>
+      </section>
+
+      <section id="langref25-dml-select-from-dt">
+        <title>Derived tables</title>
+
+        <para>A derived table is a valid <database>SELECT</database> statement
+        enclosed in parentheses, optionally followed by a table alias and/or
+        column aliases. The result set of the statement acts as a virtual
+        table which the enclosing statement can query.</para>
+
+        <para>Derived tables are discussed in detail in the section <link
+        linkend="langref25-dml-derived-tables"><citetitle>Derived tables
+        (<quote><database>SELECT FROM
+        SELECT</database></quote>)</citetitle></link>. Here, we only give an
+        example.</para>
+
+        <para>Suppose we have a table <database>COEFFS</database> which
+        contains the coefficients of a number of quadratic equations we have
+        to solve. It has been defined like this:</para>
+
+        <blockquote>
+          <programlisting>create table coeffs (
+  a double precision not null,
+  b double precision not null,
+  c double precision not null,
+  constraint chk_a_not_zero check (a &lt;&gt; 0)
+)</programlisting>
+        </blockquote>
+
+        <para>Depending on the values of <replaceable>a</replaceable>,
+        <replaceable>b</replaceable> and <replaceable>c</replaceable>, each
+        equation may have zero, one or two solutions in ℝ. It is possible to
+        find these solutions with a single-level query on table
+        <database>COEFFS</database>, but the code will look rather messy and
+        several values (like the discriminant) will have to be calculated
+        multiple times per row. A derived table can help keep things clean
+        here:</para>
+
+        <blockquote>
+          <programlisting>select
+  iif (D &gt;= 0, (-b - sqrt(D)) / denom, null) sol_1,
+  iif (D &gt;  0, (-b + sqrt(D)) / denom, null) sol_2
+  from
+    (select b, b*b - 4*a*c, 2*a from coeffs) (b, D, denom)</programlisting>
+        </blockquote>
+
+        <para>If we want to show the coefficients next to the solutions (which
+        may not be a bad idea), we can alter the query like this:</para>
+
+        <blockquote>
+          <programlisting>select
+  a, b, c,
+  iif (D &gt;= 0, (-b - sqrt(D)) / denom, null) sol_1,
+  iif (D &gt;  0, (-b + sqrt(D)) / denom, null) sol_2
+  from
+    (select a, b, c, b*b - 4*a*c as D, 2*a as denom
+     from coeffs)</programlisting>
+        </blockquote>
+
+        <para>Notice that whereas the first query used a column aliases list
+        for the derived table, the second defines aliases internally where
+        needed. Both methods work, as long as every column is guaranteed to
+        have a name.</para>
+      </section>
+
+      <section id="langref25-dml-select-from-cte">
+        <title>Common table expressions</title>
+
+        <para>A common table expression or <database>CTE</database> is a more
+        complex, but also more powerful type of derived table. A preamble,
+        starting with the keyword <database>WITH</database>, defines one or
+        more named <database>CTE</database>'s, each optionally with a column
+        aliases list. The main query, which follows the preamble, can then
+        access these <database>CTE</database>'s as if they were regular tables
+        or views. Once the main query has run to completion, the
+        <database>CTE</database>'s go out of scope.</para>
+
+        <para>For a full discussion of <database>CTE</database>'s, please
+        refer to the section <link
+        linkend="langref25-dml-select-cte"><citetitle>Common Table Expressions
+        (<quote><database>WITH ... AS ...
+        SELECT</database></quote>)</citetitle></link>.</para>
+
+        <para>The following is a rewrite of our derived table example as a
+        <database>CTE</database>:</para>
+
+        <blockquote>
+          <programlisting>with vars (b, D, denom) as (
+  select b, b*b - 4*a*c, 2*a from coeffs
+)
+select
+  iif (D &gt;= 0, (-b - sqrt(D)) / denom, null) sol_1,
+  iif (D &gt;  0, (-b + sqrt(D)) / denom, null) sol_2
+from vars</programlisting>
+        </blockquote>
+
+        <para>Except for the fact that the calculations that have to be made
+        first are now at the beginning, this isn't a great improvement over
+        the derived table version. But we can now also eliminate the double
+        calculation of sqrt(D) for every row:</para>
+
+        <blockquote>
+          <programlisting>with vars (b, D, denom) as (
+  select b, b*b - 4*a*c, 2*a from coeffs
+),
+vars2 (b, D, denom, sqrtD) as (
+  select b, D, denom, iif (D &gt;= 0, sqrt(D), null) from vars
+)
+select
+  iif (D &gt;= 0, (-b - sqrtD) / denom, null),
+  iif (D &gt;  0, (-b + sqrtD) / denom, null)
+from vars2</programlisting>
+        </blockquote>
+
+        <para>The code is a little more complicated now, but it might execute
+        more efficiently (depending on what takes more time: executing the
+        <database>SQRT</database> function or passing the values of
+        <replaceable>b</replaceable>, <replaceable>D</replaceable> and
+        <replaceable>denom</replaceable> through an extra
+        <database>CTE</database>). Incidentally, we could have done the same
+        with derived tables, but that would involve nesting.</para>
+      </section>
     </section>
 
     <section id="langref25-dml-select-joins">
@@ -1747,16 +2037,65 @@ group by fieldcount</programlisting>
         <para><blockquote>
             <programlisting>SELECT
    ...
-   FROM <replaceable>relation</replaceable> [[AS] <replaceable>alias</replaceable>] [<replaceable>&lt;joins&gt;</replaceable>]   -- <replaceable>source</replaceable> gebruiken ipv <replaceable>relation</replaceable>?
-      -- in sectie JOINS wordt <replaceable>&lt;joins&gt;</replaceable> dan uitgewerkt tot
-      <replaceable>&lt;joins&gt;</replaceable>  ::=  <replaceable>&lt;join&gt;</replaceable> [, <replaceable>&lt;join&gt;</replaceable> ...]
-      <replaceable>&lt;join&gt;</replaceable>   ::=  [INNER | {LEFT | RIGHT | FULL} [OUTER]] JOIN <replaceable>relation</replaceable> [[AS] <replaceable>alias</replaceable>] ON <replaceable>&lt;conditions&gt;</replaceable>
-      -- wacht effe: er zijn inmiddels meer soorten JOINs bijgekomen:
-      --   &lt;relation&gt; CROSS JOIN &lt;relation&gt;   (set multiplication, geen ON subclaus!) (zelfde als comma syntax?)
-      --   Named columns join: &lt;relation&gt; [&lt;join_type&gt;] JOIN &lt;relation&gt; USING (colname [, colname ...])
-      --      (an equi-join on the named cols, which must exist in both relations)
-      --   Natural join: &lt;relation&gt; NATURAL [&lt;join_type&gt;] JOIN &lt;relation&gt;
-      --      (an auto equi-join on the cols that exist in both relations; if none, then cross join!)</programlisting>
+   FROM <replaceable>&lt;source&gt;</replaceable>
+   [<replaceable>&lt;joins&gt;</replaceable>]
+   [...]
+
+<replaceable>&lt;source&gt;     </replaceable>     ::=  {<replaceable>table</replaceable>
+                          | <replaceable>view</replaceable>
+                          | <replaceable>selectable-stored-procedure</replaceable> [(<replaceable>args</replaceable>)]
+                          | <replaceable>derived-table</replaceable>
+                          | <replaceable>common-table-expression</replaceable>}
+                       [[AS] <replaceable>alias</replaceable>]
+
+<replaceable>&lt;joins&gt;      </replaceable>     ::=  <replaceable>&lt;join&gt;</replaceable> [<replaceable>&lt;join&gt;</replaceable> ...]
+
+<replaceable>&lt;join&gt;</replaceable>            ::=  [<replaceable>&lt;join-type&gt;</replaceable>] JOIN <replaceable>&lt;source&gt;</replaceable> <replaceable>&lt;join-condition&gt;</replaceable>
+                         | NATURAL [<replaceable>&lt;join-type&gt;</replaceable>] JOIN <replaceable>&lt;source&gt;</replaceable>
+                         | {CROSS JOIN | ,} <replaceable>&lt;source&gt;</replaceable>
+
+<replaceable>&lt;join-type&gt;</replaceable>       ::=  INNER | {LEFT | RIGHT | FULL} [OUTER]
+
+<replaceable>&lt;join-condition&gt;</replaceable>  ::=  ON <replaceable>condition</replaceable> | USING (<replaceable>column-list</replaceable>)
+
+
+
+
+
+SQL 2003 sez:
+
+&lt;joined table&gt; ::=
+    &lt;cross join&gt;
+  | &lt;qualified join&gt;
+  | &lt;natural join&gt;
+
+&lt;cross join&gt; ::=
+    &lt;table reference&gt; CROSS JOIN &lt;table factor&gt;
+
+&lt;qualified join&gt; ::=
+    &lt;table reference&gt; [ &lt;join type&gt; ] JOIN &lt;table reference&gt; &lt;join specification&gt;
+
+&lt;natural join&gt; ::=
+    &lt;table reference&gt; NATURAL [ &lt;join type&gt; ] JOIN &lt;table factor&gt;
+
+&lt;join specification&gt; ::=
+    &lt;join condition&gt;
+  | &lt;named columns join&gt;
+
+&lt;join condition&gt; ::= ON &lt;search condition&gt;
+
+&lt;named columns join&gt; ::= USING &lt;left paren&gt; &lt;join column list&gt; &lt;right paren&gt;
+
+&lt;join type&gt; ::=
+    INNER
+  | &lt;outer join type&gt; [ OUTER ]
+
+&lt;outer join type&gt; ::=
+    LEFT
+  | RIGHT
+  | FULL
+
+&lt;join column list&gt; ::= &lt;column name list&gt;</programlisting>
           </blockquote></para>
       </formalpara>
     </section>
@@ -2084,23 +2423,13 @@ also without an alias, does that mean they have the same context? I hope not...-
         <!--ESQL? Suppose not, but do find out / ask-->
       </formalpara>
 
-      <formalpara>
-        <title>Added in</title>
-
-        <para>2.1</para>
-      </formalpara>
-
-      <formalpara>
-        <title>Description</title>
-
-        <para>A common table expression or <database>CTE</database> can be
-        described as a virtual table or view, defined in a preamble to a main
-        query, and going out of scope after the main query's execution. The
-        main query can reference any <database>CTE</database>s defined in the
-        preamble as if they were regular tables or views.
-        <database>CTE</database>s can be recursive, i.e. self-referencing, but
-        they cannot be nested.</para>
-      </formalpara>
+      <para>A common table expression or <database>CTE</database> can be
+      described as a virtual table or view, defined in a preamble to a main
+      query, and going out of scope after the main query's execution. The main
+      query can reference any <database>CTE</database>s defined in the
+      preamble as if they were regular tables or views.
+      <database>CTE</database>s can be recursive, i.e. self-referencing, but
+      they cannot be nested.</para>
 
       <formalpara>
         <title>Syntax</title>
@@ -2323,21 +2652,10 @@ from <emphasis role="bold">dept_tree</emphasis> d
       <title>Derived tables (<quote><database>SELECT FROM
       SELECT</database></quote>)</title>
 
-      <formalpara>
-        <title>Added in</title>
-
-        <para>2.0</para>
-      </formalpara>
-
-      <formalpara>
-        <title>Description</title>
-
-        <para>A derived table is the result set of a
-        <database>SELECT</database> query, used in an outer
-        <database>SELECT</database> as if it were an ordinary table. Put
-        otherwise, it is a subquery in the <database>FROM</database>
-        clause.</para>
-      </formalpara>
+      <para>A derived table is the result set of a <database>SELECT</database>
+      query, used in an outer <database>SELECT</database> as if it were an
+      ordinary table. Put another way, it is a subquery in the
+      <database>FROM</database> clause.</para>
 
       <formalpara>
         <title>Syntax</title>
@@ -2347,7 +2665,7 @@ from <emphasis role="bold">dept_tree</emphasis> d
    [[AS] <replaceable>derived-table-alias</replaceable>]
    [(<replaceable>&lt;derived-column-aliases&gt;</replaceable>)]
 
-<replaceable>&lt;derived-column-aliases&gt;</replaceable>  :=  <replaceable>column-alias</replaceable> [, <replaceable>column-alias</replaceable> ...]</programlisting>
+<replaceable>&lt;derived-column-aliases&gt;</replaceable>  ::=  <replaceable>column-alias</replaceable> [, <replaceable>column-alias</replaceable> ...]</programlisting>
           </blockquote></para>
       </formalpara>
 
