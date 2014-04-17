@@ -1962,7 +1962,7 @@ from get_winners('#34517', 'AMS')</programlisting>
         </blockquote>
 
         <para>Notice that whereas the first query used a column aliases list
-        for the derived table, the second defines aliases internally where
+        for the derived table, the second adds aliases internally where
         needed. Both methods work, as long as every column is guaranteed to
         have a name.</para>
       </section>
@@ -2011,8 +2011,8 @@ vars2 (b, D, denom, sqrtD) as (
   select b, D, denom, iif (D &gt;= 0, sqrt(D), null) from vars
 )
 select
-  iif (D &gt;= 0, (-b - sqrtD) / denom, null),
-  iif (D &gt;  0, (-b + sqrtD) / denom, null)
+  iif (D &gt;= 0, (-b - sqrtD) / denom, null) sol_1,
+  iif (D &gt;  0, (-b + sqrtD) / denom, null) sol_2
 from vars2</programlisting>
         </blockquote>
 
@@ -2029,7 +2029,16 @@ from vars2</programlisting>
     <section id="langref25-dml-select-joins">
       <title>Joins</title>
 
-      <para/>
+      <para>Joins combine data from two sources into a single set. This is
+      done on a row-by-row basis and usually involves the checking of a
+      <firstterm>join condition</firstterm> in order to determine which rows
+      should be linked together and appear in the resulting dataset. There are
+      several types (<database>INNER</database>, <database>OUTER</database>)
+      and classes (qualified, natural, etc.) of joins, each with their own
+      syntax and rules.</para>
+
+      <para>Since joins can be chained, the datasets involved in a join may
+      themselves be joined sets.</para>
 
       <formalpara>
         <title>Syntax</title>
@@ -2056,48 +2065,686 @@ from vars2</programlisting>
 
 <replaceable>&lt;join-type&gt;</replaceable>       ::=  INNER | {LEFT | RIGHT | FULL} [OUTER]
 
-<replaceable>&lt;join-condition&gt;</replaceable>  ::=  ON <replaceable>condition</replaceable> | USING (<replaceable>column-list</replaceable>)
-
-
-
-
-
-SQL 2003 sez:
-
-&lt;joined table&gt; ::=
-    &lt;cross join&gt;
-  | &lt;qualified join&gt;
-  | &lt;natural join&gt;
-
-&lt;cross join&gt; ::=
-    &lt;table reference&gt; CROSS JOIN &lt;table factor&gt;
-
-&lt;qualified join&gt; ::=
-    &lt;table reference&gt; [ &lt;join type&gt; ] JOIN &lt;table reference&gt; &lt;join specification&gt;
-
-&lt;natural join&gt; ::=
-    &lt;table reference&gt; NATURAL [ &lt;join type&gt; ] JOIN &lt;table factor&gt;
-
-&lt;join specification&gt; ::=
-    &lt;join condition&gt;
-  | &lt;named columns join&gt;
-
-&lt;join condition&gt; ::= ON &lt;search condition&gt;
-
-&lt;named columns join&gt; ::= USING &lt;left paren&gt; &lt;join column list&gt; &lt;right paren&gt;
-
-&lt;join type&gt; ::=
-    INNER
-  | &lt;outer join type&gt; [ OUTER ]
-
-&lt;outer join type&gt; ::=
-    LEFT
-  | RIGHT
-  | FULL
-
-&lt;join column list&gt; ::= &lt;column name list&gt;</programlisting>
+<replaceable>&lt;join-condition&gt;</replaceable>  ::=  ON <replaceable>condition</replaceable> | USING (<replaceable>column-list</replaceable>)</programlisting>
           </blockquote></para>
       </formalpara>
+
+      <section id="langref25-dml-select-joins-types">
+        <title>Inner vs. outer joins</title>
+
+        <para>A join always combines data rows from two sets, the
+        <emphasis>left</emphasis> set and the <emphasis>right</emphasis> set.
+        By default, only rows that meet the join condition (i.e., that match
+        at least one row in the other set when the join condition is applied)
+        make it into the result set. This default type of join is called an
+        <firstterm>inner join</firstterm>. Suppose we have two tables
+        <database>A</database> and <database>B</database>:</para>
+
+        <blockquote>
+          <para>Table A:</para>
+
+          <informaltable>
+            <tgroup cols="2">
+              <thead>
+                <row>
+                  <entry>ID</entry>
+
+                  <entry>S</entry>
+                </row>
+              </thead>
+
+              <tbody>
+                <row>
+                  <entry>87</entry>
+
+                  <entry>Just some text</entry>
+                </row>
+
+                <row>
+                  <entry>235</entry>
+
+                  <entry>Silence</entry>
+                </row>
+              </tbody>
+            </tgroup>
+          </informaltable>
+
+          <para>Table B:</para>
+
+          <informaltable>
+            <tgroup cols="2">
+              <thead>
+                <row>
+                  <entry>CODE</entry>
+
+                  <entry>X</entry>
+                </row>
+              </thead>
+
+              <tbody>
+                <row>
+                  <entry>-23</entry>
+
+                  <entry>56.7735</entry>
+                </row>
+
+                <row>
+                  <entry>87</entry>
+
+                  <entry>416.0</entry>
+                </row>
+              </tbody>
+            </tgroup>
+          </informaltable>
+        </blockquote>
+
+        <para>If we join these tables like this:</para>
+
+        <blockquote>
+          <programlisting>select *
+  from A
+  join B on A.id = B.code</programlisting>
+        </blockquote>
+
+        <para>then the result set will be:</para>
+
+        <blockquote>
+          <informaltable>
+            <tgroup cols="4">
+              <thead>
+                <row>
+                  <entry>ID</entry>
+
+                  <entry>S</entry>
+
+                  <entry>CODE</entry>
+
+                  <entry>X</entry>
+                </row>
+              </thead>
+
+              <tbody>
+                <row>
+                  <entry>87</entry>
+
+                  <entry>Just some text</entry>
+
+                  <entry>87</entry>
+
+                  <entry>416.0</entry>
+                </row>
+              </tbody>
+            </tgroup>
+          </informaltable>
+        </blockquote>
+
+        <para>The first row of A has been joined with the second row of B
+        because together they met the condition <quote>A.id = B.code</quote>.
+        The other rows from the source tables have no match in the opposite
+        set and are therefore not included in the join. Remember, this is an
+        <database>INNER</database> join. We can make that fact explicit by
+        writing:</para>
+
+        <blockquote>
+          <programlisting>select *
+  from A
+  inner join B on A.id = B.code</programlisting>
+        </blockquote>
+
+        <para>However, since <database>INNER</database> is the default, this
+        is rarely done.</para>
+
+        <para>It is perfectly possible that a row in the left set matches
+        several rows from the right set or vice versa. In that case, all those
+        combinations are included, and we can get results like:</para>
+
+        <blockquote>
+          <informaltable>
+            <tgroup cols="4">
+              <thead>
+                <row>
+                  <entry>ID</entry>
+
+                  <entry>S</entry>
+
+                  <entry>CODE</entry>
+
+                  <entry>X</entry>
+                </row>
+              </thead>
+
+              <tbody>
+                <row>
+                  <entry>87</entry>
+
+                  <entry>Just some text</entry>
+
+                  <entry>87</entry>
+
+                  <entry>416.0</entry>
+                </row>
+
+                <row>
+                  <entry>87</entry>
+
+                  <entry>Just some text</entry>
+
+                  <entry>87</entry>
+
+                  <entry>-1.0</entry>
+                </row>
+
+                <row>
+                  <entry>-23</entry>
+
+                  <entry>Don't know</entry>
+
+                  <entry>-23</entry>
+
+                  <entry>56.7735</entry>
+                </row>
+
+                <row>
+                  <entry>-23</entry>
+
+                  <entry>Still don't know</entry>
+
+                  <entry>-23</entry>
+
+                  <entry>56.7735</entry>
+                </row>
+
+                <row>
+                  <entry>-23</entry>
+
+                  <entry>I give up</entry>
+
+                  <entry>-23</entry>
+
+                  <entry>56.7735</entry>
+                </row>
+              </tbody>
+            </tgroup>
+          </informaltable>
+        </blockquote>
+
+        <para>Sometimes we want (or need) <emphasis>all</emphasis> the rows of
+        one or both of the sources to appear in the joined set, regardless of
+        whether they match a record in the other source. This is where outer
+        joins come in. A <database>LEFT</database> outer join includes all the
+        records from the left set, but only matching records from the right
+        set. In a <database>RIGHT</database> outer join, it's the other way
+        around. <database>FULL</database> outer joins include all the records
+        from both sets. In all outer joins, the <quote>holes</quote> (the
+        places where an included source record doesn't have a match in the
+        other set) are filled up with <database>NULL</database>s.</para>
+
+        <para>In order to make an outer join, you must specify
+        <database>LEFT</database>, <database>RIGHT</database> or
+        <database>FULL</database>, optionally followed by the keyword
+        <database>OUTER</database>.</para>
+
+        <para>Below are the results of the various outer joins when applied to
+        our original tables <database>A</database> and
+        <database>B</database>:</para>
+
+        <blockquote>
+          <programlisting>select *
+  from A
+  left [outer] join B on A.id = B.code</programlisting>
+        </blockquote>
+
+        <blockquote>
+          <informaltable>
+            <tgroup cols="4">
+              <thead>
+                <row>
+                  <entry>ID</entry>
+
+                  <entry>S</entry>
+
+                  <entry>CODE</entry>
+
+                  <entry>X</entry>
+                </row>
+              </thead>
+
+              <tbody>
+                <row>
+                  <entry>87</entry>
+
+                  <entry>Just some text</entry>
+
+                  <entry>87</entry>
+
+                  <entry>416.0</entry>
+                </row>
+
+                <row>
+                  <entry>235</entry>
+
+                  <entry>Silence</entry>
+
+                  <entry><emphasis>&lt;null&gt;</emphasis></entry>
+
+                  <entry><emphasis>&lt;null&gt;</emphasis></entry>
+                </row>
+              </tbody>
+            </tgroup>
+          </informaltable>
+        </blockquote>
+
+        <blockquote>
+          <programlisting>select *
+  from A
+  right [outer] join B on A.id = B.code</programlisting>
+        </blockquote>
+
+        <blockquote>
+          <informaltable>
+            <tgroup cols="4">
+              <thead>
+                <row>
+                  <entry>ID</entry>
+
+                  <entry>S</entry>
+
+                  <entry>CODE</entry>
+
+                  <entry>X</entry>
+                </row>
+              </thead>
+
+              <tbody>
+                <row>
+                  <entry><emphasis>&lt;null&gt;</emphasis></entry>
+
+                  <entry><emphasis>&lt;null&gt;</emphasis></entry>
+
+                  <entry>-23</entry>
+
+                  <entry>56.7735</entry>
+                </row>
+
+                <row>
+                  <entry>87</entry>
+
+                  <entry>Just some text</entry>
+
+                  <entry>87</entry>
+
+                  <entry>416.0</entry>
+                </row>
+              </tbody>
+            </tgroup>
+          </informaltable>
+        </blockquote>
+
+        <blockquote>
+          <programlisting>select *
+  from A
+  full [outer] join B on A.id = B.code</programlisting>
+        </blockquote>
+
+        <blockquote>
+          <informaltable>
+            <tgroup cols="4">
+              <thead>
+                <row>
+                  <entry>ID</entry>
+
+                  <entry>S</entry>
+
+                  <entry>CODE</entry>
+
+                  <entry>X</entry>
+                </row>
+              </thead>
+
+              <tbody>
+                <row>
+                  <entry><emphasis>&lt;null&gt;</emphasis></entry>
+
+                  <entry><emphasis>&lt;null&gt;</emphasis></entry>
+
+                  <entry>-23</entry>
+
+                  <entry>56.7735</entry>
+                </row>
+
+                <row>
+                  <entry>87</entry>
+
+                  <entry>Just some text</entry>
+
+                  <entry>87</entry>
+
+                  <entry>416.0</entry>
+                </row>
+
+                <row>
+                  <entry>235</entry>
+
+                  <entry>Silence</entry>
+
+                  <entry><emphasis>&lt;null&gt;</emphasis></entry>
+
+                  <entry><emphasis>&lt;null&gt;</emphasis></entry>
+                </row>
+              </tbody>
+            </tgroup>
+          </informaltable>
+        </blockquote>
+      </section>
+
+      <section id="langref25-dml-select-joins-qualified">
+        <title>Qualified joins</title>
+
+        <para>Qualified joins specify explicit conditions for the combining of
+        rows. This happens in an <database>ON</database> clause or a
+        <database>USING</database> clause.</para>
+
+        <formalpara>
+          <title>Syntax</title>
+
+          <para><blockquote>
+              <programlisting><replaceable>&lt;qualified-join&gt;</replaceable>  ::=  [<replaceable>&lt;join-type&gt;</replaceable>] JOIN <replaceable>&lt;source&gt;</replaceable> <replaceable>&lt;join-condition&gt;</replaceable>
+
+<replaceable>&lt;join-type&gt;</replaceable>       ::=  INNER | {LEFT | RIGHT | FULL} [OUTER]
+
+<replaceable>&lt;join-condition&gt;</replaceable>  ::=  ON <replaceable>condition</replaceable> | USING (<replaceable>column-list</replaceable>)</programlisting>
+            </blockquote></para>
+        </formalpara>
+
+        <para>Most qualified joins have an <database>ON</database> clause,
+        with a condition that can be any valid boolean expression but usually
+        involves some comparison between the two sources involved. This
+        comparison is often an equality test with the
+        <quote><literal>=</literal></quote> operator. Joins like these are
+        called <firstterm>equi-joins</firstterm>. (The examples in the
+        previous section were al equi-joins.)</para>
+
+        <para>Some examples of qualified joins with an <database>ON</database>
+        clause:</para>
+
+        <blockquote>
+          <programlisting>/* Select all Detroit customers who made a purchase
+   in 2013, along with the purchase details: */
+select * from customers c
+  join sales s on s.cust_id = c.id
+  where c.city = 'Detroit' and s.year = 2013</programlisting>
+        </blockquote>
+
+        <blockquote>
+          <programlisting>/* Same as above, but include non-buying customers: */
+select * from customers c
+  left join sales s on s.cust_id = c.id
+  where c.city = 'Detroit' and s.year = 2013</programlisting>
+
+          <programlisting>/* For each man, select the women who are taller than he.
+   Men for whom no such woman exists are not included. */
+select m.fullname as man, f.fullname as woman
+  from males m
+  join females f on f.height &gt; m.height</programlisting>
+
+          <programlisting>/* Select all pupils with their class and mentor.
+   Pupils without a mentor are also included.
+   Pupils without a class are not included. */
+select p.firstname, p.middlename, p.lastname,
+       c.name, m.name
+  from pupils p
+  join classes c on c.id = p.class
+  left join mentors m on m.id = p.mentor</programlisting>
+        </blockquote>
+
+        <para>Quite often, equi-joins compare columns that have the same name
+        in both tables. If this is the case, we can also use the second type
+        of qualified join: the <firstterm>named columns join</firstterm>.
+        Named columns joins have a <database>USING</database> clause which
+        states just the column names. Instead of this:</para>
+
+        <blockquote>
+          <programlisting>select * from flotsam f
+  join jetsam j
+  on f.sea = j.sea
+  and f.ship = j.ship</programlisting>
+        </blockquote>
+
+        <para>we can also write:</para>
+
+        <blockquote>
+          <programlisting>select * from flotsam
+  join jetsam using (sea, ship)</programlisting>
+        </blockquote>
+
+        <para>which is considerably shorter. The result set is a little
+        different though:</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>The conditional join – with the <database>ON</database>
+            clause – will contain each of the columns <database>SEA</database>
+            and <database>SHIP</database> twice: once from table
+            <database>FLOTSAM</database>, and once from table
+            <database>JETSAM</database>. Obviously, they will contain the same
+            data.</para>
+          </listitem>
+
+          <listitem>
+            <para>The named columns join – with the <database>USING</database>
+            clause – will contain these columns only once.</para>
+          </listitem>
+        </itemizedlist>
+
+        <para>If, for some reason, you insist on having all the columns in the
+        result set of the named columns join, you must specify them explicitly
+        instead of using <quote><literal>*</literal></quote>:</para>
+
+        <blockquote>
+          <programlisting>select
+  f.id, f.sea, f.ship, f.description,
+  j.id, j.sea, j.ship, j.description
+from flotsam f
+  join jetsam j using (sea, ship)</programlisting>
+        </blockquote>
+
+        <para>This will give you the exact same result set as the conditional
+        join.</para>
+
+        <para>For an <database>OUTER</database> named columns join, there's an
+        additional twist when using <quote><database>SELECT</database>
+        *</quote> or an unqualified column name from the
+        <database>USING</database> list:</para>
+
+        <para>If a row from one source set doesn't have a match in the other
+        but must still be included because of the <database>LEFT</database>,
+        <database>RIGHT</database> or <database>FULL</database> directive, the
+        column in the joined set gets the non-<database>NULL</database> value.
+        That stands to reason, but now you can't tell whether this value came
+        from the left set, the right set, or both. This can be especially
+        deceiving when the value came from the right hand set, because
+        <quote><literal>*</literal></quote> always shows combined columns in
+        the left hand set – even in the case of a <database>RIGHT</database>
+        join. Whether this is a problem or not depends on the situation. If it
+        is, specify the output columns explicitly <emphasis>and qualify at
+        least all common columns with the name or alias of the source
+        relation</emphasis>. Better yet, avoid
+        <quote><literal>*</literal></quote> altogether in your serious queries
+        and qualify all column names (or at least all common column names) in
+        joined sets. This has the addional benefit that it forces you to think
+        about which data you want to retrieve and where from.</para>
+
+        <para>It is your responsibility to make sure that the column names in
+        the <database>USING</database> list are of compatible types between
+        the two sources. If the types are compatible but not equal, the engine
+        converts them to the type with the broadest range of values before
+        comparing the values. This will also be the data type of the
+        <quote>merged</quote> column that shows up in the result set if
+        <quote><database>SELECT</database> *</quote> or the unqualified column
+        name is used. Qualified columns on the other hand will always retain
+        their original data type.</para>
+
+        <note>
+          <para>The <quote><literal>=</literal></quote> operator, which is
+          explicitly used in many conditional joins and implicitly in named
+          column joins, only matches values to values. According to the SQL
+          standard, <database>NULL</database> is not a value and hence two
+          <database>NULL</database>s are neither equal nor unequal to one
+          another. If you need <database>NULL</database>s to match each other
+          in a join, use the <database>IS NOT DISTINCT FROM</database>
+          operator. This operator returns true if the operands have the same
+          value <emphasis>or</emphasis> if they are both
+          <database>NULL</database>.</para>
+
+          <programlisting>select *
+  from A join B
+  on A.id is not distinct from B.code</programlisting>
+        </note>
+      </section>
+
+      <section id="langref25-dml-select-joins-natural">
+        <title>Natural joins</title>
+
+        <para>Taking the idea of the named columns join a step further, a
+        <firstterm>natural join</firstterm> performs an automatic equi-join on
+        all the columns that have the same name in the left and right table.
+        The data types of these columns must be compatible.</para>
+
+        <formalpara>
+          <title>Syntax</title>
+
+          <para><blockquote>
+              <programlisting><replaceable>&lt;natural-join&gt;</replaceable>  ::=  NATURAL [<replaceable>&lt;join-type&gt;</replaceable>] JOIN <replaceable>&lt;source&gt;</replaceable>
+
+<replaceable>&lt;join-type&gt;</replaceable>     ::=  INNER | {LEFT | RIGHT | FULL} [OUTER]</programlisting>
+            </blockquote></para>
+        </formalpara>
+
+        <para>Given these two tables:</para>
+
+        <blockquote>
+          <programlisting>create table TA (
+  a bigint,
+  s varchar(12),
+  ins_date date
+)</programlisting>
+        </blockquote>
+
+        <blockquote>
+          <programlisting>create table TB (
+  a bigint,
+  descr varchar(12),
+  x float,
+  ins_date date
+)</programlisting>
+        </blockquote>
+
+        <para>a natural join on <database>TA</database> and
+        <database>TB</database> would involve the columns
+        <replaceable>a</replaceable> and <replaceable>ins_date</replaceable>,
+        and the following two statements would have the same effect:</para>
+
+        <blockquote>
+          <programlisting>select * from TA
+  natural join TB</programlisting>
+        </blockquote>
+
+        <blockquote>
+          <programlisting>select * from TA
+  join TB using (a, ins_date)</programlisting>
+        </blockquote>
+
+        <para>Like all joins, natural joins are inner joins by default, but
+        you can turn them into outer joins by specifying
+        <database>LEFT</database>, <database>RIGHT</database> or
+        <database>FULL</database> before the <database>JOIN</database>
+        keyword.</para>
+
+        <para>Caution! If there are no columns with the same name in the two
+        source relations, a <database>CROSS JOIN</database> is
+        performed.</para>
+      </section>
+
+      <section id="langref25-dml-select-joins-cross">
+        <title>Cross joins</title>
+
+        <para>A cross join produces the full set product of the two data
+        sources. This means that it successfully matches every row in the left
+        source to every row in the right source.</para>
+
+        <formalpara>
+          <title>Syntax</title>
+
+          <para><blockquote>
+              <programlisting><replaceable>&lt;cross-join&gt;</replaceable>  ::=  {CROSS JOIN | ,} <replaceable>&lt;source&gt;</replaceable></programlisting>
+            </blockquote></para>
+        </formalpara>
+
+        <para>Please notice that the comma syntax is deprecated! It is only
+        supported to keep legacy code working, and it may disappear in some
+        future version.</para>
+
+        <para>Cross-joining two sets is equivalent to joining them on a
+        tautology (a condition that is always true). The following two
+        statements have the same effect:</para>
+
+        <blockquote>
+          <programlisting>select * from TA
+  cross join TB</programlisting>
+
+          <programlisting>select * from TA
+  join TB on 1 = 1</programlisting>
+        </blockquote>
+
+        <para>Cross joins are inner joins, because they only include matching
+        records – it just so happens that <emphasis>every</emphasis> record
+        matches! An outer cross join, if it existed, wouldn't add anything to
+        the result, because what outer joins add are non-matching records, and
+        these don't exist in cross joins.</para>
+
+        <para>Cross joins are rarely useful, except if you want to list all
+        the possible combinations of two or more variables. Suppose you are
+        selling a product that comes in different sizes, different colors and
+        different materials. If these variables are each listed in a table of
+        their own, this query would return all the combinations:</para>
+
+        <blockquote>
+          <programlisting>select m.name, s.size, c.name
+  from materials m
+  cross join sizes s
+  cross join colors c</programlisting>
+        </blockquote>
+      </section>
+
+      <section id="langref25-dml-select-joins-ambiguity">
+        <title>Ambiguous field names in joins</title>
+
+        <para>Firebird rejects unqualified field names in a query if these
+        field names exist in more than one dataset involved in a join. This is
+        even true for inner equi-joins where the field name figures in the
+        <database>ON</database> clause like this:</para>
+
+        <blockquote>
+          <programlisting>select a, b, c
+  from TA
+  join TB on TA.a = TB.a</programlisting>
+        </blockquote>
+
+        <para>There is one exception to this rule: with named columns joins
+        and natural joins, the unqualified field name of a column taking part
+        in the matching process may be used legally and refers to the merged
+        column of the same name. For named columns joins, these are the
+        columns listed in the <database>USING</database> clause. For natural
+        joins, they are the columns that have the same name in both relations.
+        But please notice again that, especially in outer joins, plain
+        <replaceable>colname</replaceable> isn't always the same as
+        <replaceable>left</replaceable>.<replaceable>colname</replaceable> or
+        <replaceable>right</replaceable>.<replaceable>colname</replaceable>.
+        Types may differ, and one of the qualified columns may be
+        <database>NULL</database> while the other isn't. In that case, the
+        value in the merged, unqualified column may mask the fact that one of
+        the source values is absent.</para>
+      </section>
     </section>
 
     <section id="langref25-dml-aggregates">
