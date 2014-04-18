@@ -1143,9 +1143,9 @@ Try this in isql too!-->
    [INTO <replaceable>&lt;host-varlist&gt;</replaceable>]
    FROM <replaceable>source</replaceable> [[AS] <replaceable>alias</replaceable>]
    [<replaceable>&lt;joins&gt;</replaceable>]
-   [WHERE <replaceable>&lt;conditions&gt;</replaceable>]
-   [GROUP BY <replaceable>&lt;grouping-list&gt;</replaceable>]
-   [HAVING <replaceable>&lt;aggregate-conditions&gt;</replaceable>]
+   [WHERE <replaceable>&lt;condition&gt;</replaceable>]
+   [GROUP BY <replaceable>&lt;grouping-list&gt;</replaceable>
+     [[NOT] HAVING <replaceable>&lt;aggregate-condition&gt;</replaceable>]]
    [UNION [DISTINCT | ALL] <replaceable>&lt;other-select&gt;</replaceable>]
    [PLAN <replaceable>&lt;plan-items&gt;</replaceable>]
    [ORDER BY <replaceable>&lt;ordering-list&gt;</replaceable>]
@@ -2032,10 +2032,10 @@ from vars2</programlisting>
       <para>Joins combine data from two sources into a single set. This is
       done on a row-by-row basis and usually involves the checking of a
       <firstterm>join condition</firstterm> in order to determine which rows
-      should be linked together and appear in the resulting dataset. There are
-      several types (<database>INNER</database>, <database>OUTER</database>)
-      and classes (qualified, natural, etc.) of joins, each with their own
-      syntax and rules.</para>
+      should be merged and appear in the resulting dataset. There are several
+      types (<database>INNER</database>, <database>OUTER</database>) and
+      classes (qualified, natural, etc.) of joins, each with their own syntax
+      and rules.</para>
 
       <para>Since joins can be chained, the datasets involved in a join may
       themselves be joined sets.</para>
@@ -2072,13 +2072,12 @@ from vars2</programlisting>
       <section id="langref25-dml-select-joins-types">
         <title>Inner vs. outer joins</title>
 
-        <para>A join always combines data rows from two sets, the
-        <emphasis>left</emphasis> set and the <emphasis>right</emphasis> set.
-        By default, only rows that meet the join condition (i.e., that match
-        at least one row in the other set when the join condition is applied)
-        make it into the result set. This default type of join is called an
-        <firstterm>inner join</firstterm>. Suppose we have two tables
-        <database>A</database> and <database>B</database>:</para>
+        <para>A join always combines data rows from two sets (usually referred
+        to as the left set and the right set). By default, only rows that meet
+        the join condition (i.e., that match at least one row in the other set
+        when the join condition is applied) make it into the result set. This
+        default type of join is called an <firstterm>inner join</firstterm>.
+        Suppose we have the following two tables:</para>
 
         <blockquote>
           <para>Table A:</para>
@@ -2273,7 +2272,7 @@ from vars2</programlisting>
         whether they match a record in the other source. This is where outer
         joins come in. A <database>LEFT</database> outer join includes all the
         records from the left set, but only matching records from the right
-        set. In a <database>RIGHT</database> outer join, it's the other way
+        set. In a <database>RIGHT</database> outer join it's the other way
         around. <database>FULL</database> outer joins include all the records
         from both sets. In all outer joins, the <quote>holes</quote> (the
         places where an included source record doesn't have a match in the
@@ -2440,9 +2439,9 @@ from vars2</programlisting>
       <section id="langref25-dml-select-joins-qualified">
         <title>Qualified joins</title>
 
-        <para>Qualified joins specify explicit conditions for the combining of
-        rows. This happens in an <database>ON</database> clause or a
-        <database>USING</database> clause.</para>
+        <para>Qualified joins specify conditions for the combining of rows.
+        This happens either explicitly in an <database>ON</database> clause or
+        implicitly in a <database>USING</database> clause.</para>
 
         <formalpara>
           <title>Syntax</title>
@@ -2456,38 +2455,43 @@ from vars2</programlisting>
             </blockquote></para>
         </formalpara>
 
-        <para>Most qualified joins have an <database>ON</database> clause,
-        with a condition that can be any valid boolean expression but usually
-        involves some comparison between the two sources involved. This
-        comparison is often an equality test with the
-        <quote><literal>=</literal></quote> operator. Joins like these are
-        called <firstterm>equi-joins</firstterm>. (The examples in the
-        previous section were al equi-joins.)</para>
+        <section>
+          <title>Explicit-condition joins</title>
 
-        <para>Some examples of qualified joins with an <database>ON</database>
-        clause:</para>
+          <para>Most qualified joins have an <database>ON</database> clause,
+          with an explicit condition that can be any valid boolean expression
+          but usually involves some comparison between the two sources
+          involved.</para>
 
-        <blockquote>
-          <programlisting>/* Select all Detroit customers who made a purchase
+          <para>Quite often, the condition is an equality test (or a number of
+          <database>AND</database>ed equality tests) using the
+          <quote><literal>=</literal></quote> operator. Joins like these are
+          called <firstterm>equi-joins</firstterm>. (The examples in the
+          section on inner and outer joins were al equi-joins.)</para>
+
+          <para>Examples of joins with an explicit condition:</para>
+
+          <blockquote>
+            <programlisting>/* Select all Detroit customers who made a purchase
    in 2013, along with the purchase details: */
 select * from customers c
   join sales s on s.cust_id = c.id
   where c.city = 'Detroit' and s.year = 2013</programlisting>
-        </blockquote>
+          </blockquote>
 
-        <blockquote>
-          <programlisting>/* Same as above, but include non-buying customers: */
+          <blockquote>
+            <programlisting>/* Same as above, but include non-buying customers: */
 select * from customers c
   left join sales s on s.cust_id = c.id
   where c.city = 'Detroit' and s.year = 2013</programlisting>
 
-          <programlisting>/* For each man, select the women who are taller than he.
+            <programlisting>/* For each man, select the women who are taller than he.
    Men for whom no such woman exists are not included. */
 select m.fullname as man, f.fullname as woman
   from males m
   join females f on f.height &gt; m.height</programlisting>
 
-          <programlisting>/* Select all pupils with their class and mentor.
+            <programlisting>/* Select all pupils with their class and mentor.
    Pupils without a mentor are also included.
    Pupils without a class are not included. */
 select p.firstname, p.middlename, p.lastname,
@@ -2495,111 +2499,101 @@ select p.firstname, p.middlename, p.lastname,
   from pupils p
   join classes c on c.id = p.class
   left join mentors m on m.id = p.mentor</programlisting>
-        </blockquote>
+          </blockquote>
+        </section>
 
-        <para>Quite often, equi-joins compare columns that have the same name
-        in both tables. If this is the case, we can also use the second type
-        of qualified join: the <firstterm>named columns join</firstterm>.
-        Named columns joins have a <database>USING</database> clause which
-        states just the column names. Instead of this:</para>
+        <section id="langref25-dml-select-joins-named-columns">
+          <title>Named columns joins</title>
 
-        <blockquote>
-          <programlisting>select * from flotsam f
+          <para>Equi-joins often compare columns that have the same name in
+          both tables. If this is the case, we can also use the second type of
+          qualified join: the <firstterm>named columns join</firstterm>. Named
+          columns joins have a <database>USING</database> clause which states
+          just the column names. So instead of this:</para>
+
+          <blockquote>
+            <programlisting>select * from flotsam f
   join jetsam j
   on f.sea = j.sea
   and f.ship = j.ship</programlisting>
-        </blockquote>
+          </blockquote>
 
-        <para>we can also write:</para>
+          <para>we can also write:</para>
 
-        <blockquote>
-          <programlisting>select * from flotsam
+          <blockquote>
+            <programlisting>select * from flotsam
   join jetsam using (sea, ship)</programlisting>
-        </blockquote>
+          </blockquote>
 
-        <para>which is considerably shorter. The result set is a little
-        different though:</para>
+          <para>which is considerably shorter. The result set is a little
+          different though – at least when using
+          <quote><database>SELECT</database> *</quote>:</para>
 
-        <itemizedlist>
-          <listitem>
-            <para>The conditional join – with the <database>ON</database>
-            clause – will contain each of the columns <database>SEA</database>
-            and <database>SHIP</database> twice: once from table
-            <database>FLOTSAM</database>, and once from table
-            <database>JETSAM</database>. Obviously, they will contain the same
-            data.</para>
-          </listitem>
+          <itemizedlist>
+            <listitem>
+              <para>The explicit-condtion join – with the
+              <database>ON</database> clause – will contain each of the
+              columns <database>SEA</database> and <database>SHIP</database>
+              twice: once from table <database>FLOTSAM</database>, and once
+              from table <database>JETSAM</database>. Obviously, they will
+              have the same values.</para>
+            </listitem>
 
-          <listitem>
-            <para>The named columns join – with the <database>USING</database>
-            clause – will contain these columns only once.</para>
-          </listitem>
-        </itemizedlist>
+            <listitem>
+              <para>The named columns join – with the
+              <database>USING</database> clause – will contain these columns
+              only once.</para>
+            </listitem>
+          </itemizedlist>
 
-        <para>If, for some reason, you insist on having all the columns in the
-        result set of the named columns join, you must specify them explicitly
-        instead of using <quote><literal>*</literal></quote>:</para>
+          <para>If you want all the columns in the result set of the named
+          columns join, set up your query like this:</para>
 
-        <blockquote>
-          <programlisting>select
-  f.id, f.sea, f.ship, f.description,
-  j.id, j.sea, j.ship, j.description
-from flotsam f
+          <blockquote>
+            <programlisting>select f.*, j.*
+  from flotsam f
   join jetsam j using (sea, ship)</programlisting>
-        </blockquote>
+          </blockquote>
 
-        <para>This will give you the exact same result set as the conditional
-        join.</para>
+          <para>This will give you the exact same result set as the
+          explicit-condition join.</para>
 
-        <para>For an <database>OUTER</database> named columns join, there's an
-        additional twist when using <quote><database>SELECT</database>
-        *</quote> or an unqualified column name from the
-        <database>USING</database> list:</para>
+          <para>For an <database>OUTER</database> named columns join, there's
+          an additional twist when using <quote><database>SELECT</database>
+          *</quote> or an unqualified column name from the
+          <database>USING</database> list:</para>
 
-        <para>If a row from one source set doesn't have a match in the other
-        but must still be included because of the <database>LEFT</database>,
-        <database>RIGHT</database> or <database>FULL</database> directive, the
-        column in the joined set gets the non-<database>NULL</database> value.
-        That stands to reason, but now you can't tell whether this value came
-        from the left set, the right set, or both. This can be especially
-        deceiving when the value came from the right hand set, because
-        <quote><literal>*</literal></quote> always shows combined columns in
-        the left hand set – even in the case of a <database>RIGHT</database>
-        join. Whether this is a problem or not depends on the situation. If it
-        is, specify the output columns explicitly <emphasis>and qualify at
-        least all common columns with the name or alias of the source
-        relation</emphasis>. Better yet, avoid
-        <quote><literal>*</literal></quote> altogether in your serious queries
-        and qualify all column names (or at least all common column names) in
-        joined sets. This has the addional benefit that it forces you to think
-        about which data you want to retrieve and where from.</para>
+          <para>If a row from one source set doesn't have a match in the other
+          but must still be included because of the <database>LEFT</database>,
+          <database>RIGHT</database> or <database>FULL</database> directive,
+          the merged column in the joined set gets the
+          non-<database>NULL</database> value. That is fair enough, but now
+          you can't tell whether this value came from the left set, the right
+          set, or both. This can be especially deceiving when the value came
+          from the right hand set, because <quote><literal>*</literal></quote>
+          always shows combined columns in the left hand part – even in the
+          case of a <database>RIGHT</database> join.</para>
 
-        <para>It is your responsibility to make sure that the column names in
-        the <database>USING</database> list are of compatible types between
-        the two sources. If the types are compatible but not equal, the engine
-        converts them to the type with the broadest range of values before
-        comparing the values. This will also be the data type of the
-        <quote>merged</quote> column that shows up in the result set if
-        <quote><database>SELECT</database> *</quote> or the unqualified column
-        name is used. Qualified columns on the other hand will always retain
-        their original data type.</para>
+          <para>Whether this is a problem or not depends on the situation. If
+          it is, use the <quote><literal>a</literal>.<literal>*</literal>,
+          <literal>b</literal>.<literal>*</literal></quote> approach shown
+          above, with <literal>a</literal> and <literal>b</literal> the names
+          or aliases of the two sources. Or better yet, avoid
+          <quote><literal>*</literal></quote> altogether in your serious
+          queries and qualify all column names in joined sets. This has the
+          additional benefit that it forces you to think about which data you
+          want to retrieve and where from.</para>
 
-        <note>
-          <para>The <quote><literal>=</literal></quote> operator, which is
-          explicitly used in many conditional joins and implicitly in named
-          column joins, only matches values to values. According to the SQL
-          standard, <database>NULL</database> is not a value and hence two
-          <database>NULL</database>s are neither equal nor unequal to one
-          another. If you need <database>NULL</database>s to match each other
-          in a join, use the <database>IS NOT DISTINCT FROM</database>
-          operator. This operator returns true if the operands have the same
-          value <emphasis>or</emphasis> if they are both
-          <database>NULL</database>.</para>
-
-          <programlisting>select *
-  from A join B
-  on A.id is not distinct from B.code</programlisting>
-        </note>
+          <para>It is your responsibility to make sure that the column names
+          in the <database>USING</database> list are of compatible types
+          between the two sources. If the types are compatible but not equal,
+          the engine converts them to the type with the broadest range of
+          values before comparing the values. This will also be the data type
+          of the merged column that shows up in the result set if
+          <quote><database>SELECT</database> *</quote> or the unqualified
+          column name is used. Qualified columns on the other hand will always
+          retain their original data type.</para>
+        </section>
       </section>
 
       <section id="langref25-dml-select-joins-natural">
@@ -2660,9 +2654,45 @@ from flotsam f
         <database>FULL</database> before the <database>JOIN</database>
         keyword.</para>
 
-        <para>Caution! If there are no columns with the same name in the two
-        source relations, a <database>CROSS JOIN</database> is
-        performed.</para>
+        <para>Caution: if there are no columns with the same name in the two
+        source relations, a <database>CROSS JOIN</database> is performed.
+        We'll get to this type of join in a minute.</para>
+      </section>
+
+      <section id="langref25-dml-select-joins-equality">
+        <title>A note on equality</title>
+
+        <para>The <quote><literal>=</literal></quote> operator, which is
+        explicitly used in many conditional joins and implicitly in named
+        column joins and natural joins, only matches values to values.
+        According to the SQL standard, <database>NULL</database> is not a
+        value and hence two <database>NULL</database>s are neither equal nor
+        unequal to one another. If you need <database>NULL</database>s to
+        match each other in a join, use the <database>IS NOT DISTINCT
+        FROM</database> operator. This operator returns true if the operands
+        have the same value <emphasis>or</emphasis> if they are both
+        <database>NULL</database>.</para>
+
+        <blockquote>
+          <programlisting>select *
+  from A join B
+  on A.id is not distinct from B.code</programlisting>
+        </blockquote>
+
+        <para>Likewise, in the – extremely rare – cases where you want to join
+        on <emphasis>in</emphasis>equality, use <database>IS DISTINCT
+        FROM</database>, not <quote><literal>&lt;&gt;</literal></quote>, if
+        you want <database>NULL</database> to be considered different from any
+        value and two <database>NULL</database>s considered equal:</para>
+
+        <blockquote>
+          <programlisting>select *
+  from A join B
+  on A.id is distinct from B.code</programlisting>
+        </blockquote>
+
+        <para>This note about equality and inequality operators applies
+        everywhere in Firebird SQL, not only in join conditions.</para>
       </section>
 
       <section id="langref25-dml-select-joins-cross">
@@ -2681,8 +2711,8 @@ from flotsam f
         </formalpara>
 
         <para>Please notice that the comma syntax is deprecated! It is only
-        supported to keep legacy code working, and it may disappear in some
-        future version.</para>
+        supported to keep legacy code working and may disappear in some future
+        version.</para>
 
         <para>Cross-joining two sets is equivalent to joining them on a
         tautology (a condition that is always true). The following two
@@ -2702,7 +2732,7 @@ from flotsam f
         the result, because what outer joins add are non-matching records, and
         these don't exist in cross joins.</para>
 
-        <para>Cross joins are rarely useful, except if you want to list all
+        <para>Cross joins are seldom useful, except if you want to list all
         the possible combinations of two or more variables. Suppose you are
         selling a product that comes in different sizes, different colors and
         different materials. If these variables are each listed in a table of
@@ -2745,6 +2775,261 @@ from flotsam f
         value in the merged, unqualified column may mask the fact that one of
         the source values is absent.</para>
       </section>
+    </section>
+
+    <section id="langref25-dml-select-where">
+      <title>The <database>WHERE</database> clause</title>
+
+      <para>The <database>WHERE</database> clause serves to limit the rows
+      returned to the ones that the caller is interested in. The condition
+      following the keyword <database>WHERE</database> can be as simple as a
+      check like <quote><database>AMOUNT</database> = 3</quote> or it can be a
+      multilayered, convoluted expression containing subselects, predicates,
+      function calls, mathematical and logical operators, context variables
+      and more.</para>
+
+      <para>The condition in the <database>WHERE</database> clause is often
+      called the <firstterm>search condition</firstterm>, the
+      <firstterm>search expression</firstterm> or simply the
+      <firstterm>search</firstterm>.</para>
+
+      <para>In DSQL and ESQL, the search expression may contain parameters.
+      This is useful if a query has to be repeated a number of times with
+      different input values. In the SQL string as it is passed to the server,
+      question marks are used as placeholders for the parameters. They are
+      called <firstterm>positional parameters</firstterm> because they can
+      only be told apart by their position in the string. Connectivity
+      libraries often support <firstterm>named parameters</firstterm> of the
+      form <parameter>:id</parameter>, <parameter>:amount</parameter>,
+      <parameter>:a</parameter> etc. These are more user-friendly; the library
+      takes care of translating the named parameters to positional parameters
+      before passing the statement to the server.</para>
+
+      <para>The search condition may also contain local (PSQL) or host (ESQL)
+      variable names, preceded by a colon.</para>
+
+      <formalpara>
+        <title>Syntax</title>
+
+        <para><blockquote>
+            <programlisting>SELECT ...
+   FROM ...
+   [...]
+   WHERE <replaceable>&lt;search-condition&gt;</replaceable>
+   [...]
+
+<replaceable>&lt;search-condition&gt;</replaceable>  ::=  a boolean expression returning
+                         <constant>TRUE</constant>, <constant>FALSE</constant> or possibly <constant>UNKNOWN</constant> (<constant>NULL</constant>)</programlisting>
+          </blockquote></para>
+      </formalpara>
+
+      <para>Only those rows for which the search condition evaluates to
+      <constant>TRUE</constant> are included in the result set. Be careful
+      with possible <constant>NULL</constant> outcomes: if you negate a
+      <constant>NULL</constant> expression with <database>NOT</database>, the
+      result will still be <constant>NULL</constant> and the row will not
+      pass. This is demonstrated in one of the examples below.</para>
+
+      <bridgehead>Examples</bridgehead>
+
+      <blockquote>
+        <programlisting>select genus, species from mammals
+  where family = 'Felidae'
+  order by genus</programlisting>
+      </blockquote>
+
+      <blockquote>
+        <programlisting>select * from persons
+  where birthyear in (1880, 1881) 
+     or birthyear between 1891 and 1898</programlisting>
+      </blockquote>
+
+      <blockquote>
+        <programlisting>select name, street, borough, phone
+  from schools s
+  where exists (select * from pupils p where p.school = s.id)
+  order by borough, street</programlisting>
+      </blockquote>
+
+      <blockquote>
+        <programlisting>select * from employees
+  where salary &gt;= 10000 and position &lt;&gt; 'Manager'</programlisting>
+      </blockquote>
+
+      <blockquote>
+        <programlisting>select name from wrestlers
+  where region = 'Europe'
+    and weight &gt; all (select weight from shot_putters
+                      where region = 'Africa')</programlisting>
+      </blockquote>
+
+      <blockquote>
+        <programlisting>select id, name from players
+  where team_id = (select id from teams where name = 'Buffaloes')</programlisting>
+      </blockquote>
+
+      <blockquote>
+        <programlisting>select sum (population) from towns
+  where name like '%dam'
+  and province containing 'land'</programlisting>
+      </blockquote>
+
+      <blockquote>
+        <programlisting>select password from usertable
+  where username = current_user</programlisting>
+      </blockquote>
+
+      <para>The following example shows what can happen if the search
+      condition evaluates to <constant>NULL</constant>.</para>
+
+      <para>Suppose you have a table listing some children's names and the
+      number of marbles they possess. At a certain moment, the table contains
+      these data:</para>
+
+      <blockquote>
+        <informaltable>
+          <tgroup cols="2">
+            <thead>
+              <row>
+                <entry>CHILD</entry>
+
+                <entry>MARBLES</entry>
+              </row>
+            </thead>
+
+            <tbody>
+              <row>
+                <entry>Anita</entry>
+
+                <entry>23</entry>
+              </row>
+
+              <row>
+                <entry>Bob E.</entry>
+
+                <entry>12</entry>
+              </row>
+
+              <row>
+                <entry>Chris</entry>
+
+                <entry><emphasis>&lt;null&gt;</emphasis></entry>
+              </row>
+
+              <row>
+                <entry>Deirdre</entry>
+
+                <entry>1</entry>
+              </row>
+
+              <row>
+                <entry>Eve</entry>
+
+                <entry>17</entry>
+              </row>
+
+              <row>
+                <entry>Fritz</entry>
+
+                <entry>0</entry>
+              </row>
+
+              <row>
+                <entry>Gerry</entry>
+
+                <entry>21</entry>
+              </row>
+
+              <row>
+                <entry>Hadassah</entry>
+
+                <entry><emphasis>&lt;null&gt;</emphasis></entry>
+              </row>
+
+              <row>
+                <entry>Isaac</entry>
+
+                <entry>6</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </informaltable>
+      </blockquote>
+
+      <para>First, please notice the difference between
+      <constant>NULL</constant> and 0: Fritz is <emphasis>known</emphasis> to
+      have no marbles at all, Chris's and Hadassah's marble counts are
+      unknown.</para>
+
+      <para>Now, if you issue this SQL statement:</para>
+
+      <blockquote>
+        <programlisting>select list(child) from marbletable where marbles &gt; 10</programlisting>
+      </blockquote>
+
+      <para>you will get the names Anita, Bob E., Eve and Gerry. These
+      children all have more than 10 marbles.</para>
+
+      <para>If you negate the expression:<blockquote>
+          <programlisting>select list(child) from marbletable where not marbles &gt; 10</programlisting>
+        </blockquote></para>
+
+      <para>it's the turn of Deirdre, Fritz and Isaac to fill the list. Chris
+      and Hadassah are not included, because they aren't known to have ten
+      marbles or less. Should you change the last query to:</para>
+
+      <blockquote>
+        <programlisting>select list(child) from marbletable where marbles &lt;= 10</programlisting>
+      </blockquote>
+
+      <para>the result will be the same, because the expression
+      <constant>NULL</constant> <literal>&lt;=</literal> <literal>10</literal>
+      yields <constant>UNKNOWN</constant>. This is not the same as
+      <constant>TRUE</constant>, so Chris and Hadassah are not listed. If you
+      want them listed with the <quote>poor</quote> children, change the query
+      to:</para>
+
+      <blockquote>
+        <programlisting>select list(child) from marbletable where marbles &lt;= 10 or marbles is null</programlisting>
+      </blockquote>
+
+      <para>Now the search condition becomes true for Chris and Hadassah,
+      because <quote><literal>marbles is null</literal></quote> obviously
+      returns <constant>TRUE</constant> in their case. In fact, the search
+      condition cannot be <constant>NULL</constant> for anybody now.</para>
+
+      <para>Lastly, two examples of <database>SELECT</database> queries with
+      parameters in the search. It depends on the application how you should
+      define query parameters and even if it is possible at all. Notice that
+      queries like these cannot be executed immediately: they have to be
+      <emphasis>prepared</emphasis> first. Once a parameterized query has been
+      prepared, the user (or calling code) can supply values for the
+      parameters and have it executed many times, entering new values before
+      every call. How the values are entered and the execution triggered is up
+      to the application. In a GUI environment, the user typically types the
+      parameter values in one or more text boxes and then clicks an
+      <quote>Execute</quote>, <quote>Run</quote> or <quote>Refresh</quote>
+      button.</para>
+
+      <blockquote>
+        <programlisting>select name, address, phone frome stores
+  where city = ? and class = ?</programlisting>
+      </blockquote>
+
+      <blockquote>
+        <programlisting>select * from pants
+  where model = :model and size = :size and color = :col</programlisting>
+      </blockquote>
+
+      <para>The last query cannot be passed directly to the engine; the
+      application must convert it to the other format first, mapping named
+      parameters to positional parameters.</para>
+    </section>
+
+    <section id="langref25-dml-select-groupby">
+      <title>The <database>GROUP BY</database> clause</title>
+
+      <para/>
     </section>
 
     <section id="langref25-dml-aggregates">
