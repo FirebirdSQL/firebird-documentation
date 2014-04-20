@@ -1145,7 +1145,7 @@ Try this in isql too!-->
    [<replaceable>&lt;joins&gt;</replaceable>]
    [WHERE <replaceable>&lt;condition&gt;</replaceable>]
    [GROUP BY <replaceable>&lt;grouping-list&gt;</replaceable>
-     [[NOT] HAVING <replaceable>&lt;aggregate-condition&gt;</replaceable>]]
+     [HAVING <replaceable>&lt;aggregate-condition&gt;</replaceable>]]
    [UNION [DISTINCT | ALL] <replaceable>&lt;other-select&gt;</replaceable>]
    [PLAN <replaceable>&lt;plan-items&gt;</replaceable>]
    [ORDER BY <replaceable>&lt;ordering-list&gt;</replaceable>]
@@ -3029,7 +3029,498 @@ select p.firstname, p.middlename, p.lastname,
     <section id="langref25-dml-select-groupby">
       <title>The <database>GROUP BY</database> clause</title>
 
-      <para/>
+      <para><database>GROUP BY</database> merges output rows that have the
+      same combination of values in its item list into a single row. Aggregate
+      functions in the select list are applied to each group individually
+      instead of to the dataset as a whole.</para>
+
+      <para>If the select list only contains aggregate columns – or, more
+      generally, columns whose values don't depend on individual rows in the
+      underlying set – <database>GROUP BY</database> is optional. When
+      omitted, the final result set of will consist of a single row (provided
+      that at least one aggregated column is present).</para>
+
+      <para>If the select list contains both aggregate columns and columns
+      whose values may vary per row, the <database>GROUP BY</database> clause
+      becomes mandatory.</para>
+
+      <formalpara>
+        <title>Syntax</title>
+
+        <para><blockquote>
+            <programlisting>SELECT ... FROM ...
+   GROUP BY <replaceable>&lt;grouping-item&gt;</replaceable> [, <replaceable>&lt;grouping-item&gt;</replaceable> ...]
+   [HAVING <replaceable>&lt;grouped-row-condition&gt;</replaceable>]
+   ...
+
+<replaceable>&lt;grouping-item&gt;</replaceable>         ::=  <replaceable>&lt;non-aggr-select-item&gt;</replaceable>
+                               | <replaceable>&lt;non-aggr-expression&gt;</replaceable>
+
+<replaceable>&lt;non-aggr-select-item&gt;</replaceable>  ::=  <replaceable>column-copy</replaceable>
+                               | <replaceable>column-alias</replaceable>
+                               | <replaceable>column-position</replaceable>
+
+<replaceable>&lt;non-aggr-expression&gt;</replaceable>   ::=  any non-aggregate expression that is not
+                             in the select list, e.g. unselected columns
+                             from the source set or expressions that
+                             don't depend on the data in the set at all</programlisting>
+          </blockquote></para>
+      </formalpara>
+
+      <para>A general rule of thumb is that every non-aggregate item in the
+      <database>SELECT</database> list must also be in the <database>GROUP
+      BY</database> list. You can do this in three ways:</para>
+
+      <orderedlist>
+        <listitem>
+          <para>By copying the item verbatim from the select list, e.g.
+          <quote><literal>class</literal></quote> or
+          <quote><literal>'D:'</literal> <literal>||</literal>
+          <literal>upper(doccode)</literal></quote>.</para>
+        </listitem>
+
+        <listitem>
+          <para>By specifying the column alias, if it exists.</para>
+        </listitem>
+
+        <listitem>
+          <para>By specifying the column position as an integer
+          <emphasis>literal</emphasis> between 1 and the number of columns.
+          Integer values resulting from expressions or parameter substitutions
+          are simply invariables and will be used as such in the grouping.
+          They will have no effect though, as their value is the same for each
+          row.</para>
+        </listitem>
+      </orderedlist>
+
+      <para>Please notice: If you group by a column position, the expression
+      at that position is copied internally from the select list. If it
+      concerns a subquery, that subquery will be executed at least twice.<!--I suppose the same goes for grouping by aliases? And not only for subqueries but also function calls? TEST USING GENERATORS--></para>
+
+      <para>In addition to the required items, the grouping list may also
+      contain:</para>
+
+      <itemizedlist>
+        <listitem>
+          <para>Columns from the source table that are not in the select list,
+          or non-aggregate expressions based on such columns. Adding such
+          columns may further subdivide the groups. But since these columns
+          are not in the select list, you can't tell which aggregated row
+          corresponds to which value in the column. So, in general, if you are
+          interested in this information, you also include the column or
+          expression in the select list – which brings you back to the
+          standard <quote>every non-aggregate column in the select list must
+          also be in the grouping list</quote> mantra.</para>
+        </listitem>
+
+        <listitem>
+          <para>Expressions that aren't dependent on the data in the
+          underlying set, e.g. constants, context variables, single-value
+          non-correlated subselects etc. This is only mentioned for
+          completeness, as adding such items is utterly pointless: they don't
+          affect the grouping at all. <quote>Harmless but useless</quote>
+          items like these may also figure in the select list without being
+          copied to the grouping list.</para>
+        </listitem>
+      </itemizedlist>
+
+      <bridgehead>Examples</bridgehead>
+
+      <para>When the select list only contains aggregate columns,
+      <database>GROUP BY</database> is not mandatory:</para>
+
+      <blockquote>
+        <programlisting>select count(*), avg(age) from students
+  where sex = 'M'</programlisting>
+      </blockquote>
+
+      <para>This will return a single row listing the number of male students
+      and their average age. Adding expressions that don't depend on values in
+      individual rows of table <database>STUDENTS</database> doesn't change
+      that:</para>
+
+      <blockquote>
+        <programlisting>select count(*), avg(age), current_date from students
+  where sex = 'M'</programlisting>
+      </blockquote>
+
+      <para>The row will now have an extra column showing the current date,
+      but other than that, nothing fundamental has changed. A <database>GROUP
+      BY</database> clause is still not required.</para>
+
+      <para>However, in both the above examples it is
+      <emphasis>allowed</emphasis>. This is perfectly valid:</para>
+
+      <blockquote>
+        <programlisting>select count(*), avg(age) from students
+  where sex = 'M'
+  group by class</programlisting>
+      </blockquote>
+
+      <para>and will return a row for each class that has boys in it, listing
+      the number of boys and their average age in that particular class. (If
+      you also leave the <literal>current_date</literal> field in, this value
+      will be repeated on every row, which is not very exciting.)</para>
+
+      <para>The above query has a major drawback though: it gives you
+      information about the different classes, but it doesn't tell you which
+      row applies to which class. In order to get that extra bit of
+      information, the non-aggregate column <database>CLASS</database> must be
+      added to the select list:</para>
+
+      <blockquote>
+        <programlisting>select class, count(*), avg(age) from students
+  where sex = 'M'
+  group by class</programlisting>
+      </blockquote>
+
+      <para>Now we have a useful query. Notice that the addition of column
+      <database>CLASS</database> also makes the <database>GROUP BY</database>
+      clause mandatory. We can't drop that clause anymore, unless we also
+      remove <database>CLASS</database> from the column list.</para>
+
+      <para>The output of our last query may look something like this:</para>
+
+      <blockquote>
+        <informaltable>
+          <tgroup cols="3">
+            <thead>
+              <row>
+                <entry>CLASS</entry>
+
+                <entry>COUNT</entry>
+
+                <entry>AVG</entry>
+              </row>
+            </thead>
+
+            <tbody>
+              <row>
+                <entry>2A</entry>
+
+                <entry>12</entry>
+
+                <entry>13.5</entry>
+              </row>
+
+              <row>
+                <entry>2B</entry>
+
+                <entry>9</entry>
+
+                <entry>13.9</entry>
+              </row>
+
+              <row>
+                <entry>3A</entry>
+
+                <entry>11</entry>
+
+                <entry>14.6</entry>
+              </row>
+
+              <row>
+                <entry>3B</entry>
+
+                <entry>12</entry>
+
+                <entry>14.4</entry>
+              </row>
+
+              <row>
+                <entry>...</entry>
+
+                <entry>...</entry>
+
+                <entry>...</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </informaltable>
+      </blockquote>
+
+      <para>The headings <quote>COUNT</quote> and <quote>CLASS</quote> are not
+      very informative. In a simple case like this, you might get away with
+      that, but in general you should give aggregate columns a meaningful name
+      by aliasing them:</para>
+
+      <blockquote>
+        <programlisting>select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M'
+  group by class</programlisting>
+      </blockquote>
+
+      <para>As you may recall from the formal syntax of the columns list, the
+      <database>AS</database> keyword is optional.</para>
+
+      <para>Adding more non-aggregate (or rather: row-dependent) columns
+      requires adding them to the <database>GROUP BY</database> clause too.
+      For instance, you might want to see the above information for girls as
+      well; and you may also want to differentiate between boarding and day
+      students:</para>
+
+      <blockquote>
+        <programlisting>select class,
+       sex,
+       boarding_type,
+       count(*) as number,
+       avg(age) as avg_age
+  from students
+  group by class, sex, boarding_type</programlisting>
+      </blockquote>
+
+      <para>This may give you the following result:</para>
+
+      <blockquote>
+        <informaltable>
+          <tgroup cols="5">
+            <thead>
+              <row>
+                <entry>CLASS</entry>
+
+                <entry>SEX</entry>
+
+                <entry>BOARDING_TYPE</entry>
+
+                <entry>NUMBER</entry>
+
+                <entry>AVG_AGE</entry>
+              </row>
+            </thead>
+
+            <tbody>
+              <row>
+                <entry>2A</entry>
+
+                <entry>F</entry>
+
+                <entry>BOARDING</entry>
+
+                <entry>9</entry>
+
+                <entry>13.3</entry>
+              </row>
+
+              <row>
+                <entry>2A</entry>
+
+                <entry>F</entry>
+
+                <entry>DAY</entry>
+
+                <entry>6</entry>
+
+                <entry>13.5</entry>
+              </row>
+
+              <row>
+                <entry>2A</entry>
+
+                <entry>M</entry>
+
+                <entry>BOARDING</entry>
+
+                <entry>7</entry>
+
+                <entry>13.6</entry>
+              </row>
+
+              <row>
+                <entry>2A</entry>
+
+                <entry>M</entry>
+
+                <entry>DAY</entry>
+
+                <entry>5</entry>
+
+                <entry>13.4</entry>
+              </row>
+
+              <row>
+                <entry>2B</entry>
+
+                <entry>F</entry>
+
+                <entry>BOARDING</entry>
+
+                <entry>11</entry>
+
+                <entry>13.7</entry>
+              </row>
+
+              <row>
+                <entry>2B</entry>
+
+                <entry>F</entry>
+
+                <entry>DAY</entry>
+
+                <entry>5</entry>
+
+                <entry>13.7</entry>
+              </row>
+
+              <row>
+                <entry>2B</entry>
+
+                <entry>M</entry>
+
+                <entry>BOARDING</entry>
+
+                <entry>6</entry>
+
+                <entry>13.8</entry>
+              </row>
+
+              <row>
+                <entry>...</entry>
+
+                <entry>...</entry>
+
+                <entry>...</entry>
+
+                <entry>...</entry>
+
+                <entry>...</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </informaltable>
+      </blockquote>
+
+      <para>Each row in the result set corresponds to one particular
+      combination of the variables class, sex and boarding type. The aggregate
+      results – number and average age – are given for each of these rather
+      specific groups individually. In a query like this, you don't see a
+      total for boys as a whole, or day students as a whole. That's the
+      tradeoff: the more non-aggregate columns you add, the more you can
+      pinpoint very specific groups, but the more you also lose sight of the
+      general picture. Of course you can still obtain the
+      <quote>coarser</quote> aggregates through separate queries.</para>
+
+      <section id="langref25-dml-select-groupby-having">
+        <title><database>HAVING</database></title>
+
+        <para>Just as a <database>WHERE</database> clause limits the rows in a
+        dataset to those that meet the search condition, so the
+        <database>HAVING</database> subclause imposes restrictions on the
+        aggregated rows in a grouped set. <database>HAVING</database> is
+        optional, and can only be used in conjunction with <database>GROUP
+        BY</database>.</para>
+
+        <para>The condition(s) in the <database>HAVING</database> clause can
+        refer to:</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Any aggregated column in the select list. This is the most
+            widely used alternative.</para>
+          </listitem>
+
+          <listitem>
+            <para>Any aggregated expression that is not in the select list,
+            but allowed in the context of the query. This is sometimes useful
+            too.</para>
+          </listitem>
+
+          <listitem>
+            <para>Any column in the <database>GROUP BY</database> list. While
+            legal, it is more efficient to filter on these non-aggregated data
+            at an earlier stage: in the <database>WHERE</database>
+            clause.</para>
+          </listitem>
+
+          <listitem>
+            <para>Any expression whose value doesn't depend on the contents of
+            the dataset (like a constant or a context variable). This is valid
+            but utterly pointless, because it will either suppress the entire
+            set or leave it untouched, based on conditions that have nothing
+            to do with the set itself.</para>
+          </listitem>
+        </itemizedlist>
+
+        <para>A <database>HAVING</database> clause can
+        <emphasis>not</emphasis> contain: </para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Non-aggregated column expressions that are not in the
+            <database>GROUP BY</database> list.</para>
+          </listitem>
+
+          <listitem>
+            <para>Column positions. An integer in the
+            <database>HAVING</database> clause is just an integer.</para>
+          </listitem>
+
+          <listitem>
+            <para>Column aliases – not even if they appear in the
+            <database>GROUP BY</database> clause!<!--Is that by design? Test also in 2.5--></para>
+          </listitem>
+        </itemizedlist>
+
+        <bridgehead>Examples</bridgehead>
+
+        <para>Building on our earlier examples, this could be used to skip
+        small groups of students:</para>
+
+        <blockquote>
+          <programlisting>select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M'
+  group by class
+  having count(*) &gt;= 5</programlisting>
+        </blockquote>
+
+        <para>To select only groups that have a minimum age spread:</para>
+
+        <blockquote>
+          <programlisting>select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M'
+  group by class
+  having max(age) - min(age) &gt; 1.2</programlisting>
+        </blockquote>
+
+        <para>Notice that if you're really interested in this information,
+        you'd normally include <literal>min(age)</literal> and
+        <literal>max(age)</literal> – or the expression
+        <quote><literal>max(age)</literal> <literal>-</literal>
+        <literal>min(age)</literal></quote> – in the select list as
+        well!</para>
+
+        <para>To include only 3rd classes:</para>
+
+        <blockquote>
+          <programlisting>select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M'
+  group by class
+  having class starting with '3'</programlisting>
+        </blockquote>
+
+        <para>Better would be to move this condition to the
+        <database>WHERE</database> clause:</para>
+
+        <blockquote>
+          <programlisting>select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M' and class starting with '3'
+  group by class</programlisting>
+        </blockquote>
+      </section>
     </section>
 
     <section id="langref25-dml-aggregates">
@@ -3894,7 +4385,7 @@ refer to the current context.-->
 
         <para>If you group by a column position, the expression at that
         position is copied internally from the select list. If it concerns a
-        subquery, that subquery will be executed at least twice.<!--I suppose the same goes for grouping by aliases?--></para>
+        subquery, that subquery will be executed at least twice.<!--I suppose the same goes for grouping by aliases? And not only for subqueries but also function calls? TEST USING GENERATORS--></para>
       </formalpara>
 
       <section id="langref25-dml-groupby-extensions">
