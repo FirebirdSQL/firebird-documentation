@@ -654,7 +654,7 @@ int main(int argc, char *argv[])
           <!-- reverting to the Level 3 section -->
           <para><emphasis role="bold">Usage Examples</emphasis></para>
           <para>Following are a few examples of using the new parameters with the
-          <emphasis>fbsvmgr</emphasis> utility.  For simplicity, it is assumed that
+          <emphasis>fbsvcmgr</emphasis> utility.  For simplicity, it is assumed that
           login has already been established.  Each example, though broken to
           fit the page-width, is a single line command.</para>
 
@@ -960,8 +960,8 @@ int main(int argc, char *argv[])
           <title>Back Up to or Restore from a Remote Backup File</title>
           <author><firstname>Alex</firstname><surname>Peshkov</surname></author>
         </sectioninfo>
-        <para>Introduced in v.2.5.2 was the ability to run <emphasis>gbak</emphasis> at 
-        the server side reading from or writing to a <emphasis>gbak</emphasis> backup file 
+        <para>Introduced in v.2.5.2 was the ability to run <emphasis>gbak</emphasis> at
+        the server side reading from or writing to a <emphasis>gbak</emphasis> backup file
         located at a remote client.  This is an especially efficient way to do backups and restores
         across an Internet connection.</para>
         
@@ -1037,6 +1037,173 @@ fbsvcmgr remotehost:service_mgr -user sysdba -password XXX \
         </section>
       </section>
 
+<!-- The following section was added at v.2.5.4 -->
+      <section id="rnfb25-apiods-api-onlinevalidation"><!-- Level 2 section -->
+        <sectioninfo>
+          <title>Perform Some Validation Services On-line</title>
+          <author><firstname>Vlad</firstname><surname>Khorsun</surname></author>
+        </sectioninfo>
+        <para>Database validation enables low-level checks of the consistency 
+        of on-disk structures and even to fix some minor corruptions. The
+        recommended procedure for any valuable database is for the DBA to validate 
+        a database periodically to ensure it is healthy.</para>
+        <para>Exclusive access to the database is required:  any kind of concurrent
+        access is forbidden during validation.  Sometimes, blocking user access could
+        be a major hold-up, especially if the database is large and complex.</para>
+        <para>Online validation is a new feature that allows some consistency checks 
+        to be performed without exclusive access.</para>
+        <section>
+          <title>What Online Validation Can Do</title>
+          <itemizedlist>
+            <listitem>
+              <para>validate some (or all) user tables in a database.</para>
+              <para><emphasis>System tables are not validated.</emphasis></para>
+            </listitem>
+            <listitem>
+              <para>validate some (or all) indices</para>
+            </listitem>
+          </itemizedlist>
+
+           <para>Other ODS checks, such as Header\PIP\TIP\Generators pages, are not
+           performed.</para>
+         </section>
+
+         <section>
+           <title>Protection During Online Validation</title>
+           <para>While a table (and\or its index) is undergoing validation, user attachments 
+           are allowed to read this table. Any attempt to change data (INSERT\UPDATE\DELETE) 
+           will wait until validation finishes or, depending on the lock timeout of the
+           user transaction, will return a lock timeout error.</para>
+           <para>Any kind of garbage collection on the table or its indexes is disabled whilst 
+           it is undergoing validation:</para>
+           <itemizedlist>
+             <listitem>
+               <para>background and cooperative garbage collection will just skip this table</para>
+             </listitem>
+             <listitem>
+               <para>sweep will be terminated with an error</para>
+             </listitem>
+           </itemizedlist>
+           <para>When online validation starts to check a table, it acquires a couple of locks 
+           to prevent concurrent modifications of its data:</para>
+           <itemizedlist>
+             <listitem>
+               <para>a relation lock in PR (protected read) mode</para>
+             </listitem>
+             <listitem>
+               <para>(NEW) a garbage collection lock in PW (protected write) mode</para>
+             </listitem>
+           </itemizedlist>
+           <para>Both locks are acquired using a user-specified lock timeout. An error is 
+           reported for any lock request that fails and that table is skipped.</para>
+         </section>
+         <para>Once the locks are acquired, the table and its indexes are validated in the 
+         same way as a full validation does it.  The locks are released when it completes 
+         and the whole procedure is repeated for the next table.</para>
+         <section>
+           <title>The New Services API action: isc_action_svc_validate</title>
+           <para>Online validation is implemented as a Firebird service and is accessed through
+           the Services API.  Thus, it cannot be run from the <emphasis>gfix</emphasis> utility.</para>
+           <para>The call involves the following elements:</para>
+           <literallayout class="monospaced">
+Action:
+	isc_action_svc_validate
+
+Parameters:
+	isc_spb_dbname :
+		database file name, string, mandatory
+
+	isc_spb_val_tab_incl, isc_spb_val_tab_excl,
+	isc_spb_val_idx_incl, isc_spb_val_idx_excl :
+		patterns for tables\indices names, string, optional
+
+	isc_spb_val_lock_timeout :
+		lock timeout, integer, optional
+
+Output:
+	text messages with progress of online validation process
+           </literallayout>
+         </section>
+         <section>
+           <title>Using isc_action_svc_validate Interactively</title>
+           <para>The <emphasis>fbsvcmgr</emphasis> utility has full support for
+           the new service.  The syntax is:</para>
+           <programlisting>
+fbsvcmgr [host:]service_mgr [user &lt;...&gt;] [password &lt;...&gt;]
+	action_validate dbname &lt;filename&gt;
+	[val_tab_incl &lt;pattern&gt;]
+	[val_tab_excl &lt;pattern&gt;]
+	[val_idx_incl &lt;pattern&gt;]
+	[val_idx_excl &lt;pattern&gt;]
+	[val_lock_timeout &lt;number&gt;]
+           </programlisting>
+           <para>where
+           <simplelist type="horiz" columns="2">
+             <member>val_tab_incl</member><member>pattern for table names to include in validation run</member>
+             <member>val_tab_excl</member><member>pattern for table names to exclude from validation run</member>
+             <member>val_idx_incl</member><member>pattern for index names to include in validation run,
+						by default %, i.e. all indexes</member>
+             <member>val_idx_excl</member><member>pattern for index names to exclude from validation run</member>
+             <member>val_lock_timeout</member><member>lock timeout, used to acquire locks for table to validate,
+						in seconds, default is 10 secs. 0 is no-wait, -1 is infinite wait</member>
+           </simplelist>
+           </para>
+           <note>
+             <title>Usage Notes</title>
+             <itemizedlist>
+               <listitem>Patterns are regular expressions, processed by the same rules as SIMILAR TO expressions.</listitem>
+               <listitem>All patterns are case-sensitive, regardless of database dialect.</listitem>
+               <listitem>If the pattern for tables is omitted then all user tables will be validated.</listitem>
+               <listitem>If the pattern for indexes is omitted then all indexes of the appointed tables will
+               be validated.</listitem>
+               <listitem>System tables are not validated.</listitem>
+               <listitem>
+                <para>To specify a list of tables or indexes:</para>
+                <orderedlist type="a">
+                  <listitem>Separate names with the pipe character '|'</listitem>
+                  <listitem>Do not add spaces: TAB1 | TAB2 is wrong</listitem>
+                  <listitem>Enclose the whole list in double quotes to avoid confusing the 
+                  command interpreter</listitem>
+                </orderedlist>
+               </listitem>
+             </itemizedlist>
+           </note>
+           <para><emphasis role="bold">Examples</emphasis></para>
+
+           <orderedlist>
+             <listitem>
+               <para>Validate all tables in database 'c:\db.fdb' with names starting with 'A'.
+               Indexes are not validated. Lock wait is not performed.</para>
+               <programlisting>
+fbsvcmgr.exe service_mgr user SYSDBA password masterkey
+		action_validate dbname c:\db.fdb
+		val_tab_incl A%
+		val_idx_excl %
+		val_lock_timeout 0
+               </programlisting>
+             </listitem>
+             <listitem>
+               <para>Validate tables TAB1 and TAB2 and all their indexes.
+Lock wait timeout is 10 seconds (the default):</para>
+               <programlisting>
+fbsvcmgr.exe service_mgr user SYSDBA password masterkey
+		action_validate dbname c:\db.fdb
+		val_tab_incl &quot;TAB1|TAB2&quot;
+               </programlisting>
+             </listitem>
+             <listitem>
+               <para>Default behavior of val_XXX options: validate all user tables and 
+               their indexes in database 'c:\db.fdb', lock wait is the default 
+               10 seconds:</para>
+               <programlisting>
+fbsvcmgr.exe service_mgr user SYSDBA password masterkey
+               action_validate dbname c:\db.fdb
+               </programlisting>
+             </listitem>
+           </orderedlist>
+         </section>
+      </section><!--L2-->
+<!-- ======================================================================== -->
       <section id="rnfb25-apiods-api-spbadds"><!-- Level 2 section -->
         <sectioninfo>
           <title>Other Services API Additions</title>
