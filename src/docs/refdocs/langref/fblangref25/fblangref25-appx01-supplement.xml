@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE appendix PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN"
+"../../../../../tools/docbook-dtd/docbookx.dtd">
+<appendix id="fblangref25-appx01-supplement">
+  <title>Supplemental Articles</title>
+  <para>In this Appendix are supplemental articles that developers may wish to refer to, to
+  enhance understanding of features or changes that may benefit from a more detailed
+  view.</para>
+  <section  id="fblangref25-appx01-supp-rdb_validblr">
+    <title>The <database>RDB$VALID_BLR</database> Field</title>
+    <para>The field <database>RDB$VALID_BLR</database> was added to the system tables
+    <database>RDB$PROCEDURES</database> and <database>RDB$TRIGGERS</database> in Firebird 2.1.
+    Its purpose is to signal possible invalidation of a PSQL module when a domain or a table column
+    upon which the module depends is altered. If such invalidations occur, <database>RDB$VALID_BLR</database>
+    is set to 0 for any procedure or trigger whose code is no longer valid.</para>
+    <para>The following query will find the modules that depend on a specific domain and report
+    the state of their <database>RDB$VALID_BLR</database> fields:
+      <blockquote><programlisting>
+SELECT * FROM (
+  SELECT
+    'Procedure',
+    rdb$procedure_name,
+    rdb$valid_blr
+  FROM rdb$procedures
+  UNION ALL
+  SELECT
+    'Trigger',
+    rdb$trigger_name,
+    rdb$valid_blr
+  FROM rdb$triggers
+) (type, name, valid)
+WHERE EXISTS
+  (SELECT * from rdb$dependencies
+   WHERE rdb$dependent_name = name
+     AND rdb$depended_on_name = 'MYDOMAIN')
+
+/* Replace MYDOMAIN with the actual domain name.
+   Use all-caps if the domain was created
+   case-insensitively. Otherwise, use the exact
+   capitalisation. */
+      </programlisting></blockquote>
+      The following query will find the modules that depend on a specific table column and
+      report the state of their <database>RDB$VALID_BLR</database> fields:
+      <blockquote><programlisting>
+SELECT * FROM (
+  SELECT
+    'Procedure',
+    RDB$PROCEDURE_NAME,
+    RDB$VALID_BLR
+  FROM RDB$PROCEDURES
+  UNION ALL
+  SELECT
+    'Trigger',
+    RDB$TRIGGER_NAME,
+    RDB$VALID_BLR
+  FROM RDB$TRIGGERS) (TYPE, NAME, VALID)
+WHERE EXISTS
+  (SELECT *
+   FROM RDB$DEPENDENCIES
+   WHERE RDB$DEPENDENT_NAME = NAME
+     AND RDB$DEPENDED_ON_NAME = 'MYTABLE'
+     AND RDB$FIELD_NAME = 'MYCOLUMN')
+      </programlisting></blockquote>
+    </para>
+    <para>Unfortunately, not all PSQL invalidations will be reflected in the <database>RDB$VALID_BLR</database>
+    field. After changing a domain or table column, it is therefore advisable to have a good look at all the
+    procedures and triggers reported by the above queries, even those having a 1 in the
+    <quote>VALID</quote> column.</para>
+    <note>
+      <title>Notes</title>
+      <itemizedlist>
+        <listitem>For PSQL modules inherited from earlier Firebird versions (including a number of system
+        triggers, even if the database was created under Firebird 2.1 or higher),
+       <database>RDB$VALID_BLR</database> is NULL. This does not imply that their BLR is invalid.</listitem>
+        <listitem>The <emphasis>isql</emphasis> commands <database>SHOW PROCEDURES</database> and
+        <database>SHOW TRIGGERS</database> flag modules whose <database>RDB$VALID_BLR</database> field is zero
+        with an asterisk. <database>SHOW PROCEDURE procname</database> and <database>SHOW
+        TRIGGER trigname</database>, which display individual PSQL modules, do not signal invalid BLR.</listitem>
+      </itemizedlist>
+    </note>
+  </section> <!-- rdb$valid_blr -->
+
+  <!-- ======================================================================================
+                     N O T E   O N   E Q U A L I T Y
+       ====================================================================================== -->
+  <section id="fblangref25-appx01-note-on-equality">
+    <title>A Note on Equality</title>
+    <important>
+      <para>This note about equality and inequality operators applies
+      everywhere in Firebird's SQL language, not just in JOIN conditions.</para>
+    </important>
+    <para>The <quote><literal>=</literal></quote> operator, which is
+    explicitly used in many conditional joins and implicitly in named
+    column joins and natural joins, only matches values to values.
+    According to the SQL standard, <database>NULL</database> is not a
+    value and hence two <database>NULL</database>s are neither equal nor
+    unequal to one another. If you need <database>NULL</database>s to
+    match each other in a join, use the <database>IS NOT DISTINCT
+    FROM</database> operator. This operator returns true if the operands
+    have the same value <emphasis>or</emphasis> if they are both
+    <database>NULL</database>.</para>
+
+    <blockquote>
+      <programlisting>select *
+  from A join B
+  on A.id is not distinct from B.code</programlisting>
+        </blockquote>
+
+        <para>Likewise, in the&mdash;extremely rare&mdash;cases where you want to join
+        on <emphasis>in</emphasis>equality, use <database>IS DISTINCT
+        FROM</database>, not <quote><literal>&lt;&gt;</literal></quote>, if
+        you want <database>NULL</database> to be considered different from any
+        value and two <database>NULL</database>s considered equal:</para>
+
+    <blockquote>
+      <programlisting>select *
+  from A join B
+  on A.id is distinct from B.code</programlisting>
+    </blockquote>
+  </section>
+
+  <!-- ======================================================================================
+                     U N S T A B L E   C U R S O R   B U G
+       ====================================================================================== -->
+  <section id="fblangref25-appx01-unstable-cursor">
+    <title>The <quote>Unstable Cursor</quote> Bug</title>
+    <para>Changes made by a DML statement to rows in an implicitly created SQL cursor can
+     be visible to the same statement while it processes the remaining rows. The visibility
+     of these changes depends on the physical location of rows in the database. This effect
+     is called <quote>unstable cursor</quote> and is of a negative nature. It is fixed in
+     Firebird 3.0.</para>
+     <para><comment>Editor's Note :: For some unknown reason, this paragraph appeared in 
+     the chapter on Transaction Control.  Obviously it doesn't belong there - it applies to 
+     DML.  There are several warnings in various parts of the DML chapter about these 
+     row-destroying problems, without going to the level of explaining the underlying bug. 
+     It's parked here until Dmitry or someone else thinks of a better context for
+     it.</comment></para>
+   </section>
+</appendix>
