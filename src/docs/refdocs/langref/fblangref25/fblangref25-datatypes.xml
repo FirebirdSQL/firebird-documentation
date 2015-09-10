@@ -370,7 +370,7 @@ CREATE TABLE CUSTOMER (
         <para>Always keep in mind that the storage format depends on the precision.
         For instance, you define the column type as NUMERIC(2,2) presuming that its
         range of values will be -0.99...0.99. However, the actual range of
-        values for the column will be -327.68..327.68, which is due to storing the
+        values for the column will be -327.68..327.67, which is due to storing the
         NUMERIC(2,2) data type in the SMALLINT format. In storage, the NUMERIC(4,2),
         NUMERIC(3,2) and NUMERIC(2,2) data types are the same, in fact.  It means
         that if you really want to store data in a column with
@@ -415,22 +415,58 @@ CREATE TABLE CUSTOMER (
     </note>
     <formalpara>
       <title>Fractions of Seconds</title>
-      <para>If fractions of seconds are stored in date and time data types, Firebird stores them by default to
+      <para>If fractions of seconds are stored in date and time data types, Firebird stores them to
       ten-thousandths of a second.  If a lower granularity is preferred, the fraction can be specified
       explicitly as thousandths, hundredths or tenths of a second in Dialect 3 databases of ODS 11 or
       higher.</para>
     </formalpara>
+    <note>
+      <title>Some useful knowledge about subseconds precision:</title>
+      <para>The time-part of a <database>TIME</database> or <database>TIMESTAMP</database> is a 4-byte WORD, 
+      with room for decimilliseconds precision and time values are stored as the number of deci-milliseconds 
+      elapsed since midnight.
+      The actual precision of values stored in or read from time(stamp) functions and variables is:
+        <itemizedlist>
+          <listitem><emphasis>CURRENT_TIME</emphasis> defaults to seconds precision and can be
+          specified up to milliseconds precision with &nbsp;<function>CURRENT_TIME (0|1|2|3)</function>&nbsp;</listitem>
+          <listitem><emphasis>CURRENT_TIMESTAMP</emphasis> milliseconds precision.  Precision from seconds
+          to milliseconds can be specified with &nbsp;<function>CURRENT_TIMESTAMP (0|1|2|3)</function>&nbsp;</listitem>
+          <listitem>Literal <emphasis>'NOW'</emphasis>: milliseconds precision</listitem>
+          <listitem>Functions <emphasis>DATEADD()</emphasis> and <emphasis>DATEDIFF()</emphasis> support up 
+          to milliseconds precision. Deci-milliseconds can be specified but they are rounded to the nearest 
+          integer before any operation is performed</listitem>
+          <listitem>The <emphasis>EXTRACT()</emphasis> function returns up to deci-milliseconds precision 
+          with the <database>SECOND</database> and <database>MILLISECOND</database> arguments</listitem>
+          <listitem>For <emphasis>TIME and TIMESTAMP literals</emphasis> Firebird happily accepts up to 
+          deci-milliseconds precision, but truncates (not rounds) the time part to the nearest lower or 
+          equal millisecond.  Try, for example,
+          &nbsp;<function>SELECT TIME '14:37:54.1249' FROM rdb$database</function></listitem>
+          <listitem>the '+' and '-' operators work with deci-milliseconds precision, but only
+          <emphasis>within</emphasis> the expression. As soon as something is stored or even just
+          SELECTed from RDB$DATABASE, it reverts to milliseconds precision</listitem>
+        </itemizedlist>
+      Deci-milliseconds precision is rare and is not currently stored in columns or variables.
+      The best assumption to make from all this is that, although Firebird stores <database>TIME</database> and
+      the <database>TIMESTAMP</database> time-part values as the number of deci-milliseconds 
+      (10<superscript>-4</superscript> seconds) elapsed since midnight, the actual precision could vary from
+      seconds to milliseconds.</para>
+    </note>
 
     <section id="fblangref25-datatypes-date">
       <title><database>DATE</database></title>
       <para>The <database>DATE</database> data type in Dialect 3 stores only date without time.
       The available range for storing data is from January 01, 1 to December 31, 9999.</para>
       <para>Dialect 1 has no <quote>date-only</quote> type.
-      <tip>
-        <para>If you need to store Dialect 1 date values with no time, append
-        a <quote>zero time-part</quote>&mdash;'00:00:00.0000'&mdash; to the date part literal for
-        writing to the table.</para>
-      </tip></para>
+        <tip>
+          <para>In Dialect 1, date literals without a time part, as well as
+          <database>'TODAY'</database>, <database>'YESTERDAY'</database> and
+          <database>'TOMORROW'</database> automatically get a zero time part.</para>
+          <para>If, for some reason, it is important to you to store a Dialect 1 timestamp 
+          literal with an explicit zero time-part, the engine will accept a literal like 
+          <function>'25.12.2016 00:00:00.0000'</function>.  However, <function>'25.12.2016'</function>
+          would have precisely the same effect, with fewer keystrokes!</para>
+        </tip>
+      </para>
     </section>
 
     <section id="fblangref25-datatypes-time">
@@ -495,7 +531,8 @@ CREATE TABLE CUSTOMER (
               <entry>DATE</entry>
               <entry align="center">+</entry>
               <entry>Numeric value <replaceable>n</replaceable></entry>
-              <entry>DATE increased by n <replaceable>n</replaceable>whole days. The fractional part is ignored</entry>
+              <entry>DATE increased by <replaceable>n</replaceable> whole days. Broken values are rounded
+              (not floored) to the nearest integer</entry>
             </row>
             <row valign="middle">
               <entry>TIME</entry>
@@ -507,16 +544,16 @@ CREATE TABLE CUSTOMER (
               <entry>TIME</entry>
               <entry align="center">+</entry>
               <entry>Numeric value <replaceable>n</replaceable></entry>
-              <entry>TIME increased by <replaceable>n</replaceable> seconds. The fractional part is taken into account</entry>
+              <entry>TIME increased by <replaceable>n</replaceable> seconds. The fractional part is 
+              taken into account</entry>
             </row>
             <row valign="middle">
               <entry>TIMESTAMP</entry>
               <entry align="center">+</entry>
               <entry>Numeric value <replaceable>n</replaceable></entry>
-              <entry>TIMESTAMP where days are increased by the integer part of
-              number <replaceable>n</replaceable> plus the fractional part of number
-              <replaceable>n</replaceable> (if it is specified) as the number of
-              seconds in the day (with precision of up to ten-thousandths of a second)</entry>
+              <entry>TIMESTAMP, where the date will advance by the number of days and part of a day
+              represented by number <replaceable>n</replaceable>&mdash;so <quote>+ 2.75</quote>
+              will push the date forward by 2 days and 18 hours</entry>
             </row>
             <row valign="middle">
               <entry>DATE</entry>
@@ -528,7 +565,8 @@ CREATE TABLE CUSTOMER (
               <entry>DATE</entry>
               <entry align="center">-</entry>
               <entry>Numeric value <replaceable>n</replaceable></entry>
-              <entry>DATE reduced by <replaceable>n</replaceable> whole days. The fractional part is ignored</entry>
+              <entry>DATE reduced by <replaceable>n</replaceable> whole days. Broken values are rounded
+              (not floored) to the nearest integer</entry>
             </row>
             <row valign="middle">
               <entry>TIME</entry>
@@ -551,12 +589,10 @@ CREATE TABLE CUSTOMER (
             <row valign="middle">
               <entry>TIMESTAMP</entry>
               <entry align="center">-</entry>
-              <entry>Numeric value <replaceable>n</replaceable> as the number of days and
-              part-days, expressed as a real number which may encompass sub-seconds
-              precision of up to ten-thousandths of a second</entry>
-              <entry>TIMESTAMP, where the overall date- and time-parts are reduced by the number of
-              seconds and sub-seconds (if specified) implicit in number <replaceable>n</replaceable>
-              </entry>
+              <entry>Numeric value <replaceable>n</replaceable></entry>
+              <entry>TIMESTAMP where the date will retreat by the number of days and part of a day
+              represented by number <replaceable>n</replaceable>&mdash;so <quote>- 2.25</quote>
+              will reduce the date by 2 days and 6 hours</entry>
             </row>
           </tbody>
         </tgroup>
@@ -579,8 +615,8 @@ CREATE TABLE CUSTOMER (
     stored in these data types is 32,767 bytes for <database>CHAR</database> and 32,765 bytes
     for <database>VARCHAR</database>. The maximum number of <emphasis>characters</emphasis> that
     will fit within these limits depends on the <database>CHARACTER SET</database> being used
-    and the collation sequence specified or defaulted to in the <database>COLLATE</database> clause
-    for the data under consideration.</para>
+    for the data under consideration. The collation sequence does not affect this maximum, although 
+    it may affect the maximum size of any index that involves the column.</para>
 
     <para>If no character set is explicitly specified when defining a character object, the 
     default character set specified when the database was created will be used. If the database
@@ -607,7 +643,7 @@ CREATE TABLE CUSTOMER (
       collations for many languages.  <database>UNICODE_FSS</database> is more limited and is used mainly
       by Firebird internally for storing metadata. Keep in mind that one <database>UTF8</database> character
       occupies up to 4 bytes, thus limiting the size of <database>CHAR</database> fields to
-      8,192 characters (32,767/4).</para>
+      8,191 characters (32,767/4).</para>
       <note>
         <para>The actual <quote>bytes per character</quote> value depends on the range the character belongs to.
         Non-accented Latin letters occupy 1 byte, Cyrillic letters from the WIN1251 encoding occupy 2 bytes,
@@ -722,7 +758,12 @@ CREATE TABLE CUSTOMER (
                 Firebird 2.0</entry>
               </row>
               <row valign="middle">
-                <entry align="center"><database>UTF-8</database></entry>
+                <entry align="center"><database>UTF8</database></entry>
+                <entry>The default, binary collation, identical to <database>UCS_BASIC</database>,
+                which was added for SQL compatibility</entry>
+              </row>
+              <row valign="middle">
+                <entry align="center"><database>UNICODE_CI</database></entry>
                 <entry>Case-insensitive collation, works without taking character case
                 into account.  Added in Firebird 2.1</entry>
               </row>
@@ -754,7 +795,7 @@ CREATE TABLE CUSTOMER (
       character columns that use a non-standard collation sequence: the length of an indexed field
       is limited to 252 bytes with no <database>COLLATE</database> specified or 84 bytes
       if <database>COLLATE</database> is specified.  Multi-byte character sets and compound indexes
-      consume more bytes from this figure.</para>
+      limit the size even further.</para>
       <para>Starting from Firebird 2.0, the maximum length for an index equals one quarter of the
       page size, i.e. from 1,024 to 4,096 bytes. The maximum length of an indexed string is 9 bytes
       less than that quarter-page limit.</para>
@@ -825,7 +866,7 @@ CREATE TABLE CUSTOMER (
         </tgroup>
       </table>
       <note>
-        <para>In case-insensitive encodings (<quote>_CI</quote>), one character in the <command>index</command>
+        <para>With case-insensitive collations (<quote>_CI</quote>), one character in the <command>index</command>
         will occupy not 4, but 6 (six) bytes, so the maximum key length for a page of, for example, 4,096
         bytes, will be 169 characters.</para>
       </note>
@@ -983,7 +1024,7 @@ CREATE TABLE CUSTOMER (
           <member>=</member>
           <member>(assignment)</member>
 
-          <member>=, &lt;&gt;, &lt;, &tl;=, &gt;, &gt;=</member>
+          <member>=, &lt;&gt;, &lt;, &lt;=, &gt;, &gt;=</member>
           <member>(comparison)</member>
 
           <member>||</member>
@@ -1023,7 +1064,7 @@ CREATE TABLE CUSTOMER (
 
                 <member><database>GROUP BY</database></member>
                 <member>concatenates the same strings if they are adjacent to each
-                other, but not do it if they remote from each other</member>
+                other, but does not do it if they are remote from each other</member>
               </simplelist>
               </para>
             </listitem>
@@ -1155,7 +1196,7 @@ CREATE TABLE CUSTOMER (
       <para>The <database>SQL_NULL</database> type holds no data, but only a state:
       <database>NULL</database> or <database>NOT NULL</database>. It is not available as
       a data type for declaring table fields, PSQL variables or parameter descriptions.
-      It was added to improve the support of untyped parameters in expressions involving
+      It was added to support the use of untyped parameters in expressions involving
       the <database>IS NULL</database> predicate.</para>
       <para>An evaluation problem occurs when optional filters are used to write queries
       of the following type:
@@ -1174,11 +1215,14 @@ CREATE TABLE CUSTOMER (
       independent <emphasis>parameters</emphasis>. The server cannot determine the type of
       the second parameter since it comes in association with <database>IS NULL</database>.</para>
 
-      <para>It was to solve the <quote>? IS NULL</quote> enigma that this special
-      <database>SQL_NULL</database> data type was added. When the query and its parameters are
-      sent to the server, the application sends each placeholder positionally, in the form <quote>?</quote>.
-      Duplicated parameters are allowed to merge into one. Two filters (named parameters) would
-      require four positional parameters. (Familiarity with the Firebird API is assumed.)
+      <para>The <database>SQL_NULL</database> data type solves this problem. Whenever the engine encounters
+      an <function>'? IS NULL' </function> predicate in a query, it assigns the <database>SQL_NULL</database>
+      type to the parameter, which will indicate that parameter is only about <quote>nullness</quote> and
+      the data type or the value need not be addressed.</para>
+      <para>The following example demonstrates its use in practice. It assumes two named parameters&mdash;say,
+      <function>:size</function> and <function>:colour</function>&mdash;which might, for example,
+      get values from on-screen text fields or drop-down lists. Each named parameter corresponds with
+      two positional parameters in the query.
         <programlisting>
        SELECT
          SH.SIZE, SH.COLOUR, SH.PRICE
@@ -1187,31 +1231,39 @@ CREATE TABLE CUSTOMER (
          AND (SH.COLOUR = ? OR ? IS NULL)
         </programlisting>
        </para>
-       <para>After <function>isc_dsql_describe_bind()</function> is executed, the sqltype of the second
-       and fourth parameters is set to <database>SQL_NULL</database>. As before, the Firebird server
-       has no information about their associations with the first and third parameters&mdash;the
-       application developer is completely responsible for that.</para>
-       <para>Once the values for the first and third parameters are specified (or set to NULL) and the
-       query is prepared, each pair of XSQLVARs must be filled as follows:</para>
-       <formalpara>
-         <title>The user has specified the parameters</title>
-         <simplelist type="horiz" columns="2">
-           <member>First parameter (value comparison):</member>
-           <member>set *sqldata to the sent value and *sqlind to 0 (for NOT NULL)</member>
-           <member>Second parameter (test for NULL):</member>
-           <member>set *sqldata to NULL (not SQL_NULL) and *sqlind to 0 (for NOT NULL)</member>
-         </simplelist>
-       </formalpara>
-       <formalpara>
-         <title>The user has specified no parameters (NULL)</title>
-         <simplelist type="horiz" columns="2">
-           <member>Both parameters (test for NULL):</member>
-           <member>set *sqldata to NULL (not SQL_NULL) and *sqlind to -1 (NULL indication)</member>
- .       </simplelist>
-       </formalpara>
-       <para>In other words, the value of the comparison parameter is still set, as usual.
-       The <database>SQL_NULL</database> parameter is set in the same way, except when sqldata
-       is sent as NULL.</para>
+       <para>Explaining what happens here assumes the reader is familiar with 
+       the Firebird API and the passing of parameters in XSQLVAR structures&mdash;what happens under the 
+       surface will not be of interest to those who are not writing drivers or applications that communicate 
+       using the <quote>naked</quote> API.</para>
+
+       <para>The application passes the parameterized query to the server in the usual positional ?-form. 
+       Pairs of <quote>identical</quote> parameters cannot be merged into one so, for two optional filters, 
+       for example, four positional parameters are needed: one for each ? in our example.</para>
+       <para>After the call to <function>isc_dsql_describe_bind()</function>, the SQLTYPE of the 
+       second and fourth parameters will be set to SQL_NULL. Firebird has no knowledge of their special 
+       relation with the first and third parameters: that responsibility lies entirely on the application side.</para>
+       <para>Once the values for size and colour have been set (or left unset) by the user and the query is 
+       about to be executed, each pair of XSQLVARs must be filled as follows:
+         <variablelist>
+           <varlistentry>
+             <term>User has supplied a value</term>
+             <listitem>
+               <para>First parameter (value compare): set *sqldata to the supplied value and *sqlind to 0
+               (for NOT NULL)</para>
+               <para>Second parameter (NULL test): set sqldata to null (null pointer, not SQL
+               NULL) and *sqlind to 0 (for NOT NULL)</para>
+             </listitem>
+           </varlistentry>
+           <varlistentry>
+             <term>User has left the field blank</term>
+             <listitem>
+               <para>Both parameters: set sqldata to null (null pointer, not SQL NULL) and *sqlind
+               to -1 (indicating NULL)</para>
+             </listitem>
+           </varlistentry>
+         </variablelist>
+       In other words: The value compare parameter is always set as usual. The SQL_NULL parameter is set the
+       same, except that sqldata remains null at all times.</para>
     </section>
   </section><!-- Special data types -->
 
@@ -1230,7 +1282,7 @@ CREATE TABLE CUSTOMER (
       <formalpara>
         <title>Syntax</title>
         <programlisting>
-       CAST (&lt;value&gt; | NULL AS &lt;data_type&gt;)
+       CAST ( { &lt;value&gt; | NULL } AS &lt;data_type&gt;)
 
        &lt;data_type&gt; ::= sql_datatype |
                         [TYPE OF] <replaceable>domain</replaceable> |
