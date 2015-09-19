@@ -2796,31 +2796,48 @@ SET TERM ;^
   </section> <!-- body code -->
 
   <section id="fblangref25-psql-handleexceptions">
-    <title>Statements for Handling Errors</title>
-    <para>Firebird has a useful lexicon of PSQL statements and resources for handling errors and
-    exceptions in modules.  Internally-implemented exceptions exist for stalling execution when
-    every sort of standard error occurs in DDL, DML and the physical environment.  A full listing
-    of them can be found in
-    <link linkend="fblangref25-appx02-errorcodes"><citetitle>Appendix B: Exception Handling,
-    Codes and Messages</citetitle></link>,
-    in the sections starting at
-    <link linkend="fblangref25-appx02-tbl-errcodes01"><citetitle>SQLCODE and GDSCODE Error Codes
-    and Message Texts (1)</citetitle></link>.  There are more than 700 of them&mdash;hence the
-    need to split them into four sections for practical purposes.</para>
-    <para>In the same Appendix are the DDL instructions for creating custom exceptions that are 
-    specific to your own applications, along with tips about using them.  See 
-    <link linkend="fblangref25-appx02-createexcept"><database>CREATE EXCEPTION</database></link>.
-    </para>
-    <para>Also in that Appendix is a detailed description and discussion of the different types 
-    of exception that can be handled in PSQL&mdash;see <link 
-    linkend="fblangref25-appx02-exceptypes">Exception Types</link>&mdash;including the newer,
-    SQL-standard <database>SQLSTATE</database> type that Firebird began to support in version 2.5.
-    The list of <database>SQLSTATE</database> codes and message can be found in
-    <link linkend="fblangref25-appx02-tbl-sqlstates"><citetitle>>SQLSTATE Codes and 
-    Message Texts</citetitle></link>.</para>
-    <para>Custom exceptions are stored in the system table
-    <ulink linkend="fblangref-appx04-exceptions"><database>RDB$EXCEPTIONS</database></ulink>.
-    </para>
+    <title>Trapping and Handling Errors</title>
+    <para>Firebird has a useful lexicon of PSQL statements and resources for trapping errors 
+    in modules and for handling them.  Internally-implemented exceptions exist for stalling
+    execution when every sort of standard error occurs in DDL, DSQL and the physical 
+    environment.</para>
+
+    <section id="fblangref25-ddl-sysexcept">
+      <title>System Exceptions</title>
+      <para>An exception is a message that is generated when an error occurs.</para>
+      <para>All exceptions handled by Firebird have predefined numeric values for context variables
+      (symbols) and text messages associated with them. Error messages are output in English
+      by default.  Localized Firebird builds are available, where error messages are translated
+      into other languages.</para>
+
+      <para>Complete listings of the system exceptions can be found in
+      <link linkend="fblangref25-appx02-errorcodes"><citetitle>Appendix B: Exception Codes and
+      Messages</citetitle></link>:
+        <itemizedlist>
+          <listitem><link linkend="fblangref25-appx02-sqlstates">SQLSTATE Error Codes and Descriptions</link></listitem>
+          <listitem><link linkend="fblangref25-appx02-sqlcodes">GDSCODE Error Codes, SQLCODEs and Descriptions</link></listitem>
+        </itemizedlist>
+      </para>
+    </section> <!-- system exceptions -->
+
+    <section id="fblangref25-ddl-customexcept">
+      <title>Custom Exceptions</title>
+      <para>Custom exceptions can be declared in the database as persistent objects and called
+      in the PSQL code to signal specific errors; for instance, to enforce certain business
+      rules.  A custom exception consists of an identifier and a default message of approximately
+      1000 bytes.  For details, see <link linkend="fblangref25-ddl-exception-create"><database>CREATE
+      EXCEPTION</database></link>.</para>
+    </section>
+
+    <para>In PSQL code, exceptions are handled by means of the WHEN statement. Handling an exception in
+    the code involves either fixing the problem in situ, or stepping past it; either solution allows
+    execution to continue without returning an exception message to the client.</para>
+
+    <para>An exception results in execution being terminated in the block. Instead of passing the
+    execution to the <database>END</database> statement, the procedure moves outward through levels
+    of nested blocks, starting from the block where the exception is caught, searching for the code
+    of the handler that <quote>knows</quote> about this exception. It stops searching when it finds
+    the first <database>WHEN</database> statement that can handle this exception.</para>
 
     <section id="fblangref25-psql-exception">
       <title><database>EXCEPTION</database></title>
@@ -2863,8 +2880,8 @@ EXCEPTION [exception_name [custom_message]]
         </tgroup>
       </table>
       <para>An <database>EXCEPTION</database> statement throws the user-defined exception with the
-      specified name. An alternative message text of up to 1,021 bytes can optionally replace the
-      message text defined when the exception was created.</para>
+      specified name. An alternative message text of up to 1,021 bytes can optionally override the
+      exception's default message text.</para>
       <para>The exception can be handled in the statement, by just leaving it with no specific
       <database>WHEN ... DO</database> handler and allowing the trigger or stored procedure to terminate and
       roll back all operations.  The calling application application gets the alternative message text, if
@@ -2872,9 +2889,22 @@ EXCEPTION [exception_name [custom_message]]
       <para>Within the exception-handling block&mdash;and only within it&mdash;the caught exception can
       be re-thrown by executing the <database>EXCEPTION</database> statement without parameters. If located
       outside the block, the re-thrown <database>EXCEPTION</database> call has no effect.</para>
+      <note>
+        <para>Custom exceptions are stored in the system table
+        <link linkend="fblangref-appx04-exceptions"><database>RDB$EXCEPTIONS</database></link>.
+        </para>
+      </note>
       <formalpara>
         <title>Examples</title>
         <orderedlist>
+        <listitem>Throwing an exception with dynamically generated text:
+          <blockquote><programlisting>
+&hellip;
+EXCEPTION EX_BAD_TYPE
+  'Incorrect record type with id ' || new.id;
+&hellip;
+          </programlisting></blockquote>
+          </listitem>
           <listitem>Throwing an exception upon a condition in the SHIP_ORDER stored procedure:
             <blockquote><programlisting>
 CREATE OR ALTER PROCEDURE SHIP_ORDER (
@@ -2968,7 +2998,7 @@ END
       </formalpara>
       <formalpara>
         <title>See also</title>
-        <para>&nbsp;<link linkend="fblangref25-appx02-createexcept"><database>CREATE EXCEPTION</database></link>,
+        <para>&nbsp;<link linkend="fblangref25-ddl-exception-create"><database>CREATE EXCEPTION</database></link>,
         <link linkend="fblangref25-psql-when"><database>WHEN ... DO</database></link>
         </para>
       </formalpara>
@@ -3062,14 +3092,19 @@ DO &lt;compound_statement&gt;
       MERGE</database>) that caused the error will be rolled back and none of the statements below it
       in the same block of statements are executed.
         <important>
-          <title>Attention!</title>
-          <para>If the error is not caused by one of the DML statements (<database>SELECT, INSERT,
-          UPDATE, DELETE, MERGE</database>), the entire block of statements will be rolled back, not
-          just the one that caused an error. Any operations in the <database>WHEN ... DO</database>
-          statement will be rolled back as well. The same limitation applies to the
-          <database>EXECUTE PROCEDURE</database> statement. Read an interesting discussion of the
-          phenomenon in Firebird Tracker ticket
-          <ulink url="http://tracker.firebirdsql.org/browse/CORE-4483">CORE-4483</ulink>.</para>
+          <orderedlist>
+            <listitem>If the error is not caused by one of the DML statements (<database>SELECT, INSERT,
+            UPDATE, DELETE, MERGE</database>), the entire block of statements will be rolled back, not
+            just the one that caused an error. Any operations in the <database>WHEN ... DO</database>
+            statement will be rolled back as well. The same limitation applies to the
+            <database>EXECUTE PROCEDURE</database> statement. Read an interesting discussion of the
+            phenomenon in Firebird Tracker ticket
+            <ulink url="http://tracker.firebirdsql.org/browse/CORE-4483">CORE-4483</ulink>.</listitem>
+            <listitem>In selectable stored procedures, output rows that were already passed to the client
+            in previous iterations of a <database>FOR SELECT &hellip; DO &hellip; SUSPEND</database>
+            loop remain available to the client if an exception is thrown subsequently in the process
+            of retrieving rows.</listitem>
+          </orderedlist>
         </important>
       </para>
       <section id="fblangref25-psql-whendo-scope">
@@ -3153,15 +3188,18 @@ END
           </orderedlist>
         </para>
       </formalpara>
+
+    <link linkend="fblangref25-ddl-exception-create"><database>CREATE EXCEPTION</database></link> in
+    <citetitle>DDL Statements</citetitle> and, for usage, the statement
+    <link linkend="fblangref25-psql-exception"><database>EXCEPTION</database></link>
+
       <formalpara>
         <title>See also</title>
         <para>&nbsp;<link linkend="fblangref25-psql-exception"><database>EXCEPTION</database></link>,
-        <link linkend="fblangref25-appx02-createexcept"><database>CREATE EXCEPTION</database></link>,
+        <link linkend="fblangref25-ddl-exception-create"><database>CREATE EXCEPTION</database></link>,
         <link linkend="fblangref25-appx02-tbl-errcodes01">SQLCODE and GDSCODE
-        Error Codes and Message Texts</link>,
+        Error Codes and Message Texts</link> and
         <link linkend="fblangref25-appx02-tbl-sqlstates">SQLSTATE Codes and Message Texts</link>
-        and <link linkend="fblangref25-appx02-exceptypes"><database>SQLCODE, GDSCODE, SQLCODE,
-        SQLSTATE</database></link>
         </para>
       </formalpara>
     </section> <!-- WHEN ... DO -->
