@@ -3456,7 +3456,28 @@ ROWS 81 TO 100
       </note>
     </section> <!-- ROWS -->
 
-<!-- SELECT ... W I T H   L O C K -->
+    <section id="fblangref-dml-for-update">
+      <title><database>FOR UPDATE [OF]</database></title>
+      <formalpara>
+        <title>Syntax</title>
+        <para><blockquote>
+          <programlisting>SELECT ... FROM <replaceable>single_table</replaceable>
+   [WHERE ...]
+   [FOR UPDATE [OF ...]]
+          </programlisting>
+        </blockquote></para>
+      </formalpara>
+      <para><database>FOR UPDATE</database> does not do what it suggests.  Its only effect currently
+      is to disable the pre-fetch buffer.
+        <tip>
+          <para>It is likely to change in future: the plan is to validate cursors marked with
+          <database>FOR UPDATE</database> if they are truly updateable and reject positioned updates
+          and deletes for cursors evaluated as non-updateable.</para>
+        </tip>
+      </para>
+      <para>The <database>OF</database> sub-clause does not do anything at all.</para>
+    </section>
+<!-- SELECT ... FOR UPDATE [OF] -->
 
     <section id="fblangref25-dml-with-lock">
       <title><database>WITH LOCK</database></title>
@@ -3611,31 +3632,30 @@ ROWS 81 TO 100
           </tgroup>
         </table>
 
-      <section id="fblangref-dml-for-update">
-        <title><database>FOR UPDATE [OF]</database></title>
-        <para>If the <database>FOR UPDATE</database> clause is included, the
-        buffered fetches are suppressed and, instead, the lock will be applied to each
-        row, one by one, at the moment it is fetched into the server-side row cache.
-        It becomes possible, then, that a lock which appeared to succeed when requested
-        will nevertheless <emphasis>fail subsequently</emphasis>, when an attempt is made to
-        fetch a row which has become locked by another transaction.
+      <section id="fblangref25-dml-withlock-forupdate">
+        <title>Usage with a <database>FOR UPDATE</database> Clause</title>
+        <para>If the <database>FOR UPDATE</database> sub-clause precedes
+        the <database>WITH LOCK</database> sub-clause, buffered fetches are suppressed.
+        Thus, the lock will be applied to each row, one by one, at the moment
+        it is fetched.  It becomes possible, then, that a lock which appeared to succeed when
+        requested will nevertheless <emphasis>fail subsequently</emphasis>, when an attempt
+        is made to fetch a row which has become locked by another transaction in the meantime.
           <tip>
-            <para>As an alternative, it may be possible in your access components to set 
-            the size of the fetch buffer to 1. This would enable you to process the currently-locked row 
+            <para>As an alternative, it may be possible in your access components to set
+            the size of the fetch buffer to 1. This would enable you to process the currently-locked row
             before the next is fetched and locked, or to handle errors without rolling back your
             transaction.</para>
           </tip>
         </para>
-        <section id="fblangref-dml-withlock-of">
-          <title>The optional <quote><database>OF</database><replaceable>&lt;column-names&gt;</replaceable></quote>
-          sub-clause</title>
-          <para>The <database>FOR UPDATE</database> clause can optionally include the <quote><database>OF</database>
-          <replaceable>&lt;column-names&gt;</replaceable></quote> subclause to enable positioned
-          updates.</para>
-          <para><comment>Editor's note :: I don't think this actually says anything useful about this sub-clause.
-          I suspect it is an unintended survivor from some ESQL documentation.</comment></para>
-        </section>
-      </section> <!-- FOR UPDATE -->
+        <note>
+          <title>OF &lt;column-names&gt;</title>
+          <para>This optional sub-clause does nothing at all.</para>
+        </note>
+        <formalpara>
+          <title>See also</title>
+          <para><link linkend="fblangref-dml-for-update"><database>FOR UPDATE [OF]</database></link></para>
+        </formalpara>
+      </section>
 
       <section id="fblangref25-dml-withlock-engine">
         <title>How the engine deals with <database>WITH LOCK</database></title>
@@ -4222,8 +4242,6 @@ INSERT INTO <replaceable>target</replaceable>
       <database>NEW.</database><replaceable>column_name</replaceable> for <constant>NULL</constant>.
       </para>
     </important>
-     <para><comment>Editor's note :: I added the alert above, because it wasn't mentioned
-     anywhere.</comment></para>
 
     <section id="fblangref25-dml-insert-values">
       <title><database>INSERT</database> ...
@@ -4269,13 +4287,13 @@ VALUES (_ISO8859_1 'Hans-J&ouml;rg Sch&auml;fer')
       <title><database>INSERT</database> ...
       <database>SELECT</database></title>
 
-      <para>For this method of inserting, the output columns of the 
+      <para>For this method of inserting, the output columns of the
       <database>SELECT</database> statement must provide a
       value for every target column in the column list, in the same order and
       of the correct type.</para>
-      <para>Literal values, context variables or expressions of compatible type 
-      can be substituted for any column in the source row.  In this case, a 
-      source column list and a corresponding <database>VALUES</database> list 
+      <para>Literal values, context variables or expressions of compatible type
+      can be substituted for any column in the source row.  In this case, a
+      source column list and a corresponding <database>VALUES</database> list
       are required.</para>
       <para>If the column list is absent&mdash;as it is when <database>SELECT *</database>
       is used for the source expression&mdash;the <replaceable>column_list</replaceable>
@@ -4318,6 +4336,33 @@ SELECT n FROM r
       output columns exactly match the insert columns in number, order and
       type. Types need not be exactly the same, but they must be
       assignment-compatible.</para>
+
+      <section id="fblangref25-dml-insert-select-unstable">
+        <title>The <quote>Unstable Cursor</quote> Problem</title>
+        <para>In Firebird, up to and including this version, it is necessary to
+        be aware of an implementation fault that affects this style of
+        inserts when the objective is to duplicate rows in the same table.
+        For example
+          <blockquote><programlisting>
+INSERT INTO T
+  SELECT * FROM T
+          </programlisting></blockquote>
+        known affectionately as the <quote>infinite insertion loop</quote>, will
+        continuously select rows and insert them, over and over, until the
+        system runs out of storage space.</para>
+        <para>This is a quirk that affects all data-changing DML operations,
+        with a variety of effects.  It happens because, in the execution layers,
+        DML statements use implicit cursors for performing the operations.
+        Thus, using our simple example, execution works as follows:
+          <blockquote><programlisting>
+FOR SELECT &lt;values&gt; FROM T INTO &lt;tmp_vars&gt;
+  DO
+    INSERT INTO T VALUES (&lt;tmp_vars&gt;)
+          </programlisting></blockquote>
+        The implementation results in behaviour that does not accord with
+        the SQL standards.  Future versions of Firebird will comply with the
+        standard.</para>
+      </section> <!-- Unstable cursor - inserts -->
     </section>
 
     <section id="fblangref25-dml-insert-defaults">
@@ -4325,7 +4370,7 @@ SELECT n FROM r
       VALUES</database></title>
 
       <para>The <database>DEFAULT VALUES</database> clause allows insertion of
-      a record without providing any values at all, neither directly nor from
+      a record without providing any values at all, either directly or from
       a <database>SELECT</database> statement. This is only possible if every
       <database>NOT NULL</database> or <database>CHECK</database>ed column in
       the table either has a valid default declared or gets such a value from
@@ -4643,7 +4688,7 @@ A B
       <database>WHERE CURRENT OF</database> clause, the action is limited to the row where the
       cursor is currently positioned.  This is a <firstterm>positioned update</firstterm>.
         <note>
-          <para>The <database>WHERE CURRENT OF</database> clause is available only in PSQL only,
+          <para>The <database>WHERE CURRENT OF</database> clause is available only in PSQL,
           since there is no statement for creating and manipulating an explicit cursor
           in DSQL.  Searched updates are also available in PSQL, of course.</para>
         </note>
@@ -4687,6 +4732,51 @@ WHERE id = 53662
           </programlisting></blockquote>
         </para>
       </formalpara>
+
+      <section id="fblangref25-dml-update-unstable">
+        <title>The <quote>Unstable Cursor</quote> Problem</title>
+        <para>In Firebird, up to and including this version, it is necessary to
+        be aware of an implementation fault that affects updates when the
+        WHERE conditions use the <database>IN</database> (<replaceable>select-expr</replaceable>)
+        and the <replaceable>select-expr</replaceable> is of the form
+        <database>SELECT FIRST</database> <replaceable>n</replaceable> or
+        <database>SELECT ... ROWS</database>.  For example
+          <blockquote><programlisting>
+UPDATE T
+  SET ...
+  WHERE ID IN (SELECT FIRST 1 ID FROM T)
+          </programlisting></blockquote>
+        known affectionately as the <quote>infinite update loop</quote>, will
+        continuously update rows, over and over, and give the impression that
+        the server has hung.</para>
+
+        <para>Quirks like this can affect any data-changing DML operations, most often
+        when the selection conditions involve a subquery.  Cases have been reported
+        where sort order interferes with expectations, without involving a subquery.
+        It happens because, in the execution layers, instead of establishing a stable <quote>target
+        set</quote> and then executing the data changes to each set member, DML statements
+        use implicit cursors for performing the operations on whatever row currently meets the
+        conditions, without knowledge of whether that row formerly failed the condition or
+        was updated already.  Thus, using a simple example pattern:
+
+          <blockquote><programlisting>
+UPDATE T SET &lt;fields&gt; = &lt;values&gt;
+  WHERE &lt;conditions&gt;
+          </programlisting></blockquote>
+
+        the execution works as:
+          <blockquote><programlisting>
+FOR SELECT &lt;values&gt; FROM T
+  WHERE &lt;conditions&gt;
+  INTO &lt;tmp_vars&gt; AS CURSOR &lt;cursor&gt;
+  DO
+    UPDATE T SET &lt;fields&gt; = &lt;tmp_vars&gt;
+    WHERE CURRENT OF &lt;cursor&gt;
+          </programlisting></blockquote>
+        Firebird's implementation does not accord with the SQL standards, which require
+        that a stable set be established before any data are changed.  Versions of
+        Firebird from V.3 onward will comply with the standard.</para>
+      </section> <!-- Unstable cursor - updates -->
     </section> <!-- WHERE clause -->
 
     <section id="fblangref25-dml-update-orderbyclause">
@@ -4759,12 +4849,20 @@ ROWS 20
         returned and variables specified in <database>RETURNING</database> will keep their
         previous values.
           <note>
-            <para>A column returned to a <database>NEW.</database> context variable in the trigger
-            should not have a colon before its name.</para>
+            <para>When a value is returned and assigned to a <database>NEW</database> context variable, 
+            it is not valid to use a colon prefix on it.  For example, this is invalid:
+              <literallayout class="monospaced">
+...
+into :var1, :var2, :new.id
+              </literallayout>
+            and this is valid:
+              <literallayout class="monospaced">
+...
+into :var1, :var2, new.id
+              </literallayout>
+            </para>
           </note>
         </para>
-        <para><comment>Editor's note :: This note seems to be a non-sequitur.  Should it be
-        <quote>A column returned FROM ...</quote>?</comment></para>
       </section> <!-- RETURNING INTO -->
 
       <formalpara>
@@ -4969,6 +5067,16 @@ RETURNING id, old.lastname, new.lastname
         </blockquote>
       </para>
     </formalpara>
+    <important>
+      <title>The <quote>Unstable Cursor</quote> Problem</title>
+      <para>Because of the way the execution of data-changing DML is implemented in
+      Firebird, up to and including this version, the sets targeted for updating sometimes
+      produce unexpected results.  For more information, refer to
+      <link linkend="fblangref25-dml-update-unstable">
+      <citetitle>The <quote>Unstable Cursor</quote> Problem</citetitle></link> in the
+      <database>UPDATE</database> section.</para>
+    </important>
+
   </section> <!-- update or insert -->
 
 <!-- ========================================================================================
@@ -5165,11 +5273,11 @@ DELETE FROM Submissions
       the actual deletion takes place. It only makes sense in combination
       with <database>ROWS</database>, but is also valid without it.</para>
 
-      <para>The <database>ROWS</database> clause limits the number of rows being 
+      <para>The <database>ROWS</database> clause limits the number of rows being
       deleted. Integer literals or any integer expressions can be used for
       the arguments <replaceable>m</replaceable> and <replaceable>n</replaceable>.
       </para>
-      
+
       <para>If <database>ROWS</database> has one argument, <replaceable>m</replaceable>, the
       rows to be deleted will be limited to the first <replaceable>m</replaceable> rows.
         <formalpara>
@@ -5178,7 +5286,7 @@ DELETE FROM Submissions
             <listitem>If m &gt; the number of rows being processed, the entire set of rows
             is deleted</listitem>
             <listitem>If m = 0, no rows are deleted</listitem>
-            <listitem>If m &lt; 0, an error occurs and the update fails</listitem>
+            <listitem>If m &lt; 0, an error occurs and the deletion fails</listitem>
           </itemizedlist>
         </formalpara>
       </para>
@@ -5195,7 +5303,7 @@ DELETE FROM Submissions
             these values, rows from m to the end of the set are deleted</listitem>
             <listitem>If m &lt; 1 or n &lt; 1, an error occurs and the deletion fails</listitem>
             <listitem>If n = m - 1, no rows are deleted</listitem>
-            <listitem>If n &lt; m -1, an error occurs and the update fails</listitem>
+            <listitem>If n &lt; m -1, an error occurs and the deletion fails</listitem>
           </itemizedlist>
         </formalpara>
       </para>
@@ -5284,10 +5392,15 @@ DELETE FROM Dumbbells
         </para>
       </formalpara>
     </section>
-    <para><comment>Editor's note :: I have excluded two allusions to assigning values to  
-    the NEW and OLD context variables in PSQL (one Note, one example) as there are no NEW context
-    variables in DELETE triggers and the OLD ones are read-only.  Oops!  they were
-    probably copy/paste booboos.</comment></para>
+    <important>
+      <title>The <quote>Unstable Cursor</quote> Problem</title>
+      <para>Because of the way the execution of data-changing DML is implemented in
+      Firebird, up to and including this version, the sets targeted for deletion sometimes
+      produce unexpected results.  For more information, refer to
+      <link linkend="fblangref25-dml-update-unstable">
+      <citetitle>The <quote>Unstable Cursor</quote> Problem</citetitle></link> in the
+      <database>UPDATE</database> section.</para>
+    </important>
   </section>  <!-- DELETE -->
 
 <!-- ========================================================================================
@@ -5383,7 +5496,7 @@ DELETE FROM Dumbbells
     <note>
       <title>Notes</title>
       <para>Only one of each <database>WHEN</database> clause can be supplied.
-      This will change in the next major version of Firebird, when compound matching conditions 
+      This will change in the next major version of Firebird, when compound matching conditions
       will be supported.</para>
       <para><database>WHEN NOT MATCHED</database> is evaluated from the source viewpoint, that is,
       the table or set specified in <database>USING</database>. It has to work this way because,
@@ -5443,6 +5556,16 @@ WHEN NOT MATCHED THEN
         </blockquote>
       </para>
     </formalpara>
+    <important>
+      <title>The <quote>Unstable Cursor</quote> Problem</title>
+      <para>Because of the way the execution of data-changing DML is implemented in
+      Firebird, up to and including this version, the sets targeted for merging sometimes
+      produce unexpected results.  For more information, refer to
+      <link linkend="fblangref25-dml-update-unstable">
+      <citetitle>The <quote>Unstable Cursor</quote> Problem</citetitle></link> in the
+      <database>UPDATE</database> section.</para>
+    </important>
+
   </section><!-- MERGE -->
 
 
