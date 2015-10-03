@@ -1,0 +1,154 @@
+<chapter id="rnfb25-compat">
+  <chapterinfo>
+    <title>互換性問題</title>
+    <author>
+      <firstname>Dmitry</firstname>
+      <surname>Yemanov</surname>
+    </author>
+  </chapterinfo>
+  <para>バージョン2.0またはバージョン2.1.xデータベースからFirebird 2.5に移行する際、既存のデータベースまたはアプリケーションに影響する可能性がある多くの非互換性に注意する必要があります。あなたがこれらの問題を解決するまで、移行の開始はお勧めできません。</para>
+
+  <important>
+    <title>古いクライアントとの非互換性</title>
+    <para>64bitサーバーで統計ルーチンが適切に動作する新しいストラクチャーで、32bitツールが正しく動作できるようにするため、いくつかの新しい内部API関数（<command>struct perf64</command>と<command>perf64_xxx</command>）を導入し、またこれらを使用するように<emphasis>isql</emphasis>と<emphasis>qli</emphasis>を変更する必要がありました。このことは、バージョン2.5の<emphasis>isql</emphasis>と<emphasis>qli</emphasis>プログラムが古いFirebirdクライアントと互換性がないことを意味しています。</para>
+    <para>詳細は、エンジンの章の<link linkend="rnfb25-engine-stats64">データベースの統計が64bit値で適切に動作するように</link>の項を参照して下さい。</para>
+  </important>
+
+  <section id="rnfb25-compat-metadata"><!-- level 1 -->
+    <title>Unicodeメタデータへの影響</title>
+    <para>あなたがこれまでにデータベースのメタデータ中のテキストオブジェクトをUTF-8キャラクタ・セットへと更新していない場合、バージョン2.5以前のデータベースのリストアは<quote>不正な形式の文字列</quote>のエラーを起こして失敗します。この問題の解決には、あなたがインストールした<filename>/misc/upgrade/metadata</filename>ディレクトリ内のファイル群に注意し、また、<emphasis>gbak</emphasis>コマンドラインで新しい<filename>-fix_fss_data<filename>と</filename>-fix_fss_metadata</filename>スイッチを使う必要があります。</para>
+  </section>
+
+  <section id="rnfb25-compat-config"><!-- level 1 -->
+    <title>設定パラメータの削除</title>
+    <para>非推奨の設定パラメータ<filename>OldParameterOrdering</filename>と<filename>CreateInternalWindow</filename>は今後サポートされず、<filename>firebird.conf</filename>からも削除されました。</para>
+    <para>以前のバージョンでは<filename>LockSemCount</filename>と<filename>LockSignal</filename>という二つのパラメータを使ってロックマネージャの調整ができましたが、新しいロックマネージャの実装では必要なくなり、削除されました。</para>
+    <para>パラメータMaxFileSystemCacheはFileSystemCacheThresholdにリネームされました。</para>
+  </section>
+
+  <section id="rnfb25-compat-sql"><!-- level 1 -->
+    <title>SQL言語の変更</title>
+    <para>SQL言語の実装にいくつか変更が加えられましたので、注意する必要があります。</para>
+
+    <section id="rnfb25-compat-sql-reserv"><!-- level 2 -->
+    <title>予約語</title>
+    <para>いくつかの新しい予約語が導入される一方で、予約語リスト全体は劇的に縮小され、Firebirdのパーサ文法は、従来は予約語だった大部分の非標準キーワードを非予約語と見なすようになりました。従来からの予約語と新たに予約語となったSQL標準キーワードのリストについては<link linkend="rnfb25-reswords">予約語とその変更</link>の章で確認できます。</para>
+    </section>
+
+    <section id="rnfb25-compat-sql-exec"><!-- level 2 -->
+      <title>実行結果</title>
+      <para>いくつかの変更により、<emphasis>gbak</emphasis>ユーティリティのコード（バックアップとリストア）実行時に実行されるものを含むクエリのランタイム実行時に例外を発生させるようになりました。</para>
+
+      <section id="rnfb25-compat-sql-malformed"><!-- level 3 -->
+        <title>不正な形式の文字列</title>
+        <para>UNICODE_FSS文字列とテキストBLOBに対して適格性のチェックが実行されるようになりました。これにより、新規のまたは既存のUNICODE_FSSが不正な形式だった場合、実行時に例外が発生します。</para>
+      </section>
+
+      <section id="rnfb25-compat-sql-setclause"><!-- level 3 -->
+        <title>SET句でのロジックの変更</title>
+        <para>従来は、UPDATE文のSET句が新しい値をカラムに割り当てる際、ただちに新しい値が元の値に置き換わっていました。同じカラムが割り当てられたり、一度以上の割り当てがあった場合、現在の値は最後に行われた割り当ての値となっていました。言い換えると、従来は割り当ての順序が重要となっていました。</para>
+        <para>Firebirdを標準に合わせるため、このバージョン以降、SET句では、カラムのもとの値だけが任意の割り当てに対してアクセス可能となっています。</para>
+        <para>しばらくは、<filename>firebird.conf</filename>内の一時的なパラメータ<link linkend="rnfb25-fbconf-oldset">OldSetClauseSemantics</link>の設定によって従来の挙動に戻すことができます。このパラメータは将来のリリースで非推奨となり、廃止されます。</para>
+      </section><!-- level 3 -->
+    </section><!-- level 2 -->
+  </section><!-- level 1 -->
+
+  <section id="rnfb25-compat-utils"><!-- level 1 -->
+    <title>ユーティリティ</title>
+    <para>Firebirdコマンドラインユーティリティに加えられた以下の変更の影響に注意して下さい。</para>
+
+    <section id="rnfb25-compat-utils-lckprt">
+      <title>fb_lock_print</title>
+      <para>バージョン2.5ではサーバー上の各データベースのセパレートロックストラクチャーが維持されているので、<emphasis>fb_lock_print</emphasis>がロックテーブルを表示するためにデータベースのパス名を要求するようになっています。コマンドラインで新しいスイッチ<filename>-d &lt;path name&gt;</filename>を付けて、分析したいデータベースの<emphasis>ファイルシステム・パス</emphasis>を指定して下さい。</para>
+    </section>
+    <important id="fb25-deprecation-warning">
+      <title>将来廃止予定の非推奨機能</title>
+      <para>Firebird 3コードベースから組み込み関数<command>isc_ddl</command>が削除されることを見越して、現在<emphasis>gdef</emphasis>と<emphasis>gpre</emphasis>ツールで利用できるいくつかの機能が非推奨となりました&mdash;そのため、バージョン2.5では動作するかもしれませんが、Firebird 3では失敗するでしょう。</para>
+      <itemizedlist>
+        <listitem>
+          <para><emphasis>gdef</emphasis>はもうサポートされていません。通常のDDLコマンドとしては、代わりに<emphasis>isql</emphasis>を使用して下さい。</para>
+        </listitem>
+        <listitem>
+          <para><emphasis>gpre</emphasis>のプリプロセッシングとして、全てのDDLオペレーションを次のものと置き換えて下さい。</para>
+          <literallayout>
+          EXEC SQL
+            EXECUTE IMMEDIATE &quot;...&quot;
+          </literallayout>
+        </listitem>
+        <listitem>
+          <para>全てのカスタムアプリケーションで、<command>isc_ddl</command>の呼び出しは、SQLのDDL文の要求に置き換えなければなりません。</para>
+        </listitem>
+      </itemizedlist>
+    </important>
+    
+  </section>
+
+  <section id="rnfb25-compat-api"><!-- level 1 -->
+    <title>APIの変更</title>
+    <para>クライアントライブラリに実装されるアプリケーションプログラミングインターフェース（API）に以下の変更が加えられましたので、注意して下さい。</para>
+
+    <section id="rnfb25-compat-api-tpb"><!-- level 2 -->
+      <title>矛盾するTPBオプションのリジェクト</title>
+      <para>API関数<command>isc_start_transaction()</command>と<command>isc_start_multiple()</command>が<quote>一緒にあるべきではない</quote>トランザクションパラメータバッファ（TPB）アイテムの組み合わせをリジェクトするようになりました。</para>
+
+      <para>例えば、ゼロではない<emphasis>wait timeout</emphasis>は<emphasis>no wait</emphasis>オプションと矛盾します；また、<emphasis>no record version</emphasis>は任意の<emphasis>トランザクション分離モード</emphasis>と矛盾します。本来のあいまいさについて、いくぶん恣意的で（そして恐らく不正確な）仮定を行う代わりに、エンジンはこのような組み合わせを無効としてリジェクトするようになりました。</para>
+      <para>詳細は、<emphasis>Firebirdエンジンの変更</emphasis>の章の<link linkend="rnfb25-engine-dgnstcs01">トランザクションの診断</link>の項を参照して下さい。</para>
+    </section>
+    
+    <section id="rnfb25-compat-api-sqlnull"><!-- level 2 -->
+      <title>SQL_NULL定数の追加</title>
+      <para>SQL_NULL定数が導入されたことで、<command>OR ? IS NULL</command>句が認識され、<quote>未知のデータ型</quote>の例外を発生させることなく処理され、期待された結果を出せようになりました。このことは、XSQLVAR構造体がこの種のクエリに配置される仕方に影響を与えます。詳細は、DMLの章の<link linkend="rnfb25-dml-orisnull">SOME_COL = ? OR ? IS NULL Predication</link>の項を参照して下さい。</para>
+    </section>
+  </section><!-- level 1 -->
+
+  <section id="rnfb25-compat-sec"><!-- level 1 -->
+    <title>セキュリティの強化</title>
+    <para>以下の変更に注意して下さい。</para>
+
+    <section id="rnfb25-compat-sec01">
+      <title>SYSDBA自動マッピングの廃止（Windows版）</title>
+      <para>バージョン2.1では、Windows管理者グループのメンバーは、デフォルトでSYSDBAにマッピングされていました。バージョン2.5以降は、SYSDBAのマッピングは新しいSQLコマンドを使ってデータベースごとに制御されます。</para>
+      <para><command>ALTER ROLE RDB$ADMIN SET/DROP AUTO ADMIN MAPPING</command></para>
+      <para>詳細は、<link linkend="rnfb25-security-win-sysdba">セキュリティに関する章</link>を参照して下さい。</para>
+    </section>
+
+    <section id="rnfb25-compat-sec02">
+      <title>デフォルトの認証方法（Windows）</title>
+      <para>Windowsの<quote>信頼された認証</quote>が導入されたバージョン2.1では、デフォルトの認証方法は<firstterm>mixed</firstterm>です。つまり、DPBやSPBは、nativeのFirebirdログインもtrustedのユーザーログインもアクセプトします。そのため、<filename>firebird.conf</filename>内の<emphasis>Authentication</emphasis>パラメータはデフォルトで<firstterm>mixed</firstterm>を示していました。</para>
+      <para>バージョン2.5以降、デフォルトは<firstterm>native</firstterm>となりました。<firstterm>mixed</firstterm>または<firstterm>trusted</firstterm>とするには、このパラメータを明示的に設定する必要があります。</para>
+      <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-2376">CORE-2376</ulink></para>
+    </section>
+  </section>
+  <!-- //////////////////////////// -->
+  <!-- Section added in 2.5.1 Notes -->
+  <!-- //////////////////////////// -->
+  <section id="rnfb25-compat-servicepath"><!-- level 1 -->
+    <title>サービスへのアクセスパス</title>
+    <para>Firebirdの以前の一部のバージョンでは、データベース名の引数としてサーバーのフルパスが与えられていれば、SYSDBAパスワードがクライアントとサーバーの両方で同じだった場合、サービスへのリモートアクセスが有効になっていたようです。これらの条件下では、例外がスローされず、アクセスは成功していました。</para>
+    <para>例えば、リモートのクライアントがリモートサーバーと同じSYSDBAパスワードを持ったFirebirdサーバーを稼動していた場合、<emphasis>gbak</emphasis>へのリモートの呼び出しのための以下の構文が有効となっていたようです。</para>
+    <programlisting>
+gbak -b -se dbhost:service_mgr dbhost:dbalias 
+   /var2/backups/mydb.fbk -user SYSDBA -password masterke
+    </programlisting>
+    <para>一部の開発者は長い間これをドキュメント化されていない機能かと思っていましたが、残念ながら、この異常はバグでした。バージョン2.5では、どのような条件の下でも、この構文は例外となります。正しい構文は次の通り：</para>
+    <programlisting>
+gbak -b -se dbhost:service_mgr dbalias
+   /var2/backups/mydb.fbk -user SYSDBA -password masterke
+
+gbak -b -se dbhost:service_mgr d:\databases\mydb.fdb
+   x:\backups\mydb.fbk -user SYSDBA -password masterke
+    </programlisting>
+  </section>
+
+  <section id="rnfb25-compat-platform"><!-- level 1 -->
+    <title>プラットフォーム固有の既知の問題</title>
+    <para>エンジンなどの変更により、一般的な問題以外に、いくつかのプラットフォームで固有の影響が出る可能性があります。既知の問題は以下に記載されています。</para>
+    <section id="rnfb25-compat-platform01"><!-- level02 -->
+      <title>MacOSX版</title>
+      <para>マルチスレッド環境で新しいエンジンを正しく動作させるには、<ulink url="http://en.wikipedia.org/wiki/Grand_Central_Dispatch">Grand Central Dispatch</ulink>を使う必要があります。これはMacOSX 10.6（Snow Leopard）で最初にリリースされたため、MacOSXのユーザーは、Firebird 2.5がMacOSX 10.6以上のバージョンでなければ起動しないことを認識して下さい。</para>
+      <note>
+        <para>OSXの以前のバージョンを使いたい場合は、Firebirdも以前のバージョンのものを使う必要があります。</para>
+      </note>
+    </section>
+  </section>
+</chapter>
