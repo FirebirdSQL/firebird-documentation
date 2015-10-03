@@ -1,0 +1,576 @@
+<chapter id="rnfb25-ddl">
+  <chapterinfo>
+    <title>データ定義言語（DDL）</title>
+  </chapterinfo>
+  <para>バージョン2.5では、DDLに対して重要な追加と拡張が施されました。</para>
+
+  <section id="rnfb25-ddl-links"><!-- Level 1 section -->
+    <title>Quick Links</title>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><link linkend="rnfb25-ddl-crtusr">CREATE/ALTER/DROP USER</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-ddl-altrvw">ビュー変更の構文</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-ddl-sspinview">CREATE VIEW用のSSP拡張</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-ddl-altrcmptd">計算項目用のALTERの仕組み</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-ddl-grntdby">GRANTおよびREVOKE用GRANTED BYの拡張</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-ddl-altrrole">ALTER ROLE</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-ddl-rvkall">REVOKE ALL</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-ddl-dftcolltn">データベースのデフォルトのコレーション属性</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb25-ddl-altrchrset">ALTER CHARACTER SET</link></para>
+      </listitem>
+<!-- Corrected in v.2.5.1 -->
+      <listitem>
+        <para><link linkend="rnfb25-ddl-crtdb-diffile">CREATE DATABASE用の引数DIFFERENCE FILE</link></para>
+      </listitem>
+    </itemizedlist>
+    
+    <para>このリリースではFirebird 3を目指したアーキテクチャ変更が強調されていますが、多数の改善や拡張も実装されています。その多くはトラッカーでの機能要求に応えたものです。</para>
+    
+<!-- Added in v.2.5.1 -->
+    <warning>
+      <title>一般的警告</title>
+      <para>バージョン2.5以上では、カラムのデータ型の変更が可能になっています。そのカラムがストアドプロシージャやトリガで参照されていたとしても、例外がスローされることはありません。ただし、コンパイル済みのPSQLはBLOB内でバイナリ表現（<quote>BLR</quote>）として静的に格納されているため、オリジナルのBLRはバックアップやリストアを行なっても残っています。BLRは静的であるため、データ型を変更しても更新されません。</para>
+      <para>このことは、テーブルやそのビューから影響を受けるカラムを参照しているBLRが、それらのカラムを参照するTYPE OF構文を使って任意の変数を宣言している場合、警告なしに破壊される可能性が高いことを意味します。最善の場合、BLRは<quote>注意が必要</quote>のフラグを付けられますが、テストでは、どんな条件でもフラグ付けが行なわれるわけではないことが分かっています。</para>
+      <para>つまり、フィールドがコンパイル済みPSQLに何らかの依存関係を持っていたとしても、あなたがそのフィールドの型を変更するのをエンジンはもう止めてくれなくなった、ということです。変更された状況を管理するため、影響を受けるプロシージャやトリガを特定したり、変更に対応してそれらを再コンパイルしたりといった対応は、あなた自身の問題となります。</para>
+    </warning>
+<!-- End of v.2.5.1 addition -->
+
+    <section id="rnfb25-ddl-storedproc"><!-- Level 2 section -->
+      <sectioninfo>
+      <title>クラシックサーバーでのプロシージャ定義変更の可視性</title>
+        <author>
+          <firstname>Dmitry</firstname><surname>Yemanov</surname>
+        </author>
+      </sectioninfo>
+      <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-2052">CORE-2052</ulink></para>
+      <para>一件の変更により、クラシックサーバーで、変更されたストアドプロシージャに関する他のクライアントの接続からの可視性の問題への対処が行われました。変更中のトランザクションがコミットを完了するとすぐに、その変更がサーバー全体で確認できるようになりました。</para>
+    </section>
+
+    <section id="rnfb25-ddl-crtusr" xreflabel="CREATE/ALTER/DROP USER"><!-- Level 2 section -->
+      <sectioninfo>
+      <title>CREATE/ALTER/DROP USER</title>
+        <author>
+          <firstname>Alex</firstname><surname>Peshkov</surname>
+        </author>
+      </sectioninfo>
+      <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-696">CORE-696</ulink></para>
+      <para>バージョン2.5で、Firebirdはついに、通常のデータベースへのログイン時にSQL文を発行することでサーバーのユーザーアカウントを管理できる構文を手に入れました。</para>
+
+      <para>CREATE USERとALTER USER文はいずれもパラメータGRANT ADMIN ROLEとREVOKE ADMIN ROLEをを持ち、SYSDBA権限を持つユーザーがセキュリティ・データベースのロールRDB$ADMINを通常のユーザーに付与することができます。この使い方の解説とロールRDB$ADMINの全容については、<emphasis>管理機能</emphasis>の章の<link linkend="rnfb25-prvlgs">新しいシステムロールRDB$ADMIN</link>の項を参照して下さい。</para>
+
+      <para><emphasis role="bold">構文パターン</emphasis></para>
+      <para>SYSDBAまたはSYSDBA権限を持つユーザーは、現在のデータベースとセキュリティ・データベースのいずれにも新しいユーザーを追加できます：</para>
+      <programlisting>
+CREATE USER &lt;ユーザー名&gt; {PASSWORD 'パスワード'}
+  [FIRSTNAME 'ファーストネーム']
+  [MIDDLENAME 'ミドルネーム']
+  [LASTNAME 'ラストネーム']
+  [GRANT ADMIN ROLE];
+      </programlisting>
+      <note>
+        <para>新しいユーザーを作成する際はPASSWORD句が必要です。これは新しいユーザーの初期パスワードとなります。ユーザーが後からこれを変更するにはALTER USERを使います。</para>
+      </note>
+
+      <para>SYSDBAまたはSYSDBA権限を持つユーザーは、現在のデータベースとセキュリティ・データベースのいずれでも、既存のユーザーのパスワードや固有名詞属性を変更できます。権限がないユーザーは、同じ文を使うことで自分自身の属性のみ変更できます：</para>
+
+      <programlisting>
+ALTER USER &lt;ユーザー名&gt;
+  [PASSWORD 'パスワード']
+  [FIRSTNAME 'ファーストネーム']
+  [MIDDLENAME 'ミドルネーム']
+  [LASTNAME 'ラストネーム']
+  [{GRANT | REVOKE} ADMIN ROLE];
+      </programlisting>
+      <note>
+      <!-- V.2.5.1, the text of the first para was changed. -->
+        <para>少なくとも一つのオプションパラメータを与える必要があります。</para>
+        <para>ALTER USERでは&lt;ユーザー名&gt;の変更はできません。別の&lt;ユーザー名&gt;に変更したい場合は、もとのユーザーを削除し新たなユーザーを作成しなくてはなりません。</para>
+      </note>
+      <para>SYSDBAまたはSYSDBA権限を持つユーザーは、現在のデータベースとセキュリティ・データベースのいずれでも、ユーザーを削除することができます：</para>
+      <programlisting>
+DROP USER &lt;ユーザー名&gt;;
+      </programlisting>
+
+      <para><emphasis role="bold">制限事項</emphasis></para>
+      <para>現在のデータベースとセキュリティー・データベースのいずれでも、CREATE USERやDROP USER文とGRANT | REVOKE ADMIN ROLEを使えるのはSYSDBAまたはロールRDB$ADMINを手にしているユーザーだけです。</para>
+      <para>通常のユーザーは自身のパスワードや固有名詞の要素をALTERすることができます。別のユーザーの修正を試みても失敗します。</para>
+
+      <para><emphasis role="bold">例</emphasis></para>
+
+      <para>SYSDBAまたは<link linkend="rnfb25-prvlgs">同等の権限を持つユーザー</link>は、現在のデータベースでもセキュリティ・データベースでも、以下のことができます：</para>
+      <programlisting>
+CREATE USER alex PASSWORD 'test';
+
+ALTER USER alex FIRSTNAME 'Alex' LASTNAME 'Peshkov';
+
+ALTER USER alex PASSWORD 'IdQfA';
+      </programlisting>
+
+    </section><!-- Level 2 section -->
+
+    <section id="rnfb25-ddl-altrvw"><!-- Level 2 section -->
+      <sectioninfo>
+      <title>ビューを変更する構文</title>
+        <author>
+          <firstname>Adriano</firstname>
+          <surname>dos Santos Fernandes</surname>
+        </author>
+      </sectioninfo>
+      <para>従来は、ビュー定義を変更するためには、ビュー定義をオフラインのどこかに保存してからビューを削除し、その上で再作成するする必要がありました。これは、特に依存関係の問題がある場合には非常に煩わしいものでした。そこで、バージョン2.5では、ALTER VIEWとCREATE OR ALTER VIEWの構文が導入されました。</para>
+
+      <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-770">CORE-770</ulink> および <ulink url="http://tracker.firebirdsql.org/browse/CORE-1640">CORE-1640</ulink></para>
+
+      <section id="rnfb25-ddl-altrvw01"><!-- Level 3 section -->
+        <title>ALTER VIEW</title>
+        <para>ALTER VIEWはビュー定義の変更を可能にします。ビューの古いバージョンと全ての依存関係を再作成（削除して作成）する必要はありません。</para>
+      </section>
+
+      <section id="rnfb25-ddl-altrvw02"><!-- Level 3 section -->
+        <title>CREATE OR ALTER VIEW</title>
+        <para>CREATE OR ALTER VIEWを使うと、ビューが存在する場合はビュー定義が変更されます（ALTER VIEWと同様）。存在しない場合はビューが作成されます。</para>
+      </section>
+
+      <para><emphasis role="bold">構文パターン</emphasis></para>
+<!-- v.2.5.1 Added starting brace character { before the first word 'create' -->
+      <programlisting>
+{create [ or alter ] | alter } view &lt;ビュー名&gt;
+  [ ( &lt;フィールドリスト&gt; ) ]
+as &lt;select文&gt;{
+      </programlisting>
+
+      <para><emphasis role="bold">例</emphasis></para>
+      <programlisting>
+create table users (
+    id integer,
+    name varchar(20),
+    passwd varchar(20)
+);
+
+create view v_users as
+    select name from users;
+
+alter view v_users (id, name) as
+    select id, name from users;
+      </programlisting>
+    </section>
+
+    <section id="rnfb25-ddl-createview"><!-- Level 2 section -->
+      <title>CREATE VIEWの拡張</title>
+      <para>CREATE VIEWに以下のような拡張が追加されました。</para>
+      <section id="rnfb25-ddl-sspinview"><!-- Level 3 section -->
+        <sectioninfo>
+          <title>FROM句にストアドプロシージャを指定</title>
+          <author>
+            <firstname>Adriano</firstname>
+            <surname>dos Santos Fernandes</surname>
+          </author>
+        </sectioninfo>
+        <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-886">CORE-886</ulink>.</para>
+        <para>ビュー定義のFROM句に選択型ストアドプロシージャを指定できるようになりました。</para>
+        <para><emphasis role="bold">例</emphasis></para>
+        <literallayout class="monospaced">
+    create view a_view as
+    select * from a_procedure(current_date);
+        </literallayout>
+      </section>
+
+      <section id="rnfb25-ddl-unioninview"><!-- Level 4 section -->
+        <sectioninfo>
+          <title>カラムリストを含まないUNION句を用いたビューの作成</title>
+          <author>
+            <firstname>Dmitry</firstname>
+            <surname>Yemanov</surname>
+          </author>
+        </sectioninfo>
+        <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-1402">CORE-1402</ulink></para>
+        <para>セットがUNION句で定義されている場合、CREATE VIEWからカラムリストを省略できるようになりました。</para>
+        <para><emphasis role="bold">例</emphasis></para>
+        <literallayout class="monospaced">
+ recreate view V1 as
+   select d.rdb$relation_id from rdb$database d
+   union all
+   select d.rdb$relation_id from rdb$database d
+
+ recreate view V2 as
+   select d.rdb$relation_id as q from rdb$database d
+   union all
+   select d.rdb$relation_id as w from rdb$database d
+        </literallayout>
+      </section>
+
+      <section id="rnfb25-ddl-inferviewcols"><!-- Level 4 section -->
+        <sectioninfo>
+          <title>推定されたカラム名</title>
+          <author>
+            <firstname>Adriano</firstname>
+            <surname>dos Santos Fernandes</surname>
+          </author>
+        </sectioninfo>
+        <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-2424">CORE-2424</ulink></para>
+        <para>CREATE VIEWが、GROUP BY句を含むビューまたは派生テーブルのカラム名を推定できるようになりました。</para>
+        <para><emphasis role="bold">例</emphasis></para>
+        <literallayout class="monospaced">
+ create view V as 
+   select d.rdb$relation_id from rdb$database d 
+     group by d.rdb$relation_id
+
+ create view V as 
+    select a from (select 1 a from rdb$database);
+        </literallayout>
+      </section>
+    </section>
+
+    <section id="rnfb25-ddl-altrcmptd"><!-- Level 2 section -->
+      <sectioninfo>
+      <title>計算項目に対するALTERの仕組み</title>
+        <author>
+          <firstname>Adriano</firstname>
+          <surname>dos Santos Fernandes</surname>
+        </author>
+      </sectioninfo>
+      <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-1454">CORE-1454</ulink></para>
+      <para>COMPUTED BY &lt;式&gt;と定義されたカラムをALTER TABLE...ALTER COLUMN構文を使って変更できるようになりました。この機能はカラム定義の&lt;式&gt;要素を異なる式に変更するためだけに使われます。計算項目を非計算項目に、またその逆の変換を行うことはできません。</para>
+
+      <para><emphasis role="bold">構文パターン</emphasis></para>
+      <programlisting>
+alter table &lt;テーブル名&gt;
+  alter &lt;計算項目名&gt;
+  [type &lt;データ型&gt;]
+  COMPUTED BY (&lt;式&gt;);
+      </programlisting>
+
+      <para><emphasis role="bold">例</emphasis></para>
+      <programlisting>
+create table test (
+  n integer,
+  dn computed by (n * 2)
+);
+commit;
+alter table test
+  alter dn computed by (n + n);
+      </programlisting>
+    </section>
+
+    <section id="rnfb25-ddl-sqlperms"><!-- Level 2 section -->
+      <sectioninfo>
+      <title>SQLパーミッションの拡張</title>
+        <author>
+          <firstname>Alex</firstname>
+          <surname>Peshkov</surname>
+        </author>
+      </sectioninfo>
+      <para>SQLパーミッション（権限）のエリアに以下の拡張が実装されました。</para>
+
+      <section id="rnfb25-ddl-grntdby"><!-- Level 3 section -->
+<!-- v.2.5.1 Several changes in this section - study carefully wrong references to 
+     GRANTED AS in v.2.5.0 and alpha/beta notes. -->
+        <title>GRANTED BY句</title>
+        <!-- v.2.5.1 Note changes to the text -->
+        <para>GRANT文とREVOKE文にオプションでGRANTED BY（またはAS）句を含めることで、CURRENT_USER（デフォルト）以外のユーザーを権限付与者にできるようになりました。</para>
+
+        <para><emphasis role="bold">構文パターン</emphasis></para>
+        <programlisting>
+grant &lt;権限&gt; to &lt;オブジェクト&gt;
+  [ { granted by | as } [ user ] &lt;ユーザー名&gt; ]
+--
+revoke &lt;権限&gt; from &lt;オブジェクト&gt;
+  [ { granted by | as } [ user ] &lt;ユーザー名&gt; ]g
+        </programlisting>
+
+        <tip>
+          <literallayout>
+  { granted by | as }
+          </literallayout>
+          <para>GRANTED BYとASは同じ働きをします。SQL標準で推奨される形式はGRANTED BYです。われわれは他のサーバー（例えばInformix）との互換性のためにASをサポートしています。</para>
+        </tip>
+
+        <para><emphasis role="bold">例</emphasis></para>
+        <para>SYSDBAとしてログイン：</para>
+        <programlisting>
+create role r1; -- SYSDBAがこのロールを所持しています
+  /* 次に、SYSDBAはuser1に対し、他のユーザーに同じロールを
+     付与する権限を付けてこのロールを付与します */
+grant r1 to user1 with admin option;
+  /* SYSDBAがGRANTED BY句を使ってuser1の
+     ADMIN OPTIONを行使します */
+grant r1 to public granted by user1;
+      </programlisting>
+
+        <para>この効果はisqlでも得られます：</para>
+        <literallayout>
+  SQL&gt;show grant;
+  /* このデータベースに対するを付与します */
+  GRANT R1 TO PUBLIC GRANTED BY USER1
+  GRANT R1 TO USER1 WITH ADMIN OPTION
+  SQL&gt;
+        </literallayout>
+      </section>
+
+      <section id="rnfb25-ddl-altrrole"><!-- Level 3 section -->
+        <title>ALTER ROLE</title>
+        <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-1660">CORE-1660</ulink></para>
+        <para>新しいALTER ROLE文の機能は、WindowsのAdministratorsに対する<quote>信頼された認証</quote>を通じたSYSDBAパーミッション割り当ての制御に特化しています。現在これに他の用途はありません。</para>
+
+        <note>
+          <para><link linkend="rnfb25-prvlgs-automap-altrole">ALTER ROLEの使い方の解説</link>とRDB$ADMINの全容については、<emphasis>管理機能</emphasis>の章の<link linkend="rnfb25-prvlgs">新しいシステムロールRDB$ADMIN</link>の項を参照して下さい。</para>
+        </note>
+      </section>
+
+      <section id="rnfb25-ddl-rvkall"><!-- Level 3 section -->
+        <title>REVOKE ALL</title>
+        <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-21130">CORE-2113</ulink></para>
+        <para>ユーザーがセキュリティ・データベースまたは他の認証ソース（OSのACLなど）から削除される時、データベース内で関連するSQL権限のクリーンアップは手動で行う必要があります。この拡張により、特定のユーザーやロールの全ての権限を一度に取り消すことができるようになりました。</para>
+
+        <para><emphasis role="bold">構文パターン</emphasis></para>
+        <programlisting>
+REVOKE ALL ON ALL FROM { &lt;ユーザーリスト&gt; | &lt;ロールリスト&gt; }
+        </programlisting>
+
+        <para><emphasis role="bold">例</emphasis></para>
+        <para>SYSDBAとしてログイン：</para>
+        <programlisting>
+# gsec -del guest
+# isql employee
+fbs bin # ./isql employee
+Database:  employee
+SQL&gt; REVOKE ALL ON ALL FROM USER guest;
+SQL&gt;
+        </programlisting>
+      </section>
+    </section>
+
+    <section id="rnfb25-ddl-dftcolltn"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>データベースのデフォルトのコレーション属性</title>
+        <author>
+          <firstname>Adriano</firstname>
+          <surname>dos Santos Fernandes</surname>
+        </author>
+      </sectioninfo>
+      <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-1737">CORE-1737</ulink> および <ulink url="http://tracker.firebirdsql.org/browse/CORE-1803">CORE-1803</ulink></para>
+      <para>ODS 11.2以上のデータベースは、デフォルトのキャラクタ・セットに関連付けた、デフォルトのCOLLATION属性を持つことができ、異なるコレーション用のCOLLATE句が指定されていない限り、全てのテキスト・カラム、ドメイン、変数の定義を同じコレーションオーダーで作成できます。</para>
+
+      <para>COLLATION句はオプションです。これが省略された場合は、キャラクタ・セット用のデフォルトのコレーションオーダーが使われます。</para>
+
+      <tip>
+        <para><link linkend="rnfb25-ddl-altrchrset">ALTER CHARACTER SET</link>用の構文が導入されたことで、データベースで使われるキャラクタ・セット用のデフォルトのコレーションオーダーも変更可能になっていることに注意して下さい。</para>
+       </tip>
+
+      <para><emphasis role="bold">構文パターン</emphasis></para>
+      <programlisting>
+create database &lt;ファイル名&gt;
+    [ page_size &lt;ページサイズ&gt; ]
+    [ length = &lt;長さ&gt; ]
+    [ user &lt;ユーザー名&gt; ]
+    [ password &lt;ユーザーパスワード&gt; ]
+    [ set names &lt;charset名&gt; ]
+    [ default character set &lt;charset名&gt;
+       [ [ collation &lt;コレーション名&gt; ] ]
+    [ difference file &lt;ファイル名&gt; ]
+      </programlisting>
+
+      <note>
+        <para>CREATE DATABASE用のパラメータ<command>DIFFERENCE FILE</command>は新しいものではありません。これは、バージョン2.0で、<emphasis>nBackup</emphasis>ユーティリティに関連して静かに導入されており、ドキュメント化も三年間でひっそりと行われていました。詳細は、この章の終わりにある<link linkend="rnfb25-ddl-crtdb">CREATE DATABASEの進化</link>をご覧ください。</para>
+      </note>
+
+      <para><emphasis role="bold">例</emphasis></para>
+      <programlisting>
+create database 'test.fdb'
+    default character set win1252
+    collation win_ptbr;
+      </programlisting>
+    </section>
+
+    <section id="rnfb25-ddl-altrchrset"><!-- Level 2 section -->
+      <sectioninfo>
+        <title>ALTER CHARACTER SET コマンド</title>
+        <author>
+          <firstname>Adriano</firstname>
+          <surname>dos Santos Fernandes</surname>
+        </author>
+      </sectioninfo>
+      <para>トラッカー・リファレンス <ulink url="http://tracker.firebirdsql.org/browse/CORE-1803">CORE-1803</ulink></para>
+      <para>このバージョンでは新しい構文が導入され、データベースにキャラクタ・セット用のデフォルトのコレーションを設定できるようになりました。</para>
+      <para>デフォルトのコレーションが使われるのは、（カラムまたはドメイン定義中のCHARACTER SET句を通じて明示的に、またはデータベースのデフォルトのキャラクタ・セット属性を通じて暗に）指定されたキャラクタ・セットを持つテーブルのカラムが作成され、そして、いかなるCOLLATION句も指定されていない場合となります。</para>
+      <note>
+        <para>文字列定数も、接続キャラクタ・セットのデフォルトのコレーションを使います。</para>
+        <para>既存のカラムのキャラクタ・セットとコレーションはALTER CHARACTER SETの変更によっては影響を受けません。</para>
+      </note>
+
+      <para><emphasis role="bold">構文パターン</emphasis></para>
+      <programlisting>
+ALTER CHARACTER SET &lt;charset名&gt;
+    SET DEFAULT COLLATION &lt;コレーション名&gt;
+      </programlisting>
+
+      <para><emphasis role="bold">例</emphasis></para>
+      <programlisting>
+create database 'people.fdb'
+  default character set win1252;
+
+alter character set win1252
+  set default collation win_ptbr;
+
+create table person (
+  id integer,
+  name varchar(50)  /* データベースのデフォルトの
+                       キャラクタ・セットとwin1252の
+                       デフォルトのコレーションを使います */
+);
+
+insert into person
+  values (1, 'adriano');
+insert into person
+  values (2, 'ADRIANO');
+
+/* win_ptbrは大文字小文字を区別しないので、
+   両方のレコードの取得します */
+select * from person where name like 'A%';
+      </programlisting>
+
+      <tip>
+        <para>また<link linkend="rnfb25-engine-mtdta01">別の改善</link>により、システムテーブルRDB$CHARACTER_SETS内のRDB$DEFAULT_COLLATE_NAMEの現在の値がバックアップ／リストアのサイクルの中で維持されるようになりました。</para>
+      </tip>
+    </section>
+
+    <section id="rnfb25-ddl-crtdb"><!-- Level 2 section -->
+
+      <title>CREATE DATABASEの進化</title>
+
+      <para>nBackupの状態の登録と変更を行うために導入されたデータベースのヘッダ属性に対するDDLのサポートは、Firebird 2.0以来、進化を続けています。nBackupのユーザーには、完全な<emphasis>nBackup</emphasis>の間にメインのデータベースとは別のファイルに<quote>増分</quote>データの格納を開始、終了するALTER DATABASE文はお馴染みとなっています。</para>
+
+      <section id="rnfb25-ddl-crtdb-delta"><!-- Level 3 -->
+        <title>nBackup用の増分ファイルの命名</title>
+        <para>ALTER DATABASEはまたもう一つの引数を持ち、これによって増分データを格納するファイルに使われる名前を設定することができます。Paul Vinkenoog氏による<emphasis>nBackup</emphasis>の素晴らしいマニュアルを引用すれば：</para>
+
+        <para>デフォルトでは、増分ファイルはデータベース自身と同じディレクトリ内に置かれます。このファイルには、データベースファイルと同じ名前に<command>.delta</command>を加えた名前が付けられます。通常これを変更する理由はありませんが、必要なら変更できます。&mdash;ただし、それをnbackupから行うことはできません。</para>
+        <para>任意のクライアントからデータベースに接続したら、あなた自身でSQL文を入力し、コマンドを打って下さい：</para>
+        <programlisting>
+alter database
+  add difference file &apos;パスとファイル名&apos;
+        </programlisting>
+        <para>カスタムの増分ファイル指定は、データベース内で保持されます；これはシステムテーブル<filename>RDB$FILES</filename>に格納されます。</para>
+        <para>デフォルトの挙動に戻すには、次のSQL文を発行して下さい：</para>
+        <programlisting>
+alter database
+  drop difference file
+        </programlisting>
+        <para>さらに詳しく知りたい方は、バージョン2.0のリリースノートまたは<emphasis>nBackup</emphasis>のマニュアルをお読み下さい。</para>
+      </section>
+
+      <section id="rnfb25-ddl-crtdb-diffile"><!-- Level 3 -->
+        <title>CREATE DATABASEの引数DIFFERENCE FILE</title>
+        <author><firstname>C.</firstname><surname>Valderrama</surname></author>
+
+        <para>Firebird 2.0で、増分ファイルのカスタム名を規定する構文は、CREATE DATABASEの追加のオプション引数として登場しました。<emphasis>データベースのデフォルトCOLLATION属性</emphasis>の項の<link linkend="rnfb25-ddl-dftcolltn">上記の構文パターン</link>の中でその配置を確認することができます。ALTER DATABASEの場合と同様に、引数用のキーワードはDIFFERENCE FILEであり、引数は有効なファイル指定となります。ALTER DATABASE BEGIN BACKUPが呼び出される場合、または、同等の<emphasis>nBackup</emphasis>のシェルコマンドが呼び出される場合はいつでも、作成される増分ファイルのカスタム名を指定できます。</para>
+
+        <para><emphasis role="bold">使い方の例</emphasis></para>
+        <literallayout class="monospaced">
+  &rsqb;..\bin&gt; isql -user sysdba -pass masterkey
+
+ Use CONNECT or CREATE DATABASE to specify a database
+ SQL&gt; create database 'ticks' difference file 'jaguar';
+ SQL&gt; shell dir jaguar;
+ Volume in drive F is Firebird
+ Volume Serial Number is BCD9-4211
+
+ Directory of ..\bin
+
+ File Not Found
+        </literallayout>
+
+        <para>これは正しく、ただファイル名が定義されただけです。次にこれを使います：</para>
+        <literallayout class="monospaced">
+ SQL&gt; alter database begin backup;
+ SQL&gt; shell dir jaguar;
+ Volume in drive F is Firebird
+ Volume Serial Number is BCD9-4211
+
+ Directory of ..\bin
+
+ 10-11-2009  00:59             8.192 jaguar
+                1 File(s)          8.192 bytes
+                0 Dir(s)  16.617.979.904 bytes free
+
+ SQL&gt; alter database end backup;
+ SQL&gt; shell dir jaguar;
+ Volume in drive F is Firebird
+ Volume Serial Number is BCD9-4211
+
+ Directory of ..\bin
+
+ SQL&gt; drop database;
+ SQL&gt; &circ;Z
+        </literallayout>
+
+        <para>引数がファイル名なので、シングルクォートで囲います。ダブルクォートは無効となります：SQL文は失敗し、煩雑なエラーメッセージが返されます。</para>
+
+        <literallayout class="monospaced">
+ &rsqb;..\bin&gt; isql -user sysdba -pass masterke
+
+ Use CONNECT or CREATE DATABASE to specify a database
+ SQL&gt; create database 'ticks' DIFFERENCE FILE 'jaguar';
+ SQL&gt; alter database add difference file 'leopard';
+
+ Statement failed, SQLCODE = -607
+ unsuccessful metadata update
+ -Difference file is already defined
+        </literallayout>
+        <para>このメッセージは正しいです。呼び出しALTER DATABASE END BACKUPによって増分が削除されたとしても、差分ファイルの名前はずっと格納されています。なお、存在して良いのは一つだけです。</para>
+
+        <literallayout class="monospaced">
+ SQL&gt; alter database drop difference file;
+ SQL&gt; alter database begin backup;
+         </literallayout>
+ <!-- V.2.5.1 Removed this section because it was fixed after the documentation
+     was written
+
+ Statement failed, SQLCODE = -607
+ unsuccessful metadata update
+ -STORE RDB$FILES failed
+ -message length error (encountered 278, expected 276)
+        </literallayout>
+        <para>It is not a user friendly message but it means we have no difference
+        file.  Perhaps curiously, the engine does not rescue the situation and
+        create the delta using the default mechanism.</para>
+-->
+<!-- Added the following in v.2.5.1 notes -->
+        <para>これは何も破壊したことになりません。エンジンがこの事態を救い、デフォルトの仕組みを使って増分を作成するためです。</para>
+<!-- End v.2.5.1 addition -->        
+        <literallayout class="monospaced">
+ SQL&gt; alter database add difference file 'leopard';
+ SQL&gt; alter database begin backup;
+ SQL&gt; alter database drop difference file;
+
+ Statement failed, SQLCODE = -607
+ unsuccessful metadata update
+ -Cannot change difference file name while database is in backup mode
+        </literallayout>
+        <para>これは正しい検証です。</para>
+        <literallayout class="monospaced">
+ SQL&gt; alter database end backup;
+ SQL&gt; drop database;
+ SQL&gt; &circ;Z
+        </literallayout>
+      </section><!-- sect3 -->
+    </section><!-- sect2 -->
+
+  </section>
+
+</chapter>
