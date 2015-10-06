@@ -1442,20 +1442,21 @@ DROP DOMAIN COUNTRYNAME;
         <blockquote><programlisting>
 CREATE [GLOBAL TEMPORARY] TABLE tablename
 		[EXTERNAL [FILE] '&lt;filespec&gt;']
-	(&lt;col_def&gt; [, &lt;col_def&gt; | &lt;tconstraint&gt; ...])
+	(&lt;col_def&gt; [, {&lt;col_def&gt; | &lt;tconstraint&gt;} ...])
 	[ON COMMIT {DELETE | PRESERVE} ROWS];
 
-&lt;col_def&gt; ::= colname
-{
-  { &lt;datatype&gt; | domainname }
+&lt;col_def&gt; ::= &lt;regular_col_def&gt; | &lt;computed_col_def&gt;
+
+&lt;regular_col_def&gt; ::=
+  colname {&lt;datatype&gt; | domainname}
   [DEFAULT {literal | NULL | &lt;context_var&gt;}]
   [NOT NULL]
   [&lt;col_constraint&gt;]
-  [COLLATE collation]
-} | &lt;col_exp_def&gt;
+  [COLLATE collation_name]
 
-&lt;col_exp_def&gt; ::= [&lt;datatype&gt;]
-	{COMPUTED [BY] | GENERATED ALWAYS AS} (&lt;col_expr&gt;)
+&lt;computed_col_def&gt; ::=
+  colname [&lt;datatype&gt;]
+  {COMPUTED [BY] | GENERATED ALWAYS AS} (&lt;expression&gt;)
 
 &lt;datatype&gt; ::=
     {SMALLINT | INTEGER | BIGINT} [&lt;array_dim&gt;]
@@ -1463,50 +1464,45 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
   | {DATE | TIME | TIMESTAMP} [&lt;array_dim&gt;]
   | {DECIMAL | NUMERIC} [(precision [, scale])] [&lt;array_dim&gt;]
   | {CHAR | CHARACTER | CHARACTER VARYING | VARCHAR} [(size)]
-    [&lt;array_dim&gt;] [CHARACTER SET charset]
+    [&lt;array_dim&gt;] [CHARACTER SET charset_name]
   | {NCHAR | NATIONAL CHARACTER | NATIONAL CHAR} [VARYING]
     [(size)] [&lt;array_dim&gt;]
   | BLOB [SUB_TYPE {subtype_num | subtype_name}]
-    [SEGMENT SIZE seglen] [CHARACTER SET charset]
+    [SEGMENT SIZE seglen] [CHARACTER SET charset_name]
   | BLOB [(seglen [, subtype_num])]
 
-&lt;array_dim&gt; ::= <command>[</command>x:y [,x:y ...]<command>]</command>
+&lt;array_dim&gt; ::= <command>[</command>[m:]n [, [m:]n ...]<command>]</command>
 
-&lt;col_constraint&gt; ::= [CONSTRAINT constr_name]
-{
-    UNIQUE [&lt;using_index&gt;]
-  | PRIMARY KEY [&lt;using_index&gt;]
-  | REFERENCES other_table [(other_col)] [&lt;using_index&gt;]
-    [ON DELETE {
-      NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
-    [ON UPDATE {
-      NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
-  | CHECK (&lt;search_condition&gt;)
-}
+&lt;col_constraint&gt; ::=
+  [CONSTRAINT constr_name]
+  {   PRIMARY KEY [&lt;using_index&gt;]
+    | UNIQUE      [&lt;using_index&gt;]
+    | REFERENCES other_table [(colname)] [&lt;using_index&gt;]
+        [ON DELETE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
+        [ON UPDATE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
+    | CHECK (&lt;check_condition&gt;) }
 
-&lt;tconstraint&gt; ::= [CONSTRAINT constr_name] {
-    UNIQUE (colname [, colname &hellip;]) [&lt;using_index&gt;]
-  | PRIMARY KEY (colname [, colname &hellip;]) [&lt;using_index&gt;]
-  | FOREIGN KEY (colname [, colname &hellip;])
-    REFERENCES other_table
-    [(other_col [, other_col &hellip;])] [&lt;using_index&gt;]
-    [ON DELETE {
-      NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
-    [ON UPDATE {
-      NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
-  | CHECK (&lt;search_condition&gt;)
-}
+&lt;tconstraint&gt; ::=
+  [CONSTRAINT constr_name]
+  {   PRIMARY KEY (col_list) [&lt;using_index&gt;]
+    | UNIQUE      (col_list) [&lt;using_index&gt;]
+    | FOREIGN KEY (col_list)
+        REFERENCES other_table [(col_list)] [&lt;using_index&gt;]
+        [ON DELETE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
+        [ON UPDATE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
+    | CHECK (&lt;check_condition&gt;) }"
+
+&lt;col_list&gt; ::= colname [, colname ...]
 
 &lt;using_index&gt; ::= USING
   [ASC[ENDING] | DESC[ENDING]] INDEX indexname
 
-&lt;search_condition&gt; ::=
-{
+&lt;check_condition&gt; ::=
     &lt;val&gt; &lt;operator&gt; &lt;val&gt;
   | &lt;val&gt; [NOT] BETWEEN &lt;val&gt; AND &lt;val&gt;
   | &lt;val&gt; [NOT] IN (&lt;val&gt; [, &lt;val&gt; ...] | &lt;select_list&gt;)
   | &lt;val&gt; IS [NOT] NULL
-  | &lt;val&gt; IS [NOT] DISTINCT &lt;val&gt;
+  | &lt;val&gt; IS [NOT] DISTINCT FROM&lt;val&gt;
   | &lt;val&gt; [NOT] CONTAINING &lt;val&gt;
   | &lt;val&gt; [NOT] STARTING [WITH] &lt;val&gt;
   | &lt;val&gt; [NOT] LIKE &lt;val&gt; [ESCAPE &lt;val&gt;]
@@ -1514,17 +1510,16 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
   | &lt;val&gt; &lt;operator&gt; {ALL | SOME | ANY} (&lt;select_list&gt;)
   | [NOT] EXISTS (&lt;select_expr&gt;)
   | [NOT] SINGULAR (&lt;select_expr&gt;)
-  | (&lt;search_condition&gt;)
-  | NOT &lt;search_condition&gt;
-  | &lt;search_condition&gt; OR &lt;search_condition&gt;
-  | &lt;search_condition&gt; AND &lt;search_condition&gt;
-}
+  | (&lt;check_condition&gt;)
+  | NOT &lt;check_condition&gt;
+  | &lt;check_condition&gt; OR &lt;check_condition&gt;
+  | &lt;check_condition&gt; AND &lt;check_condition&gt;
 
-&lt;operator&gt; ::= {= | &lt; | &gt; | &lt;= | &gt;= | !&lt; | !&gt; | &lt;&gt; | !=}
+&lt;operator&gt; ::= 
+&lt;&gt; | != | ^= | ~= | = | &lt; | &gt; | &lt;= | &gt;= | !&lt; | ^&lt; | ~&lt; | !&gt; | ^&gt; | ~&gt;
 
 &lt;val&gt; ::=
-{
-    colname [[&lt;ind&gt; [, &lt;ind&gt; ...]]]
+    colname [<command>[</command>&lt;array_idx&gt; [, &lt;array_idx&gt; ...]<command>]</command>]
   | literal
   | &lt;context_var&gt;
   | &lt;expression&gt;
@@ -1533,8 +1528,7 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
   | GEN_ID(genname, &lt;val&gt;)
   | CAST(&lt;val&gt; AS &lt;datatype&gt;)
   | (&lt;select_one&gt;)
-  | func(&lt;val&gt; [, &lt;val&gt; ...])
-}
+  | func([&lt;val&gt; [, &lt;val&gt; ...]])
         </programlisting></blockquote>
       </formalpara>
       <table id="fblangref25-ddl-tbl-createtbl">
@@ -1553,34 +1547,22 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
             <row valign="middle">
               <entry align="center">tablename</entry>
               <entry align="left">Name (identifier) for the table. It may consist of up to 31 characters
-              and must be unique in the database</entry>
+              and must be unique in the database.</entry>
             </row>
             <row valign="middle">
               <entry align="center">filespec</entry>
               <entry align="left">File specification (only for external tables). Full file name
               and path, correct for the local file system and located on a storage device
-              that is physically connected to Firebird's host computer</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">col_def</entry>
-              <entry align="left">Column definition</entry>
+              that is physically connected to Firebird's host computer.</entry>
             </row>
             <row valign="middle">
               <entry align="center">colname</entry>
               <entry align="left">Name (identifier) for a column in the table. May consist of
-              up to 31 characters and be unique in the table</entry>
+              up to 31 characters and must be unique in the table.</entry>
             </row>
             <row valign="middle">
               <entry align="center">datatype</entry>
               <entry align="left">SQL data type</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">col_expr</entry>
-              <entry align="left">Expression defining a computed column</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">domain_name</entry>
-              <entry align="left">Domain name</entry>
             </row>
             <row valign="middle">
               <entry align="center">col_constraint</entry>
@@ -1607,16 +1589,17 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
             </row>
             <row valign="middle">
               <entry align="center">literal</entry>
-              <entry align="left">Literal</entry>
+              <entry align="left">A literal value that is allowed in the given context</entry>
             </row>
             <row valign="middle">
               <entry align="center">context_var</entry>
-              <entry align="left">Any context variable whose type is compatible with the
-              data type of the domain</entry>
+              <entry align="left">Any context variable whose data type is allowed in the 
+              given context</entry>
             </row>
             <row valign="middle">
-              <entry align="center">search_condition</entry>
-              <entry align="left">Constraint CHECK condition</entry>
+              <entry align="center">check_condition</entry>
+              <entry align="left">The condition applied to a CHECK constraint, that will resolve
+              as either true, false or <database>NULL</database></entry>
             </row>
             <row valign="middle">
               <entry align="center">collation</entry>
@@ -1627,31 +1610,26 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
               <entry align="left">Array dimensions</entry>
             </row>
             <row valign="middle">
-              <entry align="center">x</entry>
-              <entry align="left">The initial number of the element in the array, a
-              positive integer</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">y</entry>
-              <entry align="left">The final number of the element in the array, a positive
-              integer</entry>
+              <entry align="center">m, n</entry>
+              <entry align="left">INTEGER numbers defining the index range of an array dimension</entry>
             </row>
             <row valign="middle">
               <entry align="center">precision</entry>
-              <entry align="left">Precision. From 1 to 18</entry>
+              <entry align="left">The total number of significant digits that a value of the datatype
+              can hold (1..18)</entry>
             </row>
             <row valign="middle">
               <entry align="center">scale</entry>
-              <entry align="left">Scale. From 0 to 18, it must be less than or
-              equal to precision</entry>
+              <entry align="left">The number of digits after the decimal point (0..<replaceable>precision</replaceable>)</entry>
             </row>
             <row valign="middle">
               <entry align="center">size</entry>
               <entry align="left">The maximum size of a string in characters</entry>
             </row>
             <row valign="middle">
-              <entry align="center">charset</entry>
-              <entry align="left">Character set</entry>
+              <entry align="center">charset_name</entry>
+              <entry align="left">The name of a valid character set, if the character set of the column 
+              is to be different to the default character set of the database</entry>
             </row>
             <row valign="middle">
               <entry align="center">subtype_num</entry>
@@ -1663,11 +1641,7 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
             </row>
             <row valign="middle">
               <entry align="center">seglen</entry>
-              <entry align="left">Segment size, it cannot be greater than 65535</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">val</entry>
-              <entry align="left">Value</entry>
+              <entry align="left">Segment size (max. 65535)</entry>
             </row>
             <row valign="middle">
               <entry align="center">select_one</entry>
@@ -1686,7 +1660,8 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
             </row>
             <row valign="middle">
               <entry align="center">expression</entry>
-              <entry align="left">Expression</entry>
+              <entry align="left">An expression resolving to a value that is is allowed 
+              in the given context</entry>
             </row>
             <row valign="middle">
               <entry align="center">genname</entry>
@@ -1700,20 +1675,16 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
         </tgroup>
       </table>
 
-      <para> Any user connected to the database can create a new table. The user who creates a table becomes
-      its owner.</para>
+      <para>The <database>CREATE TABLE</database> statement creates a new table. Any user can create it
+      and its name must be unique among the names of all tables, views and stored procedures in the database.</para>
+      <para>A table must contain at least one column that is not computed and the names of columns must be unique
+      in the table.</para>
 
-      <para>The <database>CREATE TABLE</database> statement creates a new table. The name of a table must be
-      unique among the names of all tables, views and stored procedures in a database.</para>
-      <para>A table must contain at least one column and may have any number of table constraints,
-      including none.</para>
-
-      <para>A table must contain at least one column. The names of columns must be unique for the table
-      being created. A column must have either a <emphasis>data type</emphasis>, the name of a
+      <para>A column must have either an explicit <emphasis>SQL data type</emphasis>, the name of a
       <emphasis>domain</emphasis> whose attributes will be copied for the column, or be defined
       as <database>COMPUTED BY</database> an expression (a <emphasis>calculated field</emphasis>).</para>
 
-      <para>You can use any SQL data type as the column type.</para>
+      <para>A table may have any number of table constraints, including none.</para>
 
       <section id="fblangref25-ddl-tbl-nonnull">
       <title>Making a Column Non-nullable</title>
@@ -1733,9 +1704,9 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
         source and destination encodings, which may result in errors.</para>
 
         <para>The optional <database>COLLATE</database> clause allows you to specify the collation sequence
-        for character data types (except for BLOB). If no collation sequence is specified, the collation
-        sequence that is default for the specified collation set during the creation of the domain is
-        applied by default.</para>
+        for character data types, including <database>BLOB SUB_TYPE TEXT</database>. If no collation sequence
+        is specified, the collation sequence that is default for the specified character set during the creation 
+        of the column is applied by default.</para>
       </section> <!-- character columns -->
 
       <section id="fblangref25-ddl-tbl-default">
@@ -1787,15 +1758,36 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
 
       <section id="fblangref25-ddl-tbl-array">
         <title>Defining an <database>ARRAY</database> Column</title>
-        <para>If the column is to be an array, you can specify the number of dimensions for any
-        data type, except <database>BLOB</database> and <database>ARRAY</database>. The number of dimensions
-        is specified in square brackets. In the <link linkend="fblangref25-ddl-tbl-create">syntax pattern</link>,
-        so as not to confuse them with symbols denoting optional elements, the dimension delimiter brackets are
-        highlighted in bold. When you specify the number of dimensions in the array, you type two numbers
-        separated with a colon. The first number defines the initial number of the array element and the second
-        number defines the final number of the array element. If only one number is specified, it defines the
-        final number of the array element, while the initial number is considered 1. If the array is multi-dimensional,
-        the dimensions are separated with commas.</para>
+        <itemizedlist spacing="compact">
+          <listitem>If the column is to be an array, the base type can be any SQL
+            data type except <database>BLOB</database> and <database>ARRAY</database>.
+          </listitem>
+          <listitem>The dimensions of the array are specified between square brackets.
+          (In the <link linkend="fblangref25-ddl-tbl-create">Syntax block</link> these
+          brackets appear in boldface to distinguish them from the square brackets that
+          identify optional syntax elements.)
+          </listitem>
+          <listitem>For each array dimension, one or two integer numbers define the
+          lower and upper boundaries of its index range:
+            <itemizedlist spacing="compact">
+              <listitem>By default, arrays are 1-based.  The lower boundary is implicit
+              and only the upper boundary need be specified.  A single number smaller than
+              1 defines the range <replaceable>num</replaceable>..1 and a number greater
+              than 1 defines the range 1..<replaceable>num</replaceable>.</listitem>
+              <listitem>Two numbers separated by a colon (':') and optional whitespace,
+              the second greater than the first, can be used to define the range explicitly.
+              One or both boundaries can be less than zero, as long as the upper boundary
+              is greater than the lower.</listitem>
+            </itemizedlist>
+          </listitem>
+          <listitem>When the array has multiple dimensions, the range definitions for
+            each dimension must be separated by commas and optional whitespace.
+          </listitem>
+          <listitem>Subscripts are validated <emphasis>only</emphasis> if an array actually
+          exists. It means that no error messages regarding invalid subscripts will be
+          returned if selecting a specific element returns nothing or if an array field
+          is <constant>NULL</constant>.</listitem>
+        </itemizedlist>
       </section><!-- array column -->
 
       <section id="fblangref25-ddl-tbl-constraints">
@@ -1816,8 +1808,8 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
         whether the constraint is being defined at column or table level.
           <itemizedlist>
             <listitem>A column-level constraint is specified during a column definition, after
-            other column attributes are specified, and can involve only the column specified in
-            that definition</listitem>
+            all column attributes except <database>COLLATION</database> are specified, and can 
+            involve only the column specified in that definition</listitem>
             <listitem>Table-level constraints are specified after all of the column definitions.
             They are a more flexible way to set constraints, since they can cater for constraints
             involving multiple columns</listitem>
@@ -1872,105 +1864,114 @@ CREATE [GLOBAL TEMPORARY] TABLE tablename
           <para>As with the Primary Key, the Unique constraint can be multi-column.  If so, it must be
           specified as a table-level constraint.</para>
 
-          <para>Unlike a Primary Key, the <database>UNIQUE</database> constraint can accept <database>NULL</database> in
-          the key, for any number of rows.  Thus, it is possible to specify a Unique key for a column that does
-          not have the <database>NOT NULL</database> constraint.</para>
-
           <section id="fblangref25-ddl-tbl-uqkey-nulls">
             <title><database>NULL</database> in Unique Keys</title>
-            <para>With a <database>UNIQUE</database> key containing multiple columns, the logic is a bit
-            more complicated:
-              <itemizedlist>
-                <listitem>There is no requirement for the <database>NOT NULL</database> constraint to be on
-                all columns included in a unique key</listitem>
-                <listitem>You can store <database>NULL</database> values several rows in columns included in
-                a unique key</listitem>
-                <listitem>Rows are permitted that have <database>NULL</database> in one of the columns of the unique key while
-                the rest of the columns are filled with values and these values are different at least in one of them</listitem>
-                <listitem>Rows are not permitted that have <database>NULL</database> in one of the columns of the unique
-                key while the rest of the columns are filled with values and these values coincide at least in one of
-                them.
-                <note>
-                  <para>Duplicated <database>NULL</database>s are allowed for unique keys containing several columns
-                  only when they are placed in all the columns of the constraint. In other cases, the <database>NULL</database>
-                  will be considered as though it were a regular value, not <database>UNKNOWN</database>).</para>
-                </note>
-                  <blockquote><programlisting>
+            <para>Firebird's SQL-99-compliant rules for <database>UNIQUE</database> constraints allow one
+            or more <database>NULL</database>s in a column with a <database>UNIQUE</database> constraint.
+            That makes it possible to define a <database>UNIQUE</database>constraint on a column
+            that does not have the <database>NOT NULL</database> constraint.</para>
+
+            <para>For <database>UNIQUE</database> keys that span multiple columns, the logic is a
+            little complicated:
+              <itemizedlist spacing="compact">
+                <listitem>Multiple rows having null in all the columns of the key are allowed
+                </listitem>
+                <listitem>Multiple rows having keys with different combinations of nulls and non-null
+                values are allowed</listitem>
+                <listitem>Multiple rows having the same key columns null and the rest filled with
+                non-null values are allowed, provided the values differ in at least one column</listitem>
+                <listitem>Multiple rows having the same key columns null and the rest filled with
+                non-null values that are the same in every column will violate the constraint</listitem>
+              </itemizedlist>
+            The rules for uniqueness can be summarised thus:
+            <blockquote>In principle, all nulls are considered distinct. However, if two rows
+            have exactly the same key columns filled with non-null values, the NULL columns are
+            ignored and the uniqueness is determined on the non-null columns as though they
+            constituted the entire key.</blockquote>
+              <formalpara>
+                <title>Illustration</title>
+                <blockquote><programlisting>
 RECREATE TABLE t( x int, y int, z int, unique(x,y,z));
 INSERT INTO t values( NULL, 1, 1 );
 INSERT INTO t values( NULL, NULL, 1 );
 INSERT INTO t values( NULL, NULL, NULL );
 INSERT INTO t values( NULL, NULL, NULL ); -- Permitted
 INSERT INTO t values( NULL, NULL, 1 );    -- Not permitted
-                  </programlisting></blockquote>
-                </listitem>
-              </itemizedlist>
+                </programlisting></blockquote>
+              </formalpara>
             </para>
           </section> <!-- null in unique keys -->
         </section><!-- unique constraint -->
 
         <section id="fblangref25-ddl-tbl-constraints-refs">
           <title><database>FOREIGN KEY</database></title>
-          <para>At column-level, for a single-column Foreign Key, the constraint is defined by
-          the <database>REFERENCES</database> clause. The <database>REFERENCES</database> keyword
-          is followed by the name of the parent table whose Primary Key, or a unique key, is to be
-          referred to (<quote>referenced</quote>) by this key. The name of the referenced primary
-          or unique key column comes immediately after the name of the table and is enclosed in
-          parentheses, e.g.,
+          <para>A Foreign Key ensures that the participating column(s) can contain
+          only values that also exist in the referenced column(s) in the master table.
+          These referenced columns are often called <firstterm>target columns</firstterm>.
+          They must be the primary key or a unique key in the target table. They need not
+          have a <database>NOT NULL</database> constraint defined on them although, if
+          they are the primary key, they will, of course, have that constraint.</para>
+          <para>The foreign key columns in the referencing table itself do not require
+          a <database>NOT NULL</database> constraint.</para>
+          <para>A single-column Foreign Key can be defined in the column declaration, using
+          the keyword <database>REFERENCES</database>:
             <blockquote><programlisting>
 ... ,
 ARTIFACT_ID INTEGER REFERENCES COLLECTION (ARTIFACT_ID),
             </programlisting></blockquote>
-          The syntax for defining a Foreign Key relationship at table level is
-          a little different.  After all of the column definitions, with their column-level
-          constraints, you can define a named Foreign Key constraint at table level using the
-          keywords <database>FOREIGN KEY</database> and naming the column[s] to which it applies:
+          The column <database>ARTIFACT_ID</database> in the example references a column of
+          the same name in the table <database>COLLECTIONS</database>.
+          </para>
+          <para>Both single-column and multi-column foreign keys can be defined at the
+          <firstterm>table level</firstterm>.  For a multi-column Foreign Key, the table-level
+          declaration is is the only option. This method also enables the provision of an
+          optional name for the constraint:
             <blockquote><programlisting>
-... .
+...
 CONSTRAINT FK_ARTSOURCE FOREIGN KEY(DEALER_ID, COUNTRY)
   REFERENCES DEALER (DEALER_ID, COUNTRY),
             </programlisting></blockquote>
-          </para>
-          <para>There is no requirement for the column or columns referenced by the Foreign Key
-          to be constrained as <database>NOT NULL</database>, although it will be so if the
-          referenced column or key set is the Primary Key of that table.  However, a Foreign Key
-          relationship can be defined to reference a column or key set that has the <database>UNIQUE</database>
-          constraint.  <database>NULL</database> is allowed in <database>UNIQUE</database> keys, with
-          some restrictions if the key is multi-column
-          <link linkend="fblangref25-ddl-tbl-uqkey-nulls">(review the discussion above)</link>.</para>
-
-          <para>To ensure the additional intregrity of data, you can include the optional
-          <database>ON DELETE</database> and <database>ON UPDATE</database> clauses to specify
-          your preferred strategy for preserving data consistency between the parent and
-          child tables:
-            <itemizedlist spacing="compact">
-              <listitem>The <database>ON UPDATE</database> clause defines what happens to the
-              records in the child table when the value of the parent key changes in the
-              referenced table</listitem>
-              <listitem>The <database>ON DELETE</database> clause defines what happens to the
-              records in the child table when the corresponding row is deleted in the referenced
-              table</listitem>
-             </itemizedlist>
-           </para>
-           <para>One or both of these clauses is used with one of the following <emphasis>action</emphasis>
-           arguments to ensure the exact style of referential integrity preservation you want for the
-           Foreign Key when the value of the referenced primary or unique key is changed or deleted:
-           <itemizedlist>
-              <listitem><database>NO ACTION</database>&mdash;nothing will be done.  The client software 
-              will be responsible for maintaining the referential integrity of data; otherwise, the child 
-              data will remain unchanged and integrity errors will occur in future</listitem>
-              <listitem><database>CASCADE</database>&mdash;when the value of the referenced key is updated or
-              deleted, the same actions will be applied to the corresponding records. If a row is
-              deleted in the referenced table, all child records with the matching key are deleted.
-              When you update a record in the referenced table and change the value of the parent key, 
-              the modification will be written to the corresponding field in the foreign key.</listitem>
-              <listitem><database>SET DEFAULT</database>&mdash;the values of the foreign key of all
-              corresponding rows in the child table are set to the default value specified in the
-              <database>DEFAULT</database> clause for this column</listitem>
-              <listitem><database>SET NULL</database>&mdash;the values of the foreign key of all
-              corresponding rows in the child table are set to the NULL value</listitem>
-            </itemizedlist>
-          </para>
+          Notice that the column names in the referenced (<quote>master</quote>)
+          table may differ from those in the Foreign Key.</para>
+          <note>
+            <para>If no target columns are specified, the Foreign Key automatically
+            references the target table's Primary Key.</para>
+          </note>
+          <section id="fblangref25-ddl-tbl-constraints-fkactions">
+            <title>Foreign Key Actions</title>
+            <para>With the sub-clauses <database>ON UPDATE</database> and <database>ON
+            DELETE</database> it is possible to specify an action to be taken on 
+            the affected foreign key column(s) when referenced values in the master table 
+            are changed:
+              <itemizedlist>
+                <listitem><database>NO ACTION</database> (the default) - Nothing is
+                done</listitem>
+                <listitem><database>CASCADE</database> - The change in the master table is
+                propagated to the corresponding row(s) in the child table. If a key value
+                changes, the corresponding key in the child records changes to the new value;
+                if the master row is deleted, the child records are deleted.</listitem>
+                <listitem><database>SET DEFAULT</database> - The Foreign Key columns in the
+                affected rows will be set to their default values <emphasis>as they were when
+                the foreign key constraint was defined</emphasis>.</listitem>
+                <listitem><database>SET NULL</database> - The Foreign Key columns in the
+                affected rows will be set to NULL.</listitem>
+              </itemizedlist>
+            The specified action, or the default <database>NO ACTION</database>, could cause
+            a Foreign Key column to become invalid.  For example, it could get a value that is
+            not present in the master table, or it could become <database>NULL</database> while 
+            the column has a <database>NOT NULL</database> constraint.  Such conditions will 
+            cause the operation on the master table to fail with an error message.
+            </para>
+            <formalpara>
+              <title>Example</title>
+              <blockquote><programlisting>
+...
+  CONSTRAINT FK_ORDERS_CUST
+    FOREIGN KEY (CUSTOMER) REFERENCES CUSTOMERS (ID)
+    ON UPDATE CASCADE ON DELETE SET NULL
+              </programlisting></blockquote>
+            </formalpara>
+          </section> <!-- FK actions -->
         </section><!-- references -->
 
         <section id="fblangref25-ddl-tbl-constraints-check">
@@ -1984,34 +1985,27 @@ CONSTRAINT FK_ARTSOURCE FOREIGN KEY(DEALER_ID, COUNTRY)
           table column (the <database>UPDATE</database> statement) and also for statements where one of
           these actions may take place (UPDATE OR INSERT, MERGE).</para>
           <important>
-            <para>When you use the <database>CHECK</database> clause for a column based on a domain,
-            you should keep in mind that the expression in <database>CHECK</database> only complements
-            the check condition that may already be defined in the domain.</para>
+            <para>A <database>CHECK</database> constraint on a domain-based column does not replace an
+            existing <database>CHECK</database> condition on the domain, but becomes an addition to 
+            it.  The Firebird engine has no way, during definition, to verify that the extra
+            <database>CHECK</database> does not conflict with the existing one.</para>
           </important>
+
+          <para><database>CHECK</database> conditions&mdash;whether defined at table level or column
+          level&mdash; refer to table columns <emphasis>by their names</emphasis>.  The use of the
+          keyword <database>VALUE</database> as a placeholder, as in domain <database>CHECK</database>
+          constraints, is not valid in the context of defining column constraints.</para>
           <formalpara>
-            <title>Column-level</title>
-            <para> The <database>CHECK</database> clause expression refers to the incoming
-            value with the keyword <database>VALUE</database>, as a <database>CHECK</database>
-            clause in a domain definition does:
+            <title>Example</title>
+            <para> with two column-level constraints and one at table-level:
               <blockquote><programlisting>
-...
-CURRENCY CHAR(3) NOT NULL 
-   CONSTRAINT CHECK_CURRENCY
-   CHECK (VALUE IN ('AUD','EUR','GBP','RUR','USD','YEN')),
-...
-              </programlisting></blockquote>
-            </para>
-          </formalpara>
-          <formalpara>
-            <title>Table-level</title>
-            <para> The <database>CHECK</database> clause expression refers to the incoming
-            value by its column identifier:
-              <blockquote><programlisting>
-...
-CONSTRAINT CHECK_EXCHANGE
-  CHECK (CURRENCY IN ('AUD','EUR','GBP','RUR','USD','YEN')
-         AND CURRENCY &lt;&gt; EXCHANGE_CURRENCY),
-...
+CREATE TABLE PLACES (
+  ...
+  LAT DECIMAL(9, 6) CHECK (ABS(LAT) &lt;=  90),
+  LON DECIMAL(9, 6) CHECK (ABS(LON) &lt;= 180),
+  ...
+  CONSTRAINT CHK_POLES CHECK (ABS(LAT) &lt; 90 OR LON = 0)
+                     );
               </programlisting></blockquote>
             </para>
           </formalpara>
@@ -2020,36 +2014,70 @@ CONSTRAINT CHECK_EXCHANGE
 
       <section id="fblangref25-ddl-tbl-gtt">
         <title>Global Temporary Tables (GTT)</title>
-        <para>If the <database>CREATE TABLE</database> statement contains the optional <database>GLOBAL TEMPORARY</database>
-        clause, a global temporary table will be created instead of a regular table. The same as regular tables, global
-        temporary tables (referred to hereafter as GTT) represent permanent metadata, but the life of data in them
-        is limited to a transaction (the default value) or to a session (a connection to the database). Each
-        transaction or connection has its own instance of a GTT with data isolated from any other instance. These
-        instances are created only if a GTT is referenced. The GTT instance and the data in it are destroyed when
-        the transaction is committed or a disconnection from the database is detected.</para>
+        <para>Global temporary tables have persistent metadata, but their contents are transaction-bound
+        (the default) or connection-bound. Every transaction or connection has its own private instance of
+        a GTT, isolated from all the others. Instances are only created if and when the GTT is referenced.
+        They are destroyed when the transaction ends or on disconnection. The metadata of a GTT can be
+        modified or removed using ALTER TABLE and DROP TABLE, respectively.</para>
 
-        <para>The <database>ON COMMIT</database> parameter in the <database>CREATE GLOBAL TEMPORARY TABLE</database>
-        statement determines the scope of the data in the GTT:
+        <formalpara>
+          <title>Syntax</title>
+          <para><blockquote>
+            <programlisting>
+CREATE GLOBAL TEMPORARY TABLE <replaceable>name</replaceable>
+  (&lt;column_def&gt; [, {&lt;column_def&gt; | &lt;table_constraint&gt;} ...])
+  [ON COMMIT {DELETE | PRESERVE} ROWS]
+            </programlisting></blockquote>
+          </para>
+        </formalpara>
+        <note>
+          <title>Syntax notes</title>
           <itemizedlist spacing="compact">
-            <listitem>if the argument is <database>DELETE ROWS</database>, a transaction-scoped
-            GTT (the default) will be created.</listitem>
-            <listitem>if the agument is <database>PRESERVE ROWS</database>, a connection-scoped
-            GTT will be created.</listitem>
+            <listitem><database>ON COMMIT DELETE ROWS</database> creates a transaction-level GTT (the default),
+            <database>ON COMMIT PRESERVE ROWS</database> a connection-level GTT</listitem>
+            <listitem>An <database>EXTERNAL [FILE]</database> clause is not allowed in the definition of a
+            global temporary table</listitem>
           </itemizedlist>
-        </para>
+        </note>
 
-        <para>The <database>EXTERNAL [FILE]</database> clause cannot be used for a global temporary table.</para>
+        <section id="fblangref25-ddl-tbl-gtt-restrictions">
+          <title>Restrictions on GTTs</title>
+          <para>GTTs can be <quote>dressed up</quote> with all the features and paraphernalia of ordinary
+          tables (keys, references, indexes, triggers and so on) but there are a few restrictions:
+            <itemizedlist spacing="compact">
+              <listitem>GTTs and regular tables cannot reference one another</listitem>
+              <listitem>A connection-bound (<quote>PRESERVE ROWS</quote>) GTT cannot reference a
+              transaction-bound (<quote>DELETE ROWS</quote>) GTT</listitem>
+              <listitem>Domain constraints cannot reference any GTT</listitem>
+              <listitem>The destruction of a GTT instance at the end of its life cycle does not
+              cause any <database>BEFORE/AFTER</database> delete triggers to fire</listitem>
+            </itemizedlist>
+          </para>
+        </section>
 
-        <para>Global temporary tables have some restrictions:
-          <itemizedlist>
-            <listitem>GTT and regular tables cannot reference each other</listitem>
-            <listitem>Connection-scoped GTTs (<database>PRESERVE ROWS</database>) cannot reference
-            transaction-scoped GTTs (<database>DELETE ROWS</database>)</listitem>
-            <listitem>GTTs cannot be referred to in domain constraints</listitem>
-            <listitem>The destruction of a GTT instance at the end of its life cycle
-            cannot activate any before/after deletion triggers</listitem>
-          </itemizedlist>
-        </para>
+        <tip>
+          <para>In an existing database, it is not always easy to distinguish a regular table
+          from a GTT, or a transaction-level GTT from a connection-level GTT.  Use this query to
+          find out what type of table you are looking at:
+            <programlisting>
+select t.rdb$type_name
+  from rdb$relations r
+  join rdb$types t on r.rdb$relation_type = t.rdb$type
+    where t.rdb$field_name = 'RDB$RELATION_TYPE'
+    and r.rdb$relation_name = '<replaceable>TABLENAME</replaceable>'
+            </programlisting>
+        For an overview of the types of all the relations in the database:
+            <programlisting>
+    select r.rdb$relation_name, t.rdb$type_name
+    from rdb$relations r
+    join rdb$types t on r.rdb$relation_type = t.rdb$type
+    where t.rdb$field_name = 'RDB$RELATION_TYPE'
+    and coalesce (r.rdb$system_flag, 0) = 0
+            </programlisting>
+          The <database>RDB$TYPE_NAME</database> field will show PERSISTENT for a regular
+          table, VIEW for a view, GLOBAL_TEMPORARY_PRESERVE for a connection-bound GTT and
+          GLOBAL_TEMPORARY_DELETE for a transaction_bound GTT.</para>
+        </tip>
       </section> <!-- GTTs -->
 
       <section id="fblangref25-ddl-tbl-external">
@@ -2062,12 +2090,14 @@ CONSTRAINT CHECK_EXCHANGE
         rows (<database>DELETE</database>) are not possible.</para>
 
         <para>A file that is defined as an external table must be located on a storage device that is physically
-        present on the host server where the DBMS is stored. If the DBMS does not find the file while querying the
-        table, it creates this file. The option to use external files for a table depends on the value set for
-        the <emphasis>ExternalFileAccess</emphasis> parameter in the firebird.conf configuration file.</para>
+        present on the machine where the Firebird server runs and, if the parameter <emphasis>ExternalFileAccess</emphasis>
+        in the <filename>firebird.conf</filename> configuration file is <function>Restrict</function>, it must be
+        in one of the directories listed there as the argument for <function>Restrict</function>. If the file does not
+        exist yet, Firebird will create it on first access.</para>
         <important>
-          <para>The external file must be created manually <command>before</command>
-          the <database>CREATE TABLE...EXTERNAL</database> statement is presented.</para>
+          <para>The ability to use external files for a table depends on the value set for the
+          <emphasis>ExternalFileAccess</emphasis> parameter in <filename>firebird.conf</filename>. If it is set
+          to <function>None</function>, any attempt to access an external file will be denied.</para>
         </important>
       </section><!-- external table -->
 
@@ -2091,9 +2121,9 @@ CREATE TABLE STOCK (
   CONSTRAINT MOD_UNIQUE UNIQUE (MODELNAME, ITEMID));
             </programlisting>
           </listitem>
-          <listitem>Creating the JOB table with primary key constraints for three columns, with
-          foreign key constraints for the COUNTRY table and a CHECK constraint for the table row.
-          The table contains an array of 5 elements.
+          <listitem>Creating the JOB table with a primary key constraint spanning two columns, a foreign key
+          constraint for the COUNTRY table and a table-level CHECK constraint. The table also contains an array
+          of 5 elements.
             <programlisting>
 CREATE TABLE JOB (
     JOB_CODE         JOBCODE NOT NULL,
@@ -2104,7 +2134,7 @@ CREATE TABLE JOB (
     MAX_SALARY       NUMERIC(18, 2) NOT NULL,
     JOB_REQUIREMENT  BLOB SUB_TYPE 1,
     LANGUAGE_REQ     VARCHAR(15) [1:5],
-    PRIMARY KEY (JOB_CODE, JOB_GRADE, JOB_COUNTRY),
+    PRIMARY KEY (JOB_CODE, JOB_GRADE),
     FOREIGN KEY (JOB_COUNTRY) REFERENCES COUNTRY (COUNTRY)
     ON UPDATE CASCADE
     ON DELETE SET NULL,
@@ -2113,7 +2143,7 @@ CREATE TABLE JOB (
             </programlisting>
           </listitem>
           <listitem>Creating the PROJECT table with primary, foreign and unique key constraints
-          with custom index name specified for them, specified with the USING clause.
+          with custom index names specified with the USING clause.
             <programlisting>
 CREATE TABLE PROJECT (
     PROJ_ID    PROJNO NOT NULL,
@@ -2122,13 +2152,14 @@ CREATE TABLE PROJECT (
     TEAM_LEADER  EMPNO,
     PRODUCT      PRODTYPE,
     CONSTRAINT PK_PROJECT PRIMARY KEY (PROJ_ID) USING INDEX IDX_PROJ_ID,
-    FOREIGN KEY (TEAM_LEADER) REFERENCES EMPLOYEE (EMP_NO) USING INDEX IDX_LEADER
+    FOREIGN KEY (TEAM_LEADER) REFERENCES EMPLOYEE (EMP_NO)
+      USING INDEX IDX_LEADER
 );
             </programlisting>
           </listitem>
           <listitem>Creating the SALARY_HISTORY table with two computed fields. The first
           one is declared according to the SQL:2003 standard, while the second one is declared
-          according to the traditional declaration of computer fields in Firebird.
+          according to the traditional declaration of computed fields in Firebird.
             <programlisting>
 CREATE TABLE SALARY_HISTORY (
     EMP_NO          EMPNO NOT NULL,
@@ -2136,17 +2167,22 @@ CREATE TABLE SALARY_HISTORY (
     UPDATER_ID      VARCHAR(20) NOT NULL,
     OLD_SALARY      SALARY NOT NULL,
     PERCENT_CHANGE  DOUBLE PRECISION DEFAULT 0 NOT NULL,
-    SALARY_CHANGE   GENERATED ALWAYS AS (OLD_SALARY * PERCENT_CHANGE / 100),
-    NEW_SALARY      COMPUTED BY (OLD_SALARY + OLD_SALARY * PERCENT_CHANGE / 100)
+    SALARY_CHANGE   GENERATED ALWAYS AS
+      (OLD_SALARY * PERCENT_CHANGE / 100),
+    NEW_SALARY      COMPUTED BY
+      (OLD_SALARY + OLD_SALARY * PERCENT_CHANGE / 100)
 );
             </programlisting>
           </listitem>
-          <listitem>Creating the external EXT_LOG table.
+          <listitem>Creating the external EXT_LOG table. Notice the text field uses a
+          fixed-length string, even though the text is probably of variable length.  The
+          reason, of course, is that the external file, whether intended for import or
+          for export, will have fixed-length fields.
             <programlisting>
 CREATE TABLE EXT_LOG
-EXTERNAL FILE 'log.txt' (
+EXTERNAL FILE 'C:\Firebird\Databases\Externals\log.txt' (
    BYTIME TIMESTAMP,
-   AMESSAGE VARCHAR(100)
+   AMESSAGE CHAR(100)
 );
             </programlisting>
           </listitem>
@@ -2166,7 +2202,8 @@ CREATE GLOBAL TEMPORARY TABLE MYTXGTT (
     ID INTEGER NOT NULL PRIMARY KEY,
     PARENT_ID INTEGER NOT NULL REFERENCES MYCONNGTT(ID),
     TXT VARCHAR(32),
-    TS TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+    TS TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+      ON COMMIT DELETE ROWS;
             </programlisting>
           </listitem>
         </orderedlist>
@@ -2185,35 +2222,40 @@ CREATE GLOBAL TEMPORARY TABLE MYTXGTT (
       <formalpara><title>Syntax</title>
         <blockquote><programlisting>
 ALTER TABLE tablename
-&lt;operation&gt; [, &lt;operation&gt;];
+&lt;operation&gt; [, &lt;operation&gt; ...]
 
-&lt;operation&gt; ::=
-{
-    ADD &lt;col_def&gt;
-  | ADD &lt;tconstraint&gt;
-  | DROP colname
-  | DROP CONSTRAINT constr_name
-  | ALTER [COLUMN] colname {
-      TO new_colname |
-      TYPE &lt;datatype&gt; |
-      POSITION new_col_position |
-      SET DEFAULT {literal | NULL | &lt;context_var&gt;} |
-      DROP DEFAULT }
-  | ALTER [COLUMN] gencolname [TYPE &lt;datatype&gt;]
-    { GENERATED ALWAYS AS | COMPUTED [BY]} (&lt;col_expr&gt;)
-}
+&lt;operation&gt; ::= ADD &lt;col_def&gt;
+                      ADD &lt;tconstraint&gt;
+                      DROP <replaceable>colname</replaceable>
+                      DROP CONSTRAINT <replaceable>constr_name</replaceable>
+                      ALTER [COLUMN] <replaceable>colname</replaceable> &lt;col_mod&gt;
 
-&lt;col_def&gt; ::= colname
-{
-  { &lt;datatype&gt; | domainname }
+&lt;col_def&gt; ::= &lt;regular_col_def&gt; | &lt;computed_col_def&gt;
+
+&lt;regular_col_def&gt; ::=
+  colname {&lt;datatype&gt; | domainname}
   [DEFAULT {literal | NULL | &lt;context_var&gt;}]
   [NOT NULL]
   [&lt;col_constraint&gt;]
-  [COLLATE collation]
-} | &lt;col_exp_def&gt;
+  [COLLATE collation_name]
 
-&lt;col_exp_def&gt; ::= [&lt;datatype&gt;]
-{COMPUTED [BY] | GENERATED ALWAYS AS} (&lt;col_expr&gt;)
+&lt;computed_col_def&gt; ::=
+  colname [&lt;datatype&gt;]
+  {COMPUTED [BY] | GENERATED ALWAYS AS} (&lt;expression&gt;)
+
+&lt;col_mod&gt; ::= &lt;regular_col_mod&gt; | &lt;computed_col_mod&gt;
+
+&lt;regular_col_mod&gt; ::=
+    TO <replaceable>newname</replaceable>
+  | POSITION <replaceable>newpos</replaceable>
+  | TYPE {&lt;datatype&gt; | <replaceable>domainname</replaceable>}
+  | SET DEFAULT {<replaceable>literal</replaceable> | NULL | &lt;context_var&gt;}
+  | DROP DEFAULT
+
+&lt;computed_col_mod&gt; ::=
+    TO <replaceable>newname</replaceable>
+  | POSITION <replaceable>newpos</replaceable>
+  | [TYPE &lt;datatype&gt;] {COMPUTED [BY] | GENERATED ALWAYS AS} (&lt;expression&gt;)
 
 &lt;datatype&gt; ::=
     {SMALLINT | INTEGER | BIGINT} [&lt;array_dim&gt;]
@@ -2221,51 +2263,45 @@ ALTER TABLE tablename
   | {DATE | TIME | TIMESTAMP} [&lt;array_dim&gt;]
   | {DECIMAL | NUMERIC} [(precision [, scale])] [&lt;array_dim&gt;]
   | {CHAR | CHARACTER | CHARACTER VARYING | VARCHAR} [(size)]
-    [&lt;array_dim&gt;] [CHARACTER SET charset]
+    [&lt;array_dim&gt;] [CHARACTER SET charset_name]
   | {NCHAR | NATIONAL CHARACTER | NATIONAL CHAR} [VARYING]
     [(size)] [&lt;array_dim&gt;]
   | BLOB [SUB_TYPE {subtype_num | subtype_name}]
-    [SEGMENT SIZE seglen] [CHARACTER SET charset]
+    [SEGMENT SIZE seglen] [CHARACTER SET charset_name]
   | BLOB [(seglen [, subtype_num])]
 
-&lt;array_dim&gt; ::= <command>[</command>x:y [,x:y ...]<command>]</command>
+&lt;array_dim&gt; ::= <command>[</command>[m]:n [,[m]:n ...]<command>]</command>
 
-&lt;col_constraint&gt; ::= [CONSTRAINT constr_name]
-{
-    UNIQUE [&lt;using_index&gt;]
-  | PRIMARY KEY [&lt;using_index&gt;]
-  | REFERENCES other_table [(other_col [, other_col &hellip;])]
-    [&lt;using_index&gt;]
-    [ON DELETE {
-      NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
-    [ON UPDATE {
-      NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
-  | CHECK (&lt;search_condition&gt;)
-}
+&lt;col_constraint&gt; ::=
+  [CONSTRAINT constr_name]
+  {   PRIMARY KEY [&lt;using_index&gt;]
+    | UNIQUE      [&lt;using_index&gt;]
+    | REFERENCES other_table [(colname)] [&lt;using_index>]
+        [ON DELETE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
+        [ON UPDATE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
+    | CHECK (&lt;check_condition&gt;) }
 
-&lt;tconstraint&gt; ::= [CONSTRAINT constr_name]
-{
-    UNIQUE (colname [, colname &hellip;]) [&lt;using_index&gt;]
-  | PRIMARY KEY (colname [, colname &hellip;]) [&lt;using_index&gt;]
-  | FOREIGN KEY (colname [, colname &hellip;])
-    REFERENCES other_table [&lt;using_index&gt;]
-    [ON DELETE {
-      NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
-    [ON UPDATE {
-      NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
-  | CHECK (&lt;search_condition&gt;)
-}
+&lt;tconstraint&gt; ::=
+  [CONSTRAINT <replaceable>constr_name</replaceable>]
+  {   PRIMARY KEY (<replaceable>col_list</replaceable>) [&lt;using_index&gt;]
+    | UNIQUE      (<replaceable>col_list</replaceable>) [&lt;using_index&gt;]
+    | FOREIGN KEY (<replaceable>col_list</replaceable>)
+        REFERENCES <replaceable>other_table</replaceable> [(<replaceable>col_list</replaceable>)] [&lt;using_index&gt;]
+        [ON DELETE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
+        [ON UPDATE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
+    | CHECK (&lt;check_condition&gt;) }
+
+&lt;col_list&gt; ::= <replaceable>colname</replaceable> [, <replaceable>colname</replaceable> ...]
 
 &lt;using_index&gt; ::= USING
-[ASC[ENDING] | DESC[ENDING]] INDEX indexname
+[ASC[ENDING] | DESC[ENDING]] INDEX <replaceable>indexname</replaceable>
 
-&lt;search_condition&gt; ::=
-{
+&lt;check_condition&gt; ::=
     &lt;val&gt; &lt;operator&gt; &lt;val&gt;
   | &lt;val&gt; [NOT] BETWEEN &lt;val&gt; AND &lt;val&gt;
   | &lt;val&gt; [NOT] IN (&lt;val&gt; [, &lt;val&gt; ...] | &lt;select_list&gt;)
   | &lt;val&gt; IS [NOT] NULL
-  | &lt;val&gt; IS [NOT] DISTINCT &lt;val&gt;
+  | &lt;val&gt; IS [NOT] DISTINCT FROM &lt;val&gt;
   | &lt;val&gt; [NOT] CONTAINING &lt;val&gt;
   | &lt;val&gt; [NOT] STARTING [WITH] &lt;val&gt;
   | &lt;val&gt; [NOT] LIKE &lt;val&gt; [ESCAPE &lt;val&gt;]
@@ -2277,13 +2313,12 @@ ALTER TABLE tablename
   | NOT &lt;search_condition&gt;
   | &lt;search_condition&gt; OR &lt;search_condition&gt;
   | &lt;search_condition&gt; AND &lt;search_condition&gt;
-}
 
-&lt;operator&gt; ::= {= | &lt; | &gt; | &lt;= | &gt;= | !&lt; | !&gt; | &lt;&gt; | !=}
+&lt;operator&gt; ::= 
+  &lt;&gt; | != | ^= | ~= | = | &lt; | &gt; | &lt;= | &gt;= | !&lt; | ^&lt; | ~&lt; | !&gt; | ^&gt; | ~&gt;
 
 &lt;val&gt; ::=
-{
-    colname [[&lt;ind&gt; [, &lt;ind&gt; ...]]]
+    colname [<command>[</command>&lt;array_idx&gt; [, &lt;array_idx&gt; ...]<command>]</command>]
   | literal
   | &lt;context_var&gt;
   | &lt;expression&gt;
@@ -2292,8 +2327,7 @@ ALTER TABLE tablename
   | GEN_ID(genname, &lt;val&gt;)
   | CAST(&lt;val&gt; AS &lt;datatype&gt;)
   | (&lt;select_one&gt;)
-  | func(&lt;val&gt; [, &lt;val&gt; ...])
-}
+  | func([&lt;val&gt; [, &lt;val&gt; ...]])
         </programlisting></blockquote>
       </formalpara>
       <table id="fblangref25-ddl-tbl-altertbl">
@@ -2318,39 +2352,19 @@ ALTER TABLE tablename
               <entry align="left">One of the available operations altering the structure of the table</entry>
             </row>
             <row valign="middle">
-              <entry align="center">col_def</entry>
-              <entry align="left">Column definition</entry>
-            </row>
-            <row valign="middle">
               <entry align="center">colname</entry>
-              <entry align="left">Name (identifier) for a column in the table. May consist of
-              up to 31 characters and be unique in the table</entry>
+              <entry align="left">Name (identifier) for a column in the table, max. 31 characters.
+              Must be unique in the table.</entry>
             </row>
             <row valign="middle">
-              <entry align="center">new_colname</entry>
-              <entry align="left">New name (identifier) for the column. May consist of
-              up to 31 characters and be unique in the table</entry>
+              <entry align="center">newname</entry>
+              <entry align="left">New name (identifier) for the column, max. 31 characters. Must be 
+              unique in the table.</entry>
             </row>
             <row valign="middle">
-              <entry align="center">gencolname</entry>
-              <entry align="left">Computed column name</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">new_col_position</entry>
-              <entry align="left">The new position of the column in the table. It is an integer
-              from 1 to the number of columns in the table</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">datatype</entry>
-              <entry align="left">SQL data type</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">col_expr</entry>
-              <entry align="left">Expression defining a computed column</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">domain_name</entry>
-              <entry align="left">Domain name</entry>
+              <entry align="center">newpos</entry>
+              <entry align="left">The new column position (an integer between 1 and the 
+              number of columns in the table)</entry>
             </row>
             <row valign="middle">
               <entry align="center">col_constraint</entry>
@@ -2371,57 +2385,51 @@ ALTER TABLE tablename
               key constraint</entry>
             </row>
             <row valign="middle">
-              <entry align="center">other_col</entry>
-              <entry align="left">The name of the column in <replaceable>other_table</replaceable>
-              that is referenced by the foreign key</entry>
-            </row>
-            <row valign="middle">
               <entry align="center">literal</entry>
-              <entry align="left">Literal</entry>
+              <entry align="left">A literal value that is allowed in the given context</entry>
             </row>
             <row valign="middle">
               <entry align="center">context_var</entry>
-              <entry align="left">Any context variable whose type is compatible with the
-              data type of the domain</entry>
+              <entry align="left">A context variable whose type is allowed in the given context</entry>
             </row>
             <row valign="middle">
-              <entry align="center">search_condition</entry>
-              <entry align="left">Constraint CHECK condition</entry>
+              <entry align="center">check_condition</entry>
+              <entry align="left">The condition of a CHECK constraint that will be satisfied if it 
+              evaluates to TRUE or UNKNOWN/NULL</entry>
             </row>
             <row valign="middle">
               <entry align="center">collation</entry>
-              <entry align="left">Collation</entry>
+              <entry align="left">Name of a collation sequence that is valid for 
+              <replaceable>charset_name</replaceable>, if it is supplied with 
+              <replaceable>datatype</replaceable> or, otherwise, is valid for the default character 
+              set of the database</entry>
             </row>
             <row valign="middle">
               <entry align="center">array_dim</entry>
               <entry align="left">Array dimensions</entry>
             </row>
             <row valign="middle">
-              <entry align="center">x</entry>
-              <entry align="left">The initial number of the element in the array, a
-              positive integer</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">y</entry>
-              <entry align="left">The final number of the element in the array, a positive
-              integer</entry>
+              <entry align="center">m, n</entry>
+              <entry align="left">INTEGER numbers defining the index range of an array dimension</entry>
             </row>
             <row valign="middle">
               <entry align="center">precision</entry>
-              <entry align="left">Precision. From 1 to 18</entry>
+              <entry align="left">The total number of significant digits that a value of
+              the <replaceable>datatype</replaceable> can hold (1..18)</entry>
             </row>
             <row valign="middle">
               <entry align="center">scale</entry>
-              <entry align="left">Scale. From 0 to 18, it must be less than or
-              equal to precision</entry>
+              <entry align="left">The number of digits after the decimal point
+              (0..<replaceable>precision</replaceable>)</entry>
             </row>
             <row valign="middle">
               <entry align="center">size</entry>
               <entry align="left">The maximum size of a string in characters</entry>
             </row>
             <row valign="middle">
-              <entry align="center">charset</entry>
-              <entry align="left">Character set</entry>
+              <entry align="center">charset_name</entry>
+              <entry align="left">The name of a valid character set, if the character set of the column 
+              is to be different to the default character set of the database</entry>
             </row>
             <row valign="middle">
               <entry align="center">subtype_num</entry>
@@ -2433,11 +2441,7 @@ ALTER TABLE tablename
             </row>
             <row valign="middle">
               <entry align="center">seglen</entry>
-              <entry align="left">Segment size, it cannot be greater than 65535</entry>
-            </row>
-            <row valign="middle">
-              <entry align="center">val</entry>
-              <entry align="left">Value</entry>
+              <entry align="left">Segment size (max. 65535)</entry>
             </row>
             <row valign="middle">
               <entry align="center">select_one</entry>
@@ -2456,7 +2460,8 @@ ALTER TABLE tablename
             </row>
             <row valign="middle">
               <entry align="center">expression</entry>
-              <entry align="left">Expression</entry>
+              <entry align="left">An expression resolving to a value that is is allowed in 
+              the given context</entry>
             </row>
             <row valign="middle">
               <entry align="center">genname</entry>
@@ -2479,8 +2484,8 @@ ALTER TABLE tablename
         <title>Version Count Increments</title>
         <para>Some changes in the structure of a table increment the metadata change counter (<quote>version count</quote>)
         assigned to every table. The number of metadata changes is limited to 255 for each table. Once the counter reaches
-        the 255 limit, you will not be able to change the structure of the table, nor to access it.  The counter will have
-        to be reset.
+        the 255 limit, you will not be able to make any further changes to the structure of the table without resetting 
+        the counter.
           <formalpara>
             <title>To reset the metadata change counter</title>
             <para> You should back up and restore the database using the <emphasis>gbak</emphasis> utility.</para>
@@ -2559,7 +2564,7 @@ ALTER TABLE tablename
             <listitem>change the data type (increases the metadata change counter by one)</listitem>
             <listitem>change the column position in the column list of the table (does not affect the metadata change counter)</listitem>
             <listitem>delete the default column value (does not affect the metadata change counter)</listitem>
-            <listitem>add a default column value (does not affect the metadata change counter)</listitem>
+            <listitem>set a default column value or change the existing default (does not affect the metadata change counter)</listitem>
             <listitem>change the type and expression for a computed column (does not affect the metadata change counter)</listitem>
           </itemizedlist>
         </para>
@@ -2581,9 +2586,9 @@ ALTER TABLE tablename
         type. A type change that might result in data loss will be disallowed. As an example, the number of characters
         in the new type for a <database>CHAR</database> or <database>VARCHAR</database> column cannot be smaller than
         the existing specification for it.</para>
-        <para>If the column was declared as an array, no change to its type or the its number of dimensions are
+        <para>If the column was declared as an array, no change to its type or its number of dimensions is
         permitted.</para>
-        <para>The data type of a column that is involved in a foreign / primary (unique) key reference cannot be
+        <para>The data type of a column that is involved in a foreign key, primary key or unique constraint cannot be
         changed at all.</para>
       </section>
 
@@ -2594,8 +2599,8 @@ ALTER TABLE tablename
         <para>Numbering of column positions starts at 1.
           <itemizedlist spacing="compact">
             <listitem>If a position less than 1 is specified, an error message will be returned</listitem>
-            <listitem>If a postion number is greater than the number of columns in the table, no error or
-            warning is returned but the change request will be ignored.</listitem>
+            <listitem>If a position number is greater than the number of columns in the table, its new position
+            will be adjusted silently to match the number of columns.</listitem>
           </itemizedlist>
         </para>
       </section>
@@ -2605,11 +2610,10 @@ ALTER TABLE tablename
         <para>The optional <database>DROP DEFAULT</database> clause deletes the default
         value for the column if it was put there previously by a CREATE TABLE or ALTER TABLE statement.
           <itemizedlist>
-            <listitem>If the column is based on a domain with a default value, the domain
-            value will override this deletion</listitem>
+            <listitem>If the column is based on a domain with a default value, the default value will revert
+            to the domain default</listitem>
             <listitem>An execution error will be raised if an attempt is made to delete the
-            default value of a column that has no default value of its own and whose default
-            value is based on a domain</listitem>
+            default value of a column which has no default value or whose default value is domain-based</listitem>
           </itemizedlist>
         </para>
         <para>The optional <database>SET DEFAULT</database> clause sets a default value for the
@@ -2618,7 +2622,7 @@ ALTER TABLE tablename
       </section>
 
       <section id="fblangref25-ddl-tbl-altrcmptd">
-        <title>The <database>COMPUTED [BY]</database> alias <database>GENERATED ALWAYS AS</database> Clauses</title>
+        <title>The <database>COMPUTED [BY]</database> or <database>GENERATED ALWAYS AS</database> Clauses</title>
         <para>The data type and expression underlying a computed column can be modified using a
         <database>COMPUTED [BY]</database> or <database>GENERATED ALWAYS AS</database> clause in the
         <database>ALTER TABLE ALTER [COLUMN]</database> statement.  Converting a regular column to a
@@ -2675,10 +2679,10 @@ ALTER COLUMN MODELNAME TO NAME;
           <listitem>Changing the computed columns NEW_SALARY and SALARY_CHANGE.
             <programlisting>
 ALTER TABLE SALARY_HISTORY
-ALTER NEW_SALARY GENERATED ALWAYS
-AS (OLD_SALARY + OLD_SALARY * PERCENT_CHANGE / 100),
-ALTER SALARY_CHANGE COMPUTED
-BY (OLD_SALARY * PERCENT_CHANGE / 100);
+ALTER NEW_SALARY GENERATED ALWAYS AS 
+  (OLD_SALARY + OLD_SALARY * PERCENT_CHANGE / 100),
+ALTER SALARY_CHANGE COMPUTED BY 
+  (OLD_SALARY * PERCENT_CHANGE / 100);
             </programlisting>
           </listitem>
         </orderedlist>
@@ -2764,12 +2768,10 @@ DROP TABLE COUNTRY;
       </formalpara>
       <formalpara><title>Syntax</title>
         <blockquote><programlisting>
-RECREATE [GLOBAL TEMPORARY] TABLE tablename
-		[EXTERNAL [FILE] '&lt;filespec&gt;']
-(		&lt;col_def&gt; [, &lt;col_def&gt; | &lt;tconstraint&gt; ...])
-...
-...
-		[ON COMMIT {DELETE | PRESERVE} ROWS];
+RECREATE [GLOBAL TEMPORARY] TABLE <replaceable>tablename</replaceable>
+  [EXTERNAL [FILE] '&lt;filespec&gt;']
+  (&lt;col_def&gt; [, {&lt;col_def&gt; | &lt;tconstraint&gt;} ...])
+  [ON COMMIT {DELETE | PRESERVE} ROWS]
         </programlisting></blockquote>
       </formalpara>
       <para>See the <link linkend="fblangref25-ddl-tbl-create"><database>CREATE TABLE</database>
