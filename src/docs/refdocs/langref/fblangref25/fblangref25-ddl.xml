@@ -3239,7 +3239,7 @@ ALTER INDEX indexname {ACTIVE | INACTIVE};
 ALTER INDEX IDX_UPDATER INACTIVE;
             </programlisting>
           </listitem>
-          <listitem>Switching the IDX_UPDATER index back to the active state an rebuilding it
+          <listitem>Switching the IDX_UPDATER index back to the active state and rebuilding it
             <programlisting>
 ALTER INDEX IDX_UPDATER ACTIVE;
             </programlisting>
@@ -3393,7 +3393,7 @@ SET STATISTICS INDEX IDX_UPDATER;
   <title><database>VIEW</database></title>
     <para>A view is a virtual table that is actually a stored and named <database>SELECT</database> query
     for retrieving data of any complexity. Data can be retrieved from one or more tables,
-    from other views and also from <database>SELECT</database> stored procedures.</para>
+    from other views and also from selectable stored procedures.</para>
     <para>Unlike regular tables in relational databases, a view is not an independent data
     set stored in the database. The result is dynamically created as a data set when the view
     is selected.</para>
@@ -3434,7 +3434,7 @@ AS &lt;select_statement&gt;
           <tbody>
             <row valign="middle">
               <entry align="center">viewname</entry>
-              <entry align="left">View name. It may consist of up to 31 characters</entry>
+              <entry align="left">View name, maximum 31 characters</entry>
             </row>
             <row valign="middle">
               <entry align="center">select_statement</entry>
@@ -3446,7 +3446,7 @@ AS &lt;select_statement&gt;
             </row>
             <row valign="middle">
               <entry align="center">colname</entry>
-              <entry align="left">View column name. No duplicate column names are allowed</entry>
+              <entry align="left">View column name. Duplicate column names are not allowed.</entry>
             </row>
           </tbody>
         </tgroup>
@@ -3456,76 +3456,103 @@ AS &lt;select_statement&gt;
       <para>The name of the new view can be followed by the list of column names that should be returned to
       the caller when the view is invoked. Names in the list do not have to be related to the names of the
       columns in the base tables from which they derive.</para>
-      <para>If there is no column list in the view definition, the system will compile it by extracting the
-      specified column names from the base tables, or from their aliases, by analysing the
-      <database>SELECT </database>statement.</para>
+      <para>If the view column list is omitted, the system will use the column names and/or aliases from the
+      <database>SELECT</database> statement. If duplicate names or non-aliased expression-derived columns make
+      this impossible to obtain a valid list, creation of the view fails with an error.</para>
       <para>The number of columns in the view's list must exactly match the number of columns in the selection
-     list of the underlying SELECT statement in the view definition.</para>
-     <note>
-       <title>Additional Points</title>
-       <itemizedlist>
-         <listitem>If the full list of columns is specified, it makes no sense to specify aliases 
-         in the <database>SELECT</database> statement because the names in the column list will override
-         them</listitem>
-         <listitem>Specifying the full list of view columns is required where the <database>SELECT</database>
-         statement contains expressions based on the columns or column names that are duplicated</listitem>
-         <listitem>The column list is optional if all of the columns in the <database>SELECT</database>
-         are explicitly named and are unique in the selection list</listitem>
-       </itemizedlist>
-     </note>
-     <section id="fblangref25-ddl-view-create-updatable">
-       <title>Updatable Views</title>
-       <para>A view can be updatable or read-only. If a view is updatable, the data retrieved when this
-       view is called can be changed by the DML statements <database>INSERT</database>,
-       <database>UPDATE</database>, <database>DELETE</database>, <database>UPDATE OR INSERT</database>
-       or <database>MERGE</database>. Changes made in an updatable view are applied to the table the
-       from which the data were retrieved.</para>
-       <para>A read-only view can be made updatable with the help of additional triggers. If one or more
-       triggers are defined on an updatable view, changes are not applied directly to the table.  It will
-       be done by the trigger or it will not be applied at all.</para>
-       <para>A view will be updatable if the following conditions are met:
-         <itemizedlist>
-           <listitem>the <database>SELECT</database> statement queries only one table or one
-           updatable view</listitem>
-           <listitem>the <database>SELECT</database> statement does not call any stored
-           procedures</listitem>
-           <listitem>all columns in the base table or in the updatable view that are not present in
-           this view allow <database>NULL</database></listitem>
-           <listitem>the <database>SELECT</database> statement contains no fields derived from subqueries
-           or other expressions</listitem>
-           <listitem>the <database>SELECT</database> statement does not contain fields defined through
-           aggregate functions, such as <database>MIN</database>, <database>MAX</database>, <database>AVG</database>,
-           <database>SUM</database>, <database>COUNT</database>, <database>LIST</database></listitem>
-           <listitem>the <database>SELECT</database> statement contains no sorting clauses such as <database>ORDER BY</database>,
-           <database>GROUP BY</database>, <database>HAVING</database></listitem>
+      list of the underlying SELECT statement in the view definition.</para>
+      <note>
+        <title>Additional Points</title>
+        <itemizedlist>
+          <listitem>If the full list of columns is specified, it makes no sense to specify aliases
+          in the <database>SELECT</database> statement because the names in the column list will override
+          them</listitem>
+          <listitem>The column list is optional if all of the columns in the <database>SELECT</database>
+          are explicitly named and are unique in the selection list</listitem>
+        </itemizedlist>
+      </note>
+      <section id="fblangref25-ddl-view-create-updatable">
+        <title>Updatable Views</title>
+        <para>A view can be updatable or read-only. If a view is updatable, the data retrieved when this
+        view is called can be changed by the DML statements <database>INSERT</database>,
+        <database>UPDATE</database>, <database>DELETE</database>, <database>UPDATE OR INSERT</database>
+        or <database>MERGE</database>. Changes made in an updatable view are applied to the underlying
+        table(s).</para>
+        <para>A read-only view can be made updateable with the use of triggers. Once triggers have been
+        defined on a view, changes posted to it will never be written automatically to the underlying table,
+        even if the view was updateable to begin with. It is the responsibility of the programmer to ensure
+        that the triggers update (or delete from, or insert into) the base tables as needed.</para>
+        <para>A view will be automatically updatable if all of the the following conditions are met:
+          <itemizedlist>
+            <listitem>the <database>SELECT</database> statement queries only one table or one
+            updatable view</listitem>
+            <listitem>the <database>SELECT</database> statement does not call any stored
+            procedures</listitem>
+            <listitem>each base table (or base view) column not present in the view definition is covered
+            by one of the following conditions:
+              <itemizedlist spacing="compact">
+                <listitem>it is nullable</listitem>
+                <listitem>it has a non-NULL default value</listitem>
+                <listitem>it has a trigger that supplies a permitted value</listitem>
+              </itemizedlist>
+            </listitem>
+            <listitem>the <database>SELECT</database> statement contains no fields derived from subqueries
+            or other expressions</listitem>
+            <listitem>the <database>SELECT</database> statement does not contain fields defined through
+            aggregate functions, such as <database>MIN</database>, <database>MAX</database>, <database>AVG</database>,
+            <database>SUM</database>, <database>COUNT</database>, <database>LIST</database></listitem>
+           <listitem>the <database>SELECT</database> statement contains no <database>ORDER BY</database> or
+           <database>GROUP BY</database> or GROUP BY clause</listitem>
            <listitem>the <database>SELECT</database> statement does not include the keyword <database>DISTINCT</database>
            or row-restrictive keywords such as <database>ROWS</database>, <database>FIRST</database>,
            <database>SKIP</database></listitem>
-         </itemizedlist>
-       </para>
-     </section>
+          </itemizedlist>
+        </para>
+      </section>
 
-     <section id="fblangref25-ddl-view-create-chkopt">
-       <title><database>WITH CHECK OPTION</database></title>
-       <para>The optional <database>WITH CHECK OPTION</database> clause requires an updatable view to
-       check whether new or updated data meet the condition specified in the <database>WHERE</database>
-       clause of the <database>SELECT</database> statement. Every attempt to insert a new record or to
-       update an existing one is checked as to whether the new or updated record would meet the
-       <database>WHERE</database> criteria. If they fail the check, the operation is not performed
-       and an appropriate error message is returned.</para>
-       <para><database>WITH CHECK OPTION</database> can be specified only in a CREATE VIEW statement
-       in which a WHERE clause is present to restrict the output of the main <database>SELECT</database>
-       statement. An error message is returned otherwise.</para>
+      <section id="fblangref25-ddl-view-create-chkopt">
+        <title><database>WITH CHECK OPTION</database></title>
+        <para>The optional <database>WITH CHECK OPTION</database> clause requires an updatable view to
+        check whether new or updated data meet the condition specified in the <database>WHERE</database>
+        clause of the <database>SELECT</database> statement. Every attempt to insert a new record or to
+        update an existing one is checked as to whether the new or updated record would meet the
+        <database>WHERE</database> criteria. If they fail the check, the operation is not performed
+        and an appropriate error message is returned.</para>
+        <para><database>WITH CHECK OPTION</database> can be specified only in a CREATE VIEW statement
+        in which a WHERE clause is present to restrict the output of the main <database>SELECT</database>
+        statement. An error message is returned otherwise.</para>
+
+        <important>
+         <title>Please note:</title>
+         <para>If <database>WITH CHECK OPTION</database> is used, the engine checks the input against
+         the <database>WHERE</database> clause before passing anything to the base relation. Therefore,
+         if the check on the input fails, any default clauses or triggers on the base relation that
+         might have been designed to correct the input will never come into action.</para>
+         <para>Furthermore, view fields omitted from the <database>INSERT</database> statement are
+         passed as <database>NULL</database>s to the base relation, regardless of their presence or
+         absence in the <database>WHERE</database> clause. As a result, base table defaults defined on
+         such fields will not be applied. Triggers, on the other hand, will fire and work as
+         expected.</para>
+         <para>For views that do not have <database>WITH CHECK OPTION</database>, fields omitted
+         from the <database>INSERT</database> statement are not passed to the base relation at all, so
+         any defaults will be applied.</para>
+       </important>
      </section>
 
       <section id="fblangref25-ddl-view-createwho">
         <title>Ownership of a View</title>
-        <para>Any user connected to the database can create a new view if the user has privileges to
-        select data from base table and views (<database>SELECT</database>) and <database>EXECUTE</database>
-        privileges for any <database>SELECT</database> stored procedures used.</para>
-        <para>For a read-only view, the user needs to have <database>ALL</database> privileges for
-        the base tables.</para>
-        <para>The user who creates a view becomes its owner.</para>
+        <para>The creator of a view becomes its owner.</para>
+        <para>To create a view, a non-admin user needs at least <database>SELECT</database>
+        access to the underlying table(s) and/or view(s), and the <database>EXECUTE</database> 
+        privilege on any selectable stored procedures involved.</para>
+        <para>To enable insertions, updates and deletions through the view, the
+        creator/owner must also possess the corresponding <database>INSERT</database>, 
+        <database>UPDATE</database> and <database>DELETE</database> rights on the base 
+        object(s).</para>
+        <para>Granting other users privileges on the view is only possible if the view owner 
+        himself has these privileges on the underlying objects <database>WITH GRANT 
+        OPTION</database>. It will always be the case if the view owner is also the owner of 
+        the underlying objects.</para>
       </section>
 
       <formalpara>
@@ -3579,7 +3606,7 @@ FROM PRICE;
           </listitem>
           <listitem>Creating a read-only view based on two tables and a stored procedure.
             <programlisting>
-CREATE VIEW GOODS_PRICE
+CREATE VIEW GOODS_PRICE AS
 SELECT
     goods.name AS goodsname,
     price.cost AS cost,
@@ -3588,20 +3615,20 @@ FROM
     goods
     JOIN price ON goods.code_goods = price.code_goods
     LEFT JOIN sp_get_balance(goods.code_goods) b ON 1 = 1;
-            </programlisting>
-          </listitem>
-        </orderedlist>
-      </formalpara>
-      <formalpara><title>See also</title>
-        <para> <link linkend="fblangref25-ddl-view-alter"><database>ALTER VIEW</database></link>,
-        <link linkend="fblangref25-ddl-view-crtoralter"><database>CREATE OR ALTER VIEW</database></link>,
-        <link linkend="fblangref25-ddl-view-recreate"><database>RECREATE VIEW</database></link>,
-        <link linkend="fblangref25-ddl-view-drop"><database>DROP VIEW</database></link>
-        </para>
-      </formalpara>
-    </section> <!-- create view -->
+           </programlisting>
+         </listitem>
+       </orderedlist>
+     </formalpara>
+     <formalpara><title>See also</title>
+       <para> <link linkend="fblangref25-ddl-view-alter"><database>ALTER VIEW</database></link>,
+       <link linkend="fblangref25-ddl-view-crtoralter"><database>CREATE OR ALTER VIEW</database></link>,
+       <link linkend="fblangref25-ddl-view-recreate"><database>RECREATE VIEW</database></link>,
+       <link linkend="fblangref25-ddl-view-drop"><database>DROP VIEW</database></link>
+       </para>
+     </formalpara>
+   </section> <!-- create view -->
 
-    <section id="fblangref25-ddl-view-alter">
+   <section id="fblangref25-ddl-view-alter">
       <title><database>ALTER VIEW</database></title>
       <formalpara><title>Used for</title>
         <para>Modifying an existing view</para>
@@ -3635,7 +3662,7 @@ AS &lt;select_statement&gt;
           <tbody>
             <row valign="middle">
               <entry align="center">viewname</entry>
-              <entry align="left">View name. It cannot be changed</entry>
+              <entry align="left">Name of an existing view</entry>
             </row>
             <row valign="middle">
               <entry align="center">select_statement</entry>
@@ -3647,7 +3674,7 @@ AS &lt;select_statement&gt;
             </row>
             <row valign="middle">
               <entry align="center">colname</entry>
-              <entry align="left">View column name. No duplicate column names are allowed</entry>
+              <entry align="left">View column name. Duplicate column names are not allowed.</entry>
             </row>
           </tbody>
         </tgroup>
@@ -3663,7 +3690,7 @@ AS &lt;select_statement&gt;
           and PSQL modules that access the view may become invalid.
           For information on how to detect this kind of problem in stored procedures and trigger,
           see <link linkend="fblangref25-appx01-supp-rdb_validblr"><citetitle>The <database>RDB$VALID_BLR</database>
-          Field</citetitle></link> in Appendix A.</para>
+          Field</citetitle></link> in the Appendix.</para>
         </caution>
       </para>
 
@@ -3680,7 +3707,7 @@ ALTER VIEW PRICE_WITH_MARKUP (
   COST_WITH_MARKUP
 ) AS
 SELECT
-8  CODE_PRICE,
+  CODE_PRICE,
   COST,
   COST * 1.15
 FROM PRICE;
@@ -3728,7 +3755,7 @@ AS &lt;select_statement&gt;
           <tbody>
             <row valign="middle">
               <entry align="center">viewname</entry>
-              <entry align="left">View name. It cannot be changed</entry>
+              <entry align="left">Name of a view which may or may not exist</entry>
             </row>
             <row valign="middle">
               <entry align="center">select_statement</entry>
@@ -3740,20 +3767,19 @@ AS &lt;select_statement&gt;
             </row>
             <row valign="middle">
               <entry align="center">colname</entry>
-              <entry align="left">View column name. No duplicate column names are allowed</entry>
+              <entry align="left">View column name. Duplicate column names are not allowed.</entry>
             </row>
           </tbody>
         </tgroup>
       </table>
-      <para>Use the <database>CREATE OR ALTER VIEW</database> statement changing the definition of
-      an existing view or creating it if it does not exist. Privileges for an existing view
+      <para>Use the <database>CREATE OR ALTER VIEW</database> statement for changing the definition 
+      of an existing view or creating it if it does not exist. Privileges for an existing view
       remain intact and dependencies are not affected.</para>
       <para>The syntax of the <database>CREATE OR ALTER VIEW</database> statement corresponds
       completely with that of <database>CREATE VIEW</database>.</para>
       <formalpara>
         <title>Example</title>
-        <para> Creating the new view PRICE_WITH_MARKUP view or altering the existing
-        view of that name, if it exists.
+        <para> Creating the new view PRICE_WITH_MARKUP view or altering it if it already exists:
           <blockquote><programlisting>
 CREATE OR ALTER VIEW PRICE_WITH_MARKUP (
   CODE_PRICE,
@@ -3778,8 +3804,8 @@ FROM PRICE;
 
     <section id="fblangref25-ddl-view-drop">
       <title><database>DROP VIEW</database></title>
-      <formalpara><title>Used for deleting (dropping) a view</title>
-        <para></para>
+      <formalpara><title>Used for</title>
+        <para>Deleting (dropping) a view</para>
       </formalpara>
       <formalpara>
         <title>Available in</title>
@@ -3825,7 +3851,8 @@ DROP VIEW PRICE_WITH_MARKUP;
       </formalpara>
       <formalpara><title>See also</title>
         <para> <link linkend="fblangref25-ddl-view-create"><database>CREATE VIEW</database></link>,
-        <link linkend="fblangref25-ddl-view-recreate"><database>RECREATE VIEW</database></link>
+        <link linkend="fblangref25-ddl-view-recreate"><database>RECREATE VIEW</database></link>,
+        <link linkend="fblangref25-ddl-view-crtoralter"><database>CREATE OR ALTER VIEW</database></link>
         </para>
       </formalpara>
     </section> <!-- Drop view -->
@@ -3864,7 +3891,7 @@ AS &lt;select_statement&gt;
           <tbody>
             <row valign="middle">
               <entry align="center">viewname</entry>
-              <entry align="left">View name. It may consist of up to 31 characters</entry>
+              <entry align="left">View name, maximum 31 characters</entry>
             </row>
             <row valign="middle">
               <entry align="center">select_statement</entry>
@@ -3876,15 +3903,15 @@ AS &lt;select_statement&gt;
             </row>
             <row valign="middle">
               <entry align="center">colname</entry>
-              <entry align="left">Column name</entry>
+              <entry align="left">View column name. Duplicate column names are not allowed.</entry>
             </row>
           </tbody>
         </tgroup>
       </table>
       <para>Creates or recreates a view. If there is a view with this name already,
-      the <database>RECREATE VIEW</database> statement tries to delete it before creating
-      the new one. The <database>RECREATE VIEW</database> statement will not be executed
-      if there is an existing view of the same name that has dependencies.</para>
+      the engine will try to drop it before creating the new instance. If the existing view 
+      cannot be dropped, because of dependencies or insufficient rights, for example, 
+      <database>RECREATE VIEW</database> fails with an error.</para>
       <formalpara>
         <title>Example</title>
         <para> Creating the new view PRICE_WITH_MARKUP view or recreating it, if it already
