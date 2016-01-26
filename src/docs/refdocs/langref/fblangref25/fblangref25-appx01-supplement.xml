@@ -10,9 +10,38 @@
     <title>The <database>RDB$VALID_BLR</database> Field</title>
     <para>The field <database>RDB$VALID_BLR</database> was added to the system tables
     <database>RDB$PROCEDURES</database> and <database>RDB$TRIGGERS</database> in Firebird 2.1.
-    Its purpose is to signal possible invalidation of a PSQL module.  Invalidation may arise 
-    when a domain or a table column upon which the module depends is altered. <database>RDB$VALID_BLR</database> 
-    is set to 0 for any procedure or trigger whose code might be no longer valid.</para>
+    Its purpose is to signal possible invalidation of a PSQL module after alteration of a domain 
+    or table column on which the module depends.<database>RDB$VALID_BLR</database>
+    is set to 0 for any procedure or trigger whose code is made invalid by such 
+    a change.</para>
+    <section>
+      <title>How Invalidation Works</title>
+      <para>In triggers and procedures, dependencies arise on the definitions of table 
+      columns accessed and also on any parameter or variable that has been defined in the 
+      module using the <database>TYPE OF</database> clause.</para>
+      <para>After the engine has altered any domain, including the implicit domains created
+      internally behind column definitions and output parameters, the engine internally 
+      recompiles all of its dependencies.  
+      <note>
+        <para>In V.2.x these comprise procedures and triggers but not blocks coded in DML 
+        statements for run-time execution with <database>EXECUTE BLOCK</database>.  Firebird 
+        3 will encompass more module types (stored functions, packages).</para>
+      </note>
+      </para>
+      <para>Any module that fails to recompile because of an incompatibility arising from a 
+      domain change is marked as invalid (<quote>invalidated</quote> by setting the
+      <database>RDB$VALID_BLR</database> in its system record (in
+      <database>RDB$PROCEDURES</database> or <database>RDB$TRIGGERS</database>, as appropriate)
+      to zero.</para>
+      <para>Revalidation (setting <database>RDB$VALID_BLR</database> to 1) occurs when
+      <orderedlist spacing="compact">
+        <listitem>the domain is altered again and the new definition is compatible
+        with the previously invalidated module definition;  OR</listitem>
+        <listitem>the previously invalidated module is altered to match the new domain
+        definition</listitem>
+     </orderedlist>
+     </para>
+    </section>
     <para>The following query will find the modules that depend on a specific domain and report
     the state of their <database>RDB$VALID_BLR</database> fields:
       <blockquote><programlisting>
@@ -62,20 +91,39 @@ WHERE EXISTS
      AND rdb$field_name = 'MYCOLUMN')
       </programlisting></blockquote>
     </para>
-    <para>Unfortunately, not all PSQL invalidations will be reflected in the <database>RDB$VALID_BLR</database>
-    field. After changing a domain or table column, it is therefore advisable to have a good look at all the
-    procedures and triggers reported by the above queries, even those having a 1 in the
-    <quote>VALID</quote> column.</para>
+
+    <important>
+      <para>All PSQL invalidations caused by domain/column changes are reflected in the
+      <database>RDB$VALID_BLR</database> field.  However, other kinds of changes, such as
+      the number of input or output parameters, called routines and so on, do not affect
+      the validation field even though they potentially invalidate the module.  A typical
+      such scenario might be one of the following:
+        <orderedlist>
+          <listitem>A procedure (B) is defined, that calls another procedure (A) and reads
+          output parameters from it.  In this case, a dependency is registered in
+          <database>RDB$DEPENDENCIES</database>.  Subsequently, the called procedure (A) is
+          altered to change or remove one or more of those output parameters.  The
+          <database>ALTER PROCEDURE A</database> statement will fail with an error when
+          commit is attempted.</listitem>
+          <listitem>A procedure (B) calls procedure A, supplying values for its input parameters.
+          No dependency is registered in <database>RDB$DEPENDENCIES</database>.  Subsequent
+          modification of the input parameters in procedure A will be allowed. Failure will
+          occur at run-time, when B calls A with the mismatched input parameter set.</listitem>
+        </orderedlist>
+      </para>
+    </important>
     <note>
-      <title>Notes</title>
+      <title>Other Notes</title>
       <itemizedlist>
         <listitem>For PSQL modules inherited from earlier Firebird versions (including a number of system
         triggers, even if the database was created under Firebird 2.1 or higher),
        <database>RDB$VALID_BLR</database> is NULL. This does not imply that their BLR is invalid.</listitem>
+
         <listitem>The <emphasis>isql</emphasis> commands <database>SHOW PROCEDURES</database> and
-        <database>SHOW TRIGGERS</database> flag modules whose <database>RDB$VALID_BLR</database> field is zero
-        with an asterisk. <database>SHOW PROCEDURE procname</database> and <database>SHOW
-        TRIGGER trigname</database>, which display individual PSQL modules, do not signal invalid BLR.</listitem>
+        <database>SHOW TRIGGERS</database> display an asterisk in the <database>RDB$VALID_BLR</database>
+        column for any module for which the value is zero (i.e., invalid). However, <database>SHOW
+        PROCEDURE &lt;procname&gt;</database> and <database>SHOW TRIGGER &lt;trigname&gt;</database>,
+        which display individual PSQL modules, do not signal invalid BLR at all.</listitem>
       </itemizedlist>
     </note>
   </section> <!-- rdb$valid_blr -->
