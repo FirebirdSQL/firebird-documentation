@@ -15,6 +15,7 @@
 
   <!-- Then include customizations for the Reference Docs: -->
   <xsl:include href="common/param-refdocs.xsl"/>
-  <xsl:include href="html/param-refdocs.xsl"/>
+  
+  <!-- Do *not* include html/param-refdocs.xsl, because that one is meant for the multi-page target -->
 
 </xsl:stylesheet>
