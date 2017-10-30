@@ -20,6 +20,10 @@
   <!-- Let's get rid of that draft pagemaster FO bloat anyhow: -->
   <xsl:param name="draft.mode" select="'no'"/> <!-- default is 'maybe' -->
 
+  <!-- Without this, we get incorrect image file paths in the .fo,
+       - resulting in missing images in the PDF - if the source document
+       is in a subdir and xi:included in the docset: -->
+  <xsl:param name="keep.relative.image.uris" select="1"/>
 
   <xsl:param name="paper.type" select="'A4'"/>
   <xsl:param name="double.sided" select="0"/>
