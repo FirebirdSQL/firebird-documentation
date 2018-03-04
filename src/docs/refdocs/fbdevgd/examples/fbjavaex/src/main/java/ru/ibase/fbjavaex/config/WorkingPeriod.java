@@ -4,7 +4,7 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 
 /**
- * Рабочий период
+ * Working period
  *
  * @author Simonov Denis
  */
@@ -14,16 +14,16 @@ public class WorkingPeriod {
     private Timestamp endDate;
 
     /**
-     * Конструктор
+     * Constructor
      */
     WorkingPeriod() {
-        // в реальных приложениях вычисляется от текущей даты
+        // in real applications is calculated from the current date
         this.beginDate = Timestamp.valueOf("2015-06-01 00:00:00");
         this.endDate = Timestamp.valueOf(LocalDateTime.now().plusDays(1));
     }
 
     /**
-     * Возвращает дату начала рабочего периода
+     * Returns the start date of the work period
      *
      * @return
      */
@@ -32,8 +32,8 @@ public class WorkingPeriod {
     }
 
     /**
-     * Возвращает дату окончания рабочего периода
-     * 
+     * Returns the end date of the work period
+     *
      * @return
      */
     public Timestamp getEndDate() {
@@ -41,8 +41,8 @@ public class WorkingPeriod {
     }
 
     /**
-     * Установка даты начала рабочего периода
-     * 
+     * Setting the start date of the work period
+     *
      * @param value
      */
     public void setBeginDate(Timestamp value) {
@@ -50,8 +50,8 @@ public class WorkingPeriod {
     }
 
     /**
-     * Установка даты окончания рабочего периода
-     * 
+     * Setting the end date of the work period
+     *
      * @param value
      */
     public void setEndDate(Timestamp value) {
@@ -59,8 +59,8 @@ public class WorkingPeriod {
     }
 
     /**
-     * Установка рабочего периода
-     * 
+     * Setting the working period
+     *
      * @param beginDate
      * @param endDate
      */

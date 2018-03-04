@@ -4,19 +4,17 @@ import org.jooq.*;
 import java.util.List;
 import java.util.Map;
 
-
 import static ru.ibase.fbjavaex.exampledb.Tables.PRODUCT;
 
-
 /**
- * Обработчик грида для справочника товаров
+ * Product grid
  *
  * @author Simonov Denis
  */
 public class JqGridProduct extends JqGrid {
 
     /**
-     * Добавление условия поиска
+     * Adding a search condition
      *
      * @param query
      */
@@ -34,44 +32,45 @@ public class JqGridProduct extends JqGrid {
         }
     }
 
-
     /**
-     * Возвращает общее количество записей
+     * Returns the total number of records
      *
      * @return
      */
     @Override
     public int getCountRecord() {
+        // query that returns the number of records
         SelectFinalStep<?> select
                 = dsl.selectCount()
                         .from(PRODUCT);
 
         SelectQuery<?> query = select.getQuery();
-
+        // if perform a search, then add the search condition
         if (this.searchFlag) {
             makeSearchCondition(query);
         }
-
+        // return count of records
         return (int) query.fetch().getValue(0, 0);
     }
 
-
     /**
+     * Returns the grid records
      *
      * @return
      */
     @Override
     public List<Map<String, Object>> getRecords() {
+        // Basic selection query
         SelectFinalStep<?> select
                 = dsl.select()
                         .from(PRODUCT);
 
         SelectQuery<?> query = select.getQuery();
-
+        // if perform a search, then add the search condition
         if (this.searchFlag) {
             makeSearchCondition(query);
         }
-
+        // set the sort order
         if (sIdx.equals("NAME")) {
             switch (sOrd) {
                 case "asc":
@@ -92,14 +91,15 @@ public class JqGridProduct extends JqGrid {
                     break;
             }
         }
-
+        // limit the number of records
         if (this.limit != 0) {
             query.addLimit(this.limit);
         }
+        // offset
         if (this.offset != 0) {
             query.addOffset(this.offset);
         }
-        
+        // return an array of maps
         return query.fetchMaps();
     }
 }

@@ -1,6 +1,6 @@
 /**
- * Конфигурация IoC контейнера
- * для осуществления внедрения зависимостей.
+ * IoC container configuration
+ * to implement dependency injection.
  */
 package ru.ibase.fbjavaex.config;
 
@@ -24,21 +24,23 @@ import ru.ibase.fbjavaex.managers.*;
 import ru.ibase.fbjavaex.jqgrid.*;
 
 /**
- * Конфигурационный класс Spring IoC контейнера
+ * Return connection pool
+ *
+ * @return
  */
 @Configuration
 public class JooqConfig {
 
     /**
-     * Возвращает пул коннектов
+     * Return connection pool
      *
      * @return
      */
     @Bean(name = "dataSource")
     public DataSource getDataSource() {
         BasicDataSource dataSource = new BasicDataSource();
-        // определяем конфигурацию подключения
-        dataSource.setUrl("jdbc:firebirdsql://localhost:3050/examples");
+        // JDBC connection configuration
+        dataSource.setUrl("jdbc:firebirdsql://localhost:3053/examples");
         dataSource.setDriverClassName("org.firebirdsql.jdbc.FBDriver");
         dataSource.setUsername("SYSDBA");
         dataSource.setPassword("masterkey");
@@ -47,7 +49,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возращает менеджер транзакций
+     * Return transaction manager
      *
      * @return
      */
@@ -62,7 +64,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает провайдер подключений
+     * Return connection provider
      *
      * @return
      */
@@ -72,7 +74,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает транслятор исключений
+     * Return exception translator
      *
      * @return
      */
@@ -82,14 +84,14 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает конфгурацию DSL контекста
+     * Returns the DSL context configuration
      *
      * @return
      */
     @Bean(name = "dslConfig")
     public org.jooq.Configuration getDslConfig() {
         DefaultConfiguration config = new DefaultConfiguration();
-        // используем диалект SQL СУБД Firebird
+        // use the dialect SQL DBMS Firebird
         config.setSQLDialect(SQLDialect.FIREBIRD);
         config.setConnectionProvider(getConnectionProvider());
         DefaultExecuteListenerProvider listenerProvider = new DefaultExecuteListenerProvider(getExceptionTranslator());
@@ -98,7 +100,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает DSL контекст
+     * Return DSL context
      *
      * @return
      */
@@ -109,7 +111,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает менеджер заказчиков
+     * Return customer manager
      *
      * @return
      */
@@ -119,7 +121,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает грид с заказчиками
+     * Return customer grid
      *
      * @return
      */
@@ -129,7 +131,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает менеджер продуктов
+     * Return product manager
      *
      * @return
      */
@@ -139,7 +141,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает грид с товарами
+     * Return product grid
      *
      * @return
      */
@@ -149,7 +151,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает менеджер счёт фактур
+     * Return invoice manager
      *
      * @return
      */
@@ -159,7 +161,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает грид с заголовками счёт фактур
+     * Return invoice grid
      *
      * @return
      */
@@ -169,7 +171,7 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращет грид с позициями счёт фактуры
+     * Return invoice items grid
      *
      * @return
      */
@@ -179,9 +181,9 @@ public class JooqConfig {
     }
 
     /**
-     * Возвращает рабочий период
-     * 
-     * @return 
+     * Return working period
+     *
+     * @return
      */
     @Bean(name = "workingPeriod")
     public WorkingPeriod getWorkingPeriod() {

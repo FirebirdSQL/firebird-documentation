@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 
 
 /**
- * Контроллер по умолчанию
+ * Default Controller
  * 
  * @author Simonov Denis
  */

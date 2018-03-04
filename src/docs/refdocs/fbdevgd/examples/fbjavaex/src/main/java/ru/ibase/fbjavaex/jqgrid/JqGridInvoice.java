@@ -12,24 +12,24 @@ import static ru.ibase.fbjavaex.exampledb.Tables.INVOICE;
 import static ru.ibase.fbjavaex.exampledb.Tables.CUSTOMER;
 
 /**
- * Обработчик грида для журнала счёт-фактур
+ * Grid handler for the invoice journal
  *
  * @author Simonov Denis
  */
 public class JqGridInvoice extends JqGrid {
-    
+
     @Autowired(required = true)
-    private WorkingPeriod workingPeriod;    
+    private WorkingPeriod workingPeriod;
 
     /**
-     * Добавление условия поиска
+     * Adding a search condition
      *
      * @param query
      */
     private void makeSearchCondition(SelectQuery<?> query) {
-        // добавлением в запрос условия поиска, если он производится
-        // для разных полей доступны разные операторы
-        // сравнения при поиске
+        // adding a search condition to the query,
+        // if it is produced for different fields,
+        // different comparison operators are available when searching.
         if (this.searchString.isEmpty()) {
             return;
         }
@@ -72,7 +72,7 @@ public class JqGridInvoice extends JqGrid {
     }
 
     /**
-     * Возвращает общее количество записей
+     * Returns the total number of records
      *
      * @return
      */
@@ -92,11 +92,9 @@ public class JqGridInvoice extends JqGrid {
         return (int) query.fetch().getValue(0, 0);
     }
 
-
-
     /**
-     * Возвращает список счёт-фактур
-     * 
+     * Returns the list of invoices
+     *
      * @return
      */
     @Override
@@ -114,11 +112,11 @@ public class JqGridInvoice extends JqGrid {
                         .where(INVOICE.INVOICE_DATE.between(this.workingPeriod.getBeginDate(), this.workingPeriod.getEndDate()));
 
         SelectQuery<?> query = select.getQuery();
-
+        // add a search condition
         if (this.searchFlag) {
             makeSearchCondition(query);
         }
-
+        // add sorting
         if (this.sIdx.equals("INVOICE_DATE")) {
             switch (this.sOrd) {
                 case "asc":
@@ -129,14 +127,14 @@ public class JqGridInvoice extends JqGrid {
                     break;
             }
         }
-
+        // limit the number of records and add an offset
         if (this.limit != 0) {
             query.addLimit(this.limit);
         }
         if (this.offset != 0) {
             query.addOffset(this.offset);
         }
-        
+
         return query.fetchMaps();
     }
 }

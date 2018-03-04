@@ -26,17 +26,15 @@ import ru.ibase.fbjavaex.managers.InvoiceManager;
 import ru.ibase.fbjavaex.jqgrid.JqGridData;
 
 //import java.util.logging.*;
-
 /**
- * Контроллер счёт-фактур
+ * Invoice controller
  *
  * @author Simonov Denis
  */
 @Controller
 public class InvoiceController {
-    
-//    private static Logger log = Logger.getLogger(InvoiceController.class.getName());
 
+//    private static Logger log = Logger.getLogger(InvoiceController.class.getName());
     @Autowired(required = true)
     private JqGridInvoice invoiceGrid;
 
@@ -47,13 +45,13 @@ public class InvoiceController {
     private InvoiceManager invoiceManager;
 
     /**
-     * Описываем, как преобразуется строка в дату
-     * из входных параметров HTTP запроса
-     * 
-     * @param binder 
+     * Describe how a string is converted to a date from the input parameters of
+     * the HTTP request
+     *
+     * @param binder
      */
     @InitBinder
-    public void initBinder(WebDataBinder binder)   {
+    public void initBinder(WebDataBinder binder) {
         binder.registerCustomEditor(Timestamp.class,
                 new PropertyEditorSupport() {
             @Override
@@ -73,11 +71,10 @@ public class InvoiceController {
     }
 
     /**
-     * Действие по умолчанию
-     * Возвращает имя JSP страницы (представления) для отображения
-     * 
+     * Default action Returns the JSP name of the page (view) to display
+     *
      * @param map
-     * @return имя JSP страницы
+     * @return JSP page name
      */
     @RequestMapping(value = "/invoice/", method = RequestMethod.GET)
     public String index(ModelMap map) {
@@ -86,18 +83,18 @@ public class InvoiceController {
     }
 
     /**
-     * Возвращает список счёт фактур в формате JSON для jqGrid
-     * 
-     * @param rows количество записей на странице
-     * @param page номер текущей страницы
-     * @param sIdx поле сортировки
-     * @param sOrd порядок сортировки
-     * @param search флаг поиска
-     * @param searchField поле поиска
-     * @param searchString значение поиска
-     * @param searchOper операция сравнения
-     * @param filters фильтр
-     * @return 
+     * Returns a list of invoices in JSON format for jqGrid
+     *
+     * @param rows number of entries per page
+     * @param page current page number
+     * @param sIdx sort field
+     * @param sOrd sorting order
+     * @param search search flag
+     * @param searchField search field
+     * @param searchString search value
+     * @param searchOper comparison operation
+     * @param filters filter
+     * @return
      */
     @RequestMapping(value = "/invoice/getdata",
             method = RequestMethod.GET,
@@ -126,11 +123,11 @@ public class InvoiceController {
     }
 
     /**
-     * Добавляет счёт фактуру
-     * 
-     * @param customerId код заказчика
-     * @param invoiceDate дата счёт фактуры
-     * @return 
+     * Add invoice
+     *
+     * @param customerId customer id
+     * @param invoiceDate invoice date
+     * @return
      */
     @RequestMapping(value = "/invoice/create",
             method = RequestMethod.POST,
@@ -151,12 +148,12 @@ public class InvoiceController {
     }
 
     /**
-     * Редактирует счёт фактуру
-     * 
-     * @param invoiceId код счёт фактуры
-     * @param customerId код заказчика
-     * @param invoiceDate дата счёт фактуры
-     * @return 
+     * Edit invoice
+     *
+     * @param invoiceId invoice id
+     * @param customerId customer id
+     * @param invoiceDate invoice date
+     * @return
      */
     @RequestMapping(value = "/invoice/edit",
             method = RequestMethod.POST,
@@ -177,10 +174,10 @@ public class InvoiceController {
     }
 
     /**
-     * Оплачивает счёт фактуру
-     * 
-     * @param invoiceId код счёт фактуры
-     * @return 
+     * Pays an invoice
+     *
+     * @param invoiceId invoice id
+     * @return
      */
     @RequestMapping(value = "/invoice/pay",
             method = RequestMethod.POST,
@@ -199,10 +196,10 @@ public class InvoiceController {
     }
 
     /**
-     * Удаляет счёт фактуру
-     * 
-     * @param invoiceId код счёт фактуры
-     * @return 
+     * Delete invoice
+     *
+     * @param invoiceId invoice id
+     * @return
      */
     @RequestMapping(value = "/invoice/delete",
             method = RequestMethod.POST,
@@ -221,10 +218,10 @@ public class InvoiceController {
     }
 
     /**
-     * Возвращает список позиций счёт фактуры
-     * 
-     * @param invoice_id код счёт фактуры
-     * @return 
+     * Returns invoice item
+     *
+     * @param invoice_id invoice id
+     * @return
      */
     @RequestMapping(value = "/invoice/getdetaildata",
             method = RequestMethod.GET,
@@ -240,12 +237,12 @@ public class InvoiceController {
     }
 
     /**
-     * Добавляет позицию счёт фактуры
-     * 
-     * @param invoiceId код счёт фактуры
-     * @param productId код товара
-     * @param quantity количество товара
-     * @return 
+     * Add invoice item
+     *
+     * @param invoiceId invoice id
+     * @param productId product id
+     * @param quantity quantity of products
+     * @return
      */
     @RequestMapping(value = "/invoice/createdetail",
             method = RequestMethod.POST,
@@ -266,11 +263,11 @@ public class InvoiceController {
     }
 
     /**
-     * Редактирует позицию счёт фактуры
-     * 
-     * @param invoiceLineId код позици счёт фактуры
-     * @param quantity количество товара
-     * @return 
+     * Edit invoice item
+     *
+     * @param invoiceLineId invoice item id
+     * @param quantity quantity of products
+     * @return
      */
     @RequestMapping(value = "/invoice/editdetail",
             method = RequestMethod.POST,
@@ -290,10 +287,10 @@ public class InvoiceController {
     }
 
     /**
-     * Удаляет позицию счёт фактуры
-     * 
-     * @param invoiceLineId код позиции счёт фактуры
-     * @return 
+     * Delete invoice item
+     *
+     * @param invoiceLineId invoice item id
+     * @return
      */
     @RequestMapping(value = "/invoice/deletedetail",
             method = RequestMethod.POST,

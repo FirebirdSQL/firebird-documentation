@@ -1,5 +1,5 @@
 /*
- * Абстрактный класс для работы с JqGrid
+ * Abstract class for working with JqGrid
  */
 package ru.ibase.fbjavaex.jqgrid;
 
@@ -9,12 +9,11 @@ import org.jooq.DSLContext;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * Работа с JqGrid
+ * Working with JqGrid
  *
  * @author Simonov Denis
  */
 public abstract class JqGrid {
-
 
     @Autowired(required = true)
     protected DSLContext dsl;
@@ -30,15 +29,15 @@ public abstract class JqGrid {
     protected String sOrd = "asc";
 
     /**
-     * Возвращает общее количество записей
+     * Returns the total number of records
      *
      * @return
      */
     public abstract int getCountRecord();
 
     /**
-     * Возвращает структуру для сериализации в JSON
-     * 
+     * Returns the structure for JSON serialization
+     *
      * @return
      */
     public JqGridData getJqGridData() {
@@ -54,10 +53,9 @@ public abstract class JqGrid {
         return jqGridData;
     }
 
-
     /**
-     * Возвращает количество записей на странице
-     * 
+     * Returns the number of records per page
+     *
      * @return
      */
     public int getLimit() {
@@ -65,8 +63,8 @@ public abstract class JqGrid {
     }
 
     /**
-     * Возвращает смещение до извлечения первой записи
-     * 
+     * Returns the offset to retrieve the first record on the page
+     *
      * @return
      */
     public int getOffset() {
@@ -74,8 +72,8 @@ public abstract class JqGrid {
     }
 
     /**
-     * Возвращает ия поля для сортировки
-     * 
+     * Returns field name for sorting
+     *
      * @return
      */
     public String getIdx() {
@@ -83,8 +81,8 @@ public abstract class JqGrid {
     }
 
     /**
-     * Возвращает порядок сортировки
-     * 
+     * Returns the sort order
+     *
      * @return
      */
     public String getOrd() {
@@ -92,8 +90,8 @@ public abstract class JqGrid {
     }
 
     /**
-     * Возвращает номер текущей страницы
-     * 
+     * Returns the current page number
+     *
      * @return
      */
     public int getPageNo() {
@@ -101,15 +99,15 @@ public abstract class JqGrid {
     }
 
     /**
-     * Возвращает массив записей как список карт
-     * 
+     * Returns an array of records as a list of maps
+     *
      * @return
      */
     public abstract List<Map<String, Object>> getRecords();
 
     /**
-     * Возвращает поле для поиска
-     * 
+     * Returns field name for search
+     *
      * @return
      */
     public String getSearchField() {
@@ -117,8 +115,8 @@ public abstract class JqGrid {
     }
 
     /**
-     * Возвращает значение для поиска
-     * 
+     * Returns value for search
+     *
      * @return
      */
     public String getSearchString() {
@@ -126,8 +124,8 @@ public abstract class JqGrid {
     }
 
     /**
-     * Вовзаращет операцию поиска
-     * 
+     * Returns the search operation
+     *
      * @return
      */
     public String getSearchOper() {
@@ -135,7 +133,7 @@ public abstract class JqGrid {
     }
 
     /**
-     * Устанавливает ограничение на количество выводимых записей
+     * Sets the limit on the number of display records
      *
      * @param limit
      */
@@ -144,7 +142,7 @@ public abstract class JqGrid {
     }
 
     /**
-     * Устанавливает количество записей которые надо пропустить
+     * Sets the number of records to skip
      *
      * @param offset
      */
@@ -153,7 +151,7 @@ public abstract class JqGrid {
     }
 
     /**
-     * Устанавливает сортировку
+     * Sets the sorting
      *
      * @param sIdx
      * @param sOrd
@@ -164,8 +162,8 @@ public abstract class JqGrid {
     }
 
     /**
-     * Устанавливает номер текущей страницы
-     * 
+     * Sets the current page number
+     *
      * @param pageNo
      */
     public void setPageNo(int pageNo) {
@@ -174,7 +172,7 @@ public abstract class JqGrid {
     }
 
     /**
-     * Устанавливает условие поиска
+     * Sets the search condition
      *
      * @param searchField
      * @param searchString

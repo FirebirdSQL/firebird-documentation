@@ -1,4 +1,3 @@
-
 package ru.ibase.fbjavaex.managers;
 
 import org.jooq.DSLContext;
@@ -11,7 +10,7 @@ import static ru.ibase.fbjavaex.exampledb.Tables.CUSTOMER;
 import static ru.ibase.fbjavaex.exampledb.Sequences.GEN_CUSTOMER_ID;
 
 /**
- * Менеджер заказчиков
+ * Customer manager
  *
  * @author Simonov Denis
  */
@@ -19,25 +18,25 @@ public class CustomerManager {
 
     @Autowired(required = true)
     private DSLContext dsl;
-    
+
     /**
-     * Добавление заказчика
-     * 
+     * Adding a customer
+     *
      * @param name
      * @param address
      * @param zipcode
-     * @param phone 
+     * @param phone
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)  
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void create(String name, String address, String zipcode, String phone) {
         if (zipcode != null) {
             if (zipcode.trim().isEmpty()) {
                 zipcode = null;
             }
-        }        
-        
+        }
+
         int customerId = this.dsl.nextval(GEN_CUSTOMER_ID).intValue();
-               
+
         this.dsl
                 .insertInto(CUSTOMER,
                         CUSTOMER.CUSTOMER_ID,
@@ -56,15 +55,15 @@ public class CustomerManager {
     }
 
     /**
-     * Редактирование заказчика
-     * 
+     * Editing a customer
+     *
      * @param customerId
      * @param name
      * @param address
      * @param zipcode
-     * @param phone 
+     * @param phone
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)      
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void edit(int customerId, String name, String address, String zipcode, String phone) {
 
         if (zipcode != null) {
@@ -72,7 +71,7 @@ public class CustomerManager {
                 zipcode = null;
             }
         }
-               
+
         this.dsl.update(CUSTOMER)
                 .set(CUSTOMER.NAME, name)
                 .set(CUSTOMER.ADDRESS, address)
@@ -83,11 +82,11 @@ public class CustomerManager {
     }
 
     /**
-     * Удаление заказчика
-     * 
-     * @param customerId 
+     * Deleting a customer
+     *
+     * @param customerId
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)    
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void delete(int customerId) {
         this.dsl.deleteFrom(CUSTOMER)
                 .where(CUSTOMER.CUSTOMER_ID.eq(customerId))

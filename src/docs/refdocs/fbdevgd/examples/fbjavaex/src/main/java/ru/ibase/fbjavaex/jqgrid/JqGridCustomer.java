@@ -7,14 +7,14 @@ import java.util.Map;
 import static ru.ibase.fbjavaex.exampledb.Tables.CUSTOMER;
 
 /**
- * Грид заказчиков
- * 
+ * Customer grid
+ *
  * @author Simonov Denis
  */
 public class JqGridCustomer extends JqGrid {
 
     /**
-     * Добавление условия поиска
+     * Adding a search condition
      *
      * @param query
      */
@@ -35,46 +35,45 @@ public class JqGridCustomer extends JqGrid {
         }
     }
 
-
     /**
-     * Возвращает общее количество записей
+     * Returns the total number of records
      *
      * @return
      */
     @Override
     public int getCountRecord() {
-        // запрос возвращающий количество записей
+        // query that returns the number of records
         SelectFinalStep<?> select
-            = dsl.selectCount()
-                 .from(CUSTOMER);
+                = dsl.selectCount()
+                        .from(CUSTOMER);
 
         SelectQuery<?> query = select.getQuery();
-        // если мы осуществляем поиск, то добавляем условие поиска
+        // if perform a search, then add the search condition
         if (this.searchFlag) {
             makeSearchCondition(query);
         }
-        // возарщаем количество
+        // return count of records
         return (int) query.fetch().getValue(0, 0);
     }
 
     /**
-     * Возвращает записи грида
-     * 
+     * Returns the grid records
+     *
      * @return
      */
     @Override
     public List<Map<String, Object>> getRecords() {
-        // Базовый запрос на выборку
-        SelectFinalStep<?> select = 
-            dsl.select()
-               .from(CUSTOMER);
+        // Basic selection query
+        SelectFinalStep<?> select
+                = dsl.select()
+                        .from(CUSTOMER);
 
         SelectQuery<?> query = select.getQuery();
-        // если мы осуществляем поиск, то добавляем условие поиска
+        // if perform a search, then add the search condition
         if (this.searchFlag) {
             makeSearchCondition(query);
         }
-        // задаём порядок сортировки
+        // set the sort order
         switch (this.sOrd) {
             case "asc":
                 query.addOrderBy(CUSTOMER.NAME.asc());
@@ -83,15 +82,15 @@ public class JqGridCustomer extends JqGrid {
                 query.addOrderBy(CUSTOMER.NAME.desc());
                 break;
         }
-        // ограничиваем количество записей
+        // limit the number of records
         if (this.limit != 0) {
             query.addLimit(this.limit);
         }
-        // смещение
+        // offset
         if (this.offset != 0) {
             query.addOffset(this.offset);
         }
-        // возвращаем массив карт
+        // return an array of maps
         return query.fetchMaps();
     }
 }

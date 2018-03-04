@@ -1,4 +1,3 @@
-
 package ru.ibase.fbjavaex.jqgrid;
 
 import org.jooq.*;
@@ -10,25 +9,24 @@ import static ru.ibase.fbjavaex.exampledb.Tables.INVOICE_LINE;
 import static ru.ibase.fbjavaex.exampledb.Tables.PRODUCT;
 
 /**
- * Обработчик грида для позиций журнала счёт-фактур
+ * The grid handler for the invoice items
  *
  * @author Simonov Denis
  */
 public class JqGridInvoiceLine extends JqGrid {
-        
-    private int invoiceId;    
-    
-    
+
+    private int invoiceId;
+
     public int getInvoiceId() {
-        return this.invoiceId; 
+        return this.invoiceId;
     }
-    
+
     public void setInvoiceId(int invoiceId) {
         this.invoiceId = invoiceId;
     }
-    
+
     /**
-     * Возвращает общее количество записей
+     * Returns the total number of records
      *
      * @return
      */
@@ -41,14 +39,12 @@ public class JqGridInvoiceLine extends JqGrid {
 
         SelectQuery<?> query = select.getQuery();
 
-
         return (int) query.fetch().getValue(0, 0);
     }
-    
-       
+
     /**
-     * Возвращает позиции накладной
-     * 
+     * Returns invoice items
+     *
      * @return
      */
     @Override
@@ -61,6 +57,7 @@ public class JqGridInvoiceLine extends JqGrid {
                         PRODUCT.NAME.as("PRODUCT_NAME"),
                         INVOICE_LINE.QUANTITY,
                         INVOICE_LINE.SALE_PRICE,
+                        // INVOICE_LINE.SALE_PRICE * INVOICE_LINE.QUANTITY AS TOTAL
                         INVOICE_LINE.SALE_PRICE.mul(INVOICE_LINE.QUANTITY).as("TOTAL"))
                         .from(INVOICE_LINE)
                         .innerJoin(PRODUCT).on(PRODUCT.PRODUCT_ID.eq(INVOICE_LINE.PRODUCT_ID))
@@ -68,5 +65,5 @@ public class JqGridInvoiceLine extends JqGrid {
 
         SelectQuery<?> query = select.getQuery();
         return query.fetchMaps();
-    }    
+    }
 }

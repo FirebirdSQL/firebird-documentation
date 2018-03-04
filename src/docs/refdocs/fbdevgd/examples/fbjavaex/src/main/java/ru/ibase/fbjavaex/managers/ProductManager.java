@@ -12,7 +12,7 @@ import static ru.ibase.fbjavaex.exampledb.Tables.PRODUCT;
 import static ru.ibase.fbjavaex.exampledb.Sequences.GEN_PRODUCT_ID;
 
 /**
- * Менеджер товаров
+ * Product manager
  *
  * @author Simonov Denis
  */
@@ -23,7 +23,7 @@ public class ProductManager {
     
 
     /**
-     * Добавление товара
+     * Adding a product
      * 
      * @param name
      * @param price
@@ -50,7 +50,7 @@ public class ProductManager {
     }
 
     /**
-     * Редактирование товара
+     * Editing a product
      * 
      * @param productId
      * @param name
@@ -68,7 +68,7 @@ public class ProductManager {
     }
 
     /**
-     * Удаление товара
+     * Deleting a product
      * 
      * @param productId 
      */

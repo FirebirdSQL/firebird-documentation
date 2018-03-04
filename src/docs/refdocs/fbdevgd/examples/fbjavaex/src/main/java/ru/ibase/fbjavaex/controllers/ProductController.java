@@ -19,8 +19,9 @@ import ru.ibase.fbjavaex.jqgrid.JqGridProduct;
 import ru.ibase.fbjavaex.jqgrid.JqGridData;
 
 /**
+ * Product Controller
  *
- * @author john
+ * @author Simonov Denis
  */
 @Controller
 public class ProductController {
@@ -37,6 +38,19 @@ public class ProductController {
         return "product";
     }
 
+    /**
+     * Returns JSON data for jqGrid
+     *
+     * @param rows number of entries per page
+     * @param page page number
+     * @param sIdx sorting field
+     * @param sOrd sorting order
+     * @param search should the search be performed
+     * @param searchField search field
+     * @param searchString value for searching
+     * @param searchOper search operation
+     * @return JSON data for jqGrid
+     */    
     @RequestMapping(value = "/product/getdata", 
             method = RequestMethod.GET, 
             produces = MediaType.APPLICATION_JSON)
@@ -63,6 +77,14 @@ public class ProductController {
         return productGrid.getJqGridData();
     }
     
+    /**
+     * Add product
+     * 
+     * @param name
+     * @param price
+     * @param description
+     * @return 
+     */
     @RequestMapping(value = "/product/create", 
             method = RequestMethod.POST, 
             produces = MediaType.APPLICATION_JSON)
@@ -81,6 +103,15 @@ public class ProductController {
         return map;
     }    
     
+    /**
+     * Edit product
+     * 
+     * @param productId
+     * @param name
+     * @param price
+     * @param description
+     * @return 
+     */
     @RequestMapping(value = "/product/edit", 
             method = RequestMethod.POST, 
             produces = MediaType.APPLICATION_JSON)
@@ -100,6 +131,12 @@ public class ProductController {
         return map;
     }    
     
+    /**
+     * Delete product
+     * 
+     * @param productId
+     * @return 
+     */
     @RequestMapping(value = "/product/delete", 
             method = RequestMethod.POST, 
             produces = MediaType.APPLICATION_JSON)

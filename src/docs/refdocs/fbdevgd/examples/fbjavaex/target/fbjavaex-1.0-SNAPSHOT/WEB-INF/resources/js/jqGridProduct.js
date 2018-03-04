@@ -3,11 +3,11 @@ var JqGridProduct = (function ($) {
     return function (options) {
         var jqGridProduct = {
             dbGrid: null,
-            // опции
             options: $.extend({
                 baseAddress: null,
                 showEditorPanel: true
             }, options),
+            // return product model description
             getColModel: function () {
                 return [
                     {
@@ -56,28 +56,29 @@ var JqGridProduct = (function ($) {
                 ];
             },
             initGrid: function () {
-                // url для получения данных
+                // url to retrieve data
                 var url = jqGridProduct.options.baseAddress + '/product/getdata';
                 jqGridProduct.dbGrid = $("#jqGridProduct").jqGrid({
                     url: url,
-                    datatype: "json", // формат получения данных 
-                    mtype: "GET", // тип http запроса
-                    // описание модели
+                    datatype: "json", // data format 
+                    mtype: "GET", // request type
+                    // description of model
                     colModel: jqGridProduct.getColModel(),
-                    rowNum: 500, // число отображаемых строк
-                    loadonce: false, // загрузка только один раз
-                    sortname: 'NAME', // сортировка по умолчанию по столбцу NAME
-                    sortorder: "asc", // порядок сортировки
-                    width: window.innerWidth - 80, // ширина грида
-                    height: 500, // высота грида
-                    viewrecords: true, // отображать количество записей
+                    rowNum: 500, // number of rows displayed
+                    loadonce: false, // load only once
+                    sortname: 'NAME', // Sorting by NAME by default
+                    sortorder: "asc", 
+                    width: window.innerWidth - 80,
+                    height: 500, 
+                    viewrecords: true, // display the number of records
                     guiStyle: "bootstrap",
                     iconSet: "fontAwesome",
-                    caption: "Products", // подпись к гриду
-                    // элемент для отображения навигации
+                    caption: "Products", 
+                    // navigation item
                     pager: 'jqPagerProduct'
                 });
             },
+            // returns the options for editing
             getEditOptions: function () {
                 return {
                     url: jqGridProduct.options.baseAddress + '/product/edit',
@@ -88,6 +89,7 @@ var JqGridProduct = (function ($) {
                     width: 400,
                     afterSubmit: jqGridProduct.afterSubmit,
                     editData: {
+                        // Add the value of the key field to the form fields
                         PRODUCT_ID: function () {
                             var selectedRow = jqGridProduct.dbGrid.getGridParam("selrow");
                             var value = jqGridProduct.dbGrid.getCell(selectedRow, 'PRODUCT_ID');
@@ -96,6 +98,7 @@ var JqGridProduct = (function ($) {
                     }
                 };
             },
+            // returns the options for adding
             getAddOptions: function () {
                 return {
                     url: jqGridProduct.options.baseAddress + '/product/create',
@@ -107,6 +110,7 @@ var JqGridProduct = (function ($) {
                     afterSubmit: jqGridProduct.afterSubmit
                 };
             },
+            // returns the options for deleting
             getDeleteOptions: function () {
                 return {
                     url: jqGridProduct.options.baseAddress + '/product/delete',
@@ -114,9 +118,10 @@ var JqGridProduct = (function ($) {
                     closeOnEscape: true,
                     closeAfterDelete: true,
                     drag: true,
-                    msg: "Удалить выделенный товар?",
+                    msg: "Are you sure you want to delete the product?",
                     afterSubmit: jqGridProduct.afterSubmit,
                     delData: {
+                        // transfer key field
                         PRODUCT_ID: function () {
                             var selectedRow = jqGridProduct.dbGrid.getGridParam("selrow");
                             var value = jqGridProduct.dbGrid.getCell(selectedRow, 'PRODUCT_ID');
@@ -125,46 +130,51 @@ var JqGridProduct = (function ($) {
                     }
                 };
             },
+            // initializing the navigation bar along with editing dialogs
             initPagerWithEditors: function () {
                 jqGridProduct.dbGrid.jqGrid('navGrid', '#jqPagerProduct',
                         {
-                            search: true, // поиск
-                            add: true, // добавление
-                            edit: true, // редактирование
-                            del: true, // удаление
-                            view: true, // просмотр записи
-                            refresh: true, // обновление
-                            // подписи кнопок
-                            searchtext: "Поиск",
-                            addtext: "Добавить",
-                            edittext: "Изменить",
-                            deltext: "Удалить",
-                            viewtext: "Смотреть",
-                            viewtitle: "Выбранная запись",
-                            refreshtext: "Обновить"
+                            // buttons
+                            search: true, 
+                            add: true, 
+                            edit: true, 
+                            del: true,
+                            view: true, 
+                            refresh: true, 
+                            // captions
+                            searchtext: "Search",
+                            addtext: "Add",
+                            edittext: "Edit",
+                            deltext: "Delete",
+                            viewtext: "View",
+                            viewtitle: "Selected record",
+                            refreshtext: "Refresh"
                         },
                         jqGridProduct.getEditOptions(),
                         jqGridProduct.getAddOptions(),
                         jqGridProduct.getDeleteOptions()
                         );
             },
+            // initializing the navigation bar along without editing dialogs
             initPagerWithoutEditors: function () {
                 jqGridProduct.dbGrid.jqGrid('navGrid', '#jqPagerProduct',
                         {
-                            search: true, // поиск
-                            add: false, // добавление
-                            edit: false, // редактирование
-                            del: false, // удаление
-                            view: false, // просмотр записи
-                            refresh: true, // обновление
-
-                            searchtext: "Поиск",
-                            viewtext: "Смотреть",
-                            viewtitle: "Выбранная запись",
-                            refreshtext: "Обновить"
+                            // buttons
+                            search: true, 
+                            add: false, 
+                            edit: false, 
+                            del: false, 
+                            view: false, 
+                            refresh: true, 
+                            // captions
+                            searchtext: "Search",
+                            viewtext: "View",
+                            viewtitle: "Selected record",
+                            refreshtext: "Refresh"
                         }
                 );
             },
+            // initializing the navigation bar
             initPager: function () {
                 if (jqGridProduct.options.showEditorPanel) {
                     jqGridProduct.initPagerWithEditors();
@@ -172,20 +182,21 @@ var JqGridProduct = (function ($) {
                     jqGridProduct.initPagerWithoutEditors();
                 }
             },
+            // initializing
             init: function () {
                 jqGridProduct.initGrid();
                 jqGridProduct.initPager();
             },
-            // обработчик результатов обработки форм (операций)
+            // form results (operations) handler
             afterSubmit: function (response, postdata) {
                 var responseData = response.responseJSON;
-                // проверяем результат на наличие сообщений об ошибках
+                // check the result for error messages
                 if (responseData.hasOwnProperty("error")) {
                     if (responseData.error.length) {
                         return [false, responseData.error];
                     }
                 } else {
-                    // обновление грида
+                    // if an error was not returned, update the grid
                     $(this).jqGrid(
                             'setGridParam',
                             {

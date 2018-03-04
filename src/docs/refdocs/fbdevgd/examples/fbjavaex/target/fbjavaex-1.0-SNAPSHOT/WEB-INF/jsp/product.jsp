@@ -6,14 +6,14 @@
 <html>
     <head>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-        <title>Пример Spring MVC приложения с использованием Firebird и jOOQ</title>
+        <title>An example of a Spring MVC application using Firebird and jOOQ</title>
         
-        <!-- Скритпы и стили -->
+        <!-- Scripts and styles -->
         <%@ include file="../jspf/head.jspf" %>
         <script src="${cp}/resources/js/jqGridProduct.js"></script>   
     </head>
     <body>
-        <!-- Навигационное меню -->
+        <!-- Navigation menu -->
         <%@ include file="../jspf/menu.jspf" %>
 
         <div class="container body-content">            
@@ -25,7 +25,7 @@
 
             <hr />
             <footer>
-                <p>&copy; 2016 - Пример Spring MVC приложения с использованием Firebird и jOOQ</p>
+                <p>&copy; 2016 - An example of a Spring MVC application using Firebird and jOOQ</p>
             </footer>         
         </div>
             

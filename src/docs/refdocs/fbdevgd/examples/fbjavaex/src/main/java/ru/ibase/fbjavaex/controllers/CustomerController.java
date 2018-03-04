@@ -17,29 +17,25 @@ import ru.ibase.fbjavaex.managers.CustomerManager;
 import ru.ibase.fbjavaex.jqgrid.JqGridCustomer;
 import ru.ibase.fbjavaex.jqgrid.JqGridData;
 
-
 /**
- * Контроллер заказчиков
+ * Customer Controller
  *
  * @author Simonov Denis
  */
 @Controller
 public class CustomerController {
 
-
     @Autowired(required = true)
     private JqGridCustomer customerGrid;
-    
+
     @Autowired(required = true)
     private CustomerManager customerManager;
 
-
     /**
-     * Действие по умолчанию
-     * Возвращает имя JSP страницы (представления) для отображения
+     * Default action Returns the JSP name of the page (view) to display
      *
      * @param map
-     * @return имя JSP шаблона
+     * @return name of JSP template
      */
     @RequestMapping(value = "/customer/", method = RequestMethod.GET)
     public String index(ModelMap map) {
@@ -47,41 +43,32 @@ public class CustomerController {
     }
 
     /**
-     * Возвращает данные в формате JSON для jqGrid
+     * Returns JSON data for jqGrid
      *
-     * @param rows количество строк на страницу
-     * @param page номер страницы
-     * @param sIdx поле для сортировки
-     * @param sOrd порядок сортировки
-     * @param search должен ли осуществляться поиск
-     * @param searchField поле поиска
-     * @param searchString значение поиска
-     * @param searchOper операция поиска
-     * @return JSON для jqGrid
+     * @param rows number of entries per page
+     * @param page page number
+     * @param sIdx sorting field
+     * @param sOrd sorting order
+     * @param search should the search be performed
+     * @param searchField search field
+     * @param searchString value for searching
+     * @param searchOper search operation
+     * @return JSON data for jqGrid
      */
-    @RequestMapping(value = "/customer/getdata", 
-            method = RequestMethod.GET, 
+    @RequestMapping(value = "/customer/getdata",
+            method = RequestMethod.GET,
             produces = MediaType.APPLICATION_JSON)
     @ResponseBody
     public JqGridData getData(
-            // количество записей на странице
             @RequestParam(value = "rows", required = false, defaultValue = "20") int rows,
-            // номер текущей страницы
             @RequestParam(value = "page", required = false, defaultValue = "1") int page,
-            // поле для сортировки
             @RequestParam(value = "sidx", required = false, defaultValue = "") String sIdx,
-            // направление сортировки
             @RequestParam(value = "sord", required = false, defaultValue = "asc") String sOrd,
-            // осуществляется ли поиск
             @RequestParam(value = "_search", required = false, defaultValue = "false") Boolean search,
-            // поле поиска
             @RequestParam(value = "searchField", required = false, defaultValue = "") String searchField,
-            // значение поиска
             @RequestParam(value = "searchString", required = false, defaultValue = "") String searchString,
-            // операция поиска
             @RequestParam(value = "searchOper", required = false, defaultValue = "") String searchOper,
-            // фильтр
-            @RequestParam(value="filters", required=false, defaultValue="") String filters) {
+            @RequestParam(value = "filters", required = false, defaultValue = "") String filters) {
         customerGrid.setLimit(rows);
         customerGrid.setPageNo(page);
         customerGrid.setOrderBy(sIdx, sOrd);
@@ -92,8 +79,17 @@ public class CustomerController {
         return customerGrid.getJqGridData();
     }
 
-    @RequestMapping(value = "/customer/create", 
-            method = RequestMethod.POST, 
+    /**
+     * Add customer
+     * 
+     * @param name
+     * @param address
+     * @param zipcode
+     * @param phone
+     * @return 
+     */
+    @RequestMapping(value = "/customer/create",
+            method = RequestMethod.POST,
             produces = MediaType.APPLICATION_JSON)
     @ResponseBody
     public Map<String, Object> addCustomer(
@@ -111,7 +107,17 @@ public class CustomerController {
         return map;
     }
 
-    @RequestMapping(value = "/customer/edit", 
+    /**
+     * Edit customer
+     * 
+     * @param customerId
+     * @param name
+     * @param address
+     * @param zipcode
+     * @param phone
+     * @return 
+     */
+    @RequestMapping(value = "/customer/edit",
             method = RequestMethod.POST,
             produces = MediaType.APPLICATION_JSON)
     @ResponseBody
@@ -131,8 +137,14 @@ public class CustomerController {
         return map;
     }
 
-    @RequestMapping(value = "/customer/delete", 
-            method = RequestMethod.POST, 
+    /**
+     * Delete Customer
+     * 
+     * @param customerId
+     * @return 
+     */
+    @RequestMapping(value = "/customer/delete",
+            method = RequestMethod.POST,
             produces = MediaType.APPLICATION_JSON)
     @ResponseBody
     public Map<String, Object> deleteCustomer(

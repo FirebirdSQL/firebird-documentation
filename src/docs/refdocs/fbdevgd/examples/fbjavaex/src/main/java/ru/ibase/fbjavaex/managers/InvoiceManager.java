@@ -1,6 +1,4 @@
-
 package ru.ibase.fbjavaex.managers;
-
 
 import java.sql.Timestamp;
 import org.jooq.DSLContext;
@@ -19,7 +17,7 @@ import static ru.ibase.fbjavaex.exampledb.Routines.spEditInvoiceLine;
 import static ru.ibase.fbjavaex.exampledb.Routines.spDeleteInvoiceLine;
 
 /**
- * Менеджер счёт фактур
+ * Invoice manager
  *
  * @author Simonov Denis
  */
@@ -29,95 +27,95 @@ public class InvoiceManager {
     private DSLContext dsl;
 
     /**
-     * Добавление шапки счёт фактуры
-     * 
+     * Add invoice
+     *
      * @param customerId
-     * @param invoiceDate 
+     * @param invoiceDate
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)     
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void create(Integer customerId, Timestamp invoiceDate) {
         int invoiceId = this.dsl.nextval(GEN_INVOICE_ID).intValue();
-        
-        spAddInvoice(this.dsl.configuration(), 
+
+        spAddInvoice(this.dsl.configuration(),
                 invoiceId,
                 customerId,
                 invoiceDate);
-    }    
-    
+    }
+
     /**
-     * Редактирование счёт фактуры
-     * 
+     * Edit invoice
+     *
      * @param invoiceId
      * @param customerId
-     * @param invoiceDate 
+     * @param invoiceDate
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)     
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void edit(Integer invoiceId, Integer customerId, Timestamp invoiceDate) {
-        spEditInvoice(this.dsl.configuration(), 
+        spEditInvoice(this.dsl.configuration(),
                 invoiceId,
                 customerId,
-                invoiceDate);        
+                invoiceDate);
     }
-    
+
     /**
-     * Оплата счёт фактуры
-     * 
-     * @param invoiceId 
+     * Payment of invoices
+     *
+     * @param invoiceId
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)     
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void pay(Integer invoiceId) {
-        spPayForInovice(this.dsl.configuration(), 
-                invoiceId);         
+        spPayForInovice(this.dsl.configuration(),
+                invoiceId);
     }
-    
+
     /**
-     * Удаление счёт фактуры
-     * 
-     * @param invoiceId 
+     * Delete invoice
+     *
+     * @param invoiceId
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)     
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void delete(Integer invoiceId) {
-        spDeleteInvoice(this.dsl.configuration(), 
-                invoiceId);      
+        spDeleteInvoice(this.dsl.configuration(),
+                invoiceId);
     }
-    
+
     /**
-     * Добавление позиции счёт фактуры
-     * 
+     * Add invoice item
+     *
      * @param invoiceId
      * @param productId
-     * @param quantity 
+     * @param quantity
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)     
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void addInvoiceLine(Integer invoiceId, Integer productId, Integer quantity) {
-        spAddInvoiceLine(this.dsl.configuration(), 
+        spAddInvoiceLine(this.dsl.configuration(),
                 invoiceId,
                 productId,
-                quantity);     
+                quantity);
     }
-    
+
     /**
-     * Редактирование позиции счёт фактуры
-     * 
+     * Edit invoice item
+     *
      * @param invoiceLineId
-     * @param quantity 
+     * @param quantity
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)     
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void editInvoiceLine(Integer invoiceLineId, Integer quantity) {
-        spEditInvoiceLine(this.dsl.configuration(), 
+        spEditInvoiceLine(this.dsl.configuration(),
                 invoiceLineId,
-                quantity);     
-    }  
-    
+                quantity);
+    }
+
     /**
-     * Удаление позиции счёт фактуры
-     * 
-     * @param invoiceLineId 
+     * Delete invoice item
+     *
+     * @param invoiceLineId
      */
-    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)     
+    @Transactional(propagation = Propagation.REQUIRED, isolation = Isolation.REPEATABLE_READ)
     public void deleteInvoiceLine(Integer invoiceLineId) {
-        spDeleteInvoiceLine(this.dsl.configuration(), 
-                invoiceLineId);      
-    }    
-    
+        spDeleteInvoiceLine(this.dsl.configuration(),
+                invoiceLineId);
+    }
+
 }
