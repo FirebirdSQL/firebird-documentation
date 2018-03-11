@@ -1,0 +1,2103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN"
+"../../../../tools/docbook-dtd/docbookx.dtd">
+<chapter id="fbdevgd30-firedac">
+  <title>Developing Firebird Applications in Delphi</title>
+
+  <para>This chapter will describe the process of developing applications for 
+  Firebird databases with the FireDac&#8482; data access components in the Embarcadero 
+  Delphi&#8482; XE5 environment. FireDac&#8482; is a standard set of components for 
+  accessing various databases in Delphi XE3 and higher versions. </para>
+
+  <section id="fbdg30-firedac-proj-start">
+    <title>Starting a Project</title>
+    <para>Create a new project using
+    <classname>
+    File&mdash;&gt;New&mdash;&gt;VCL Forms Application - Delphi</classname></para>
+    <para> Add a new data module using
+    <classname>
+    File&mdash;&gt;New&mdash;&gt;Other</classname> and selecting
+    <classname>
+    Delphi Projects&mdash;&gt;Delphi Files&mdash;&gt;Data Module</classname> in the wizard. This will
+    be the main data module in our project. It will contain some instances of global access 
+    components that must be accessible to all forms that are intended to work with data.
+    <classname>TFDConnection</classname> is an example of this kind of component.</para>
+  </section>
+
+  <section id="fbdg30-firedac-tfdconnection">
+    <title>TFDConnection Component</title>
+    <para>The <classname>TFDConnection</classname> component provides connectivity to various
+    types of databases.
+    We will specify an instance of this component in the <classname>Connection</classname> properties of other FireDac
+    components. The particular type of the database to which the connection will be established
+    depends on the value of the <classname>DriverName</classname> property. To access Firebird,
+    you need to set this property to <classname>FB</classname>.</para>
+
+    <para>For the connection to know exactly which access library it should work with, place
+    the <classname>TFBPhysFBDriverLink</classname> component in the main data module. Its
+    <classname>VendorLib</classname> property enables the path to the client library to be 
+    specified precisely. If it is not specified, the component will attempt to establish a 
+    connection via libraries registered in the system, for example, in <filename>system32</filename>, 
+    which might not be what you want at all.</para>
+  </section>
+
+  <section id="fbdg30-firedac-libpath">
+    <title>Path to the Client Library</title>
+    <para>We will place the necessary library in the <filename>fbclient</filename> folder
+    located in the application folder and use the following code for the OnCreate event
+    of the data module:
+      <programlisting>
+xAppPath := ExtractFileDir(Application.ExeName) + PathDelim;
+FDPhysFBDriverLink.VendorLib := xAppPath + 'fbclient' + PathDelim + 'fbclient.dll';
+      </programlisting>
+
+      <important>
+        <title>Important notes about <quote>bitness</quote></title>
+        <para>If you compile a 32-bit application, you should use the 32-bit fbclient.dll
+        library. For a 64-bit application, it should be the 64-bit library.</para>
+        <para>Along with the file fbclient.dll, it is advisable to place the following libraries
+        in the same folder: <filename>msvcp80.dll</filename> and <filename>msvcr80.dll</filename>
+        (for Firebird 2.5) as well as <filename>msvcp100.dll</filename> and <filename>msvcr100.dll</filename>
+        (for Firebird 3.0). These libraries are located either in the <filename>bin</filename>
+        subfolder (Firebird 2.5) or in the root folder of the server (Firebird 3.0).</para>
+        <para>For the application to show internal firebird errors correctly, it is necessary to copy
+        the file <filename>firebird.msg</filename> as well.
+          <itemizedlist spacing="compact">
+            <listitem>For Firebird 2.5 or earlier, the libraries must be one level up from the folder
+            with the client library, i.e., in the application folder for our purposes.</listitem>
+            <listitem>For Firebird 3, they must be in the same folder as the client library,
+            i.e. in the <filename>fbclient</filename> folder.</listitem>
+          </itemizedlist>
+        </para>
+      </important>
+    </para>
+
+    <section id="fbdg30-firedac-embedded">
+      <title>Developing for Embedded Applications</title>
+      <para>If you need your application to run without the installed Firebird server,
+      i.e. in the Embedded mode, for Firebird 2.5 you should replace <filename>fbclient.dll</filename>
+      with <filename>fbembed.dll</filename>.
+      Make sure that the width of the CPU register (64-bit or 32-bit) matches the application.
+      If necessary, the name of the library can be placed in the configuration file of your
+      application. </para>
+      <para>It is not necessary to change anything for Firebird 3.0, in which the working mode
+      depends on the connection string and the value of the <classname>Providers</classname> parameter
+      in the file firebird.conf/databases.conf.</para>
+      <note>
+        <title>TIP</title>
+        <para>Even if your application is intended to work with Firebird in the Embedded mode,
+        it is advisable to attach to the full server during development.  The reason is that
+        embedded Firebird runs in the same address space as the application and any application
+        connecting to a database in embedded mode must be able to obtain exclusive access
+        to that database.  Once that connection succeeds, no other embedded connections are
+        possible. When you are connected to your database in the Delphi IDE, the established
+        connection is in Delphi's application space, thus preventing your application from
+        being run successfully from the IDE.</para>
+        <para>Note, Firebird 3 embedded still requires exclusive access if the installed full
+        server is in Super (Superserver) mode.</para>
+      </note>
+    </section>
+  </section>   <!-- fbdg30-firedac-libpath -->
+
+  <section id="fbdg30-firedac-connparams">
+    <title>Connection parameters</title>
+    <para>The <classname>Params</classname> property of the <classname>TFDConnection</classname> component
+    contains the database connection parameters (username, password, connection character set, etc.).
+    If you invoke the <classname>TFDConnection</classname> property editor by double-clicking on the component, you will
+    see that those properties  have been filled automatically. The property set depends on the
+    database type.</para>
+    <figure id="tfdcon-prop-ed">
+      <title>TFDConnection property editor</title>
+      <mediaobject>
+        <imageobject>
+        <!-- actual image size is 519pxpx X 613px -->
+          <imagedata fileref="images/fbdevgd30_delphi_001.png" format="PNG"
+           width="415px" depth="490px"
+           scalefit="1" align="center" />  <!-- 80% -->
+        </imageobject>
+      </mediaobject>
+    </figure>
+
+    <table id="fbdg30-firedac-tbl-connprops">
+    <?dbfo keep-together='auto'?>
+      <title>TFDConnection component main properties</title>
+      <tgroup cols="2">
+        <colspec colname="colProp" colwidth="2*"></colspec>
+        <colspec colname="colPurp" colwidth="5*"></colspec>
+        <thead>
+          <row valign="middle">
+            <entry align="center">Property</entry>
+            <entry align="center">Purpose</entry>
+          </row>
+        </thead>
+        <tbody>
+          <row valign="middle">
+            <entry align="left">Pooled</entry>
+            <entry align="left">Whether a connection pool is used</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">Database</entry>
+            <entry align="left">The path to the database or its alias as defined
+            in the aliases.conf configuration file (or in databases.conf) of the
+            Firebird server</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">User_Name</entry>
+            <entry align="left">Firebird user name. Not used if OSAuthent is True.</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">Password</entry>
+            <entry align="left">Firebird password. Not used if OSAuthent is True.</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">OSAuthent</entry>
+            <entry align="left">Whether operating system authentication is used</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">Protocol</entry>
+            <entry align="left">Connection protocol. Possible values:
+            <itemizedlist spacing="compact">
+              <listitem>Local&mdash;local protocol</listitem>
+              <listitem>NetBEUI&mdash;named pipes, WNET</listitem>
+              <listitem>SPX&mdash;This property is for Novell's IPX/SPX protocol, which
+              has never been supported in Firebird</listitem>
+              <listitem>TCPIP&mdash;TCP/IP</listitem>
+            </itemizedlist></entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">Server</entry>
+            <entry align="left">Server name or its IP address. If the server is run
+            on a non-standard port, you also need to append the port number after a
+            slash, e.g., localhost/3051</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">SQLDialect</entry>
+            <entry align="left">SQL Dialect. It must match that of the database</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">RoleName</entry>
+            <entry align="left">Role name, if required</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">CharacterSet</entry>
+            <entry align="left">Connection character set name</entry>
+          </row>
+
+          <row valign="middle">
+            <entry align="left" namest="colProp" nameend="colPurp">Additional Properties:</entry>
+          </row>
+
+          <row valign="middle">
+            <entry align="left">Connected</entry>
+            <entry align="left"> Used to manage the database connection or check the connection
+            status. This property must be set to True in order for the wizards of other FireDac
+            components to work. If your application needs to request authentication data, it is
+            important to remember to reset this property to False before compiling your
+            application.</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">LoginPrompt</entry>
+            <entry align="left">Whether to request the username and password during a
+            connection attempt</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">Transaction</entry>
+            <entry align="left"> The TFDTransaction component that will be used as
+            default to conduct various TFDConnection transactions. If this property is
+            not explicitly specified, TFDConnection will create its own TFDTransaction
+            instance. Its parameters can be configured in the TxOptions property.</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">UpdateTransaction</entry>
+            <entry align="left">The TFDTransaction component that  is to be used as default
+            for the UpdateTransaction property of TFDQuery components, unless explicitly
+            specified for the dataset.  If this property is not specified explicitly, the
+            value from the Transaction property of the connection will be used, unless
+            it is explicitly specified for the dataset.</entry>
+          </row>
+        </tbody>
+      </tgroup>
+    </table>
+
+    <section id="fbdg30-firedac-connparams-ini">
+      <title>Connection Parameters in a Configuration File</title>
+      <para>Since the connection parameters, except for the username and password and
+      possibly the role, are usually common to all instances the application, we will
+      read them from the configuration file:
+        <programlisting>
+xIniFile := TIniFile.Create(xAppPath + 'config.ini');
+try
+  xIniFile.ReadSectionValues('connection', FDConnection.Params);
+finally
+  xIniFile.Free;
+end;
+        </programlisting>
+      </para>
+      <section id="fbdg30-firedac-config-ini">
+        <title>A Typical Configuration File</title>
+        <para>Typically, the <filename>config.ini</filename> file contains the following
+        lines:
+          <literallayout class="monospaced">
+  [connection]
+  DriverID=FB
+  Protocol=TCPIP
+  Server=localhost/3051
+  Database=examples
+  OSAuthent=No
+  RoleName=
+  CharacterSet=UTF8
+          </literallayout>
+        </para>
+        <para>You can get the contents of the connection section by copying the contents of
+        the <classname>Params</classname> property of the <classname>TFDConnection</classname> 
+        component after the wizard finishes its work.
+        <note>
+          <para>Actually, the common settings are usually located in
+          <filename>%AppData%\Manufacturer\AppName</filename> and are saved to that location
+          by the application installation software. However, it is convenient for the
+          configuration file to be stored somewhere closer during the development, for instance,
+          in the application folder.</para>
+          <para>Note that if your application is installed into the Program Files folder and
+          the configuration file is located there as well, it is likely that the file will be 
+          virtualized in Program Data and issues could arise with modifying it and reading the 
+          new settings subsequently.</para>
+        </note>
+        </para>
+      </section>
+    </section> <!-- fbdg30-firedac-connparams-ini -->
+
+    <section id="fbdg30-firedac-connecting">
+      <title>Connecting to the database</title>
+      <para>To connect to the database, it is necessary to change the <classname>Connected</classname> property
+      of the <classname>TFDConnection</classname> component to True or call the <classname>Open</classname> method.
+      You can use the <classname>Open</classname> method to pass the username and password as
+      parameters.</para>
+
+      <section id="fbdg30-firedac-auth-modification">
+        <title>A Little Modification</title>
+        <para>We will replace the standard database connection dialog box in our application
+        and allow users to make three mistakes while entering the authentication information.
+        After three failures, the application will be closed.</para>
+        <para>To implement it, we will write the following code in the <classname>OnCreate</classname>
+        event handler of the main data module.
+          <programlisting>
+// After three unsuccessful login attempts, we close the application.
+xLoginCount := 0;
+xLoginPromptDlg := TLoginPromptForm.Create(Self);
+while (xLoginCount &lt; MAX_LOGIN_COUNT) and
+      (not FDConnection.Connected) do
+begin
+  try
+    if xLoginPromptDlg.ShowModal = mrOK then
+      FDConnection.Open(
+        xLoginPromptDlg.UserName, xLoginPromptDlg.Password)
+    else
+      xLoginCount := MAX_LOGIN_COUNT;
+  except
+    on E: Exception do
+    begin
+      Inc(xLoginCount);
+      Application.ShowException(E);
+    end
+  end;
+end;
+xLoginPromptDlg.Free;
+if not FDConnection.Connected then
+  Halt;
+          </programlisting>
+        </para>
+      </section>
+    </section>
+  </section> <!-- fbdg30-firedac-connparams -->
+
+  <section id="fbdg30-firedac-transactions">
+    <title>Working with Transactions</title>
+    <para>The Firebird client allows any operations to be made only in the context of a
+    transaction so, if you manage to access data without explicitly calling
+    <classname>TFDTransaction.StartTransaction</classname>, it means that it was called
+    automatically somewhere deep in FireDac. It is highly recommended to avoid this
+    practice. For applications to work correctly with databases, it is advisable to
+    manage transactions manually, which means starting and committing them or rolling
+    them back with explicit calls.</para>
+
+    <para>The <classname>TFDTransaction</classname> component is used to manage transactions 
+    explicitly.</para>
+
+    <section id="fbdg30-firedac-tfdtransaction">
+      <title>TFDTransaction Component</title>
+      <para><classname>TFDTransaction</classname> has three methods for managing a 
+      transaction explicitly:
+      <classname>StartTransaction</classname>, <classname>Commit</classname> and
+      <classname>Rollback</classname>.  The following table summarises the properties available
+      to configure this component.</para>
+
+      <table id="fbdg30-firedac-tbl-transprops">
+      <?dbfo keep-together='auto'?>
+        <title>TFDTransaction component main properties</title>
+        <tgroup cols="2">
+          <colspec colname="colProp" colwidth="2*"></colspec>
+          <colspec colname="colPurp" colwidth="5*"></colspec>
+          <thead>
+            <row valign="middle">
+              <entry align="center">Property</entry>
+              <entry align="center">Purpose</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row valign="middle">
+              <entry align="left">Connection</entry>
+              <entry align="left">Reference to the FDConnection component</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">Options.AutoCommit</entry>
+              <entry align="left">Controls the automatic start and end of a transaction,
+              emulating Firebird's own transaction management.
+              The default value is True. See note (1) below for more details about
+              behaviour if the Autocommit option is True.</entry>
+            </row>
+            <row valign="middle">
+            <entry align="left">Options.AutoStart</entry>
+            <entry align="left">Controls the automatic start of a transaction. The
+            default value is True.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">Options.AutoStop</entry>
+              <entry align="left">Controls the automatic end of a transaction. The
+              default value is True.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">Options.DisconnectAction</entry>
+              <entry align="left">The action that will be performed when the connection is
+              closed while the transaction is active. The default value is
+              xdCommit&mdash;the transaction will be committed.  See note (2) below for
+              details of the other options.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">Options.EnableNested</entry>
+              <entry align="left">Controls nested transactions. The default value is True.
+              Firebird does not support nested transactions as such but FireDac can emulate
+              them using savepoints.  For more details, see note(3) below.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">Options.Isolation</entry>
+              <entry align="left">Specifies the transaction isolation level. It is the most
+              important transaction property. The default value is xiReadCommitted. The other
+              values that Firebird supports are xiSnapshot and xiUnspecified; also
+              xiSerializable, to some degree.  For more details about the available
+              isolation levels, see note (4) below.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">Options.Params</entry>
+              <entry align="left">Firebird-specific transaction attributes that can be
+              applied to refine the transaction parameters, overriding attributes applied
+              by the standard implementation of the selected isolation level.  For the
+              attributes that can be set and the <quote>legal</quote> combinations, see
+              note (5) below.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">Options.ReadOnly</entry>
+              <entry align="left">Indicates whether it is a read-only transaction.
+              The default value is False. Setting it to True disables any write activity.
+              Long-running read-only transactions in READ COMMITTED isolation are recommended
+              for activities that do not change anything in the database because they use
+              fewer resources and do not interfere with garbage collection.</entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+
+      <note>
+        <title>Note 1: AutoCommit=True</title>
+        <para>If the value of <classname>AutoCommit</classname> is set to True, FireDAC 
+        behaves as follows:
+          <itemizedlist spacing="compact">
+            <listitem>Starts a transaction (if required) before each SQL command and
+            ends the transaction after the SQL command completes execution</listitem>
+            <listitem>If the command is successfully executed, the transaction will
+            be ended by <database>COMMIT</database>. Otherwise, it will be ended 
+            by <database>ROLLBACK</database>.</listitem>
+            <listitem>If the application calls the StartTransaction method,
+            automatic transaction management will be disabled until that transaction is
+            ended by Commit or Rollback.</listitem>
+          </itemizedlist>
+        </para>
+      </note>
+
+      <note>
+        <title>Note 2: DisconnectAction</title>
+        <para>The following values are possible:
+          <itemizedlist spacing="compact">
+            <listitem>xdNone&mdash;nothing will be done. The DBMS will perform its default
+            action.</listitem>
+            <listitem>xdCommit&mdash;the transaction will be committed</listitem>
+            <listitem>xdRollback&mdash;the transaction will be rolled back</listitem>
+          </itemizedlist>
+        Note that, in some other data access components, the default value for the 
+        <classname>DisconnectAction</classname> property is <classname>xdRollback</classname> 
+        and will need to be set manually with Firebird to match the <classname>FDTransaction</classname>
+        setting.
+        </para>
+      </note>
+
+      <note>
+        <title>Note 3: EnableNested</title>
+        <para>If <classname>StartTransaction</classname> is called from within an active 
+        transaction, FireDac will emulate a nested transaction by creating a savepoint. 
+        Unless you are very confident in the effect of enabling nested transactions, set 
+        <classname>EnableNested</classname> to False.  With this setting, calling 
+        <classname>StartTransaction</classname> inside the transaction will raise an 
+        exception.</para>
+      </note>
+
+      <note>
+        <title>Note 4: Isolation</title>
+        <para>FireBird has three isolation levels: READ COMMITTED, SNAPSHOT (<quote>concurrency</quote>)
+        and SNAPSHOT TABLE STABILITY (<quote>consistency</quote>, rarely used).  FireDac supports  some
+        but not all configurations for READ COMMITTED and SNAPSHOT.  It uses the third level partially
+        to emulate the SERIALIZABLE isolation that Firebird does not support.
+          <itemizedlist>
+            <listitem>xiReadCommitted&mdash;the READ COMMITTED isolation level. FireDac starts ReadCommitted
+              transactions in Firebird with the following parameters:
+              read/write, rec_version, nowait</listitem>
+            <listitem>xiSnapshot&mdash;the SNAPSHOT (concurrency) isolation level. FireDac starts Snapshot
+              transactions in Firebird with the following parameters: read/write, wait</listitem>
+            <listitem>xiUnspecified&mdash;Firebird's default isolation level (SNAPSHOT) with the following
+              parameters: read/write, wait</listitem>
+            <listitem>xiSerializable&mdash;the SERIALIZABLE isolation level. Firebird does not support
+              serializable isolation, but FireDac emulates it by starting a SNAPSHOT TABLE STABILITY
+              (<quote>consistency</quote>) transaction with the following parameters: read/write,
+            wait.</listitem>
+          </itemizedlist>
+          Other parameters, not supported by Firebird at all, are:
+          <itemizedlist>
+            <listitem>xiDirtyRead&mdash;if this is selected (not a good idea!) READ COMMITTED will be used
+              instead</listitem>
+            <listitem>xiRepeatableRead&mdash;if this is selected, SNAPSHOT will be used instead</listitem>
+          </itemizedlist>
+        </para>
+      </note>
+
+      <note>
+        <title>Note 5: Firebird-specific Transaction Attributes</title>
+        <para>Attributes that can be customised in Options.Params are:
+          <itemizedlist>
+            <listitem><classname>read write</classname>, the default read mode for all of
+              the options.isolation selections&mdash;see note (4) above.
+              Set <classname>write</classname> off if you want read-only mode.  Alternatively,
+              you can set <classname>Options.ReadOnly</classname> to True to achieve the same 
+              thing.  There is no such thing as a <quote>write-only</quote> transaction.</listitem>
+
+            <listitem><classname>read_committed</classname>, <classname>concurrency</classname>
+              and <classname>consistency</classname> are isolation levels.</listitem>
+
+            <listitem><classname>wait</classname> and <classname>nowait</classname>
+              are conflict resolution settings, determining whether the transaction is
+              to wait for a conflict to resolve</listitem>
+
+            <listitem><classname>rec_version</classname> and <classname>no rec_version</classname>
+              provide an option that is applicable only to READ COMMITTED transactions.  The
+              default <classname>rec_version</classname> lets this transaction read the latest
+              committed version of a record and overwrite it if the transaction ID of the latest
+              committed version is newer (higher) than the ID of this transaction. The
+              <classname>no rec_version</classname> setting will block this transaction from
+              reading the latest committed version if an update is pending from any other
+              transaction.</listitem>
+          </itemizedlist>
+        </para>
+      </note>
+
+      <section id="fbdg30-firedac-multitransaction">
+        <title>Multiple Transactions</title>
+        <para>Unlike many other DBMSs, Firebird allows as many <classname>TFDTransaction</classname> 
+        objects as you need to associate with the same connection. In our application, we will
+        use one common read transaction for all primary and secondary modules and one
+        read/write transaction for each dataset.</para>
+        <para>We do not want to rely on starting and ending transactions automatically: we want
+        to have full control.  That is why <classname>Options.AutoCommit=False</classname>,
+        <classname>Options.AutoStart=False</classname> and <classname>Options.AutoStop=False</classname>
+        are set in all of our transactions.</para>
+      </section>
+
+    </section> <!-- fbdg30-firedac-tfdtransaction -->
+  </section> <!-- fbdg30-firedac-transactions -->
+
+  <section id="fbdg30-firedac-datasets">
+    <title>Datasets</title>
+    <para>The components <classname>TFDQuery</classname>, <classname>TFDTable</classname>, 
+    <classname>TFDStoredProc</classname> and <classname>TFDCommand</classname> are the
+    components for working with data in FireDac.  <classname>TFDCommand</classname> does not 
+    deliver a dataset and, when TFDStoredProc is used with an executable stored procedure,
+    rather than a selectable one, it does not deliver a dataset, either.</para>
+    
+    <para><classname>TFDQuery</classname>, <classname>TFDTable</classname> and 
+    <classname>TFDStoredProc</classname> are inherited 
+    from <classname>TFDRdbmsDataSet</classname>.</para>
+    <para>Apart from datasets for working with the database directly, FireDac also has
+    the <classname>TFDMemTable</classname> component for working with in-memory datasets. 
+    It is functionally equivalent to <classname>TClientDataSet</classname>.</para>
+    <para>The main component for working with datasets, <classname>TFDQuery</classname>, 
+    can be used for practically any purpose. The <classname>TFDTable</classname> and 
+    <classname>TFDStoredProc</classname> components are just variants, expanded or reduced 
+    to meet differences in functionality. No more will be said about them and we will not 
+    be using them in our application. If you wish, you can learn about them in the FireDac 
+    documentation.</para>
+    
+    <para>The purpose of a dataset component is to buffer records retrieved by the 
+    SELECT statement, commonly for displaying in a grid and providing for the current 
+    record in the buffer (grid) to be  editable. Unlike the IBX <classname>TIBDataSet</classname> 
+    component, <classname>TFDQuery</classname> component does not have the properties 
+    <classname>RefreshSQL</classname>, <classname>InsertSQL</classname>,
+    <classname>UpdateSQL</classname> and <classname>DeleteSQL</classname>. 
+    Instead, a separate <classname>TFDUpdateSQL</classname> object specifies the statement
+    for dataset modifications and the dataset component carries a reference to that
+    component in its <classname>UpdateObject</classname> property.</para>
+    <note>
+      <title>RequestLive Property</title>
+      <para>Sometimes it is possible to make an <classname>FDQuery</classname> object editable
+      without referring, through the <classname>UpdateObject</classname> property, to an 
+      <classname>FDUpdateSQL</classname> object that specifies queries for insert, update 
+      and delete.  The property <classname>UpdateOptions.RequestLive</classname> can be set 
+      to True for sets that are naturally updatable and the object will generate the 
+      modification queries for you. However, because this approach puts strict limitations 
+      on the SELECT query, it is not always useful to rely on it. </para>
+    </note>
+    
+    <section id="fbdg30-firedac-tfdquery">
+      <title>TFDQuery Component</title>
+
+      <table id="fbdg30-firedac-tbl-queryprops">
+      <?dbfo keep-together='auto'?>
+        <title>TFDQuery component main properties</title>
+        <tgroup cols="2">
+          <colspec colname="colProp" colwidth="3*"></colspec>
+          <colspec colname="colPurp" colwidth="5*"></colspec>
+          <thead>
+            <row valign="middle">
+              <entry align="center">Property</entry>
+              <entry align="center">Purpose</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row valign="middle">
+              <entry align="left">Connection</entry>
+              <entry align="left">Reference to the FDConnection object</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">MasterSource</entry>
+              <entry align="left">If the dataset is to be used as detail to a
+              master dataset, this property refers to the data source (TDataSource) 
+              of the master set</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">Transaction</entry>
+              <entry align="left">If specified, refers to the transaction within which
+              the query will be executed. If not specified, the default transaction for 
+              the connection will be used.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateObject</entry>
+              <entry align="left">Reference to the FDUpdateSQL object providing for the 
+              dataset to be editable when the SELECT query does not meet the requirements 
+              for automatic generation of modification queries with 
+              UpdateOptions.RequestLive=True.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateTransaction</entry>
+              <entry align="left">The transaction within which modification queries will be 
+              executed. If the property is not specified the transaction from the 
+              Transaction property of the connection will be used.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.CheckRequired</entry>
+              <entry align="left">If set to True (the default) FireDac controls the Required
+              property of the corresponding NOT NULL fields. If you keep it True and a field
+              with the Required=True has no value assigned to it, an exception will be raised
+              when the Post method is called. This might not be what you want if a value is 
+              going to be assigned to this field later in BEFORE triggers.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.EnableDelete</entry>
+              <entry align="left">Specifies whether a record can be deleted from the dataset. 
+              If EnableDelete=False, an exception will be raised when the Delete method is 
+              called.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.EnableInsert</entry>
+              <entry align="left">Specifies whether a record can be inserted into the 
+              dataset. If EnableInsert=False, an exception will be raised when the 
+              Insert/Append method is called.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.EnableInsert</entry>
+              <entry align="left">Specifies whether a record can be inserted into the 
+              dataset. If EnableInsert=False, an exception will be raised when the 
+              Insert/Append method is called.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.EnableUpdate</entry>
+              <entry align="left">Specifies whether a record can be edited in the
+              dataset. If EnableUpdate=False, an exception will be raised when the 
+              Edit method is called.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.FetchGeneratorPoint</entry>
+              <entry align="left">Controls the moment when the next value is
+              fetched from the generator specified in the 
+              UpdateOptions.GeneratorName property or in the GeneratorName 
+              property of the auto-incremental field 
+              AutoGenerateValue=arAutoInc. The default is <classname>gpDeferred</classname>, 
+              causing the next value to be fetched from the generator before 
+              a new record is posted in the database, i.e., during Post or 
+              ApplyUpdates.  For the full set of possible values, 
+              see note (1) below.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.GeneratorName</entry>
+              <entry align="left">The name of the generator from which the next 
+              value for an auto-incremental field is to be fetched.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.ReadOnly</entry>
+              <entry align="left">Specifies whether it is a read-only dataset. The 
+              default value is False. If the value of this property is set to True, 
+              the EnableDelete, EnableInsert and EnableUpdate properties will be 
+              automatically set to False.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.RequestLive</entry>
+              <entry align="left">Setting RequestLive to True makes a query
+              editable, if possible. Queries for insert, update and delete
+              will be generated automatically. This  setting imposes strict 
+              limitations on the SELECT query. It is supported for backward 
+              compatibility with the ancient BDE and is not recommended.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">UpdateOptions.UpdateMode</entry>
+              <entry align="left">Controls how to check whether a record has
+              been modified. This property allows control over possible 
+              overwriting of updates in cases where one user is taking a long 
+              time to edit a record while another user has been editing the 
+              same record simultaneously and completes the update earlier.
+              The default is upWhereKeyOnly. For information about the 
+              available modes, see note (2) below.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">CachedUpdates</entry>
+              <entry align="left">Specifies whether the dataset cache defers changes 
+              in the dataset buffer. If this property is set to True, any changes (Insert/Post, 
+              Update/Post, Delete) are saved to a special log and the application 
+              must apply them explicitly by calling the ApplyUpdates method. All changes will
+              be made within a small period of time and within one short transaction. 
+              The default value of this property is False.</entry>
+            </row>
+            <row valign="middle">
+              <entry align="left">SQL</entry>
+              <entry align="left">Contains the text of the SQL query. If this property is
+              a SELECT statement, execute it by calling the Open methold. Use the Execute 
+              or ExecSQL for executing a statement that does not return a dataset.</entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+
+      <note>
+        <title>Note 1: UpdateOptions.FetchGeneratorPoint</title>
+        <para>The property UpdateOptions.FetchGeneratorPoint can take 
+        the following values:
+          <itemizedlist spacing="compact">
+            <listitem><classname>gpNone</classname>&mdash;no value is fetched from
+            the generator</listitem>
+            <listitem><classname>gpImmediate</classname>&mdash;the next value is fetched
+            from the generator right after the Insert/Append method is called</listitem>
+            <listitem><classname>gpDeferred</classname>&mdash;the next value is fetched
+            during Post or ApplyUpdates</listitem>
+          </itemizedlist>
+        </para>
+      </note>
+
+      <note>
+        <title>Note 2: UpdateOptions.UpdateMode</title>
+        <para>The user in a lengthy editing session could be unaware
+        that a record has been updated one or more times during his
+        editing session, perhaps causing his own changes to overwrite
+        someone else's updates.  The <classname>UpdateOptions.UpdateMode</classname> property
+        allows a choice of behaviours to lessen or avoid this risk:
+          <itemizedlist>
+            <listitem>
+            <para><classname>upWhereAll</classname>&mdash;check whether a record exists
+            by its primary key + check all columns for old values, e.g.,
+              <literallayout class="monospaced">
+  update table set ...
+  where pkfield = :old_ pkfield and
+            client_name =  :old_client_name and
+           info = :old_info ...
+              </literallayout>
+            With <classname>upWhereAll</classname> set, the update query will change content
+            in a record only if the record has not been edited by anyone else
+            since our transaction started. It is especially important if there
+            are dependencies between values in columns, such as minimum and
+            maximum wages, etc.
+            </para>
+            </listitem>
+
+            <listitem>
+            <para><classname>upWhereChanged</classname>&mdash;check whether a record exists
+            by its primary key + check for old values only in the columns
+            being edited.
+              <literallayout class="monospaced">
+  update table set ...
+  where pkfield = :old_pkfield and
+      client_name = :old_client
+              </literallayout>
+            </para>
+            </listitem>
+            <listitem>
+            <para><classname>upWhereKeyOnly</classname>&mdash;check whether a record exists
+            by its primary key. This check corresponds to the automatically
+            generated UpdateSQL query.</para>
+            <para>To avoid (or handle) update conflicts in a multi-user
+            environment, typically you need to add WHERE conditions manually.
+            You would need a similar tactic, of course, to implement a process
+            that emulates upWhereChanged, removing the unused column modifications
+            from the update table set,  leaving in the update list only the
+            columns that are actually modified.  The update query could otherwise
+            overwrite someone else's updates of this record.</para>
+            <para>Obviously, the UpdateSQL needs to be created dynamically.</para>
+            <para>If you want to specify the settings for detecting update conflicts
+             individually for each field, you can use the ProviderFlags property
+             for each field.</para>
+            </listitem>
+          </itemizedlist>
+        </para>
+      </note>
+    </section> <!-- fbdg30-firedac-tfdquery -->
+
+    <section id="fbdg30-firedac-tupdatesql">
+      <title>TFDUpdateSQL component</title>
+      <para>The <classname>TFDUpdateSQL</classname> component enables you to refine or redefine
+      the SQL command  that Delphi generates automatically for updating a
+      dataset. It can be used to update an <classname>FDQuery</classname> object, an
+      <classname>FDTable</classname> object or data underlying an <classname>FDStoredProc</classname>
+      object.</para>
+      <para>Using <classname>TFDUpdateSQL</classname> is optional for
+      <classname>TFDQuery</classname> and <classname>TFDTable</classname> because
+      these components can generate statements automatically, that can
+      sometimes be used for posting updates from a dataset to the database.
+      For updating a dataset that is delivered into an <classname>FDStoredProc</classname> object,
+      use of the <classname>TFDUpdateSQL</classname> is not optional.  The developer
+      must figure out a statement that will result in the desired updates.  If only one
+      table is updated, a direct DML statement might be sufficient.  Where multiple tables
+      are affected, an executable stored procedure will be unavoidable.</para>
+      <para>We recommend that you always use it, even in the simplest cases,
+      to give yourself full control over  the queries that are requested
+      from your application.</para>
+
+      <section id="fbdg30-firedac-tupdatesql-props">
+        <title>TFDUpdateSQL Properties</title>
+        <para>To specify the SQL DML statements at design time, double-click
+        on the <classname>TFDUpdateSQL</classname> component in your data module to open the property
+        editor.
+          <important>
+            <para>Each component has its own design-time property editor.  For
+            multiple data-aware editors to run, FireDac needs an active connection
+            to the database (<classname>TFDConnection.Connected = True</classname>) and a transaction
+            in the autostart mode (TFDTransaction.Options.AutoStart = True)
+            for each one.</para>
+
+            <para>Design-time settings could interfere with the way the application
+            is intended to work. For instance, the user is supposed to log in to the
+            program using his username, but the FDConnection object connects
+            to the database as SYSDBA.</para>
+            <para>It is advisable to check the <classname>Connected</classname> property of the
+            <classname>FDConnection</classname> object and reset it each time you use the data-aware
+            editors. <classname>AutoStart</classname> will have to be enabled and disabled for a
+            a read-only transaction as well.</para>
+          </important>
+        </para>
+        <para>
+          <figure id="tfdupdsql-prop-ed">
+            <title>TFDUpdateSQL property editor</title>
+            <mediaobject>
+              <imageobject>
+              <!-- actual image size is 567px X 454px -->
+                <imagedata fileref="images/fbdevgd30_delphi_002.png" format="PNG"
+                width="454px" depth="363px"
+                scalefit="1" align="center" /> <!-- 80% -->
+              </imageobject>
+            </mediaobject>
+          </figure>
+        </para>
+        <para>You can use the Generate tab to make writing Insert/Update/Delete/Refresh
+        queries easier for yourself. Select the table to be updated, its key fields,
+        the fields to be updated and the fields that will be reread after the update
+        and click the Generate SQL button to have Delphi generate the queries
+        automatically.  You will be switched to the SQL Commands tab where you can
+        correct each query.</para>
+        <figure id="updsql-cmd-editor">
+          <title>TFDUpdateSQL SQL command editor</title>
+          <mediaobject>
+            <imageobject>
+            <!-- actual image size is 567px X 454px -->
+              <imagedata fileref="images/fbdevgd30_delphi_003.png" format="PNG"
+              width="454px" depth="363px"
+              scalefit="1" align="center" /> <!-- 80% -->
+            </imageobject>
+          </mediaobject>
+        </figure>
+        <note>
+          <para>Since product_id is not included in <classname>Updating Fields</classname>,
+          it is absent from the generated Insert query. It is assumed that this column
+          is filled automatically by a generator call in a BEFORE INSERT trigger or,
+          from Firebird 3.0 forward, it could be an IDENTITY column. When a value is
+          fetched from the generator for this column at the server side, it is
+          recommended to add the PRODUCT_ID column manually to the RETURNING
+          clause of the INSERT statement.</para>
+        </note>
+
+        <section id="fbdg30-firedac-tupdatesql-options">
+          <title>The Options Tab</title>
+          <para>The Options tab contains some properties that can affect the
+          process of query generation. These properties are not related to the
+          <classname>TFDUpdateSQL</classname> component itself.  Rather,
+          for convenience, they are references to the <classname>UpdateOptions</classname>
+          properties of the dataset that has the current <classname>TFDUpdateSQL</classname>
+          specified in its <classname>UpdateObject</classname> property.
+          </para>
+        </section>
+
+        <table id="fbdg30-firedac-tbl-updsqlprops">
+        <?dbfo keep-together='auto'?>
+          <title>TFDUpdateSQL component main properties</title>
+          <tgroup cols="2">
+            <colspec colname="colProp" colwidth="2*"></colspec>
+            <colspec colname="colPurp" colwidth="5*"></colspec>
+            <thead>
+              <row valign="middle">
+                <entry align="center">Property</entry>
+                <entry align="center">Purpose</entry>
+              </row>
+            </thead>
+            <tbody>
+              <row valign="middle">
+                <entry align="left">Connection</entry>
+                <entry align="left">Reference to the TFDConnection component</entry>
+              </row>
+              <row valign="middle">
+                <entry align="left">DeleteSQL</entry>
+                <entry align="left">The SQL query for deleting a record</entry>
+              </row>
+              <row valign="middle">
+                <entry align="left">FetchRowSQL</entry>
+                <entry align="left">The SQL query for returning a current record
+                after it has been updated or inserted&mdash;<quote>RefreshSQL</quote></entry>
+              </row>
+              <row valign="middle">
+                <entry align="left">InsertSQL</entry>
+                <entry align="left">The SQL query for inserting a record</entry>
+              </row>
+              <row valign="middle">
+                <entry align="left">LockSQL</entry>
+                <entry align="left">The SQL query for locking a current record. (FOR
+                UPDATE WITH LOCK)</entry>
+              </row>
+              <row valign="middle">
+                <entry align="left">ModifySQL</entry>
+                <entry align="left">The SQL query for modifying a record</entry>
+              </row>
+              <row valign="middle">
+                <entry align="left">UnlockSQL</entry>
+                <entry align="left">The SQL query for unlocking a current record.
+                It is not used in Firebird.</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </table>
+        <para>Notice that, because the <classname>TFDUpdateSQL</classname> component 
+        does not execute modification queries directly, it has no <classname>Transaction</classname> 
+        property. It acts as a replacement for queries automatically generated in the parent
+        <classname>TFDRdbmsDataSet</classname>.</para>
+
+      </section> <!--fbdg30-firedac-tupdatesql-props -->
+    </section> <!-- fbdg30-firedac-tupdatesql -->
+  </section> <!--fbdg30-firedac-datasets -->
+
+  <section id="fbdg30-firedac-tfdcommand">
+    <title>TFDCommand component</title>
+    <para>The <classname>TFDCommand</classname> component is used to execute SQL queries. It is not
+    descended from <classname>TDataSet</classname> so it is valid to use only for executing SQL queries
+    that do not return datasets.</para>
+    
+    <table id="fbdg30-firedac-tbl-tfdcommand">
+    <?dbfo keep-together='auto'?>
+      <title>TFDCommand component main properties</title>
+      <tgroup cols="2">
+        <colspec colname="colProp" colwidth="2*"></colspec>
+        <colspec colname="colPurp" colwidth="5*"></colspec>
+        <thead>
+          <row valign="middle">
+            <entry align="center">Property</entry>
+            <entry align="center">Purpose</entry>
+          </row>
+        </thead>
+        <tbody>
+          <row valign="middle">
+            <entry align="left">Connection</entry>
+            <entry align="left">Reference to the TFDConnection component</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">Transaction</entry>
+            <entry align="left">The transaction  within which the SQL command will 
+            be executed</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">CommandKind</entry>
+            <entry align="left">Type of command. The types are described in the section 
+            below.</entry>
+          </row>
+          <row valign="middle">
+            <entry align="left">CommandText</entry>
+            <entry align="left">SQL query text</entry>
+          </row>
+        </tbody>
+      </tgroup>
+    </table>
+    <section id="fbdg30-firedac-commandkind">
+      <title>Types of Command</title>
+      <para>Usually, the command type is determined automatically from the text 
+      of the SQL statement. The following values are available for the property
+      <classname>TFDCommand.CommandKind</classname> to cater for cases where the 
+      internal parser might be unable to make correct, unambiguous assumptions 
+      based on the statement text alone:
+        <itemizedlist>
+          <listitem>skUnknown&mdash;unknown. Tells the internal parser to
+          determine the command type automatically from its analysis of the 
+          text of the command</listitem>
+          <listitem>skStartTransaction&mdash;a command for starting a transaction</listitem>
+          <listitem>skCommit&mdash;a command for ending and committing a transaction</listitem>
+          <listitem>skRollback&mdash;a command for ending and rolling back a transaction</listitem>
+          <listitem>skCreate&mdash;a CREATE &hellip; command for creating a new metadata object</listitem>
+          <listitem>skAlter&mdash;an ALTER &hellip; command for altering a metadata object</listitem>
+          <listitem>skDrop&mdash;a DROP &hellip; command for deleting a metadata object</listitem>
+          <listitem>skSelect&mdash;a SELECT command for retrieving data</listitem>
+          <listitem>skSelectForLock&mdash;a SELECT &hellip; WITH LOCK command for locking 
+          the selected rows</listitem>
+          <listitem>skInsert&mdash;an INSERT &hellip; command for inserting a new 
+          record</listitem>
+          <listitem>skUpdate&mdash;an UPDATE &hellip; command for modifying records</listitem>
+          <listitem>skDelete&mdash;a DELETE &hellip; command for deleting records</listitem>
+          <listitem>skMerge&mdash;a MERGE INTO &hellip; command</listitem>
+          <listitem>skExecute&mdash;an EXECUTE PROCEDURE or or EXECUTE BLOCK command</listitem>
+          <listitem>skStoredProc&mdash;a stored procedure call</listitem>
+          <listitem>skStoredProcNoCrs&mdash;a call to a stored procedure that does not
+          return a cursor</listitem>
+          <listitem>skStoredProcWithCrs&mdash;a call to a stored procedure that returns 
+          a cursor</listitem>
+        </itemizedlist>
+      </para>
+    </section>
+  </section> <!-- fbdg30-firedac-tfdcommand -->
+
+  <section id="fbdg30-firedac-primary-modules">
+    <title>Creating the Primary Modules</title>
+    <para>We will create two  primary modules in our application: a product module 
+    and a customer module. Each primary dataset is displayed on a form by means of 
+    a <classname>TDBGrid</classname> grid and a toolbar with buttons. The business 
+    logic of working with the dataset will be located in a separate DataModule that 
+    contains a <classname>TDataSource</classname> data source, a <classname>TFDQuery</classname> 
+    dataset, and two <classname>TFDTransaction</classname> transactions, one read-only 
+    and one read/write.</para>
+    <para>As our model for creating datasets, we will create the Customer dataset on the
+    dCustomers datamodule:
+      <figure id="dcust-datamodule">
+        <title>dCustomers datamodule</title>
+        <mediaobject>
+          <imageobject>
+            <!-- actual image CROPPED size is 435px X 311px -->
+            <imagedata fileref="images/fbdevgd30_delphi_004.png" format="PNG"
+               width="435px" depth="311px"
+               scalefit="1" align="center" /> <!-- 100% -->
+          </imageobject>
+        </mediaobject>
+      </figure>
+    On tabbing to the Customers form, this is the initial view. The DataSource component
+    is not visible on the form because it is located in the dCustomers datamodule.</para>
+
+    <figure id="cust-form-init">
+      <title>Customers form, initial view</title>
+      <mediaobject>
+        <imageobject>
+        <!-- actual image size is 684px X 443px -->
+          <imagedata fileref="images/fbdevgd30_delphi_005.png" format="PNG"
+          width="492px" depth="319px"
+          scalefit="1" align="center" /> <!-- 72% -->
+        </imageobject>
+      </mediaobject>
+    </figure>
+    <para>We have placed the <classname>TFDQuery</classname> component in the dCustomers datamodule and named
+    it qryCustomers. This dataset will be referred to in the <classname>DataSet</classname> property of the
+    DataSource data source in DCustomers. We specify the read-only transaction trRead 
+    in the <classname>Transaction</classname> property, the trWritetransaction in the 
+    <classname>UpdateTransaction</classname> property and, for the <classname>Connection</classname> 
+    property, the connection located in the main data module. We populate the <classname>SQL</classname> 
+    property with the following query:
+      <programlisting>
+SELECT
+  customer_id,
+  name,
+  address,
+  zipcode,
+  phone
+FROM
+  customer
+ORDER BY name
+      </programlisting>
+    </para>
+
+    <section id="fbdg30-firedac-modules-readtransaction">
+      <title>The Read-only Transaction</title>
+      <para>The trRead read transaction is started when the dataset form is displayed
+      (the <classname>OnActivate</classname> event) and is ended when the form is closed. 
+      READ COMMITTED isolation level (<classname>Options.Isolation = xiReadCommitted</classname>) 
+      is usually used to show data in grids because it allows the transaction to see 
+      changes committed in the database by other users by just repeating queries (rereading data) 
+      without the transaction being restarted.</para>
+      <para>Since this transaction is used only to read data, we set the 
+      <classname>Options.ReadOnly</classname> property to True. Thus, our transaction will 
+      have the following parameters:
+      read read_committed rec_version.</para>
+        <note>
+          <title>Why?</title>
+          <para>A transaction with exactly these parameters can remain open in Firebird as long
+          as necessary (days, weeks,  months) without locking other transactions or affecting the
+          accumulation of garbage in the database because, with these parameters, a transaction
+          is started on the server as committed.</para>
+        </note>
+      <para>
+      We set the property <classname>Options.DisconnectAction</classname> to <classname>xdCommit</classname>,
+      which perfectly fits a read-only transaction. Finally, the read transaction will have 
+      the following properties:
+        <literallayout class="monospaced">
+  Options.AutoStart = False
+  Options.AutoCommit = False
+  Options.AutoStop = False
+  Options.DisconnectAction = xdCommit
+  Options.Isolations = xiReadCommitted
+  Options.ReadOnly = True
+        </literallayout>
+      </para>
+      <important>
+        <para>Although we do not discuss reporting in this manual, be aware that you should not
+        use such a transaction for reports, especially if they use several queries in sequence.
+        A transaction with READ COMMITTED isolation will see all new committed changes when
+        rereading data.  The recommended configuration for reports is a short read-only transaction
+        with SNAPSHOT isolation 
+        (<classname>Options.Isolation = xiSnapshot and Options.ReadOnly= True</classname>).</para>
+      </important>
+    </section>
+
+    <!-- a section close is missing before here -->
+
+    <section id="fbdg30-firedac-modules-writetransaction">
+      <title>The Read/Write Transaction</title>
+      <para>The write transaction trWrite that we use for our <classname>FDUpdateSQL</classname> 
+      object must be as short as possible to prevent the oldest active transaction from getting 
+      <quote>stuck</quote> and inhibiting garbage collection.  High levels of uncollected garbage 
+      will lead to lower performance. Since the write transaction is very short, we can use the 
+      SNAPSHOT isolation level. The default value of the 
+      <classname>Options.DisconnectAction</classname> property, <classname>xdCommit</classname>, 
+      is not appropriate for write transactions, so it should be set to <classname>xdRollback</classname>. 
+      We will not rely on starting and ending transactions automatically. Instead, we will 
+      start and end a transaction explicitly. Thus, our transaction should have the following properties:
+
+        <literallayout class="monospaced">
+  Options.AutoStart = False
+  Options.AutoCommit = False
+  Options.AutoStop = False
+  Options.DisconnectAction = xdRollback
+  Options.Isolations = xiSnapshot
+  Options.ReadOnly = False
+        </literallayout>
+      </para>
+      <section id="fbdg30-firedac-modules-whichlevel">
+        <title>SNAPSHOT vs READ COMMITTED Isolation</title>
+        <para>It is not absolutely necessary to specify SNAPSHOT isolation for simple
+        INSERT/UPDATE/DELETE operations. However, if a table has complex triggers
+        or a stored procedure is executed instead of a simple INSERT/UPDATE/DELETE query,
+        it is advisable to use SNAPSHOT.  The reason is that READ COMMITTED isolation
+        does not ensure the read consistency of the statement within one transaction,
+        since the SELECT statement in this isolation can return data that were
+        committed to the database after the transaction began. In principle, SNAPSHOT
+        isolation is recommended  for short-running transactions. </para>
+      </section>
+    </section> <!-- fbdg30-firedac-modules-writetransaction -->
+
+    <section id="fbdg30-firedac-modules-customer-config">
+      <title>Configuring the Customer Module for Editing</title>
+      <para>In this section, we will configure some properties in the 
+      <classname>qryCustomer</classname> and <classname>FDUpdateCustomer</classname>
+       objects to make the Customer dataset editable.</para>
+
+      <section id="fbdg30-firedac-modules-editing">
+        <title>The TFDUpdateSQL Settings</title>
+        <para>To make the dataset editable, the <classname>InsertSQL, ModifySQL, 
+        DeleteSQL</classname> and <classname>FetchRowSQL</classname> properties 
+        should be specified in the <classname>FDUpdateSQL</classname> object that 
+        is linked to the dataset. The wizard can generate these statements but it 
+        may be necessary to correct some things afterwards. For example, you can 
+        add a RETURNING clause, remove some columns from the update list or cancel 
+        an automatically generated stored procedure call entirely.</para>
+        <section id="fbdg30-firedac-modules-insertsql">
+          <title>InsertSQL</title>
+          <programlisting>
+INSERT INTO customer (
+  customer_id,
+  name,
+  address,
+  zipcode,
+  phone)
+VALUES (:new_customer_id,
+  :new_name,
+  :new_address,
+  :new_zipcode,
+  :new_phone)
+          </programlisting>
+        </section>
+        <section id="fbdg30-firedac-modules-modifysql">
+          <title>ModifySQL</title>
+          <programlisting>
+UPDATE customer
+SET name = :new_name,
+    address = :new_address,
+    zipcode = :new_zipcode,
+    phone = :new_phone
+WHERE (customer_id = :old_customer_id)
+          </programlisting>
+        </section>
+        <section id="fbdg30-firedac-modules-deletesql">
+          <title>DeleteSQL</title>
+          <programlisting>
+DELETE FROM customer
+WHERE (customer_id = :old_customer_id)
+          </programlisting>
+        </section>
+        <section id="fbdg30-firedac-modules-fetchrowsql">
+          <title>FetchRowSQL</title>
+          <programlisting>
+SELECT
+  customer_id,
+  name,
+  address,
+  zipcode,
+  phone
+FROM
+  customer
+WHERE customer_id = :old_customer_id
+          </programlisting>
+        </section>
+      </section> <!-- fbdg30-firedac-modules-editing -->
+
+      <section id="fbdg30-firedac-modules-getgenerator">
+        <title>Getting a Generator Value</title>
+        <para>In this project, we will get the value from the generator before
+        making an insert into the table. To enable that, specify the following
+        values for the properties of the <classname>TFDQuery</classname> component:
+          <literallayout class="monospaced">
+  UpdateOptions.GeneratorName = GEN_CUSTOMER_ID
+     and
+  UpdateOptions.AutoIncFields = CUSTOMER_ID
+
+          </literallayout>
+          <note>
+            <para>This method works only for autoinc fields that are populated by
+            explicit generators (sequences).  It is not applicable to the IDENTITY 
+            type of autoinc key introduced in Firebird 3.0.</para>
+          </note>
+        </para>
+        <para>Another way to get the value from the generator is to return it after the 
+        INSERT is executed by means of a RETURNING clause.  This method, which works 
+        for IDENTITY fields as well, will be shown later, in the topic
+        <link linkend="fbdg30-firedac-modules-returningclause">Using a RETURNING 
+        Clause to Acquire an Autoinc Value</link>.
+        </para>
+      </section>
+    </section> <!-- fbdg30-firedac-modules-customer-config -->
+    
+    <section id="fbdg30-firedac-modules-customer-impl">
+      <title>Implementing the Customer Module</title>
+      <para>Modal forms are often used to add a new record or to edit an existing 
+      one. Once the modal form is closed by the mrOK result, the changes are posted 
+      to the database. Database-aware visual components are usually used to create 
+      this kind of form. These components enable you to display the values of some 
+      fields from the current record and immediately accept the user's changes in 
+      the corresponding fields if the dataset is in the Insert/Edit mode, i.e. before 
+      Post.</para>
+      
+      <para>The only way to switch the dataset to Insert/Edit mode is by starting a write
+      transaction. So, if somebody opens a form for adding a new record and leaves
+      for a lunch break, we will have an active transaction hanging until the user
+      comes back from lunch and closes the form.  This uncommitted edit can inhibit
+      garbage collection, which will reduce performance. There are two ways to solve
+      this problem:
+        <orderedlist>
+          <listitem>Use the <classname>CachedUpdates</classname> mode, which enables the 
+          transaction to be active just for a very short period (to be exact, just for the
+          time it takes for the changes to be applied to the database).</listitem>
+          <listitem>Give up using visual components that are data-aware. This approach
+          requires some additional effort from you to activate the data source and pass 
+          user input to it.</listitem>
+        </orderedlist>
+      </para>
+      <para>We will show how both methods are implemented. The first method is much 
+      more convenient to use. Let's examine the code for editing a customer record:
+        <programlisting>
+procedure TCustomerForm.actEditRecordExecute(Sender: TObject); 
+var 
+  xEditorForm: TEditCustomerForm; 
+begin 
+  xEditorForm := TEditCustomerForm.Create(Self); 
+  try 
+    xEditorForm.OnClose := CustomerEditorClose; 
+    xEditorForm.DataSource := Customers.DataSource;
+    xEditorForm.Caption := 'Edit customer'; 
+    Customers.Edit; 
+    xEditorForm.ShowModal; 
+  finally 
+    xEditorForm.Free; 
+  end; 
+end;
+The Customers property is initiated in the <classname>OnCreate</classname> event:
+procedure TCustomerForm.FormCreate(Sender: TObject); 
+begin 
+  FCustomers := TDMCustomers.Create(Self); 
+  DBGrid.DataSource := Customers.DataSource; 
+end;
+        </programlisting>
+      </para>
+      <para>We set the <classname>CachedUpdates</classname> mode for the dataset in 
+      the Edit method of the dCustomers module before switching it to the edit mode:
+        <programlisting>
+procedure TdmCustomers.Edit; 
+begin 
+  qryCustomer.CachedUpdates := True; 
+  qryCustomer.Edit; 
+end;
+        </programlisting>
+      </para>
+      <para>The logic of handling the process of editing and adding a record is 
+      implemented in the <classname>OnClose</classname> event handler for the modal edit form:
+        <programlisting>
+procedure TCustomerForm.CustomerEditorClose(Sender: TObject; 
+  var Action: TCloseAction); 
+begin 
+  if TEditCustomerForm(Sender).ModalResult &lt;&gt; mrOK then
+  begin 
+    Customers.Cancel; 
+    Action := caFree; 
+    Exit; 
+  end; 
+  try 
+    Customers.Post; 
+    Customers.Save; 
+    Action := caFree; 
+  except 
+    on E: Exception do 
+    begin 
+      Application.ShowException(E); 
+      // It does not close the window give the user correct the error 
+      Action := caNone; 
+    end; 
+  end;
+end;
+        </programlisting>
+      To understand the internal processes, we can study the code
+      for the <classname>Cancel, Post</classname> and <classname>Save</classname> 
+      methods of the dCustomer data module:
+        <programlisting>
+procedure TdmCustomers.Cancel; 
+begin 
+  qryCustomer.Cancel; 
+  qryCustomer.CancelUpdates; 
+  qryCustomer.CachedUpdates := False; 
+end;
+
+procedure TdmCustomers.Post; 
+begin 
+  qryCustomer.Post; 
+end;
+ 
+procedure TdmCustomers.Save; 
+begin 
+  // We do everything in a short transaction 
+  // In CachedUpdates mode an error does not interrupt the running code. 
+  // The ApplyUpdates method returns the number of errors. 
+  // The error can be obtained from the property RowError 
+  try 
+    trWrite.StartTransaction; 
+    if (qryCustomer.ApplyUpdates = 0) then 
+    begin 
+      qryCustomer.CommitUpdates; 
+      trWrite.Commit; 
+    end 
+    else 
+      raise Exception.Create(qryCustomer.RowError.Message); 
+    qryCustomer.CachedUpdates := False; 
+  except 
+    on E: Exception do 
+    begin 
+      if trWrite.Active then 
+        trWrite.Rollback; 
+      raise; 
+    end; 
+  end; 
+end;
+        </programlisting>
+      Observe that the write transaction is not started at all
+      until the OK button is clicked. Thus, the write transaction is 
+      active only while the data are being transferred from the dataset 
+      buffer to the database. Since we access not more than one record 
+      in the buffer, the transaction will be active for a very short 
+      time, which is exactly what we want.</para>
+    </section> <!-- fbdg30-firedac-modules-customer-impl -->
+
+    <section id="fbdg30-firedac-modules-returningclause">
+      <title>Using a RETURNING Clause to Acquire an Autoinc Value</title>
+      <para>Creating the product is similar to creating the customer
+      one. We will use it to demonstrate the method of getting an
+      auto-incremented value by means of a RETURNING clause.</para>
+
+      <para>The main query:
+        <programlisting>
+SELECT
+  product_id,
+  name,
+  price,
+  description
+FROM product
+ORDER BY name
+        </programlisting>
+      </para>
+      <para>The <classname>TFDUpdateSQL.InsertSQL</classname> property will contain the following
+      statement:
+        <programlisting>
+INSERT INTO PRODUCT (NAME, PRICE, DESCRIPTION)
+VALUES (:NEW_NAME, :NEW_PRICE, :NEW_DESCRIPTION)
+RETURNING PRODUCT_ID
+        </programlisting>
+      The RETURNING clause in this statement will return the value of the
+      PRODUCT_ID field after it has been populated by the BEFORE INSERT trigger.
+      The client side in this case has no need to know the name of the generator, since
+      it all happens on the server. Leave the <classname>UpdateOptions.GeneratorName</classname> 
+      property as nil. </para>
+      <para>To acquire the autoinc value by this method also requires filling a couple
+      of properties for the PRODUCT_ID field because the value is being entered indirectly:
+        <literallayout class="monospaced">
+  Required = False
+     and
+  ReadOnly = True
+        </literallayout>
+      Everything else is set up similarly to the way it was done for the Customer
+      module.</para>
+    </section>
+  </section> <!-- fbdg30-firedac-primary-modules -->
+
+  <section id="fbdg30-firedac-secondary-modules">
+    <title>Creating a Secondary Module</title>
+    <para>Secondary datasets typically contain larger numbers of records than
+    primary datasets and new records are added frequently.
+    Our application will have only one secondary module, named <quote>Invoices</quote>.</para>
+
+    <para>An invoice consists of a header where some general attributes are described
+    (number, date, customer &hellip;) and invoice lines with the list of products,
+    their quantities, prices, etc. It is convenient to have two grids for such documents:
+    the main one (master) showing the data invoice header data and the detail one
+    showing the invoice lines.</para>
+    <para>We want to place two <classname>TDBGrid</classname> components on the invoice form and 
+    link a separate <classname>TDataSource</classname> to each of them that will be linked to its 
+    respective <classname>TFDQuery</classname>. In our project, the dataset with the invoice headers 
+    (the master set) will be called qryInvoice, and the one with the invoice lines (the detail 
+    set) will be called qryInvoiceLine.</para>
+
+    <section id="fbdg30-firedac-secondary-modules-txread">
+      <title>The Transactions for Invoice Data</title>
+      <para>The <classname>Transaction</classname> property of each dataset will specify 
+      the read-only transaction trRead that is located in the dmInvoicedata module. 
+      Use the <classname>UpdateTransaction</classname> property to specify the trWrite 
+      transaction and the <classname>Connection</classname> property to specify the connection 
+      located in the main data module.</para>
+    </section>
+
+    <section id="fbdg30-firedac-secondary-modules-workperiod">
+      <title>A Filter for the Data</title>
+      <para>Secondary datasets usually contain a field with the record creation
+      date. In order to reduce the amount of retrieved data, a notion such as
+      <quote>a work period</quote> is commonly incorporated in the application to
+      filter the set of data sent to the client. A work period is a range of dates
+      for which the records are required.</para>
+      <para>Since the application could have more than one secondary dataset, it makes
+      sense to add variables containing the start and end dates of a work period
+      to the global dmMain data module that is used by all modules working with the
+      database in one way or another. Once the application is started, the work period
+      could be defined by the start and end dates of the current quarter, or some other
+      appropriate start/end date pair. The application could allow the user to change
+      the work period while working with the application.</para>
+    </section>
+
+    <section id="fbdg30-firedac-secondary-modules-configuring">
+      <title>Configuring the Module</title>
+      <figure id="inv-module-config">
+        <title>The Invoice form tab</title>
+        <mediaobject>
+          <imageobject>
+          <!-- actual image size is 697px X 547px -->
+            <imagedata fileref="images/fbdevgd30_delphi_006.png" format="PNG"
+             width="495px" depth="388px"
+             scalefit="1" align="center" /> <!-- 71% -->
+          </imageobject>
+        </mediaobject>
+        </figure>
+
+        <figure id="inv-datamodule">
+          <title>The Invoice data module tab</title>
+          <mediaobject>
+            <imageobject>
+            <!-- actual CROPPED image size is 480px X 489px -->
+              <imagedata fileref="images/fbdevgd30_delphi_007.png" format="PNG"
+               width="480px" depth="489px"
+               scalefit="1" align="center" />  <!-- 100% -->
+          </imageobject>
+        </mediaobject>
+      </figure>
+
+      <para>Since the latest invoices are the most requested ones, it makes sense
+      to sort them by date in reverse order. The query will look like this in the SQL
+      property of the qryInvoice dataset:
+        <programlisting>
+SELECT
+  invoice.invoice_id AS invoice_id,
+  invoice.customer_id AS customer_id,
+  customer.NAME AS customer_name,
+  invoice.invoice_date AS invoice_date,
+  invoice.total_sale AS total_sale,
+  IIF(invoice.payed=1, 'Yes', 'No') AS payed
+FROM
+  invoice
+  JOIN customer ON customer.customer_id = invoice.customer_id
+WHERE invoice.invoice_date BETWEEN :date_begin AND :date_end
+ORDER BY invoice.invoice_date DESC
+        </programlisting>
+      </para>
+      <para>To open this dataset, it will be necessary to initialise the
+      query parameters:
+        <programlisting>
+qryInvoice.ParamByName('date_begin').AsSqlTimeStamp := dmMain.BeginDateSt;
+qryInvoice.ParamByName('date_end').AsSqlTimeStamp := dmMain.EndDateSt;
+qryInvoice.Open;
+        </programlisting>
+      </para>
+      <para>For the purpose of illustration, we will use stored procedures
+      to perform all operations on an invoice.   Regular INSERT/UPDATE/DELETE queries
+      can be used when operations are simple and involve writing to only one table
+      in the database. We will execute each stored procedure as a separate query in
+      TFDCommand objects. This component is not descended from <classname>TFDRdbmsDataSet</classname>,
+      does not buffer data and returns not more than one result row.  We are using it
+      because it consumes fewer resources  for queries that do not return data.</para>
+      <para>Since our stored procedures modify data, it is necessary to point the
+      <classname>Transaction</classname> property of each TFDCommand object to the
+      trWrite transaction.</para>
+      <note>
+        <title>Tip</title>
+        <para>Another alternative is to place the stored procedure calls for inserting,
+        editing and adding a record in the corresponding properties of a
+        <classname>TFDUpdateSQL</classname> object.</para>
+      </note>
+    </section> <!-- fbdg30-firedac-secondary-modules-configuring -->
+
+    <section id="fbdg30-firedac-secondary-modules-operations">
+      <title>Doing the Work</title>
+      <para>Four operations are provided for working with the invoice header:
+       adding, editing, deleting and setting the <quote>paid</quote> attribute.
+       Once an invoice is paid, we prevent any modifications to either the header
+       or the lines. The rule is implemented at stored procedure level. Let's
+       examine the query strings in the <classname>CommandText</classname> property
+       for calling the stored procedures.</para>
+
+      <section id="fbdg30-firedac-secondary-proc-addinvoice">
+        <title>qryAddInvoice.CommandText</title>
+        <programlisting>
+EXECUTE PROCEDURE sp_add_invoice(
+  NEXT VALUE FOR gen_invoice_id,
+  :CUSTOMER_ID,
+  :INVOICE_DATE
+)
+        </programlisting>
+      </section>
+      <section id="fbdg30-firedac-secondary-proc-editinvoice">
+        <title>qryEditInvoice.CommandText</title>
+        <programlisting>
+EXECUTE PROCEDURE sp_edit_invoice(
+  :INVOICE_ID,
+  :CUSTOMER_ID,
+  :INVOICE_DATE
+)
+        </programlisting>
+      </section>
+      <section id="fbdg30-firedac-secondary-proc-dltinvoice">
+        <title>qryDeleteInvoice.CommandText</title>
+        <programlisting>
+EXECUTE PROCEDURE sp_delete_invoice(:INVOICE_ID)
+        </programlisting>
+      </section>
+      <section id="fbdg30-firedac-secondary-proc-payinvoice">
+        <title>qryPayForInvoice.CommandText</title>
+        <programlisting>
+EXECUTE PROCEDURE sp_pay_for_invoice(:invoice_id)
+        </programlisting>
+      </section>
+      <para>Since our stored procedures are not called from a <classname>TFDUpdateSQL</classname>
+      object, we need to call <classname>qryInvoice.Refresh</classname> after they are executed,
+      in order to update the data in the grid.</para>
+      <para>Stored procedures that do not require input data from the user
+      are called as follows:
+        <programlisting>
+procedure TdmInvoice.DeleteInvoice;
+begin
+  // We do everything in a short transaction
+  trWrite.StartTransaction;
+  try
+    qryDeleteInvoice.ParamByName('INVOICE_ID').AsInteger :=
+      Invoice.INVOICE_ID.Value;
+    qryDeleteInvoice.Execute;
+    trWrite.Commit;
+    qryInvoice.Refresh;
+  except
+    on E: Exception do
+    begin
+      if trWrite.Active then
+        trWrite.Rollback;
+      raise;
+    end;
+  end;
+end;
+        </programlisting>
+      </para>
+
+      <section id="fbdg30-firedac-secondary-usrconfirm">
+        <title>Getting User Confirmation</title>
+        <para>Before performing some operations, such as deleting an invoice, we want
+        to get confirmation from the user:
+          <programlisting>
+procedure TInvoiceForm.actDeleteInvoiceExecute(Sender: TObject);
+begin
+  if MessageDlg('Are you sure you want to delete an invoice?',
+                mtConfirmation,
+                [mbYes, mbNo], 0) = mrYes then
+  begin
+    Invoices.DeleteInvoice;
+  end;
+end;
+          </programlisting>
+        </para>
+      </section>
+
+      <section id="fbdg30-firedac-secondary-add-or-edit">
+        <title>Adding or Editing Records</title>
+        <para>As with the primary modules, we will use modal forms to add a
+        new record or edit an existing one. We will not use data-aware visual
+        components in this implementation. As another variation, we will use a
+        <classname>TButtonedEdit</classname> component to select a customer.
+        It will display the name of the current customer and open a modal form
+        with a grid for selecting a customer on the click of the embedded button.
+        We could use something like <classname>TDBLookupCombobox</classname>, of
+        course, but it has drawbacks: first, the customer list may be too large
+        for scrolling comfortably through the drop-down list; secondly, the name
+        alone may not be enough to find the customer you want.</para>
+        <figure id="cust-input-form">
+          <title>The Customer input form</title>
+          <mediaobject>
+            <imageobject>
+          <!-- actual image size is 387px X 235px -->
+            <imagedata fileref="images/fbdevgd30_delphi_008.png" format="PNG"
+             width="380px" depth="188px"
+             scalefit="1" align="center" />  <!-- 98% -->
+            </imageobject>
+          </mediaobject>
+        </figure>
+
+        <para>As the window for selecting a customer, we will use the same modal form
+        that was created for adding customers. The code for the button click handler
+        for the <classname>TButtonedEdit</classname> component is as follows:
+          <programlisting>
+procedure TEditInvoiceForm.edtCustomerRightButtonClick(Sender: TObject);
+var
+  xSelectForm: TCustomerForm;
+begin
+  xSelectForm := TCustomerForm.Create(Self);
+  try
+    xSelectForm.Visible := False;
+    if xSelectForm.ShowModal = mrOK then
+    begin
+      FCustomerId := xSelectForm.Customers.Customer.CUSTOMER_ID.Value;
+      edtCustomer.Text := xSelectForm.Customers.Customer.NAME.Value;
+    end;
+  finally
+    xSelectForm.Free;
+  end;
+end;
+          </programlisting>
+        </para>
+
+        <para>Since we are not using data-aware visual components, we need
+        to initialize the customer code and name for displaying during the
+        call to the edit form:
+          <programlisting>
+procedure TInvoiceForm.actEditInvoiceExecute(Sender: TObject);
+var
+  xEditorForm: TEditInvoiceForm;
+begin
+  xEditorForm := TEditInvoiceForm.Create(Self);
+  try
+    xEditorForm.OnClose := EditInvoiceEditorClose;
+    xEditorForm.Caption := 'Edit invoice';
+    xEditorForm.InvoiceId := Invoices.Invoice.INVOICE_ID.Value;
+    xEditorForm.SetCustomer(
+      Invoices.Invoice.CUSTOMER_ID.Value,
+      Invoices.Invoice.CUSTOMER_NAME.Value);
+    xEditorForm.InvoiceDate := Invoices.Invoice.INVOICE_DATE.AsDateTime;
+    xEditorForm.ShowModal;
+  finally
+    xEditorForm.Free;
+  end;
+end;
+
+procedure TEditInvoiceForm.SetCustomer(ACustomerId: Integer;
+  const ACustomerName: string);
+begin
+  FCustomerId := ACustomerId;
+  edtCustomer.Text := ACustomerName;
+end;
+          </programlisting>
+        </para>
+
+        <para>Adding a new invoice and editing an existing one will be
+        handled in the <classname>Close</classname> event of the modal form 
+        as it is for the primary modules. However, we will not switch the dataset 
+        to <classname>CachedUpdates</classname> mode for these because the updates 
+         carried out by stored procedures and we are not using data-aware visual 
+         components to capture input.
+          <programlisting>
+procedure TInvoiceForm.actAddInvoiceExecute(Sender: TObject);
+var
+  xEditorForm: TEditInvoiceForm;
+begin
+  xEditorForm := TEditInvoiceForm.Create(Self);
+  try
+    xEditorForm.Caption := 'Add invoice';
+    xEditorForm.OnClose := AddInvoiceEditorClose;
+    xEditorForm.InvoiceDate := Now;
+    xEditorForm.ShowModal;
+  finally
+    xEditorForm.Free;
+  end;
+end;
+
+procedure TInvoiceForm.AddInvoiceEditorClose(Sender: TObject;
+  var Action: TCloseAction);
+var
+  xEditorForm: TEditInvoiceForm;
+begin
+  xEditorForm := TEditInvoiceForm(Sender);
+  if xEditorForm.ModalResult &lt;&gt; mrOK then
+  begin
+    Action := caFree;
+    Exit;
+  end;
+  try
+    Invoices.AddInvoice(xEditorForm.CustomerId, xEditorForm.InvoiceDate);
+    Action := caFree;
+  except
+    on E: Exception do
+    begin
+      Application.ShowException(E);
+// It does not close the window give the user correct the error
+      Action := caNone;
+    end;
+  end;
+end;
+
+procedure TdmInvoice.AddInvoice(ACustomerId: Integer; AInvoiceDate: TDateTime);
+begin
+  // We do everything in a short transaction
+  trWrite.StartTransaction;
+  try
+    qryAddInvoice.ParamByName('CUSTOMER_ID').AsInteger := ACustomerId;
+    qryAddInvoice.ParamByName('INVOICE_DATE').AsSqlTimeStamp :=
+    DateTimeToSQLTimeStamp(AInvoiceDate);
+    qryAddInvoice.Execute();
+    trWrite.Commit;
+    qryInvoice.Refresh;
+  except
+    on E: Exception do
+    begin
+      if trWrite.Active then
+        trWrite.Rollback;
+      raise;
+    end;
+  end;
+end;
+          </programlisting>
+        </para>
+      </section>
+    </section> <!-- fbdg30-firedac-secondary-operations -->
+
+    <section id="fbdg30-firedac-secondary-inv-detail">
+      <title>The Invoice Details</title>
+      <para>Next, we move on to the details of an invoice. For the qryInvoiceLine
+      dataset, we set the <classname>MasterSource</classname> property to the
+      datasource that is linked to qryInvoice and the <classname>MasterFields</classname>
+      property to INVOICE_ID. We specify the following query in the
+      <classname>SQL</classname> property:
+        <programlisting>
+SELECT
+  invoice_line.invoice_line_id AS invoice_line_id,
+  invoice_line.invoice_id AS invoice_id,
+  invoice_line.product_id AS product_id,
+  product.name AS productname,
+  invoice_line.quantity AS quantity,
+  invoice_line.sale_price AS sale_price,
+  invoice_line.quantity * invoice_line.sale_price AS total
+FROM
+  invoice_line
+  JOIN product ON product.product_id = invoice_line.product_id
+WHERE invoice_line.invoice_id = :invoice_id
+        </programlisting>
+      </para>
+      <para>As with the invoice header, we will use stored procedures to
+      perform all modifications. Let's examine the query strings in the
+      <classname>CommandText</classname> property of the commands that
+      call the stored procedures.</para>
+
+      <section id="fbdg30-firedac-secondary-inv-line-add">
+        <title>qryAddInvoiceLine.CommandText</title>
+        <programlisting>
+EXECUTE PROCEDURE sp_add_invoice_line(
+  :invoice_id,
+  :product_id,
+  :quantity
+)
+        </programlisting>
+      </section>
+      <section id="fbdg30-firedac-secondary-inv-line-edit">
+        <title>qryEditInvoiceLine.CommandText</title>
+        <programlisting>
+EXECUTE PROCEDURE sp_edit_invoice_line(
+  :invoice_line_id,
+  :quantity
+)
+        </programlisting>
+      </section>
+      <section id="fbdg30-firedac-secondary-inv-line-dlt">
+        <title>qryDeleteInvoiceLine.CommandText</title>
+        <programlisting>
+EXECUTE PROCEDURE sp_delete_invoice_line(
+  :invoice_line_id
+)
+        </programlisting>
+      </section>
+
+      <para>As with the header, the form for adding a new record and editing
+      an existing one does not use data-aware visual components. To select a
+      product, we use the <classname>TButtonedEdit</classname> component again.
+      The code for the on-click handler for the button on the
+      <classname>TButtonedEdit</classname> object is as follows:
+        <programlisting>
+procedure TEditInvoiceLineForm.edtProductRightButtonClick(Sender: TObject);
+var
+  xSelectForm: TGoodsForm;
+begin
+  if FEditMode = emInvoiceLineEdit then
+    Exit;
+  xSelectForm := TGoodsForm.Create(Self);
+  try
+    xSelectForm.Visible := False;
+    if xSelectForm.ShowModal = mrOK then
+    begin
+      FProductId := xSelectForm.Goods.Product.PRODUCT_ID.Value;
+      edtProduct.Text := xSelectForm.Goods.Product.NAME.Value;
+      edtPrice.Text := xSelectForm.Goods.Product.PRICE.AsString;
+    end;
+  finally
+    xSelectForm.Free;
+  end;
+end;
+        </programlisting>
+      </para>
+      <para>Since we are not using data-aware visual components,
+      again we will need to initialize the product code and name
+      and its price for displaying on the edit form.
+        <programlisting>
+procedure TInvoiceForm.actEditInvoiceLineExecute(Sender: TObject);
+var
+  xEditorForm: TEditInvoiceLineForm;
+begin
+  xEditorForm := TEditInvoiceLineForm.Create(Self);
+  try
+    xEditorForm.EditMode := emInvoiceLineEdit;
+    xEditorForm.OnClose := EditInvoiceLineEditorClose;
+    xEditorForm.Caption := 'Edit invoice line';
+    xEditorForm.InvoiceLineId := Invoices.InvoiceLine.INVOICE_LINE_ID.Value;
+    xEditorForm.SetProduct(
+      Invoices.InvoiceLine.PRODUCT_ID.Value,
+      Invoices.InvoiceLine.PRODUCTNAME.Value,
+      Invoices.InvoiceLine.SALE_PRICE.AsCurrency);
+    xEditorForm.Quantity := Invoices.InvoiceLine.QUANTITY.Value;
+    xEditorForm.ShowModal;
+  finally
+    xEditorForm.Free;
+  end;
+end;
+
+procedure TEditInvoiceLineForm.SetProduct(AProductId: Integer;
+  AProductName: string; APrice: Currency);
+begin
+  FProductId := AProductId;
+  edtProduct.Text := AProductName;
+  edtPrice.Text := CurrToStr(APrice);
+end;
+        </programlisting>
+      </para>
+      <para>We handle adding a new item and editing an existing one
+      in the Close event of the modal form.
+        <programlisting>
+procedure TInvoiceForm.actAddInvoiceLineExecute(Sender: TObject);
+var
+  xEditorForm: TEditInvoiceLineForm;
+begin
+  xEditorForm := TEditInvoiceLineForm.Create(Self);
+  try
+xEditorForm.EditMode := emInvoiceLineAdd;
+xEditorForm.OnClose := AddInvoiceLineEditorClose;
+    xEditorForm.Caption := 'Add invoice line';
+    xEditorForm.Quantity := 1;
+    xEditorForm.InvoiceId := Invoices.Invoice.INVOICE_ID.Value;
+    xEditorForm.ShowModal;
+  finally
+    xEditorForm.Free;
+  end;
+end;
+
+procedure TInvoiceForm.actEditInvoiceLineExecute(Sender: TObject);
+var
+  xEditorForm: TEditInvoiceLineForm;
+begin
+  xEditorForm := TEditInvoiceLineForm.Create(Self);
+  try
+    xEditorForm.EditMode := emInvoiceLineEdit;
+    xEditorForm.OnClose := EditInvoiceLineEditorClose;
+    xEditorForm.Caption := 'Edit invoice line';
+    xEditorForm.InvoiceLineId := Invoices.InvoiceLine.INVOICE_LINE_ID.Value;
+    xEditorForm.SetProduct(
+      Invoices.InvoiceLine.PRODUCT_ID.Value,
+      Invoices.InvoiceLine.PRODUCTNAME.Value,
+      Invoices.InvoiceLine.SALE_PRICE.AsCurrency);
+    xEditorForm.Quantity := Invoices.InvoiceLine.QUANTITY.Value;
+    xEditorForm.ShowModal;
+  finally
+    xEditorForm.Free;
+  end;
+end;
+
+procedure TInvoiceForm.AddInvoiceLineEditorClose(Sender: TObject;
+  var Action: TCloseAction);
+var
+  xEditorForm: TEditInvoiceLineForm;
+  xCustomerId: Integer;
+begin
+  xEditorForm := TEditInvoiceLineForm(Sender);
+  if xEditorForm.ModalResult &lt;&gt; mrOK then
+  begin
+    Action := caFree;
+    Exit;
+  end;
+  try
+    Invoices.AddInvoiceLine(xEditorForm.ProductId, xEditorForm.Quantity);
+    Action := caFree;
+  except
+    on E: Exception do
+    begin
+      Application.ShowException(E);
+      // It does not close the window give the user correct the error
+      Action := caNone;
+    end;
+  end;
+end;
+
+procedure TInvoiceForm.EditInvoiceLineEditorClose(Sender: TObject;
+  var Action: TCloseAction);
+var
+  xCustomerId: Integer;
+  xEditorForm: TEditInvoiceLineForm;
+begin
+  xEditorForm := TEditInvoiceLineForm(Sender);
+  if xEditorForm.ModalResult &lt;&gt; mrOK then
+  begin
+    Action := caFree;
+    Exit;
+  end;
+  try
+    Invoices.EditInvoiceLine(xEditorForm.Quantity);
+    Action := caFree;
+  except
+    on E: Exception do
+    begin
+      Application.ShowException(E);
+      // It does not close the window give the user correct the error
+      Action := caNone;
+    end;
+  end;
+end;
+        </programlisting>
+      </para>
+
+      <para>Now let's take a look at the code for the AddInvoiceLine and
+      EditInvoiceLine procedures of the dmInvoice data module:
+        <programlisting>
+procedure TdmInvoice.AddInvoiceLine(AProductId: Integer; AQuantity: Integer);
+begin
+  // We do everything in a short transaction
+  trWrite.StartTransaction;
+  try
+    qryAddInvoiceLine.ParamByName('INVOICE_ID').AsInteger :=
+      Invoice.INVOICE_ID.Value;
+    if AProductId = 0 then
+      raise Exception.Create('Not selected product');
+    qryAddInvoiceLine.ParamByName('PRODUCT_ID').AsInteger := AProductId;
+    qryAddInvoiceLine.ParamByName('QUANTITY').AsInteger := AQuantity;
+    qryAddInvoiceLine.Execute();
+    trWrite.Commit;
+    qryInvoice.Refresh;
+    qryInvoiceLine.Refresh;
+  except
+    on E: Exception do
+    begin
+      if trWrite.Active then
+        trWrite.Rollback;
+      raise;
+    end;
+  end;
+end;
+
+procedure TdmInvoice.EditInvoiceLine(AQuantity: Integer);
+begin
+  // We do everything in a short transaction
+  trWrite.StartTransaction;
+  try
+    qryEditInvoiceLine.ParamByName('INVOICE_LINE_ID').AsInteger :=
+      InvoiceLine.INVOICE_LINE_ID.Value;
+    qryEditInvoiceLine.ParamByName('QUANTITY').AsInteger := AQuantity;
+    qryEditInvoiceLine.Execute();
+    trWrite.Commit;
+    qryInvoice.Refresh;
+    qryInvoiceLine.Refresh;
+  except
+    on E: Exception do
+    begin
+      if trWrite.Active then
+        trWrite.Rollback;
+      raise;
+    end;
+  end;
+end;
+        </programlisting>
+      </para>
+    </section> <!-- fbdg30-firedac-secondary-inv-detail -->
+  </section> <!-- fbdg30-firedac-secondary-modules -->
+
+  <section id="fbdg30-firedac-proj-result">
+    <title>The Result</title>
+    <para>&nbsp;
+      <figure id="delphi-project-result">
+        <title>Screenshot of the sample application</title>
+        <mediaobject>
+          <imageobject>
+          <!-- actual image size is 984px X 692px -->
+            <imagedata fileref="images/fbdevgd30_delphi_009.png" format="PNG"
+            width="502px" depth="353px"
+            scalefit="1"/>  <!-- 51% -->
+          </imageobject>
+          <caption>
+            <para>As a result, we have an application that looks like this.</para>
+          </caption>
+        </mediaobject>
+      </figure>
+    </para>
+  </section>
+
+  <section id="fbdg30-firedac-conclusion">
+    <title>Conclusion</title>
+    <para>FireDac&#8482; is a standard set of data-access and data-aware visual components
+    for developing with various database systems, including Firebird, starting from Delphi&#8482;
+    XE3. FireDac&#8482; ships with the higher-end versions of Delphi. Many independent sets of
+    data access and data-aware visual components are available for working with Firebird, 
+    some commercial, others distributed under a variety of licences, including open source 
+    and freeware. They include FibPlus, IBObjects, UIB, UniDAC, IBDac, Interbase Express (IBX) 
+    and more.  The principles for developing Firebird applications in Delphi&#8482; are the same,
+    regardless of the components you choose.</para>
+
+    <para> All queries to a database are executed within a transaction. To guarantee that 
+    applications will work correctly and efficiently with Firebird databases, it is advisable
+    to manage transactions manually, by explicit calls to the 
+    <classname>StartTransaction, Commit</classname> and <classname>Rollback</classname> 
+    methods of the <classname>TFDTransaction</classname> component. Transactions should be 
+    as short as possible and you can use as many as the logic of your application requires.</para>
+
+    <para>The recommended configuration for a long-running, read-only transaction to view
+    datasets is to use READ_COMMITTED isolation with REC_VERSION for conflict resolution.
+    An application can run many datasets in one such transaction or one for each dataset,
+    according to the requirements of the design.</para>
+
+    <para>To avoid holding an uncommitted transaction during an editing session, either
+    use visual components that are not data-aware or use the <classname>CachedUpdates</classname> 
+    mode. With <classname>CachedUpdates</classname> you can restrict writes to short 
+    bursts of activity, keeping the read/write transaction active only for as long as 
+    it takes to post the most recent changes to the database.</para>
+
+    <para>The <classname>TFDUpdateSQL</classname> component is necessary for editing most 
+    datasets.  Update queries are governed by its <classname>InsertSQL, ModifySQL, DeleteSQL</classname>
+    and <classname>FetchRowSQL</classname> properties. The queries for those properties can 
+    be generated automatically by a wizard but manual corrections or adjustments are 
+    often required.</para>
+
+    <para>Acquiring values for auto-incrementing primary keys can be handled in one
+    of two ways:
+      <itemizedlist>
+        <listitem>Getting the value from the generator beforehand by specifying the
+        <classname>UpdateOptions.GeneratorName</classname> and 
+        <classname>UpdateOptions.AutoIncFields</classname> properties for the <classname>TFDQuery</classname> 
+        component.  This method cannot be used for auto-incrementing fields of the IDENTITY 
+        type that was introduced in Firebird 3.</listitem>
+
+        <listitem>Getting the value by adding a RETURNING clause to the InsertSQL
+        query. For this method you need to specify <classname>Required=False</classname> 
+        and <classname>ReadOnly=True</classname> for the field because the value is not 
+        entered directly.</listitem>
+      </itemizedlist>
+    </para>
+
+    <para>It is convenient and sometimes necessary to implement more complex business
+    logic with stored procedures. Using the <classname>TFDCommand</classname> component 
+    to execute stored procedures that do not return data reduces resource consumption</para>.
+  </section>
+
+  <section id="fbdevgd30-firedac-source-code">
+    <title>Source Code</title>
+    <para>ObjectPascal source code for the sample project is available for download using the
+     following link:
+     <ulink url="https://www.firebirdsql.org/file/documentation/reference_manuals/fbdevgd-en/code/FireDacEx.zip">FireDacEx.zip</ulink>.
+    </para>
+    <para>For links to the database scripts and ready-to-use databases, refer to the 
+    <link linkend="fbdevg30-db-run-script">final sections of the database chapter</link>.
+    </para>
+  </section>
+
+</chapter>
+

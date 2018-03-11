@@ -1,0 +1,4225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.5//EN"
+"../../../../tools/docbook-dtd/docbookx.dtd">
+<chapter id="fbdevgd30-java">
+  <title>Creating an Application with jOOQ and Spring MVC</title>
+  <para>This chapter will describe how to create a web application in the Java 
+  language using the Spring MVC framework, the jOOQ library and a Firebird 
+  sample database.</para>
+  <para>To make development easier, you can use one of the popular IDEs for Java 
+  (NetBeans, IntelliJ IDEA, Eclipse, JDeveloper and others). I used NetBeans.</para>
+  <para>For testing and debugging purposes, we will also need to install one of the 
+  web servers or application servers (Apache Tomcat or GlassFish). We are basing 
+  our project on the Maven web application templates.</para>
+
+  <section id="fbdg30-java-structure">
+    <title>Organising the Folder Structure</title>
+    <para>After a template-based project has been created, its folder structure will 
+    need to be rearranged to suit Spring 4. In the NetBeans 8.2 environment, the 
+    steps would be as follows:
+      <orderedlist>
+        <listitem>Delete the <filename>index.html</filename> file</listitem>
+        <listitem>Create the <filename>WEB-INF</filename> folder inside the 
+        <filename>Web Pages</filename> folder</listitem>
+        <listitem>Create the <filename>jsp</filename>, <filename>jspf</filename> 
+        and <filename>resources</filename> folders inside the <filename>WEB-INF</filename> folder</listitem>
+        <listitem>Create the <filename>js</filename> and <filename>CSS</filename> 
+        folders inside the <filename>resources</filename> folder</listitem>
+        <listitem>Create the <filename>index.jsp</filename> file inside 
+        the <filename>jsp</filename> folder</listitem>
+      </orderedlist>
+    </para>
+
+    <para>The new structure of the folders should look like this:
+      <figure id="java-file-structure">
+        <title>Folder structure for the template-based project</title>
+        <mediaobject>
+          <imageobject>
+          <!-- actual image size is 387px X 445px -->
+            <imagedata fileref="images/fbdevgd30_java_001_en.png" format="PNG"
+            width="387px" depth="445px"
+            scalefit="1" align="center" />  <!-- 100% -->
+          </imageobject>
+        </mediaobject>
+      </figure>
+    </para>
+    <para>The <filename>WEB-INF/jsp</filename> folder will contain jsp pages and the
+    <filename>jspf</filename> folder will contain page fragments that will be added to
+    other pages using the following directive:
+      <literallayout class="monospaced">
+
+  &lt;%@ include file =&quot;&lt;filename&gt;&quot; %&gt;
+      </literallayout>
+    </para>
+    <para>The <filename>resources</filename> folder is used to store static
+    web resources&mdash;the <filename>WEB-INF/resources/css</filename> folder
+    for cascading style sheet files, the <filename>WEB-INF/resources/fonts</filename>
+    folder for font files, the <filename>WEB-INF/resources/js</filename> folder for
+    JavaScript files and third-party JavaScript libraries.</para>
+
+    <para>Now, we modify the <filename>pom.xml</filename> file and add the general
+    properties of the application, dependencies on library packages (Spring MVC,
+    Jaybird, JDBC pool, JOOQ) and the properties of the JDBC connection.
+      <literallayout class="monospaced">
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;
+&lt;project xmlns=&quot;http://maven.apache.org/POM/4.0.0&quot;
+         xmlns:xsi=&quot;http://www.w3.org/2001/XMLSchema-instance&quot;
+         xsi:schemaLocation=&quot;http://maven.apache.org/POM/4.0.0
+                             http://maven.apache.org/xsd/maven-4.0.0.xsd&quot;&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+
+    &lt;groupId&gt;ru.ibase&lt;/groupId&gt;
+    &lt;artifactId&gt;fbjavaex&lt;/artifactId&gt;
+    &lt;version&gt;1.0-SNAPSHOT&lt;/version&gt;
+    &lt;packaging&gt;war&lt;/packaging&gt;
+
+    &lt;name&gt;Firebird Java Example&lt;/name&gt;
+
+    &lt;properties&gt;
+        &lt;endorsed.dir&gt;${project.build.directory}/endorsed&lt;/endorsed.dir&gt;
+        &lt;project.build.sourceEncoding&gt;UTF-8&lt;/project.build.sourceEncoding&gt;
+        &lt;spring.version&gt;4.3.4.RELEASE&lt;/spring.version&gt;
+        &lt;jstl.version&gt;1.2&lt;/jstl.version&gt;
+        &lt;javax.servlet.version&gt;3.0.1&lt;/javax.servlet.version&gt;
+        &lt;db.url&gt;jdbc:firebirdsql://localhost:3050/examples&lt;/db.url&gt;
+        &lt;db.driver&gt;org.firebirdsql.jdbc.FBDriver&lt;/db.driver&gt;
+        &lt;db.username&gt;SYSDBA&lt;/db.username&gt;
+        &lt;db.password&gt;masterkey&lt;/db.password&gt;
+    &lt;/properties&gt;
+
+
+    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;javax&lt;/groupId&gt;
+            &lt;artifactId&gt;javaee-web-api&lt;/artifactId&gt;
+            &lt;version&gt;7.0&lt;/version&gt;
+            &lt;scope&gt;provided&lt;/scope&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;javax.servlet&lt;/groupId&gt;
+            &lt;artifactId&gt;javax.servlet-api&lt;/artifactId&gt;
+            &lt;version&gt;${javax.servlet.version}&lt;/version&gt;
+            &lt;scope&gt;provided&lt;/scope&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;jstl&lt;/groupId&gt;
+            &lt;artifactId&gt;jstl&lt;/artifactId&gt;
+            &lt;version&gt;${jstl.version}&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;&excl;-- Work with JSON --&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.fasterxml.jackson.core&lt;/groupId&gt;
+            &lt;artifactId&gt;jackson-core&lt;/artifactId&gt;
+            &lt;version&gt;2.8.5&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.fasterxml.jackson.core&lt;/groupId&gt;
+            &lt;artifactId&gt;jackson-annotations&lt;/artifactId&gt;
+            &lt;version&gt;2.8.5&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.fasterxml.jackson.core&lt;/groupId&gt;
+            &lt;artifactId&gt;jackson-databind&lt;/artifactId&gt;
+            &lt;version&gt;2.8.5&lt;/version&gt;
+        &lt;/dependency&gt;
+
+
+        &lt;!-- Spring --&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-core&lt;/artifactId&gt;
+            &lt;version&gt;${spring.version}&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-web&lt;/artifactId&gt;
+            &lt;version&gt;${spring.version}&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-webmvc&lt;/artifactId&gt;
+            &lt;version&gt;${spring.version}&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-context&lt;/artifactId&gt;
+            &lt;version&gt;${spring.version}&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-jdbc&lt;/artifactId&gt;
+            &lt;version&gt;${spring.version}&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;!-- JDBC --&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.firebirdsql.jdbc&lt;/groupId&gt;
+            &lt;artifactId&gt;jaybird-jdk18&lt;/artifactId&gt;
+            &lt;version&gt;3.0.0&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;&excl;-- Connection pool --&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;commons-dbcp&lt;/groupId&gt;
+            &lt;artifactId&gt;commons-dbcp&lt;/artifactId&gt;
+            &lt;version&gt;1.4&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;!-- jOOQ --&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.jooq&lt;/groupId&gt;
+            &lt;artifactId&gt;jooq&lt;/artifactId&gt;
+            &lt;version&gt;3.9.2&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.jooq&lt;/groupId&gt;
+            &lt;artifactId&gt;jooq-meta&lt;/artifactId&gt;
+            &lt;version&gt;3.9.2&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.jooq&lt;/groupId&gt;
+            &lt;artifactId&gt;jooq-codegen&lt;/artifactId&gt;
+            &lt;version&gt;3.9.2&lt;/version&gt;
+        &lt;/dependency&gt;
+
+        &lt;!-- Testing --&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;junit&lt;/groupId&gt;
+            &lt;artifactId&gt;junit&lt;/artifactId&gt;
+            &lt;version&gt;4.11&lt;/version&gt;
+            &lt;type&gt;jar&lt;/type&gt;
+            &lt;scope&gt;test&lt;/scope&gt;
+        &lt;/dependency&gt;
+
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-test&lt;/artifactId&gt;
+            &lt;version&gt;${spring.version}&lt;/version&gt;
+            &lt;scope&gt;test&lt;/scope&gt;
+        &lt;/dependency&gt;
+
+    &lt;/dependencies&gt;
+
+    &lt;build&gt;
+
+        &lt;plugins&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+                &lt;artifactId&gt;maven-compiler-plugin&lt;/artifactId&gt;
+                &lt;version&gt;3.1&lt;/version&gt;
+                &lt;configuration&gt;
+                    &lt;source&gt;1.7&lt;/source&gt;
+                    &lt;target&gt;1.7&lt;/target&gt;
+                    &lt;compilerArguments&gt;
+                        &lt;endorseddirs&gt;${endorsed.dir}&lt;/endorseddirs&gt;
+                    &lt;/compilerArguments&gt;
+                &lt;/configuration&gt;
+            &lt;/plugin&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+                &lt;artifactId&gt;maven-war-plugin&lt;/artifactId&gt;
+                &lt;version&gt;2.3&lt;/version&gt;
+                &lt;configuration&gt;
+                    &lt;failOnMissingWebXml&gt;false&lt;/failOnMissingWebXml&gt;
+                &lt;/configuration&gt;
+            &lt;/plugin&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+                &lt;artifactId&gt;maven-dependency-plugin&lt;/artifactId&gt;
+                &lt;version&gt;2.6&lt;/version&gt;
+                &lt;executions&gt;
+                    &lt;execution&gt;
+                        &lt;phase&gt;validate&lt;/phase&gt;
+                        &lt;goals&gt;
+                            &lt;goal&gt;copy&lt;/goal&gt;
+                        &lt;/goals&gt;
+                        &lt;configuration&gt;
+                            &lt;outputDirectory&gt;${endorsed.dir}&lt;/outputDirectory&gt;
+                            &lt;silent&gt;true&lt;/silent&gt;
+                            &lt;artifactItems&gt;
+                                &lt;artifactItem&gt;
+                                    &lt;groupId&gt;javax&lt;/groupId&gt;
+                                    &lt;artifactId&gt;javaee-endorsed-api&lt;/artifactId&gt;
+                                    &lt;version&gt;7.0&lt;/version&gt;
+                                    &lt;type&gt;jar&lt;/type&gt;
+                                &lt;/artifactItem&gt;
+                            &lt;/artifactItems&gt;
+                        &lt;/configuration&gt;
+                    &lt;/execution&gt;
+                &lt;/executions&gt;
+            &lt;/plugin&gt;
+        &lt;/plugins&gt;
+    &lt;/build&gt;
+
+&lt;/project&gt;
+      </literallayout>
+    </para>
+    <note>
+      <title>What is a POM?</title>
+        <para>A <firstterm>Project Object Model</firstterm> or POM is the fundamental unit 
+        of work in Maven. It is an XML file that contains information about the project 
+        and configuration details used by Maven to build the project. More details can be 
+        found at 
+<ulink url="http://maven.apache.org/guides/introduction/introduction-to-the-pom">http://maven.apache.org/guides/introduction/introduction-to-the-pom</ulink>.</para>
+      </note>
+
+    <para>After all the necessary dependencies have been fulfilled, a restart of the
+    POM is recommended, to load all the necessary libraries and avoid errors that might
+    otherwise occur while you are working on the project. This is how it is done in
+    NetBeans:
+      <figure id="java-restart-pom">
+        <title>Restarting the POM from NetBeans</title>
+        <mediaobject>
+          <imageobject>
+          <!-- actual image size is 399px X 638px -->
+            <imagedata fileref="images/fbdevgd30_java_002_en.png" format="PNG"
+            width="399px" depth="638px"
+            scalefit="1" align="center" />  <!-- 100% -->
+          </imageobject>
+        </mediaobject>
+      </figure>
+    </para>
+  </section> <!-- fbdg30-java-structure -->
+
+  <section id="fbdg30-java-config-class">
+    <title>Coding the Configuration</title>
+    <para>We use this configuration class to specify the locations of web resources 
+    and JSP views. The <classname>configureMessageConverters</classname> method directs
+    that dates must be serialized to strings, overriding the default that serializes them 
+    to a numeric representation of a timestamp.</para>
+    <para>I am creating Java configuration classes here as I am not a big fan of doing
+    configuration in XML.
+      <programlisting>
+package ru.ibase.fbjavaex.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurerAdapter;
+import org.springframework.web.servlet.view.JstlView;
+import org.springframework.web.servlet.view.UrlBasedViewResolver;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.HttpMessageConverter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import java.util.List;
+
+@Configuration
+@ComponentScan(&quot;ru.ibase.fbjavaex&quot;)
+@EnableWebMvc
+public class WebAppConfig extends WebMvcConfigurerAdapter {
+
+    @Override
+    public void configureMessageConverters(
+      List&lt;HttpMessageConverter&lt;?&gt;&gt; httpMessageConverters) {
+        MappingJackson2HttpMessageConverter jsonConverter = 
+            new MappingJackson2HttpMessageConverter();
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, 
+                               false);
+        jsonConverter.setObjectMapper(objectMapper);
+        httpMessageConverters.add(jsonConverter);
+    }
+
+    @Bean
+    public UrlBasedViewResolver setupViewResolver() {
+        UrlBasedViewResolver resolver = new UrlBasedViewResolver();
+        resolver.setPrefix(&quot;/WEB-INF/jsp/&quot;);
+        resolver.setSuffix(&quot;.jsp&quot;);
+        resolver.setViewClass(JstlView.class);
+        return resolver;
+    }
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        registry.addResourceHandler(&quot;/resources/**&quot;)
+                .addResourceLocations(&quot;/WEB-INF/resources/&quot;);
+    }
+}
+      </programlisting>
+    </para>
+  </section> <!-- fbdg30-java-config-class -->
+
+  <section id="fbdg30-java-web-init">
+    <title>Start-up Code&mdash;WebInitializer</title>
+    <para>Now we'll get rid of the <filename>Web.xml</filename> file and 
+    create the WebInitializer.java class in its place:
+      <programlisting>
+package ru.ibase.fbjavaex.config;
+
+import javax.servlet.ServletContext;  
+import javax.servlet.ServletException;
+import javax.servlet.ServletRegistration.Dynamic;  
+  
+import org.springframework.web.WebApplicationInitializer;  
+import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;  
+import org.springframework.web.servlet.DispatcherServlet;  
+  
+public class WebInitializer implements WebApplicationInitializer {
+    
+    @Override
+    public void onStartup(ServletContext servletContext) throws ServletException {        
+        AnnotationConfigWebApplicationContext ctx = 
+            new AnnotationConfigWebApplicationContext();  
+        ctx.register(WebAppConfig.class);  
+        ctx.setServletContext(servletContext);    
+        Dynamic servlet = servletContext.addServlet(&quot;dispatcher&quot;, 
+                                                    new DispatcherServlet(ctx));  
+        servlet.addMapping(&quot;/&quot;);  
+        servlet.setLoadOnStartup(1);
+    }
+    
+}
+      </programlisting>
+    </para>
+    <para>All that is left to configure is IoC containers for injecting dependencies, 
+    a step we will <link linkend="fbdg30-java-di-config">return to later</link>. 
+    We proceed next to generating classes for working with the database via Java 
+    Object-Oriented Querying (jOOQ).</para>
+  </section> <!-- fbdg30-java-web-init -->
+
+  <section id="fbdg30-java-jooq">
+    <title>Generating classes for jOOQ</title>
+    <para>Work with the database will be carried out using the jOOQ library. jOOQ
+    builds SQL queries from jOOQ objects and code (similarly to LINQ). jOOQ is more 
+    closely integrated with the database than ORM, enabling more database features 
+    to be utilized, rather than just the simple CRUD SQL queries used in Active Record. 
+    jOOQ can work with stored procedures and functions, sequences, and use window 
+    functions and other Firebird-specific features.</para> 
+    
+    <para>You can find the full documentation for jOOQ at 
+    <ulink url="http://www.jooq.org/doc/3.9/manual-single-page/">http://www.jooq.org/doc/3.9/manual-single-page/</ulink>.
+    </para>
+
+    <section id="fbdg30-java-jooq-classes">
+      <title>jOOQ Classes</title>
+      <para>jOOQ classes for working with the database are generated on the basis 
+      of the database schema described in the earlier chapter, 
+      <link linkend="fbdevgd30-database">The examples.fdb Database</link>.</para>
+      <para>To generate jOOQ classes for working with our database, you will need to 
+      download these binary files at 
+      <ulink url="http://www.jooq.org/download">http://www.jooq.org/download</ulink> 
+      or via the maven repository:
+        <itemizedlist spacing="compact">>
+          <listitem>jooq-3.9.2.jar&mdsah;The main library included in our application 
+          for working with jOOQ</listitem>
+          <listitem>jooq-meta-3.9.2.jar&mdash;The tool included in your build for 
+          navigating the database schema via generated objects</listitem>
+          <listitem>jooq-codegen-3.9.2.jar&mdash;The tool included in your build for 
+          generating the database schema</listitem>
+        </itemizedlist>
+      </para>
+      <para>Along with those, of course, you will need to download the Jaybird driver 
+      for connecting to the Firebird database via JDBC: 
+      <filename>jaybird-full-3.0.0.jar</filename>.</para>
+      
+      <section id="fbdg30-java-jooq-classes-db-schema-config">
+        <title>Configuration for Database Schema Classes</title>
+        <para>For generating the classes for the database schema, we 
+        create the configuration file example.xml:
+          <literallayout class="monospaced">
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;?&gt;
+&lt;configuration xmlns=&quot;http://www.jooq.org/xsd/jooq-codegen-3.8.0.xsd&quot;&gt;
+  &lt;!-- Configuration of connection to the database --&gt;
+  &lt;jdbc&gt;
+    &lt;driver&gt;org.firebirdsql.jdbc.FBDriver&lt;/driver&gt;
+    &lt;url&gt;jdbc:firebirdsql://localhost:3050/examples&lt;/url&gt;
+    &lt;user&gt;SYSDBA&lt;/user&gt;
+    &lt;password&gt;masterkey&lt;/password&gt;
+    &lt;properties&gt;
+      &lt;property&gt;
+        &lt;key&gt;charSet&lt;/key&gt;
+        &lt;value&gt;utf-8&lt;/value&gt;
+      &lt;/property&gt;
+    &lt;/properties&gt;
+  &lt;/jdbc&gt;
+
+  &lt;generator&gt;
+    &lt;name&gt;org.jooq.util.JavaGenerator&lt;/name&gt;
+
+    &lt;database&gt;
+      &lt;!-- The type of the database. Format:
+           org.util.[database].[database]Database --&gt;
+      &lt;name&gt;org.jooq.util.firebird.FirebirdDatabase&lt;/name&gt;
+
+      &lt;inputSchema&gt;&lt;/inputSchema&gt;
+
+      &lt;!-- All objects that are generated from your schema 
+           (Java regular expression. Use filters to limit number of objects).  
+           Watch for sensitivity to the register. Depending on your database, 
+           this can be important! 
+       --&gt;
+      &lt;includes&gt;.*&lt;/includes&gt;
+
+      &lt;!-- Objects that are excluded when generating from your schema.
+           (Java regular expression).
+           In this case, we exclude system tables RDB$, monitoring tables MON$ 
+           and security pseudo-tables SEC$. 
+      --&gt;
+      &lt;excludes&gt;
+          RDB\$.*
+        | MON\$.*
+        | SEC\$.*
+      &lt;/excludes&gt;
+    &lt;/database&gt;
+
+    &lt;target&gt;
+      &lt;!-- The name of the package to which the generated --&gt;
+      &lt;packageName&gt;ru.ibase.fbjavaex.exampledb&lt;/packageName&gt;
+
+      &lt;!-- Directory for posting the generated classes.
+           Here, the Maven directory structure is used. --&gt;
+      &lt;directory&gt;e:/OpenServer/domains/localhost/fbjavaex/src/main/java/&lt;/directory&gt;
+    &lt;/target&gt;
+  &lt;/generator&gt;
+&lt;/configuration&gt;
+          </literallayout>
+        </para>
+      </section><!-- fbdg30-java-jooq-classes-db-schema-config -->
+
+      <section id="fbdg30-java-jooq-classes-db-schema-classes">
+        <title>Generating the Schema Classes</title>
+        <para>In the the command shell, execute the following command to create 
+        the classes needed for writing queries to database objects in Java:
+          <literallayout class="monospaced">
+java -cp jooq-3.9.2.jar;jooq-meta-3.9.2.jar;jooq-codegen-3.9.2.jar;
+jaybird-full-3.0.0.jar;. org.jooq.util.GenerationTool example.xml
+          </literallayout>
+        </para>
+        <para>You can find more details about the process of generating
+        classes at 
+<ulink url="https://www.jooq.org/doc/3.9/manual-single-page/#code-generation">https://www.jooq.org/doc/3.9/manual-single-page/#code-generation</ulink>.
+        </para>
+      </section> <!-- fbdg30-java-jooq-classes-db-schema-classes -->
+    </section> <!-- fbdg30-java-jooq-classes -->
+  </section> <!-- fbdg30-java-jooq -->
+
+  <section id="fbdg30-java-di">
+    <title>Dependency Injection</title>
+    <para>Dependency injection is a process whereby objects define their dependencies,
+    that is, the other objects they work with.  It is done only through constructor
+    arguments, arguments to a factory method, or properties set or returned using a
+    factory method. The container then injects those dependencies when it creates
+    the bean. You can find more details about dependency injection at
+<ulink url="http://docs.spring.io/spring/docs/current/spring-framework-reference/htmlsingle/#beans">http://docs.spring.io/spring/docs/current/spring-framework-reference/htmlsingle/#beans</ulink>.
+    </para>
+
+    <section id="fbdg30-java-di-config">
+      <title>Configuring IoC Containers for Dependency Injection</title>
+      <para>In Spring, dependency injection (DI) is carried out through the 
+      Spring IoC (Inversion of Control) container.</para>
+      <para>As before, we will avoid xml configuration and base our approach 
+      on annotations and Java configuration.</para>
+      <para>The main attributes and parts of the Java configuration of an IoC 
+      container are classes with the @Configuration annotation and methods with 
+      the @Bean annotation.</para>
+      
+      <section id="fbdg30-java-di-bean">
+        <title>The @Bean Annotation</title>
+        <para>The @Bean annotation is used to define a method's activity in 
+        creating, configuring and initializing a new object controlled by the
+        Spring IoC container. Methods so defined can be used the same way as 
+        classes with the @Configuration annotation.</para>
+        <para>Our IoC container will return
+          <itemizedlist spacing="compact">
+            <listitem>the connection pool</listitem>
+            <listitem>the transaction manager</listitem>
+            <listitem>the exception translator  that translates SQLException 
+            exceptions into Spring-specific DataAccessException exceptions</listitem>
+            <listitem>the DSL context that is the starting point for building all queries using the Fluent API</listitem>
+            <listitem>managers for implementing the business logic</listitem>
+            <listitem>grids for displaying data</listitem>
+          </itemizedlist>
+        </para>
+        <para>
+          <programlisting>
+/**
+ * IoC container configuration
+ * to implement dependency injection.
+ */
+
+package ru.ibase.fbjavaex.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import javax.sql.DataSource;
+import org.apache.commons.dbcp.BasicDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
+import org.jooq.impl.DataSourceConnectionProvider;
+import org.jooq.DSLContext;
+import org.jooq.impl.DefaultDSLContext;
+import org.jooq.impl.DefaultConfiguration;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DefaultExecuteListenerProvider;
+
+import ru.ibase.fbjavaex.exception.ExceptionTranslator;
+
+import ru.ibase.fbjavaex.managers.*;
+import ru.ibase.fbjavaex.jqgrid.*;
+
+/**
+ * The Spring IoC configuration class of the container 
+ */
+@Configuration
+public class JooqConfig {
+
+
+    /**
+     * Return connection pool
+     *
+     * @return 
+     */
+    @Bean(name = &quot;dataSource&quot;)
+    public DataSource getDataSource() {
+        BasicDataSource dataSource = new BasicDataSource();
+        // ?????????? ???????????? ???????????
+        dataSource.setUrl(&quot;jdbc:firebirdsql://localhost:3050/examples&quot;);
+        dataSource.setDriverClassName(&quot;org.firebirdsql.jdbc.FBDriver&quot;);
+        dataSource.setUsername(&quot;SYSDBA&quot;);
+        dataSource.setPassword(&quot;masterkey&quot;);
+        dataSource.setConnectionProperties(&quot;charSet=utf-8&quot;);
+        return dataSource;
+    }
+
+    /**
+     * Return transaction manager
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;transactionManager&quot;)
+    public DataSourceTransactionManager getTransactionManager() {
+        return new DataSourceTransactionManager(getDataSource());
+    }
+
+    @Bean(name = &quot;transactionAwareDataSource&quot;)
+    public TransactionAwareDataSourceProxy getTransactionAwareDataSource() {
+        return new TransactionAwareDataSourceProxy(getDataSource());
+    }
+
+    /**
+     * Return connection provider
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;connectionProvider&quot;)
+    public DataSourceConnectionProvider getConnectionProvider() {
+        return new DataSourceConnectionProvider(getTransactionAwareDataSource());
+    }
+
+    /**
+     * Return exception translator
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;exceptionTranslator&quot;)
+    public ExceptionTranslator getExceptionTranslator() {
+        return new ExceptionTranslator();
+    }
+
+    /**
+     * Returns the DSL context configuration
+     *
+     * @return 
+     */
+    @Bean(name = &quot;dslConfig&quot;)
+    public org.jooq.Configuration getDslConfig() {
+        DefaultConfiguration config = new DefaultConfiguration();
+        // ?????????? ??????? SQL ???? Firebird
+        config.setSQLDialect(SQLDialect.FIREBIRD);
+        config.setConnectionProvider(getConnectionProvider());
+        DefaultExecuteListenerProvider listenerProvider = 
+          new DefaultExecuteListenerProvider(getExceptionTranslator());
+        config.setExecuteListenerProvider(listenerProvider);
+        return config;
+    }
+
+    /**
+     * Return DSL context
+     *
+     * @return 
+     */
+    @Bean(name = &quot;dsl&quot;)
+    public DSLContext getDsl() {
+        org.jooq.Configuration config = this.getDslConfig();
+        return new DefaultDSLContext(config);
+    }
+
+    /**
+     * Return customer manager
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;customerManager&quot;)
+    public CustomerManager getCustomerManager() {
+        return new CustomerManager();
+    }
+
+    /**
+     * Return customer grid
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;customerGrid&quot;)
+    public JqGridCustomer getCustomerGrid() {
+        return new JqGridCustomer();
+    }
+
+    /**
+     * Return product manager
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;productManager&quot;)
+    public ProductManager getProductManager() {
+        return new ProductManager();
+    }
+
+    /**
+     * Return product grid
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;productGrid&quot;)
+    public JqGridProduct getProductGrid() {
+        return new JqGridProduct();
+    }
+
+    /**
+     * Return invoice manager
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;invoiceManager&quot;)
+    public InvoiceManager getInvoiceManager() {
+        return new InvoiceManager();
+    }
+
+    /**
+     * Return invoice grid
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;invoiceGrid&quot;)
+    public JqGridInvoice getInvoiceGrid() {
+        return new JqGridInvoice();
+    }
+
+    /**
+     * Return invoice items grid
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;invoiceLineGrid&quot;)
+    public JqGridInvoiceLine getInvoiceLineGrid() {
+        return new JqGridInvoiceLine();
+    }
+
+    /**
+     * Return working period
+     * 
+     * @return 
+     */
+    @Bean(name = &quot;workingPeriod&quot;)
+    public WorkingPeriod getWorkingPeriod() {
+        return new WorkingPeriod();
+    }
+
+}
+          </programlisting>
+        </para>
+      </section> <!-- fbdg30-java-di-bean -->
+    </section> <!-- fbdg30-java-di-config -->
+  </section> <!-- fbdg30-java-di -->
+
+  <section id="fbdg30-java-jooq-crt-qry">
+    <title>Creating SQL Queries Using jOOQ</title>
+    <para>Before we move on to the implementation of managers and grids, we will examine briefly 
+    how to work with the database via jOOQ. You can find the full documentation on this issue
+    in the <ulink url="https://www.jooq.org/doc/3.9/manual-single-page/%23sql-building">SQL-building</ulink>
+    section of the jOOQ documentation.</para>
+    <para>The <classname>org.jooq.impl.DSL</classname> class is the main one from which jOOQ
+    objects are created. It acts as a static factory for table expressions, column (or field) 
+    expressions, conditional expressions and many other parts of a query.</para>
+    <para><classname>DSLContext</classname> references the <classname>org.jooq.Configuration</classname> 
+    object that configures the behavior of jOOQ during the execution of queries. Unlike with 
+    static DSL, with DSLContext you can to create SQL statements that are already 
+    <quote>configured</quote> and ready for execution.</para>
+    <para>In our application, <classname>DSLContex</classname>t is created in the <classname>getDsl</classname> 
+    method of the <classname>JooqConfig</classname> configuration class. Configuration for 
+    <classname>DSLContext</classname> is returned by the <classname>getDslConfig</classname> method. 
+    In this method we specify the Firebird dialect that we will use, the connection provider 
+    that determines how we get a connection via JDBC and the SQL query execution listener.</para>
+
+    <section id="fbdg30-java-jooq-dsl">
+      <title>The jOOQ DSL</title>
+      <para>jOOQ comes with its own DSL (for <firstterm>Domain Specific Language</firstterm>) that 
+      emulates SQL in Java. It allows you to write SQL statements almost as though Java actually 
+      supported them. Its effect is similar to what .NET in C# does with LINQ to SQL.</para>
+      <para>jOOQ uses an informal BNF notation modelling a unified SQL dialect suitable for most 
+      database engines. Unlike other, simpler frameworks that use the Fluent API or the chain 
+      method, the jOOQ-based BNF interface does not permit bad query syntax.</para>
+      <para>
+        <programlisting>
+A simple SQL query:
+SELECT *
+  FROM author a
+  JOIN book b ON a.id = b.author_id
+ WHERE a.year_of_birth &gt; 1920
+   AND a.first_name = 'Paulo'
+ ORDER BY b.title
+        </programlisting>
+      In jOOQ it looks like this:
+        <programlisting>
+Result&lt;Record&gt; result =
+dsl.select()
+   .from(AUTHOR.as(&quot;a&quot;))
+   .join(BOOK.as(&quot;b&quot;)).on(a.ID.equal(b.AUTHOR_ID))
+   .where(a.YEAR_OF_BIRTH.greaterThan(1920)
+   .and(a.FIRST_NAME.equal(&quot;Paulo&quot;)))
+   .orderBy(b.TITLE)
+   .fetch();
+        </programlisting>
+      </para>
+      <para>The <classname>AUTHOR</classname> and <classname>BOOK</classname> classes describing 
+      the corresponding tables must be generated beforehand. The process of generating jOOQ classes 
+      according to the specified database schema was described earlier.</para>
+      <para>We specified table aliases for the AUTHOR and BOOK tables using the <database>AS</database>
+      clause. Here is the same query in DSL without aliases:
+        <programlisting>
+Result&lt;Record&gt; result =
+dsl.select()
+   .from(AUTHOR)
+   .join(BOOK).on(AUTHOR.ID.equal(BOOK.AUTHOR_ID))
+   .where(AUTHOR.YEAR_OF_BIRTH.greaterThan(1920)
+   .and(AUTHOR.FIRST_NAME.equal(&quot;Paulo&quot;)))
+   .orderBy(BOOK.TITLE)
+   .fetch();
+        </programlisting>
+      </para>
+      <para>Now we take a more complex query with aggregate functions and grouping:
+        <programlisting>
+SELECT AUTHOR.FIRST_NAME, AUTHOR.LAST_NAME, COUNT(*)
+FROM AUTHOR
+  JOIN BOOK ON AUTHOR.ID = BOOK.AUTHOR_ID
+WHERE BOOK.LANGUAGE = 'DE'
+  AND BOOK.PUBLISHED &gt; '2008-01-01'
+GROUP BY AUTHOR.FIRST_NAME, AUTHOR.LAST_NAME
+  HAVING COUNT(*) &gt; 5
+ORDER BY AUTHOR.LAST_NAME ASC NULLS FIRST
+  OFFSET 1 ROWS
+  FETCH FIRST 2 ROWS ONLY
+        </programlisting>
+      In jOOQ:
+        <programlisting>
+dsl.select(AUTHOR.FIRST_NAME, AUTHOR.LAST_NAME, count())
+   .from(AUTHOR)
+   .join(BOOK).on(BOOK.AUTHOR_ID.equal(AUTHOR.ID))
+   .where(BOOK.LANGUAGE.equal(&quot;DE&quot;))
+   .and(BOOK.PUBLISHED.greaterThan(&quot;2008-01-01&quot;))
+   .groupBy(AUTHOR.FIRST_NAME, AUTHOR.LAST_NAME)
+   .having(count().greaterThan(5))
+   .orderBy(AUTHOR.LAST_NAME.asc().nullsFirst())
+   .limit(2)
+   .offset(1)
+   .fetch();
+        </programlisting>
+      </para>
+      <note>
+        <para>'Dialect' in the jOOQ context represents not just the SQL dialect of
+        the database but also the major version number of the database engine.  The 
+        field 'limit', limiting the number of records returned, will be generated
+        according to the SQL syntax available to the database engine. The example 
+        above used FIREBIRD_3_0, which supports <database>OFFSET</database> &hellip; 
+        <database>FETCH</database>. If we had specified the FIREBIRD_2_5 or just 
+        the FIREBIRD dialect, the ROWS clause would have been used instead.</para>
+      </note>
+      <para>You can build a query in parts. This will allow you to change it
+      dynamically, to change the sort order or to add additional filter conditions.
+        <programlisting>
+SelectFinalStep&lt;?&gt; select
+    = dsl.select()
+         .from(PRODUCT);
+
+SelectQuery&lt;?&gt; query = select.getQuery();
+switch (searchOper) {
+    case &quot;eq&quot;:
+         query.addConditions(PRODUCT.NAME.eq(searchString));
+         break;
+    case &quot;bw&quot;:
+         query.addConditions(PRODUCT.NAME.startsWith(searchString));
+         break;
+    case &quot;cn&quot;:
+         query.addConditions(PRODUCT.NAME.contains(searchString));
+         break;
+}
+switch (sOrd) {
+    case &quot;asc&quot;:
+         query.addOrderBy(PRODUCT.NAME.asc());
+         break;
+    case &quot;desc&quot;:
+         query.addOrderBy(PRODUCT.NAME.desc());
+         break;
+}
+return query.fetchMaps();
+        </programlisting>
+      </para>
+    </section> <!-- fbdg30-java-jooq-dsl -->
+
+    <section id="fbdg30-java-jooq-parameters">
+      <title>Named and Unnamed Parameters</title>
+      <para>By default, any time you present a query containing a parameter that is 
+      string literal, a date, a number literal or an external variable, jOOQ uses unnamed 
+      parameters to bind that variable or literal. To illustrate, the following expression 
+      in Java:
+        <programlisting>
+dsl.select()
+   .from(BOOK)
+   .where(BOOK.ID.equal(5))
+   .and(BOOK.TITLE.equal(&quot;Animal Farm&quot;))
+   .fetch();
+        </programlisting>
+      is equivalent to the full form:
+        <programlisting>
+dsl.select()
+   .from(BOOK)
+   .where(BOOK.ID.equal(val(5)))
+   .and(BOOK.TITLE.equal(val(&quot;Animal Farm&quot;)))
+   .fetch();
+        </programlisting>
+      and is converted into the SQL query:
+        <programlisting>
+SELECT *
+FROM BOOK
+WHERE BOOK.ID = ?
+  AND BOOK.TITLE = ?
+        </programlisting>
+      </para>
+      <para>You need not concern yourself with the index position of the 
+      field value that corresponds to a parameter, as the values will be 
+      bound to the appropriate parameter automatically. The index of the 
+      parameter list is 1-based. If you need to change the value of a parameter, 
+      you just select it by its index number.
+        <programlisting>
+Select&lt;?&gt; select = 
+  dsl.select()
+     .from(BOOK)
+     .where(BOOK.ID.equal(5))
+     .and(BOOK.TITLE.equal(&quot;Animal Farm&quot;));
+Param&lt;?&gt; param = select.getParam(&quot;2&quot;);
+Param.setValue(&quot;Animals as Leaders&quot;);
+        </programlisting>
+      </para>
+      <para>Another way to assign a new value to a parameter is to call 
+      the <classname>bind</classname> method:
+        <programlisting>
+Query query1 = 
+  dsl.select()
+     .from(AUTHOR)
+     .where(LAST_NAME.equal(&quot;Poe&quot;));
+query1.bind(1, &quot;Orwell&quot;);
+        </programlisting>
+      </para>
+      
+      <para>jOOQ supports <emphasis role="bold">named parameters</emphasis>, too. They
+      need to be created explicitly using <classname>org.jooq.Param</classname>:
+        <programlisting>
+// Create a query with a named parameter. You can then use that name for 
+// accessing the parameter again
+Query query1 = 
+  dsl.select()
+     .from(AUTHOR)
+     .where(LAST_NAME.equal(param(&quot;lastName&quot;, &quot;Poe&quot;)));
+Param&lt;?&gt; param1 = query.getParam(&quot;lastName&quot;);
+
+// Or, keep a reference to the typed parameter in order 
+// not to lose the &lt;T&gt; type information:
+Param&lt;String&gt; param2 = param(&quot;lastName&quot;, &quot;Poe&quot;);
+Query query2 = 
+  dsl.select()
+     .from(AUTHOR)
+     .where(LAST_NAME.equal(param2));
+
+// You can now change the bind value directly on the Param reference:
+param2.setValue(&quot;Orwell&quot;);
+
+Another way to assign a new value to a parameter is to call the bind method:
+// Or, with named parameters
+Query query2 = 
+  dsl.select()
+     .from(AUTHOR)
+     .where(LAST_NAME.equal(param(&quot;lastName&quot;, &quot;Poe&quot;)));
+query2.bind(&quot;lastName&quot;, &quot;Orwell&quot;);
+        </programlisting>
+      </para>
+    </section> <!-- fbdg30-java-jooq-parameters -->
+
+    <section id="fbdg30-java-jooq-selects">
+      <title>Returning Values from SELECT Queries</title>
+      <para>jOOQ offers several methods for fetching data from SQL queries. 
+      We are not covering all of them here but you can find more details about them 
+      in the Fetching section of the jOOQ documentation.</para>
+      <para>
+      For our example, we will return the data to a map list (the 
+      <classname>fetchMaps</classname> method) which is handy to use
+      for serializing a result for JSON.</para>
+    </section>
+
+    <section id="fbdg30-java-jooq-others">
+      <title>Other Types of Queries</title>
+      <para>We'll take a look at other types of queries. This query 
+      inserts a record:
+        <programlisting>
+INSERT INTO AUTHOR
+       (ID, FIRST_NAME, LAST_NAME)
+VALUES (100, 'Hermann', 'Hesse');
+        </programlisting>
+      In jOOQ:
+        <programlisting>
+dsl.insertInto(AUTHOR,
+        AUTHOR.ID, AUTHOR.FIRST_NAME, AUTHOR.LAST_NAME)
+   .values(100, &quot;Hermann&quot;, &quot;Hesse&quot;)
+   .execute();
+        </programlisting>
+      </para>
+      <para>
+      A query to update a record:
+        <programlisting>
+UPDATE AUTHOR
+   SET FIRST_NAME = 'Hermann',
+       LAST_NAME = 'Hesse'
+ WHERE ID = 3;
+        </programlisting>
+      In jOOQ:
+        <programlisting>
+dsl.update(AUTHOR)
+   .set(AUTHOR.FIRST_NAME, &quot;Hermann&quot;)
+   .set(AUTHOR.LAST_NAME, &quot;Hesse&quot;)
+   .where(AUTHOR.ID.equal(3))
+   .execute();
+        </programlisting>
+      </para>
+      <para>A query to delete a record:
+        <programlisting>
+DELETE FROM AUTHOR
+ WHERE ID = 100;
+        </programlisting>
+      In jOOQ:
+        <programlisting>
+dsl.delete(AUTHOR)
+   .where(AUTHOR.ID.equal(100))
+   .execute();
+        </programlisting>
+      </para>
+      <para>More complex update queries can be built in jOOQ, such as a 
+      <database>MERGE</database> query, for example.</para>
+    </section>
+    
+    <section id="fbdg30-java-jooq-stored-procs">
+      <title>Stored Procedures with jOOQ</title>
+      <para>A great benefit of jOOQ is its support for working with stored 
+      procedures. Stored procedures are extracted to the <classname>*.Routines.*</classname> 
+      package.  From there, you can work with them easily. For instance, the following code 
+      in Java:
+        <programlisting>
+int invoiceId = dsl.nextval(GEN_INVOICE_ID).intValue();
+
+spAddInvoice(dsl.configuration(), 
+             invoiceId,
+             customerId,
+             invoiceDate);
+        </programlisting>
+      is equivalent to getting the next value of the generator using the 
+      following SQL query:
+        <programlisting>
+SELECT NEXT VALUE FOR GEN_INVOICE_ID 
+  FROM RDB$DATABASE
+        </programlisting>
+      and calling the stored procedure after that:
+        <programlisting>
+EXECUTE PROCEDURE SP_ADD_INVOICE   (
+   :INVOICE_ID, :CUSTOMER_ID, :INVOICE_DATE );
+        </programlisting>
+      </para>
+    </section>
+    <para>jOOQ also provides tools to build simple DDL queries, but we do not 
+    cover them here.</para>
+  </section> <!-- fbdg30-java-jooq-crt-qry -->
+    
+  <section id="fbdg30-java-jooq-txn">
+    <title>Working with Transactions</title>
+    <para>By default, jOOQ runs in a mode that commits transactions automatically.
+    It starts a new transaction for each SQL statement and commits the transaction
+    if there are no errors in the execution of the statement. The transaction is
+    rolled back if an error occurs.</para>
+    <para>The default transaction has the following parameters: 
+    READ_WRITE | READ_COMMITTED | REC_VERSION | WAIT, the same parameters that are 
+    used by the JDBC driver. You can change the default isolation mode using the 
+    parameters of the connection pool&mdash;see
+    <classname>BasicDataSource.setDefaultTransactionIsolation</classname> in the
+    <classname>getDataSource</classname> method of the <classname>JooqConfig</classname>
+    configuration class.</para>
+
+    <section id="fbdg30-java-jooq-txn-explicit">
+      <title>Explicit Transactions</title>
+      <para>In jOOQ you have several ways to control transactions explicitly. Since we 
+      are going to develop our application using the Spring Framework, we will use 
+      the transaction manager specified in the configuration (JooqConfig). You can 
+      get the transaction manager by declaring the <classname>txMgr</classname> 
+      property in the class as follows:
+        <programlisting>
+@Autowired 
+private DataSourceTransactionManager txMgr;  
+        </programlisting>
+      </para>
+      <para>The standard scenario for using this technique with a transaction
+      would be coded like this:
+        <programlisting>
+TransactionStatus tx = txMgr.getTransaction(new DefaultTransactionDefinition());
+try {
+    // actions in the context of a transaction
+    for (int i = 0; i &lt; 2; i++)
+        dsl.insertInto(BOOK)
+           .set(BOOK.ID, 5)
+           .set(BOOK.AUTHOR_ID, 1)
+           .set(BOOK.TITLE, &quot;Book 5&quot;)
+           .execute();
+    // transaction commit
+    txMgr.commit(tx);
+}
+catch (DataAccessException e) {
+    // transaction rollback
+    txMgr.rolback(tx);
+}
+        </programlisting>
+      </para>
+      <para>However, Spring enables that scenario to be implemented much more easily
+      using the <classname>@Transactional</classname> annotation specified before the
+      method of the class. Thereby, all actions performed by the method will be wrapped
+      in the transaction.
+        <programlisting>
+    /**
+     * Delete customer
+     *
+     * @param customerId
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void delete(int customerId) {
+        this.dsl.deleteFrom(CUSTOMER)
+                .where(CUSTOMER.CUSTOMER_ID.eq(customerId))
+                .execute();
+    }
+        </programlisting>
+      </para>
+
+      <section id="fbdg30-java-jooq-txn-params">
+        <title>Transaction Parameters</title>
+        <variablelist>
+          <varlistentry>
+            <term>Propagation</term>
+            <listitem>
+              <para>The propagation parameter defines how to work with transactions if 
+              our method is called from an external transaction.
+                <itemizedlist spacing="compact">
+                  <listitem>Propagation.REQUIRED&mdash;execute in the existing transaction 
+                  if there is one. Otherwise, create a new one.</listitem>
+                  <listitem>Propagation.MANDATORY&mdash;execute in the existing transaction 
+                  if there is one. Otherwise, raise an exception.</listitem>
+                  <listitem>Propagation.SUPPORTS&mdash;execute in the existing transaction 
+                  if there is one. Otherwise, execute outside the transaction.</listitem>
+                  <listitem>Propagation.NOT_SUPPORTED&mdash;always execute outside the 
+                  transaction. If there is an existing one, it will be suspended.</listitem>
+                  <listitem>Propagation.REQUIRES_NEW&mdash;always execute in a new independent 
+                  transaction. If there is an existing one, it will be suspended until the 
+                  new transaction is ended.</listitem>
+                  <listitem>Propagation.NESTED&mdash;if there is an existing transaction, 
+                  execute in a new so-called <quote>nested</quote> transaction. If the nested 
+                  transaction is rolled back, it will not affect the external transaction; 
+                  if the external transaction is rolled back, the nested one will be rolled 
+                  back as well. If there is no existing transaction, a new one is simply 
+                  created.</listitem>
+                  <listitem>Propagation.NEVER&mdash;always execute outside the transaction. 
+                  Raise an exception if there is an existing one.</listitem>
+                </itemizedlist>
+              </para>
+            </listitem>
+          </varlistentry>
+
+          <varlistentry>
+            <term>Isolation Level</term>
+            <listitem>
+              <para>The isolation parameter defines the isolation level. Five values are
+              supported: DEFAULT, READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE.
+              If the DEFAULT value of the <classname>isolation</classname> parameter is specified,
+              that level will be used. </para>
+              <para>The other isolation levels are taken from the SQL standard, not all of them 
+              supported exactly by Firebird. Only the READ_COMMITED level corresponds in all of 
+              the criteria, so JDBC READ_COMMITTED is mapped into read_committed in Firebird.  
+              REPEATABLE_READ is mapped into concurrency (SNAPSHOT) and SERIALIZABLE is mapped 
+              into consistency (SNAPSHOT TABLE STABILITY).</para>
+              <para>Firebird supports additional transaction parameters besides isolation level, 
+              viz. NO RECORD_VERSION/RECORD_VERSION (applicable only to a transaction with READ 
+              COMMITTED isolation) and WAIT/NO WAIT. The standard isolation levels can be mapped 
+              to Firebird transaction parameters by specifying the properties of the JDBC connection 
+              (see more details in the <citetitle>Using Transactions</citetitle> chapter of 
+              Jaybird 2.1 JDBC driver Java Programmer's Manual.</para>
+              <para>If your transaction works with more than one query, it is recommended to
+               use the REPEATABLE_READ isolation level to maintain data consistency.</para>
+            </listitem>
+          </varlistentry>
+
+          <varlistentry>
+            <term>Read Mode</term>
+            <listitem>By default, a transaction is in the read-write mode. The <classname>readOnly</classname>
+              property in the <classname>@Transactional</classname> annotation can be used to specify that 
+              it is to be read-only.
+            </listitem>
+          </varlistentry>
+        </variablelist>
+      </section> <!-- fbdg30-java-jooq-txn-params -->
+    </section> <!-- fbdg30-java-jooq-txn-explicit -->
+  </section> <!-- fbdg30-java-jooq-txn -->
+
+  <section id="fbdg30-java-jooq-app-code">
+    <title>Writing the Application Code</title>
+    <para>We will display the data of our application using the JavaScript component jqGrid. 
+    Currently, jqGrid is distributed under a commercial licence, but it is free for
+    non-commercial purposes. You can use the free-jqGrid fork instead.</para>
+    <para>To display data and page-by-page navigation elements in this grid, we need to 
+    return data in the JSON format, the structure of which looks like this:
+      <programlisting>
+{
+    total: 100,
+    page: 3,
+    records: 3000,
+    rows: [
+       {id: 1, name: &quot;Ada&quot;},
+       {id: 2, name: &quot;Smith&quot;},
+      &hellip;
+    ]
+}
+      </programlisting>
+    where
+      <itemizedlist>
+        <listitem>total&mdash;the total number of pages</listitem>
+        <listitem>page&mdash;the number of the current page</listitem>
+        <listitem>records&mdash;the total number of records</listitem>
+        <listitem>rows&mdash;the count of records on the current page array</listitem>
+      </itemizedlist>
+    </para>
+    <para>The following code creates a class demonstrating this structure:
+      <programlisting>
+package ru.ibase.fbjavaex.jqgrid;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * A class describing the structure that is used in jqGrid
+ * Designed for JSON serialization
+ *
+ * @author Simonov Denis
+ */
+public class JqGridData {
+
+    /**
+     * Total number of pages
+     */
+    private final int total;
+
+    /**
+     * The current page number
+     */
+    private final int page;
+
+    /**
+     * Total number of records
+     */
+    private final int records;
+
+    /**
+     * The actual data
+     */
+    private final List&lt;Map&lt;String, Object&gt;&gt; rows;
+
+    /**
+     * Constructor
+     *
+     * @param total
+     * @param page
+     * @param records
+     * @param rows
+     */
+    public JqGridData(int total, int page, int records,
+                      List&lt;Map&lt;String, Object&gt;&gt; rows) {
+        this.total = total;
+        this.page = page;
+        this.records = records;
+        this.rows = rows;
+    }
+
+    /**
+     * Returns the total number of pages
+     *
+     * @return
+     */
+    public int getTotal() {
+        return total;
+    }
+
+    /**
+     * Returns the current page
+     *
+     * @return
+     */
+    public int getPage() {
+        return page;
+    }
+
+    /**
+     * Returns the total number of records
+     *
+     * @return
+     */
+    public int getRecords() {
+        return records;
+    }
+
+    /**
+     * Return list of map
+     * This is an array of data to display in the grid
+     *
+     * @return
+     */
+    public List&lt;Map&lt;String, Object&gt;&gt; getRows() {
+        return rows;
+    }
+}
+        </programlisting>
+      </para>
+      <para>Now we will write an abstract class that will return that structure depending
+      on the search and sorting conditions. It will be a parent class for the entity-specific
+      classes that return similar structures.
+        <programlisting>
+/*
+ * Abstract class for working with JqGrid
+ */
+package ru.ibase.fbjavaex.jqgrid;
+
+import java.util.Map;
+import java.util.List;
+import org.jooq.DSLContext;
+import org.springframework.beans.factory.annotation.Autowired;
+
+/**
+ * Working with JqGrid
+ *
+ * @author Simonov Denis
+ */
+public abstract class JqGrid {
+
+
+    @Autowired(required = true)
+    protected DSLContext dsl;
+
+    protected String searchField = &quot;&quot;;
+    protected String searchString = &quot;&quot;;
+    protected String searchOper = &quot;eq&quot;;
+    protected Boolean searchFlag = false;
+    protected int pageNo = 0;
+    protected int limit = 0;
+    protected int offset = 0;
+    protected String sIdx = &quot;&quot;;
+    protected String sOrd = &quot;asc&quot;;
+
+    /**
+     * Returns the total number of records
+     *
+     * @return
+     */
+    public abstract int getCountRecord();
+
+    /**
+     * Returns the structure for JSON serialization
+     *
+     * @return
+     */
+    public JqGridData getJqGridData() {
+        int recordCount = this.getCountRecord();
+        List&lt;Map&lt;String, Object&gt;&gt; records = this.getRecords();
+
+        int total = 0;
+        if (this.limit &gt; 0) {
+            total = recordCount / this.limit + 1;
+        }
+
+        JqGridData jqGridData = new JqGridData(
+            total,
+            this.pageNo,
+            recordCount,
+            records);
+        return jqGridData;
+    }
+
+
+    /**
+     * Returns the number of records per page
+     *
+     * @return
+     */
+    public int getLimit() {
+        return this.limit;
+    }
+
+    /**
+     * Returns the offset to retrieve the first record on the page
+     *
+     * @return
+     */
+    public int getOffset() {
+        return this.offset;
+    }
+
+    /**
+     * Returns field name for sorting
+     *
+     * @return
+     */
+    public String getIdx() {
+        return this.sIdx;
+    }
+
+    /**
+     * Returns the sort order
+     *
+     * @return
+     */
+    public String getOrd() {
+        return this.sOrd;
+    }
+
+    /**
+     * Returns the current page number
+     *
+     * @return
+     */
+    public int getPageNo() {
+        return this.pageNo;
+    }
+
+    /**
+     * Returns an array of records as a list of maps
+     *
+     * @return
+     */
+    public abstract List&lt;Map&lt;String, Object&gt;&gt; getRecords();
+
+    /**
+     * Returns field name for search
+     *
+     * @return
+     */
+    public String getSearchField() {
+        return this.searchField;
+    }
+
+    /**
+     * Returns value for search
+     *
+     * @return
+     */
+    public String getSearchString() {
+        return this.searchString;
+    }
+
+    /**
+     * Returns the search operation
+     *
+     * @return
+     */
+    public String getSearchOper() {
+        return this.searchOper;
+    }
+
+    /**
+     * Sets the limit on the number of display records
+     *
+     * @param limit
+     */
+    public void setLimit(int limit) {
+        this.limit = limit;
+    }
+
+    /**
+     * Sets the number of records to skip
+     *
+     * @param offset
+     */
+    public void setOffset(int offset) {
+        this.offset = offset;
+    }
+
+    /**
+     * Sets the sorting
+     *
+     * @param sIdx
+     * @param sOrd
+     */
+    public void setOrderBy(String sIdx, String sOrd) {
+        this.sIdx = sIdx;
+        this.sOrd = sOrd;
+    }
+
+    /**
+     * Sets the current page number
+     *
+     * @param pageNo
+     */
+    public void setPageNo(int pageNo) {
+        this.pageNo = pageNo;
+        this.offset = (pageNo - 1) * this.limit;
+    }
+
+    /**
+     * Sets the search condition
+     *
+     * @param searchField
+     * @param searchString
+     * @param searchOper
+     */
+    public void setSearchCondition(String searchField, String searchString,
+                                   String searchOper) {
+        this.searchFlag = true;
+        this.searchField = searchField;
+        this.searchString = searchString;
+        this.searchOper = searchOper;
+    }
+}
+      </programlisting>
+      <note>
+        <para>Notice that this class contains the DSLContext dsl property that will be used
+        to build jOOQ queries for retrieving data.</para>
+      </note>
+    </para>
+  </section> <!-- fbdg30-java-jooq-app-code -->
+
+  <section id="fbdg30-java-jooq-crt-pri-modules">
+    <title>Creating the Primary Modules</title>
+    <para>Now we can start creating modules. The process of creating modules is described here,
+    using the customer module as an example. Creating the product module is similar and,
+    if you are interested, you can examine its source code in the .zip download linked at the
+    <link linkend="fbdg30-java-project-sourcecode">end of this chapter</link>.</para>
+    <para>First, we implement a class for working with jqGrid, inheriting it from
+    our abstract class <classname>ru.ibase.fbjavaex.jqgrid.JqGrid</classname>. It will be
+    able to search and sort by the NAME field in reversing order. Track the source code below
+    for explanatory comments.
+      <programlisting>
+package ru.ibase.fbjavaex.jqgrid;
+
+import org.jooq.*;
+import java.util.List;
+import java.util.Map;
+
+import static ru.ibase.fbjavaex.exampledb.Tables.CUSTOMER;
+
+/**
+ * Customer grid
+ *
+ * @author Simonov Denis
+ */
+public class JqGridCustomer extends JqGrid {
+
+    /**
+     * Adding a search condition
+     *
+     * @param query
+     */
+    private void makeSearchCondition(SelectQuery&lt;?&gt; query) {
+        switch (this.searchOper) {
+            case &quot;eq&quot;:
+                // CUSTOMER.NAME = ?
+               query.addConditions(CUSTOMER.NAME.eq(this.searchString));
+               break;
+            case &quot;bw&quot;:
+                // CUSTOMER.NAME STARTING WITH ?
+               query.addConditions(CUSTOMER.NAME.startsWith(this.searchString));
+               break;
+            case &quot;cn&quot;:
+                // CUSTOMER.NAME CONTAINING ?
+               query.addConditions(CUSTOMER.NAME.contains(this.searchString));
+               break;
+        }
+    }
+
+
+    /**
+     * Returns the total number of records
+     *
+     * @return
+     */
+    @Override
+    public int getCountRecord() {
+        // query that returns the number of records
+        SelectFinalStep&lt;?&gt; select
+            = dsl.selectCount()
+                 .from(CUSTOMER);
+
+        SelectQuery&lt;?&gt; query = select.getQuery();
+        // if perform a search, then add the search condition
+        if (this.searchFlag) {
+            makeSearchCondition(query);
+        }
+
+        return (int) query.fetch().getValue(0, 0);
+    }
+
+    /**
+     * Returns the grid records
+     *
+     * @return
+     */
+    @Override
+    public List&lt;Map&lt;String, Object&gt;&gt; getRecords() {
+        // Basic selection query
+        SelectFinalStep&lt;?&gt; select =
+            dsl.select()
+               .from(CUSTOMER);
+
+        SelectQuery&lt;?&gt; query = select.getQuery();
+        // if perform a search, then add the search condition
+        if (this.searchFlag) {
+            makeSearchCondition(query);
+        }
+        // set the sort order
+        switch (this.sOrd) {
+            case &quot;asc&quot;:
+                query.addOrderBy(CUSTOMER.NAME.asc());
+                break;
+            case &quot;desc&quot;:
+                query.addOrderBy(CUSTOMER.NAME.desc());
+                break;
+        }
+        // limit the number of records
+        if (this.limit != 0) {
+            query.addLimit(this.limit);
+        }
+
+        if (this.offset != 0) {
+            query.addOffset(this.offset);
+        }
+        // return an array of maps
+        return query.fetchMaps();
+    }
+}
+      </programlisting>
+    </para>
+
+    <section id="fbdg30-java-jooq-class-custmgr">
+      <title>CustomerManager Class</title>
+      <para>The CustomerManager class that is defined next is a kind of business
+      layer between the corresponding controller and the database. We will use
+      it for adding, editing and deleting a customer. All operations in this layer
+      will be performed in a SNAPSHOT-level transaction.
+        <programlisting>
+package ru.ibase.fbjavaex.managers;
+
+import org.jooq.DSLContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Isolation;
+
+import static ru.ibase.fbjavaex.exampledb.Tables.CUSTOMER;
+import static ru.ibase.fbjavaex.exampledb.Sequences.GEN_CUSTOMER_ID;
+
+/**
+ * Customer manager
+ *
+ * @author Simonov Denis
+ */
+public class CustomerManager {
+
+    @Autowired(required = true)
+    private DSLContext dsl;
+
+    /**
+     * Adding a customer
+     *
+     * @param name
+     * @param address
+     * @param zipcode
+     * @param phone
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void create(String name, String address, String zipcode, String phone) {
+        if (zipcode != null) {
+            if (zipcode.trim().isEmpty()) {
+                zipcode = null;
+            }
+        }
+
+        int customerId = this.dsl.nextval(GEN_CUSTOMER_ID).intValue();
+
+        this.dsl
+                .insertInto(CUSTOMER,
+                        CUSTOMER.CUSTOMER_ID,
+                        CUSTOMER.NAME,
+                        CUSTOMER.ADDRESS,
+                        CUSTOMER.ZIPCODE,
+                        CUSTOMER.PHONE)
+                .values(
+                        customerId,
+                        name,
+                        address,
+                        zipcode,
+                        phone
+                )
+                .execute();
+    }
+
+    /**
+     * Editing a customer
+     *
+     * @param customerId
+     * @param name
+     * @param address
+     * @param zipcode
+     * @param phone
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void edit(int customerId, String name, String address,
+                     String zipcode, String phone) {
+
+        if (zipcode != null) {
+            if (zipcode.trim().isEmpty()) {
+                zipcode = null;
+            }
+        }
+
+        this.dsl.update(CUSTOMER)
+                .set(CUSTOMER.NAME, name)
+                .set(CUSTOMER.ADDRESS, address)
+                .set(CUSTOMER.ZIPCODE, zipcode)
+                .set(CUSTOMER.PHONE, phone)
+                .where(CUSTOMER.CUSTOMER_ID.eq(customerId))
+                .execute();
+    }
+
+    /**
+     * Deleting a customer
+     *
+     * @param customerId
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void delete(int customerId) {
+        this.dsl.deleteFrom(CUSTOMER)
+                .where(CUSTOMER.CUSTOMER_ID.eq(customerId))
+                .execute();
+    }
+}
+        </programlisting>
+      </para>
+    </section> <!-- fbdg30-java-jooq-class-custmgr -->
+
+    <section id="fbdg30-java-jooq-class-custctrlr">
+      <title>Customer Controller Class</title>
+      <para>Controller classes start with the <classname>@Controller</classname> annotation.
+      The <classname>@RequestMapping</classname> annotation preceding the method is necessary
+      for directing the actions of the controller, for specifying the path that will be used
+      to call the action.
+        <itemizedlist>
+          <listitem>The path is specified in the <classname>value</classname> attribute</listitem>
+          <listitem>The <classname>method</classname> attribute specifies the HTTP request
+          method (PUT, GET, POST, DELETE)</listitem>
+          <listitem>The <classname>index</classname> method will be the input point of our
+          controller. It is responsible for displaying the JSP page (view) that contains the
+          layout for displaying the grid, the tool bar and the navigation bar.</listitem>
+        </itemizedlist>
+      </para>
+
+      <para>Data for display are loaded asynchronously by the jqGrid component. The path
+      is <filename>/customer/getdata</filename>, to which the <classname>getData</classname>
+      method is connected.</para>
+
+      <section id="fbdg30-java-jooq-custctrlr-getdata">
+        <title>getData Method</title>
+        <para>The <classname>getData</classname> method contains the additional
+        <classname>@ResponseBody</classname> annotation for indicating that our method
+        returns the object for serialization into a specific format. The annotation
+        <classname>@RequestMapping</classname> contains the attribute
+        <classname>produces = MediaType.APPLICATION_JSON</classname>, directing that the
+        returned object be serialized into the JSON format.</para>
+
+        <para>It is in the <classname>getData</classname> method that we work with the
+        <classname>JqGridCustomer</classname> class described earlier. The <classname>@RequestParam</classname>
+        annotation enables the value of the parameter to be retrieved from the HTTP request.
+        This class method works with GET requests.
+          <itemizedlist>
+            <listitem>The <classname>value</classname> attribute in the <classname>@RequestParam</classname>
+            annotation defines the name of the parameter to be retrieved from the HTTP request.</listitem>
+            <listitem>The <classname>Required</classname> attribute can designate the HTTP request
+            parameter as mandatory.</listitem>
+            <listitem>The <classname>defaultValue</classname> attribute supplies the value that is to
+            be used if the HTTP parameter is not specified.</listitem>
+          </itemizedlist>
+        </para>
+      </section>
+
+      <section id="fbdg30-java-jooq-custctrlr-cust-actions">
+        <title>Customer Action Methods</title>
+        <para>The <classname>addCustomer</classname> method is used to add a new customer.
+        It is connected with the <filename>/customer/create</filename> path and, unlike the
+        previous method, it works with the POST request. The method returns {success: true}
+        if the customer is added successfully.  If an error occurs, it returns an object
+        with the error message. The <classname>addCustomer</classname> method works with
+        the <classname>CustomerManager</classname> business layer method.</para>
+        <para>The <classname>editCustomer</classname> method is connected with the
+        <filename>/customer/edit</filename> path. The <classname>deleteCustomer</classname>
+        method is connected with the <filename>/customer/delete</filename> path.
+        Both methods operate on existing customer records.</para>
+        <para>
+          <programlisting>
+package ru.ibase.fbjavaex.controllers;
+
+import java.util.HashMap;
+import java.util.Map;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.ModelMap;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import javax.ws.rs.core.MediaType;
+
+import org.springframework.beans.factory.annotation.Autowired;
+
+import ru.ibase.fbjavaex.managers.CustomerManager;
+
+import ru.ibase.fbjavaex.jqgrid.JqGridCustomer;
+import ru.ibase.fbjavaex.jqgrid.JqGridData;
+
+
+/**
+ * Customer Controller
+ *
+ * @author Simonov Denis
+ */
+@Controller
+public class CustomerController {
+
+
+    @Autowired(required = true)
+    private JqGridCustomer customerGrid;
+
+    @Autowired(required = true)
+    private CustomerManager customerManager;
+
+
+    /**
+     * Default action
+     * Returns the JSP name of the page (view) to display
+     *
+     * @param map
+     * @return name of JSP template
+     */
+    @RequestMapping(value = &quot;/customer/&quot;, method = RequestMethod.GET)
+    public String index(ModelMap map) {
+        return &quot;customer&quot;;
+    }
+
+    /**
+     * Returns JSON data for jqGrid
+     *
+     * @param rows number of entries per page
+     * @param page page number
+     * @param sIdx sorting field
+     * @param sOrd sorting order
+     * @param search should the search be performed
+     * @param searchField search field
+     * @param searchString value for searching
+     * @param searchOper search operation
+     * @return JSON data for jqGrid
+     */
+    @RequestMapping(value = &quot;/customer/getdata&quot;,
+            method = RequestMethod.GET,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public JqGridData getData(
+            // number of entries per page
+            @RequestParam(value = &quot;rows&quot;, required = false,
+                          defaultValue = &quot;20&quot;) int rows,
+            // page number
+            @RequestParam(value = &quot;page&quot;, required = false,
+                          defaultValue = &quot;1&quot;) int page,
+            // sorting field
+            @RequestParam(value = &quot;sidx&quot;, required = false,
+                          defaultValue = &quot;&quot;) String sIdx,
+            // sorting order
+            @RequestParam(value = &quot;sord&quot;, required = false,
+                          defaultValue = &quot;asc&quot;) String sOrd,
+            // should the search be performed
+            @RequestParam(value = &quot;_search&quot;, required = false,
+                          defaultValue = &quot;false&quot;) Boolean search,
+            // search field
+            @RequestParam(value = &quot;searchField&quot;, required = false,
+                          defaultValue = &quot;&quot;) String searchField,
+            // value for searching
+            @RequestParam(value = &quot;searchString&quot;, required = false,
+                          defaultValue = &quot;&quot;) String searchString,
+            // search operation
+            @RequestParam(value = &quot;searchOper&quot;, required = false,
+                          defaultValue = &quot;&quot;) String searchOper,
+            // filters
+            @RequestParam(value=&quot;filters&quot;, required=false,
+                          defaultValue=&quot;&quot;) String filters) {
+        customerGrid.setLimit(rows);
+        customerGrid.setPageNo(page);
+        customerGrid.setOrderBy(sIdx, sOrd);
+        if (search) {
+            customerGrid.setSearchCondition(searchField, searchString, searchOper);
+        }
+
+        return customerGrid.getJqGridData();
+    }
+
+    @RequestMapping(value = &quot;/customer/create&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; addCustomer(
+            @RequestParam(value = &quot;NAME&quot;, required = true,
+                          defaultValue = &quot;&quot;) String name,
+            @RequestParam(value = &quot;ADDRESS&quot;, required = false,
+                          defaultValue = &quot;&quot;) String address,
+            @RequestParam(value = &quot;ZIPCODE&quot;, required = false,
+                          defaultValue = &quot;&quot;) String zipcode,
+            @RequestParam(value = &quot;PHONE&quot;, required = false,
+                          defaultValue = &quot;&quot;) String phone) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            customerManager.create(name, address, zipcode, phone);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+
+    @RequestMapping(value = &quot;/customer/edit&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; editCustomer(
+            @RequestParam(value = &quot;CUSTOMER_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) int customerId,
+            @RequestParam(value = &quot;NAME&quot;, required = true,
+                          defaultValue = &quot;&quot;) String name,
+            @RequestParam(value = &quot;ADDRESS&quot;, required = false,
+                          defaultValue = &quot;&quot;) String address,
+            @RequestParam(value = &quot;ZIPCODE&quot;, required = false,
+                          defaultValue = &quot;&quot;) String zipcode,
+            @RequestParam(value = &quot;PHONE&quot;, required = false,
+                          defaultValue = &quot;&quot;) String phone) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            customerManager.edit(customerId, name, address, zipcode, phone);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+
+    @RequestMapping(value = &quot;/customer/delete&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; deleteCustomer(
+            @RequestParam(value = &quot;CUSTOMER_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) int customerId) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            customerManager.delete(customerId);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+}
+          </programlisting>
+        </para>
+      </section> <!-- fbdg30-java-jooq-custctrlr-cust-actions -->
+
+      <section id="fbdg30-java-jooq-custctrlr-cust-display">
+        <title>Customer Display</title>
+        <para>The JSP page for displaying the customer module contains nothing
+        special: the layout with the main parts of the page, the table for displaying the
+        grid and the block for displaying the navigation bar. JSP templates are fairly
+        unsophisticated. If you wish, you can replace them with other template systems
+        that support inheritance.</para>
+        <para>The <filename>../jspf/head.jspf</filename> file contains common scripts and
+        styles for all website pages and the <filename>../jspf/menu.jspf</filename> file
+        contains the website's main menu. Their code is not reproduced here: it is quite
+        simple and you can examine it in the project's source if you are curious.
+          <programlisting>
+&lt;%@page contentType=&quot;text/html&quot; pageEncoding=&quot;UTF-8&quot;%&gt;
+&lt;%@ taglib uri=&quot;http://java.sun.com/jsp/jstl/core&quot; prefix=&quot;c&quot; %&gt;
+&lt;c:set var=&quot;cp&quot; value=&quot;${pageContext.request.servletContext.contextPath}&quot;
+       scope=&quot;request&quot; /&gt;
+
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+    &lt;head&gt;
+        &lt;meta http-equiv=&quot;Content-Type&quot; content=&quot;text/html; charset=UTF-8&quot;&gt;
+        &lt;title&gt;An example of a Spring MVC application using Firebird
+               and jOOQ&lt;/title&gt;
+
+        &lt;!-- Scripts and styles --&gt;
+        &lt;%@ include file=&quot;../jspf/head.jspf&quot; %&gt;
+        &lt;script src=&quot;${cp}/resources/js/jqGridCustomer.js&quot;&gt;&lt;/script&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;!-- Navigation menu --&gt;
+        &lt;%@ include file=&quot;../jspf/menu.jspf&quot; %&gt;
+
+        &lt;div class=&quot;container body-content&quot;&gt;
+
+            &lt;h2&gt;Customers&lt;/h2&gt;
+
+            &lt;table id=&quot;jqGridCustomer&quot;&gt;&lt;/table&gt;
+            &lt;div id=&quot;jqPagerCustomer&quot;&gt;&lt;/div&gt;
+
+            &lt;hr/&gt;
+            &lt;footer&gt;
+                &lt;p&gt;&copy; 2016 - An example of a Spring MVC application
+                using Firebird and jOOQ&lt;/p&gt;
+            &lt;/footer&gt;
+        &lt;/div&gt;
+
+&lt;script type=&quot;text/javascript&quot;&gt;
+    $(document).ready(function () {
+        JqGridCustomer({
+            baseAddress: '${cp}'
+        });
+    });
+&lt;/script&gt;
+
+    &lt;/body&gt;
+&lt;/html&gt;
+            </programlisting>
+          </para>
+          <para>The basic logic on the client side is concentrated in the
+          <filename>/resources/js/jqGridCustomer.js</filename> JavaScript module.
+            <programlisting>
+var JqGridCustomer = (function ($) {
+
+  return function (options) {
+      var jqGridCustomer = {
+          dbGrid: null,
+          options: $.extend({
+              baseAddress: null,
+              showEditorPanel: true
+          }, options),
+          // return model description
+          getColModel: function () {
+              return [
+                  {
+                      label: 'Id',
+                      name: 'CUSTOMER_ID', // field name
+                      key: true,
+                      hidden: true
+                  },
+                  {
+                      label: 'Name',
+                      name: 'NAME',
+                      width: 240,
+                      sortable: true,
+                      editable: true,
+                      edittype: &quot;text&quot;, // input field type in the editor
+                      search: true,
+                      searchoptions: {
+                          // allowed search operators
+                          sopt: ['eq', 'bw', 'cn']
+                      },
+                      // size and maximum length for the input field
+                      editoptions: {size: 30, maxlength: 60},
+                      editrules: {required: true}
+                  },
+                  {
+                      label: 'Address',
+                      name: 'ADDRESS',
+                      width: 300,
+                      sortable: false, // prohibit sorting
+                      editable: true,
+                      search: false, // prohibit search
+                      edittype: &quot;textarea&quot;, // Memo field
+                      editoptions: {maxlength: 250, cols: 30, rows: 4}
+                  },
+                  {
+                      label: 'Zip Code',
+                      name: 'ZIPCODE',
+                      width: 30,
+                      sortable: false,
+                      editable: true,
+                      search: false,
+                      edittype: &quot;text&quot;,
+                      editoptions: {size: 30, maxlength: 10}
+                  },
+                  {
+                      label: 'Phone',
+                      name: 'PHONE',
+                      width: 80,
+                      sortable: false,
+                      editable: true,
+                      search: false,
+                      edittype: &quot;text&quot;,
+                      editoptions: {size: 30, maxlength: 14}
+                  }
+              ];
+          },
+          // grid initialization
+          initGrid: function () {
+              // url to retrieve data
+              var url = jqGridCustomer.options.baseAddress
+                      + '/customer/getdata';
+              jqGridCustomer.dbGrid = $(&quot;#jqGridCustomer&quot;).jqGrid({
+                  url: url,
+                  datatype: &quot;json&quot;, // data format
+                  mtype: &quot;GET&quot;, // request type
+                  colModel: jqGridCustomer.getColModel(),
+                  rowNum: 500, // number of rows displayed
+                  loadonce: false, // load only once
+                  sortname: 'NAME', // Sorting by NAME by default
+                  sortorder: &quot;asc&quot;,
+                  width: window.innerWidth - 80,
+                  height: 500,
+                  viewrecords: true, // display the number of records
+                  guiStyle: &quot;bootstrap&quot;,
+                  iconSet: &quot;fontAwesome&quot;,
+                  caption: &quot;Customers&quot;,
+                  // navigation item
+                  pager: 'jqPagerCustomer'
+              });
+          },
+          // editing options
+          getEditOptions: function () {
+            return {
+              url: jqGridCustomer.options.baseAddress + '/customer/edit',
+              reloadAfterSubmit: true,
+              closeOnEscape: true,
+              closeAfterEdit: true,
+              drag: true,
+              width: 400,
+              afterSubmit: jqGridCustomer.afterSubmit,
+              editData: {
+                // In addition to the values from the form, pass the key field
+                CUSTOMER_ID: function () {
+                  // get the current row
+                  var selectedRow = jqGridCustomer.dbGrid.getGridParam(&quot;selrow&quot;);
+                  // get the value of the field CUSTOMER_ID
+                  var value = jqGridCustomer.dbGrid.getCell(selectedRow,
+                              'CUSTOMER_ID');
+                  return value;
+                }
+              }
+            };
+          },
+          // Add options
+          getAddOptions: function () {
+            return {
+              url: jqGridCustomer.options.baseAddress + '/customer/create',
+              reloadAfterSubmit: true,
+              closeOnEscape: true,
+              closeAfterAdd: true,
+              drag: true,
+              width: 400,
+              afterSubmit: jqGridCustomer.afterSubmit
+            };
+          },
+          // Edit options
+          getDeleteOptions: function () {
+            return {
+              url: jqGridCustomer.options.baseAddress + '/customer/delete',
+              reloadAfterSubmit: true,
+              closeOnEscape: true,
+              closeAfterDelete: true,
+              drag: true,
+              msg: &quot;Delete the selected customer?&quot;,
+              afterSubmit: jqGridCustomer.afterSubmit,
+              delData: {
+                // pass the key field
+                CUSTOMER_ID: function () {
+                  var selectedRow = jqGridCustomer.dbGrid.getGridParam(&quot;selrow&quot;);
+                  var value = jqGridCustomer.dbGrid.getCell(selectedRow,
+                              'CUSTOMER_ID');
+                  return value;
+                }
+              }
+            };
+          },
+          // initializing the navigation bar with editing dialogs
+          initPagerWithEditors: function () {
+              jqGridCustomer.dbGrid.jqGrid('navGrid', '#jqPagerCustomer',
+                  {
+                       // buttons
+                       search: true,
+                       add: true,
+                       edit: true,
+                       del: true,
+                       view: true,
+                       refresh: true,
+                       // button captions
+                       searchtext: &quot;Search&quot;,
+                       addtext: &quot;Add&quot;,
+                       edittext: &quot;Edit&quot;,
+                       deltext: &quot;Delete&quot;,
+                       viewtext: &quot;View&quot;,
+                       viewtitle: &quot;Selected record&quot;,
+                       refreshtext: &quot;Refresh&quot;
+                  },
+                  jqGridCustomer.getEditOptions(),
+                  jqGridCustomer.getAddOptions(),
+                  jqGridCustomer.getDeleteOptions()
+             );
+          },
+          // initialize the navigation bar without editing dialogs
+          initPagerWithoutEditors: function () {
+              jqGridCustomer.dbGrid.jqGrid('navGrid', '#jqPagerCustomer',
+                  {
+                       // buttons
+                       search: true,
+                       add: false,
+                       edit: false,
+                       del: false,
+                       view: false,
+                       refresh: true,
+                       // button captions
+                       searchtext: &quot;Search&quot;,
+                       viewtext: &quot;View&quot;,
+                       viewtitle: &quot;Selected record&quot;,
+                       refreshtext: &quot;Refresh&quot;
+                  }
+              );
+          },
+          // initialize the navigation bar
+          initPager: function () {
+              if (jqGridCustomer.options.showEditorPanel) {
+                  jqGridCustomer.initPagerWithEditors();
+              } else {
+                  jqGridCustomer.initPagerWithoutEditors();
+              }
+          },
+          // initialize
+          init: function () {
+              jqGridCustomer.initGrid();
+              jqGridCustomer.initPager();
+          },
+          // processor of the results of processing forms (operations)
+          afterSubmit: function (response, postdata) {
+              var responseData = response.responseJSON;
+              // check the result for error messages
+              if (responseData.hasOwnProperty(&quot;error&quot;)) {
+                  if (responseData.error.length) {
+                      return [false, responseData.error];
+                  }
+              } else {
+                  // if an error was not returned, refresh the grid
+                  $(this).jqGrid(
+                          'setGridParam',
+                          {
+                              datatype: 'json'
+                          }
+                  ).trigger('reloadGrid');
+              }
+              return [true, &quot;&quot;, 0];
+          }
+      };
+      jqGridCustomer.init();
+      return jqGridCustomer;
+  };
+})(jQuery);
+          </programlisting>
+        </para>
+
+        <section id="fbdg30-java-spring-visual">
+          <title>Visual Elements</title>
+          <variablelist>
+            <varlistentry>
+              <term>The jqGrid grid</term>
+              <listitem>
+                <para>is created in the <classname>initGrid</classname> method
+                and is bound to the <classname>html</classname> element with the
+                jqGridCustomer identifier. The grid column desciptions are returned
+                by the <classname>getColModel</classname> method.</para>
+                <para>Each column in jqGrid has a number of properties available. The source
+                code contains comments explaining column properties. You can read more details
+                about configuring the model of jqGrid columns in the ColModel API section of
+                the documentation for the jqGrid project.</para>
+              </listitem>
+            </varlistentry>
+            <varlistentry>
+              <term>The navigation bar</term>
+              <listitem>can be created either with edit buttons or without them, using the
+              <classname>initPagerWithEditors</classname> and <classname>initPagerWithoutEditors</classname>
+              methods, respectively. The bar constructor binds it to the element with the
+              jqPagerCustomer identifier. The options for creating the navigation bar are
+              described in the Navigator section of the jqGrid documentation.
+              </listitem>
+            </varlistentry>
+            <varlistentry>
+              <term>Functions and Settings for Options</term>
+              <listitem>
+                <para>The <classname>getEditOptions</classname>, <classname>getAddOptions</classname>,
+                <classname>getDeleteOptions</classname> functions return the options for the edit, add
+                and delete dialog boxes, respectively.</para>
+                <para>The <classname>url</classname> property defines the URL to which the data
+                will be submitted after the OK button in clicked in the dialog box.</para>
+               <para>The <classname>afterSubmit</classname> property marks the event that
+               occurs after the data have been sent to the server and a response has been
+               received back.</para>
+               <para>The <classname>afterSubmit</classname> method checks whether the
+               controller returns an error. The grid is updated if no error is returned;
+               otherwise, the error is shown to the user.</para>
+               <note>
+                 <para>The editData property allows you to specify the values of additional
+                 fields that are not shown in the edit dialog box. Edit dialog boxes do not
+                 show the values of hidden fields and it is rather tedious if you want to
+                 display automatically generated keys.</para>
+               </note>
+              </listitem>
+            </varlistentry>
+
+          </variablelist>
+        </section>
+      </section> <!-- fbdg30-java-jooq-custctrlr-cust-display -->
+   </section> <!-- fbdg30-java-jooq-class-custctrlr -->
+  </section> <!-- fbdg30-java-jooq-crt-pri-modules -->
+
+  <section id="fbdg30-java-jooq-crt-sec-modules">
+    <title>Creating Secondary Modules</title>
+    <para>A secondary module typically contains many more records than a primary one and
+    new records are added frequently. Most secondary tables contain a field with the record
+    creation date. In order to reduce the amount of retrieved data, the notion of a
+    <firstterm>work period</firstterm> is often incorporated to limit the range of data sent
+    to the client. A work period is a range of dates for which the records are required.
+    The work period is described by the <classname>WorkingPeriod</classname> class, defined
+    via the workingPeriod bean in the
+    <classname>ru.ibase.fbjavaex.config.JooqConfig</classname> configuration class.</para>
+    <para>
+      <programlisting>
+package ru.ibase.fbjavaex.config;
+
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+
+/**
+ * Working period
+ *
+ * @author Simonov Denis
+ */
+public class WorkingPeriod {
+
+    private Timestamp beginDate;
+    private Timestamp endDate;
+
+    /**
+     * Constructor
+     */
+    WorkingPeriod() {
+        // in real applications is calculated from the current date
+        this.beginDate = Timestamp.valueOf(&quot;2015-06-01 00:00:00&quot;);
+        this.endDate = Timestamp.valueOf(LocalDateTime.now().plusDays(1));
+    }
+
+    /**
+     * Returns the start date of the work period
+     *
+     * @return
+     */
+    public Timestamp getBeginDate() {
+        return this.beginDate;
+    }
+
+    /**
+     * Returns the end date of the work period
+     *
+     * @return
+     */
+    public Timestamp getEndDate() {
+        return this.endDate;
+    }
+
+    /**
+     * Setting the start date of the work period
+     *
+     * @param value
+     */
+    public void setBeginDate(Timestamp value) {
+        this.beginDate = value;
+    }
+
+    /**
+     * Setting the end date of the work period
+     *
+     * @param value
+     */
+    public void setEndDate(Timestamp value) {
+        this.endDate = value;
+    }
+
+    /**
+     * Setting the working period
+     *
+     * @param beginDate
+     * @param endDate
+     */
+    public void setRangeDate(Timestamp beginDate, Timestamp endDate) {
+        this.beginDate = beginDate;
+        this.endDate = endDate;
+    }
+}
+      </programlisting>
+    </para>
+
+    <para>In our project we have only one secondary module called &quot;Invoices&quot;.
+    An invoice consists of a header where some general attributes are described (number,
+    date, customer &hellip;) and one or more invoice items (product name, quantity, price, etc.).
+    The invoice header is displayed in the main grid while items can be viewed in a
+    detail grid that is opened with a click on the &quot;+&quot; icon of the selected
+    document.</para>
+    <para>We implement a class, inherited from the <classname>ru.ibase.fbjavaex.jqgrid.JqGrid</classname>
+    abstract class described earlier, for viewing the invoice headers via jqGrid.
+    Searching can be by customer name or invoice date and reversible date order
+    is supported, too.
+      <programlisting>
+package ru.ibase.fbjavaex.jqgrid;
+
+import java.sql.*;
+import org.jooq.*;
+
+import java.util.List;
+import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
+import ru.ibase.fbjavaex.config.WorkingPeriod;
+
+import static ru.ibase.fbjavaex.exampledb.Tables.INVOICE;
+import static ru.ibase.fbjavaex.exampledb.Tables.CUSTOMER;
+
+/**
+ * Grid handler for the invoice journal
+ *
+ * @author Simonov Denis
+ */
+public class JqGridInvoice extends JqGrid {
+
+    @Autowired(required = true)
+    private WorkingPeriod workingPeriod;
+
+    /**
+     * Adding a search condition
+     *
+     * @param query
+     */
+    private void makeSearchCondition(SelectQuery&lt;?&gt; query) {
+        // adding a search condition to the query,
+        // if it is produced for different fields,
+        // different comparison operators are available when searching.
+        if (this.searchString.isEmpty()) {
+            return;
+        }
+
+        if (this.searchField.equals(&quot;CUSTOMER_NAME&quot;)) {
+            switch (this.searchOper) {
+               case &quot;eq&quot;: // equal
+                 query.addConditions(CUSTOMER.NAME.eq(this.searchString));
+                 break;
+               case &quot;bw&quot;: // starting with
+                 query.addConditions(CUSTOMER.NAME.startsWith(this.searchString));
+                 break;
+               case &quot;cn&quot;: // containing
+                 query.addConditions(CUSTOMER.NAME.contains(this.searchString));
+                 break;
+            }
+        }
+        if (this.searchField.equals(&quot;INVOICE_DATE&quot;)) {
+            Timestamp dateValue = Timestamp.valueOf(this.searchString);
+
+            switch (this.searchOper) {
+               case &quot;eq&quot;: // =
+                 query.addConditions(INVOICE.INVOICE_DATE.eq(dateValue));
+                 break;
+               case &quot;lt&quot;: // &lt;
+                 query.addConditions(INVOICE.INVOICE_DATE.lt(dateValue));
+                 break;
+               case &quot;le&quot;: // &lt;=
+                 query.addConditions(INVOICE.INVOICE_DATE.le(dateValue));
+                 break;
+               case &quot;gt&quot;: // &gt;
+                 query.addConditions(INVOICE.INVOICE_DATE.gt(dateValue));
+                 break;
+               case &quot;ge&quot;: // &gt;=
+                 query.addConditions(INVOICE.INVOICE_DATE.ge(dateValue));
+                 break;
+            }
+        }
+    }
+
+    /**
+     * Returns the total number of records
+     *
+     * @return
+     */
+    @Override
+    public int getCountRecord() {
+        SelectFinalStep&lt;?&gt; select
+                = dsl.selectCount()
+                     .from(INVOICE)
+                     .where(INVOICE.INVOICE_DATE.between(
+                                this.workingPeriod.getBeginDate(),
+                                this.workingPeriod.getEndDate()));
+
+        SelectQuery&lt;?&gt; query = select.getQuery();
+
+        if (this.searchFlag) {
+            makeSearchCondition(query);
+        }
+
+        return (int) query.fetch().getValue(0, 0);
+    }
+
+
+
+    /**
+     * Returns the list of invoices
+     *
+     * @return
+     */
+    @Override
+    public List&lt;Map&lt;String, Object&gt;&gt; getRecords() {
+        SelectFinalStep&lt;?&gt; select = dsl.select(
+                INVOICE.INVOICE_ID,
+                INVOICE.CUSTOMER_ID,
+                CUSTOMER.NAME.as(&quot;CUSTOMER_NAME&quot;),
+                INVOICE.INVOICE_DATE,
+                INVOICE.PAID,
+                INVOICE.TOTAL_SALE)
+            .from(INVOICE)
+            .innerJoin(CUSTOMER).on(CUSTOMER.CUSTOMER_ID.eq(INVOICE.CUSTOMER_ID))
+            .where(INVOICE.INVOICE_DATE.between(
+                       this.workingPeriod.getBeginDate(),
+                       this.workingPeriod.getEndDate()));
+
+        SelectQuery&lt;?&gt; query = select.getQuery();
+        // add a search condition
+        if (this.searchFlag) {
+            makeSearchCondition(query);
+        }
+        // add sorting
+        if (this.sIdx.equals(&quot;INVOICE_DATE&quot;)) {
+            switch (this.sOrd) {
+               case &quot;asc&quot;:
+                 query.addOrderBy(INVOICE.INVOICE_DATE.asc());
+                 break;
+               case &quot;desc&quot;:
+                 query.addOrderBy(INVOICE.INVOICE_DATE.desc());
+                 break;
+            }
+        }
+        // limit the number of records and add an offset
+        if (this.limit != 0) {
+            query.addLimit(this.limit);
+        }
+        if (this.offset != 0) {
+            query.addOffset(this.offset);
+        }
+
+        return query.fetchMaps();
+    }
+}
+      </programlisting>
+    </para>
+
+    <section id="fbdg30-java-jooq-inv-items">
+      <title>Invoice Items</title>
+      <para>We make the class for viewing the invoice items via jqGrid a little simpler.
+      Its records are filtered by invoice header code and user-driven search and sort
+      options are not implemented.
+        <programlisting>
+package ru.ibase.fbjavaex.jqgrid;
+
+import org.jooq.*;
+
+import java.util.List;
+import java.util.Map;
+
+import static ru.ibase.fbjavaex.exampledb.Tables.INVOICE_LINE;
+import static ru.ibase.fbjavaex.exampledb.Tables.PRODUCT;
+
+/**
+ * The grid handler for the invoice items
+ *
+ * @author Simonov Denis
+ */
+public class JqGridInvoiceLine extends JqGrid {
+
+    private int invoiceId;
+
+
+    public int getInvoiceId() {
+        return this.invoiceId;
+    }
+
+    public void setInvoiceId(int invoiceId) {
+        this.invoiceId = invoiceId;
+    }
+
+    /**
+     * Returns the total number of records
+     *
+     * @return
+     */
+    @Override
+    public int getCountRecord() {
+        SelectFinalStep&lt;?&gt; select
+            = dsl.selectCount()
+                 .from(INVOICE_LINE)
+                 .where(INVOICE_LINE.INVOICE_ID.eq(this.invoiceId));
+
+        SelectQuery&lt;?&gt; query = select.getQuery();
+
+        return (int) query.fetch().getValue(0, 0);
+    }
+
+
+    /**
+     * Returns invoice items
+     *
+     * @return
+     */
+    @Override
+    public List&lt;Map&lt;String, Object&gt;&gt; getRecords() {
+        SelectFinalStep&lt;?&gt; select = dsl.select(
+                INVOICE_LINE.INVOICE_LINE_ID,
+                INVOICE_LINE.INVOICE_ID,
+                INVOICE_LINE.PRODUCT_ID,
+                PRODUCT.NAME.as(&quot;PRODUCT_NAME&quot;),
+                INVOICE_LINE.QUANTITY,
+                INVOICE_LINE.SALE_PRICE,
+                INVOICE_LINE.SALE_PRICE.mul(INVOICE_LINE.QUANTITY).as(&quot;TOTAL&quot;))
+            .from(INVOICE_LINE)
+            .innerJoin(PRODUCT).on(PRODUCT.PRODUCT_ID.eq(INVOICE_LINE.PRODUCT_ID))
+            .where(INVOICE_LINE.INVOICE_ID.eq(this.invoiceId));
+
+        SelectQuery&lt;?&gt; query = select.getQuery();
+        return query.fetchMaps();
+    }
+}
+        </programlisting>
+      </para>
+    </section>
+
+    <section id="fbdg30-java-jooq-class-invmgr">
+      <title>InvoiceManager Class</title>
+
+      <para>The <classname>ru.ibase.fbjavaex.managers.InvoiceManager</classname> class
+      is a kind of business layer that will be used to direct adding, editing and deleting invoices
+      and their items, along with invoice payment. All operations in this layer will be
+      performed in a SNAPSHOT transaction. We have chosen to have our application perform
+      all of the invoice management options in this class by calling stored procedures.
+      It is not mandatory to do it this way, of course.  It is just one option.
+        <programlisting>
+package ru.ibase.fbjavaex.managers;
+
+
+import java.sql.Timestamp;
+import org.jooq.DSLContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Isolation;
+
+import static ru.ibase.fbjavaex.exampledb.Sequences.GEN_INVOICE_ID;
+import static ru.ibase.fbjavaex.exampledb.Routines.spAddInvoice;
+import static ru.ibase.fbjavaex.exampledb.Routines.spEditInvoice;
+import static ru.ibase.fbjavaex.exampledb.Routines.spPayForInovice;
+import static ru.ibase.fbjavaex.exampledb.Routines.spDeleteInvoice;
+import static ru.ibase.fbjavaex.exampledb.Routines.spAddInvoiceLine;
+import static ru.ibase.fbjavaex.exampledb.Routines.spEditInvoiceLine;
+import static ru.ibase.fbjavaex.exampledb.Routines.spDeleteInvoiceLine;
+
+/**
+ * Invoice manager
+ *
+ * @author Simonov Denis
+ */
+public class InvoiceManager {
+
+    @Autowired(required = true)
+    private DSLContext dsl;
+
+    /**
+     * Add invoice
+     *
+     * @param customerId
+     * @param invoiceDate
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void create(Integer customerId,
+                       Timestamp invoiceDate) {
+        int invoiceId = this.dsl.nextval(GEN_INVOICE_ID).intValue();
+
+        spAddInvoice(this.dsl.configuration(),
+            invoiceId,
+            customerId,
+            invoiceDate);
+    }
+
+    /**
+     * Edit invoice
+     *
+     * @param invoiceId
+     * @param customerId
+     * @param invoiceDate
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void edit(Integer invoiceId,
+                     Integer customerId,
+                     Timestamp invoiceDate) {
+        spEditInvoice(this.dsl.configuration(),
+            invoiceId,
+            customerId,
+            invoiceDate);
+    }
+
+    /**
+     * Payment of invoices
+     *
+     * @param invoiceId
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void pay(Integer invoiceId) {
+        spPayForInovice(this.dsl.configuration(),
+            invoiceId);
+    }
+
+    /**
+     * Delete invoice
+     *
+     * @param invoiceId
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void delete(Integer invoiceId) {
+        spDeleteInvoice(this.dsl.configuration(),
+            invoiceId);
+    }
+
+    /**
+     * Add invoice item
+     *
+     * @param invoiceId
+     * @param productId
+     * @param quantity
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void addInvoiceLine(Integer invoiceId,
+                               Integer productId,
+                               Integer quantity) {
+        spAddInvoiceLine(this.dsl.configuration(),
+            invoiceId,
+            productId,
+            quantity);
+    }
+
+    /**
+     * Edit invoice item
+     *
+     * @param invoiceLineId
+     * @param quantity
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void editInvoiceLine(Integer invoiceLineId,
+                                Integer quantity) {
+        spEditInvoiceLine(this.dsl.configuration(),
+            invoiceLineId,
+            quantity);
+    }
+
+    /**
+     * Delete invoice item
+     *
+     * @param invoiceLineId
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+                   isolation = Isolation.REPEATABLE_READ)
+    public void deleteInvoiceLine(Integer invoiceLineId) {
+        spDeleteInvoiceLine(this.dsl.configuration(),
+            invoiceLineId);
+    }
+}
+        </programlisting>
+      </para>
+    </section> <!-- fbdg30-java-jooq-class-invmgr -->
+
+    <section id="fbdg30-java-jooq-class-invctrlr">
+      <title>Invoice Controller Class</title>
+      <para>Now we move on to writing the controller. The input point of our controller will be
+      the <classname>index</classname> method, that is responsible for displaying the JSP page
+      (view). This page contains the layout for displaying the grid and the tool and navigation
+      bars.</para>
+      <para>Data for displaying invoice headers are loaded asynchronously by
+      the <classname>jqGrid</classname> component (the path is <filename>/invoice/getdata</filename>).
+      The <classname>getData</classname> method is connected with this path, similarly to
+      the primary modules. Invoice items are returned by the <classname>getDetailData</classname>
+      method (the path is <filename>/invoice/getdetaildata</filename>). The primary key of the
+      invoice whose detail grid is currently open is passed to this method. </para>
+      <para>The methods implemented are addInvoice, editInvoice, deleteInvoice, payInvoice
+      for invoice headers and addInvoiceLine, editInvoiceLine, deleteInvoiceLine for invoice
+      line items.
+        <programlisting>
+package ru.ibase.fbjavaex.controllers;
+
+import java.sql.Timestamp;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Date;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.beans.PropertyEditorSupport;
+
+import javax.ws.rs.core.MediaType;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.ModelMap;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.InitBinder;
+import org.springframework.web.bind.WebDataBinder;
+import ru.ibase.fbjavaex.jqgrid.JqGridInvoice;
+import ru.ibase.fbjavaex.jqgrid.JqGridInvoiceLine;
+
+import ru.ibase.fbjavaex.managers.InvoiceManager;
+
+import ru.ibase.fbjavaex.jqgrid.JqGridData;
+
+
+/**
+ * Invoice controller
+ *
+ * @author Simonov Denis
+ */
+@Controller
+public class InvoiceController {
+
+    @Autowired(required = true)
+    private JqGridInvoice invoiceGrid;
+
+    @Autowired(required = true)
+    private JqGridInvoiceLine invoiceLineGrid;
+
+    @Autowired(required = true)
+    private InvoiceManager invoiceManager;
+
+    /**
+     * Describe how a string is converted to a date
+     * from the input parameters of the HTTP request
+     *
+     * @param binder
+     */
+    @InitBinder
+    public void initBinder(WebDataBinder binder)   {
+        binder.registerCustomEditor(Timestamp.class,
+                new PropertyEditorSupport() {
+            @Override
+            public void setAsText(String value) {
+              try {
+                if ((value == null) || (value.isEmpty())) {
+                  setValue(null);
+                } else {
+                  Date parsedDate = new SimpleDateFormat(&quot;yyyy-MM-dd'T'HH:mm:ss&quot;)
+                       .parse(value);
+                  setValue(new Timestamp(parsedDate.getTime()));
+                }
+              } catch (ParseException e) {
+                throw new java.lang.IllegalArgumentException(value);
+              }
+            }
+        });
+    }
+
+    /**
+     * Default action
+     * Returns the JSP name of the page (view) to display
+     *
+     * @param map
+     * @return JSP page name
+     */
+    @RequestMapping(value = &quot;/invoice/&quot;, method = RequestMethod.GET)
+    public String index(ModelMap map) {
+
+        return &quot;invoice&quot;;
+    }
+
+    /**
+     * Returns a list of invoices in JSON format for jqGrid
+     *
+     * @param rows number of entries per page
+     * @param page current page number
+     * @param sIdx sort field
+     * @param sOrd sorting order
+     * @param search search flag
+     * @param searchField search field
+     * @param searchString search value
+     * @param searchOper comparison operation
+     * @param filters filter
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/getdata&quot;,
+            method = RequestMethod.GET,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public JqGridData getData(
+            @RequestParam(value = &quot;rows&quot;, required = false,
+                          defaultValue = &quot;20&quot;) int rows,
+            @RequestParam(value = &quot;page&quot;, required = false,
+                          defaultValue = &quot;1&quot;) int page,
+            @RequestParam(value = &quot;sidx&quot;, required = false,
+                          defaultValue = &quot;&quot;) String sIdx,
+            @RequestParam(value = &quot;sord&quot;, required = false,
+                          defaultValue = &quot;asc&quot;) String sOrd,
+            @RequestParam(value = &quot;_search&quot;, required = false,
+                          defaultValue = &quot;false&quot;) Boolean search,
+            @RequestParam(value = &quot;searchField&quot;, required = false,
+                          defaultValue = &quot;&quot;) String searchField,
+            @RequestParam(value = &quot;searchString&quot;, required = false,
+                          defaultValue = &quot;&quot;) String searchString,
+            @RequestParam(value = &quot;searchOper&quot;, required = false,
+                          defaultValue = &quot;&quot;) String searchOper,
+            @RequestParam(value = &quot;filters&quot;, required = false,
+                          defaultValue = &quot;&quot;) String filters) {
+
+        if (search) {
+            invoiceGrid.setSearchCondition(searchField, searchString, searchOper);
+        }
+        invoiceGrid.setLimit(rows);
+        invoiceGrid.setPageNo(page);
+
+        invoiceGrid.setOrderBy(sIdx, sOrd);
+
+        return invoiceGrid.getJqGridData();
+    }
+
+    /**
+     * Add invoice
+     *
+     * @param customerId customer id
+     * @param invoiceDate invoice date
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/create&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; addInvoice(
+            @RequestParam(value = &quot;CUSTOMER_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer customerId,
+            @RequestParam(value = &quot;INVOICE_DATE&quot;, required = false,
+                          defaultValue = &quot;&quot;) Timestamp invoiceDate) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            invoiceManager.create(customerId, invoiceDate);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+
+    /**
+     * Edit invoice
+     *
+     * @param invoiceId invoice id
+     * @param customerId customer id
+     * @param invoiceDate invoice date
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/edit&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; editInvoice(
+            @RequestParam(value = &quot;INVOICE_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer invoiceId,
+            @RequestParam(value = &quot;CUSTOMER_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer customerId,
+            @RequestParam(value = &quot;INVOICE_DATE&quot;, required = false,
+                          defaultValue = &quot;&quot;) Timestamp invoiceDate) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            invoiceManager.edit(invoiceId, customerId, invoiceDate);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+
+    /**
+     * Pays an invoice
+     *
+     * @param invoiceId invoice id
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/pay&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; payInvoice(
+            @RequestParam(value = &quot;INVOICE_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer invoiceId) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            invoiceManager.pay(invoiceId);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+
+    /**
+     * Delete invoice
+     *
+     * @param invoiceId invoice id
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/delete&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; deleteInvoice(
+            @RequestParam(value = &quot;INVOICE_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer invoiceId) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            invoiceManager.delete(invoiceId);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+
+    /**
+     * Returns invoice item
+     *
+     * @param invoice_id invoice id
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/getdetaildata&quot;,
+            method = RequestMethod.GET,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public JqGridData getDetailData(
+            @RequestParam(value = &quot;INVOICE_ID&quot;, required = true) int invoice_id) {
+
+        invoiceLineGrid.setInvoiceId(invoice_id);
+
+        return invoiceLineGrid.getJqGridData();
+
+    }
+
+    /**
+     * Add invoice item
+     *
+     * @param invoiceId invoice id
+     * @param productId product id
+     * @param quantity quantity of products
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/createdetail&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; addInvoiceLine(
+            @RequestParam(value = &quot;INVOICE_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer invoiceId,
+            @RequestParam(value = &quot;PRODUCT_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer productId,
+            @RequestParam(value = &quot;QUANTITY&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer quantity) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            invoiceManager.addInvoiceLine(invoiceId, productId, quantity);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+
+    /**
+     * Edit invoice item
+     *
+     * @param invoiceLineId invoice item id
+     * @param quantity quantity of products
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/editdetail&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; editInvoiceLine(
+            @RequestParam(value = &quot;INVOICE_LINE_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer invoiceLineId,
+            @RequestParam(value = &quot;QUANTITY&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer quantity) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            invoiceManager.editInvoiceLine(invoiceLineId, quantity);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+
+    /**
+     * Delete invoice item
+     *
+     * @param invoiceLineId invoice item id
+     * @return
+     */
+    @RequestMapping(value = &quot;/invoice/deletedetail&quot;,
+            method = RequestMethod.POST,
+            produces = MediaType.APPLICATION_JSON)
+    @ResponseBody
+    public Map&lt;String, Object&gt; deleteInvoiceLine(
+            @RequestParam(value = &quot;INVOICE_LINE_ID&quot;, required = true,
+                          defaultValue = &quot;0&quot;) Integer invoiceLineId) {
+        Map&lt;String, Object&gt; map = new HashMap&lt;&gt;();
+        try {
+            invoiceManager.deleteInvoiceLine(invoiceLineId);
+            map.put(&quot;success&quot;, true);
+        } catch (Exception ex) {
+            map.put(&quot;error&quot;, ex.getMessage());
+        }
+        return map;
+    }
+}
+        </programlisting>
+      </para>
+      <para>The invoice controller is very similar to the primary module controllers
+      except for two things:
+        <orderedlist>
+          <listitem>The controller displays and works with the data of both the main
+          grid and the detail grid</listitem>
+          <listitem>Invoices are filtered by the date field so that only those invoices
+          that are included in the work period are displayed</listitem>
+        </orderedlist>
+      </para>
+
+      <section id="fbdg30-java-dates-quirks">
+        <title>Working with Dates in Java</title>
+        <para>Working with dates in Java throws up a few quirks.</para>
+        <para>The <classname>java.sql.Timestamp</classname> type in Java supports
+        precision up to nanoseconds whereas the maximum precision of the <database>TIMESTAMP</database>
+        type in Firebird is one ten-thousandth of a second. That is not really a
+        significant problem.</para>
+        <para>Date and time types in Java support working with time zones. Firebird does not
+        currently support the <database>TIMESTAMP WITH TIMEZONE</database> type. Java works
+        on the assumption that dates in the database are stored in the time zone of the server.
+        However, time will be converted to UTC during serialization into JSON. It must be
+        taken into account when processing time data in JavaScript.</para>
+        <warning>
+          <title>Attention!</title>
+          <para>Java takes the time offset from its own time zone database, not from the
+          operating system. This practice considerably increases the need to keep up with
+          the latest version of JDK. If you have some old version of JDK installed,
+          working with date and time may be incorrect.</para>
+        </warning>
+        <para>By default, a date is serialized into JSON in as the number of nanoseconds
+        since January 1, 1970, which is not always what is wanted. A date can be serialized
+        into a text representation, by setting to False the date conversion configuration
+        property <classname>SerializationFeature.WRITE_DATES_AS_TIMESTAMPS</classname> date
+        conversion in the <classname>configureMessageConverters</classname> method of
+        the <classname>WebAppConfig</classname> class.</para>
+        <para>We will return to date processing
+        <link linkend="fbdg30-java-processing-dates">a little later</link>.
+          <programlisting>
+@Configuration
+@ComponentScan(&quot;ru.ibase.fbjavaex&quot;)
+@EnableWebMvc
+public class WebAppConfig extends WebMvcConfigurerAdapter {
+
+    @Override
+    public void configureMessageConverters(
+      List&lt;HttpMessageConverter&lt;?&gt;&gt; httpMessageConverters) {
+        MappingJackson2HttpMessageConverter jsonConverter =
+            new MappingJackson2HttpMessageConverter();
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS,
+                               false);
+        jsonConverter.setObjectMapper(objectMapper);
+        httpMessageConverters.add(jsonConverter);
+    }
+&hellip;
+}
+          </programlisting>
+        </para>
+        <para>The <classname>initBinder</classname> method of the <classname>InvoiceController</classname>
+        controller describes how the text representation of a date sent by the browser is converted into a
+        value of type Timestamp.</para>
+      </section> <!-- fbdg30-java-dates-quirks -->
+    </section> <!-- fbdg30-java-jooq-class-invctrlr -->
+
+    <section id="fbdg30-java-invoice-display">
+      <title>Displaying the Invoices</title>
+      <para>The JSP page contains the layout for displaying the grid with invoice headers and
+      the navigation bar. Invoice items are displayed as a drop-down grid when the header
+      of the selected invoice is clicked.
+        <programlisting>
+&lt;%@page contentType=&quot;text/html&quot; pageEncoding=&quot;UTF-8&quot;%&gt;
+&lt;%@ taglib uri=&quot;http://java.sun.com/jsp/jstl/core&quot; prefix=&quot;c&quot; %&gt;
+&lt;c:set var=&quot;cp&quot; value=&quot;${pageContext.request.servletContext.contextPath}&quot;
+       scope=&quot;request&quot; /&gt;
+
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+    &lt;head&gt;
+        &lt;meta http-equiv=&quot;Content-Type&quot; content=&quot;text/html; charset=UTF-8&quot;&gt;
+        &lt;title&gt;An example of a Spring MVC application using Firebird and jOOQ&lt;/title&gt;
+
+        &lt;!-- Scripts and styles --&gt;
+        &lt;%@ include file=&quot;../jspf/head.jspf&quot; %&gt;
+        &lt;script src=&quot;${cp}/resources/js/jqGridProduct.js&quot;&gt;&lt;/script&gt;
+        &lt;script src=&quot;${cp}/resources/js/jqGridCustomer.js&quot;&gt;&lt;/script&gt;
+        &lt;script src=&quot;${cp}/resources/js/jqGridInvoice.js&quot;&gt;&lt;/script&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;!-- Navigation menu --&gt;
+        &lt;%@ include file=&quot;../jspf/menu.jspf&quot; %&gt;
+
+        &lt;div class=&quot;container body-content&quot;&gt;
+
+            &lt;h2&gt;Invoices&lt;/h2&gt;
+
+            &lt;table id=&quot;jqGridInvoice&quot;&gt;&lt;/table&gt;
+            &lt;div id=&quot;jqPagerInvoice&quot;&gt;&lt;/div&gt;
+
+            &lt;hr /&gt;
+            &lt;footer&gt;
+                &lt;p&gt;&copy; 2016 - An example of a Spring MVC application using
+                   Firebird and jOOQ&lt;/p&gt;
+            &lt;/footer&gt;
+        &lt;/div&gt;
+
+        &lt;script type=&quot;text/javascript&quot;&gt;
+            var invoiceGrid = null;
+            $(document).ready(function () {
+                invoiceGrid = JqGridInvoice({
+                    baseAddress: '${cp}'
+                });
+            });
+        &lt;/script&gt;
+
+    &lt;/body&gt;
+&lt;/html&gt;
+          </programlisting>
+        </para>
+        <para>The basic logic on the client side is concentrated in the
+        <filename>/resources/js/jqGridInvoice.js</filename> JavaScript module.
+          <programlisting>
+var JqGridInvoice = (function ($, jqGridProductFactory, jqGridCustomerFactory) {
+
+    return function (options) {
+        var jqGridInvoice = {
+            dbGrid: null,
+            detailGrid: null,
+            options: $.extend({
+                baseAddress: null
+            }, options),
+            // return invoice model description
+            getInvoiceColModel: function () {
+                return [
+                    {
+                        label: 'Id',
+                        name: 'INVOICE_ID', // field name
+                        key: true,
+                        hidden: true
+                    },
+                    {
+                        label: 'Customer Id'
+                        name: 'CUSTOMER_ID',
+                        hidden: true,
+                        editrules: {edithidden: true, required: true},
+                        editable: true,
+                        edittype: 'custom', // custom type
+                        editoptions: {
+                            custom_element: function (value, options) {
+                                // add hidden input
+                                return $(&quot;&lt;input&gt;&quot;)
+                                        .attr('type', 'hidden')
+                                        .attr('rowid', options.rowId)
+                                        .addClass(&quot;FormElement&quot;)
+                                        .addClass(&quot;form-control&quot;)
+                                        .val(value)
+                                        .get(0);
+                            }
+                        }
+                    },
+                    {
+                        label: 'Date',
+                        name: 'INVOICE_DATE',
+                        width: 60,
+                        sortable: true,
+                        editable: true,
+                        search: true,
+                        edittype: &quot;text&quot;, // input type
+                        align: &quot;right&quot;,
+                        // format as date
+                        formatter: jqGridInvoice.dateTimeFormatter,
+                        sorttype: 'date', // sort as date
+                        formatoptions: {
+                            srcformat: 'Y-m-d\TH:i:s', // input format
+                            newformat: 'Y-m-d H:i:s'   // output format
+                        },
+                        editoptions: {
+                            // initializing the form element for editing
+                            dataInit: function (element) {
+                                // creating datepicker
+                                $(element).datepicker({
+                                    id: 'invoiceDate_datePicker',
+                                    dateFormat: 'dd.mm.yy',
+                                    minDate: new Date(2000, 0, 1),
+                                    maxDate: new Date(2030, 0, 1)
+                                });
+                            }
+                        },
+                        searchoptions: {
+                            // initializing the form element for searching
+                            dataInit: function (element) {
+                                // create datepicker
+                                $(element).datepicker({
+                                    id: 'invoiceDate_datePicker',
+                                    dateFormat: 'dd.mm.yy',
+                                    minDate: new Date(2000, 0, 1),
+                                    maxDate: new Date(2030, 0, 1)
+                                });
+                            },
+                            searchoptions: { // search types
+                                sopt: ['eq', 'lt', 'le', 'gt', 'ge']
+                            }
+                        }
+                    },
+                    {
+                        label: 'Customer',
+                        name: 'CUSTOMER_NAME',
+                        width: 250,
+                        editable: true,
+                        edittype: &quot;text&quot;,
+                        editoptions: {
+                            size: 50,
+                            maxlength: 60,
+                            readonly: true
+                        },
+                        editrules: {required: true},
+                        search: true,
+                        searchoptions: {
+                            sopt: ['eq', 'bw', 'cn']
+                        }
+                    },
+                    {
+                        label: 'Amount',
+                        name: 'TOTAL_SALE',
+                        width: 60,
+                        sortable: false,
+                        editable: false,
+                        search: false,
+                        align: &quot;right&quot;,
+                        // foramt as currency
+                        formatter: 'currency',
+                        sorttype: 'number',
+                        searchrules: {
+                            &quot;required&quot;: true,
+                            &quot;number&quot;: true,
+                            &quot;minValue&quot;: 0
+                        }
+                    },
+                    {
+                        label: 'Paid',
+                        name: 'PAID',
+                        width: 30,
+                        sortable: false,
+                        editable: true,
+                        search: true,
+                        searchoptions: {
+                            sopt: ['eq']
+                        },
+                        edittype: &quot;checkbox&quot;,
+                        formatter: &quot;checkbox&quot;,
+                        stype: &quot;checkbox&quot;,
+                        align: &quot;center&quot;,
+                        editoptions: {
+                            value: &quot;1&quot;,
+                            offval: &quot;0&quot;
+                        }
+                    }
+                ];
+            },
+            initGrid: function () {
+                // url to retrieve data
+                var url = jqGridInvoice.options.baseAddress + '/invoice/getdata';
+                jqGridInvoice.dbGrid = $(&quot;#jqGridInvoice&quot;).jqGrid({
+                    url: url,
+                    datatype: &quot;json&quot;, // data format
+                    mtype: &quot;GET&quot;, // http request type
+                    // model description
+                    colModel: jqGridInvoice.getInvoiceColModel(),
+                    rowNum: 500, // number of rows displayed
+                    loadonce: false, // load only once
+                    // default sort by INVOICE_DATE column
+                    sortname: 'INVOICE_DATE',
+                    sortorder: &quot;desc&quot;, // sorting order
+                    width: window.innerWidth - 80,
+                    height: 500,
+                    viewrecords: true, // display the number of entries
+                    guiStyle: &quot;bootstrap&quot;,
+                    iconSet: &quot;fontAwesome&quot;,
+                    caption: &quot;Invoices&quot;,
+                    // pagination element
+                    pager: '#jqPagerInvoice',
+                    subGrid: true, // show subGrid
+                    // javascript function to display the child grid
+                    subGridRowExpanded: jqGridInvoice.showChildGrid,
+                    subGridOptions: {
+                        // load only once
+                        reloadOnExpand: false,
+                        // load the subgrid string only when you click on the &quot;+&quot;
+                        selectOnExpand: true
+                    }
+                });
+            },
+            // date format function
+            dateTimeFormatter: function(cellvalue, options, rowObject) {
+                var date = new Date(cellvalue);
+                return date.toLocaleString().replace(&quot;,&quot;, &quot;&quot;);
+            },
+            // returns a template for the editing dialog
+            getTemplate: function () {
+              var template = &quot;&lt;div style='margin-left:15px;' id='dlgEditInvoice'&gt;&quot;;
+              template += &quot;&lt;div&gt;{CUSTOMER_ID} &lt;/div&gt;&quot;;
+              template += &quot;&lt;div&gt; Date: &lt;/div&gt;&lt;div&gt;{INVOICE_DATE}&lt;/div&gt;&quot;;
+              // customer input field with a button
+              template += &quot;&lt;div&gt; Customer &lt;sup&gt;*&lt;/sup&gt;:&lt;/div&gt;&quot;;
+              template += &quot;&lt;div&gt;&quot;;
+              template += &quot;&lt;div style='float: left;'&gt;{CUSTOMER_NAME}&lt;/div&gt; &quot;;
+              template += &quot;&lt;a style='margin-left: 0.2em;' class='btn' &quot;;
+              template += &quot;onclick='invoiceGrid.showCustomerWindow(); &quot;;
+              template += &quot;return false;'&gt;&quot;;
+              template += &quot;&lt;span class='glyphicon glyphicon-folder-open'&gt;&quot;;
+              template += &quot;&lt;/span&gt;Select&lt;/a&gt; &quot;;
+              template += &quot;&lt;div style='clear: both;'&gt;&lt;/div&gt;&quot;;
+              template += &quot;&lt;/div&gt;&quot;;
+              template += &quot;&lt;div&gt; {PAID} Paid &lt;/div&gt;&quot;;
+              template += &quot;&lt;hr style='width: 100%;'/&gt;&quot;;
+              template += &quot;&lt;div&gt; {sData} {cData}  &lt;/div&gt;&quot;;
+              template += &quot;&lt;/div&gt;&quot;;
+              return template;
+            },
+            // date conversion in UTC
+            convertToUTC: function(datetime) {
+              if (datetime) {
+                  var dateParts = datetime.split('.');
+                  var date = dateParts[2].substring(0, 4) + '-' +
+                             dateParts[1] + '-' + dateParts[0];
+                  var time = dateParts[2].substring(5);
+                  if (!time) {
+                      time = '00:00:00';
+                  }
+                  var dt = Date.parse(date + 'T' + time);
+                  var s = dt.getUTCFullYear() + '-' +
+                          dt.getUTCMonth() + '-' +
+                          dt.getUTCDay() + 'T' +
+                          dt.getUTCHour() + ':' +
+                          dt.getUTCMinute() + ':' +
+                          dt.getUTCSecond() + '  GMT';
+                  return s;
+              } else
+                  return null;
+            },
+            // returns the options for editing invoices
+            getEditInvoiceOptions: function () {
+              return {
+                url: jqGridInvoice.options.baseAddress + '/invoice/edit',
+                reloadAfterSubmit: true,
+                closeOnEscape: true,
+                closeAfterEdit: true,
+                drag: true,
+                modal: true,
+                top: $(&quot;.container.body-content&quot;).position().top + 150,
+                left: $(&quot;.container.body-content&quot;).position().left + 150,
+                template: jqGridInvoice.getTemplate(),
+                afterSubmit: jqGridInvoice.afterSubmit,
+                editData: {
+                  INVOICE_ID: function () {
+                    var selectedRow = jqGridInvoice.dbGrid.getGridParam(&quot;selrow&quot;);
+                    var value = jqGridInvoice.dbGrid
+                               .getCell(selectedRow, 'INVOICE_ID');
+                    return value;
+                  },
+                  CUSTOMER_ID: function () {
+                    return $('#dlgEditInvoice input[name=CUSTOMER_ID]').val();
+                  },
+                  INVOICE_DATE: function () {
+                    var datetime = $('#dlgEditInvoice input[name=INVOICE_DATE]')
+                                  .val();
+                    return jqGridInvoice.convertToUTC(datetime);
+                  }
+                }
+              };
+            },
+            // returns options for adding invoices
+            getAddInvoiceOptions: function () {
+              return {
+                url: jqGridInvoice.options.baseAddress + '/invoice/create',
+                reloadAfterSubmit: true,
+                closeOnEscape: true,
+                closeAfterAdd: true,
+                drag: true,
+                modal: true,
+                top: $(&quot;.container.body-content&quot;).position().top + 150,
+                left: $(&quot;.container.body-content&quot;).position().left + 150,
+                template: jqGridInvoice.getTemplate(),
+                afterSubmit: jqGridInvoice.afterSubmit,
+                editData: {
+                  CUSTOMER_ID: function () {
+                    return $('#dlgEditInvoice input[name=CUSTOMER_ID]').val();
+                  },
+                  INVOICE_DATE: function () {
+                    var datetime = $('#dlgEditInvoice input[name=INVOICE_DATE]')
+                                  .val();
+                    return jqGridInvoice.convertToUTC(datetime);
+                  }
+                }
+              };
+            },
+            // returns the options for deleting invoices
+            getDeleteInvoiceOptions: function () {
+              return {
+                url: jqGridInvoice.options.baseAddress + '/invoice/delete',
+                reloadAfterSubmit: true,
+                closeOnEscape: true,
+                closeAfterDelete: true,
+                drag: true,
+                msg: &quot;Delete the selected invoice?&quot;,
+                afterSubmit: jqGridInvoice.afterSubmit,
+                delData: {
+                  INVOICE_ID: function () {
+                    var selectedRow = jqGridInvoice.dbGrid.getGridParam(&quot;selrow&quot;);
+                    var value = jqGridInvoice.dbGrid
+                               .getCell(selectedRow, 'INVOICE_ID');
+                    return value;
+                  }
+                }
+              };
+            },
+            initPager: function () {
+                // display the navigation bar
+                jqGridInvoice.dbGrid.jqGrid('navGrid', '#jqPagerInvoice',
+                    {
+                         search: true,
+                         add: true,
+                         edit: true,
+                         del: true,
+                         view: false,
+                         refresh: true,
+
+                         searchtext: &quot;Search&quot;,
+                         addtext: &quot;Add&quot;,
+                         edittext: &quot;Edit&quot;,
+                         deltext: &quot;Delete&quot;,
+                         viewtext: &quot;View&quot;,
+                         viewtitle: &quot;Selected record&quot;,
+                         refreshtext: &quot;Refresh&quot;
+                    },
+                    jqGridInvoice.getEditInvoiceOptions(),
+                    jqGridInvoice.getAddInvoiceOptions(),
+                    jqGridInvoice.getDeleteInvoiceOptions()
+                );
+                // Add a button to pay the invoice
+                var urlPay = jqGridInvoice.options.baseAddress + '/invoice/pay';
+                jqGridInvoice.dbGrid.navButtonAdd('#jqPagerInvoice',
+                    {
+                       buttonicon: &quot;glyphicon-usd&quot;,
+                       title: &quot;Pay&quot;,
+                       caption: &quot;Pay&quot;,
+                       position: &quot;last&quot;,
+                       onClickButton: function () {
+                         // get the id of the current record
+                         var id = jqGridInvoice.dbGrid.getGridParam(&quot;selrow&quot;);
+                         if (id) {
+                           $.ajax({
+                               url: urlPay,
+                               type: 'POST',
+                               data: {INVOICE_ID: id},
+                               success: function (data) {
+                                   // Check if an error has occurred
+                                   if (data.hasOwnProperty(&quot;error&quot;)) {
+                                       jqGridInvoice.alertDialog('??????',
+                                                                 data.error);
+                                   } else {
+                                          // refresh grid
+                                       $(&quot;#jqGridInvoice&quot;).jqGrid(
+                                           'setGridParam',
+                                           {
+                                               datatype: 'json'
+                                           }
+                                       ).trigger('reloadGrid');
+                                   }
+                               }
+                           });
+                         }
+                       }
+                    }
+                );
+            },
+            init: function () {
+                jqGridInvoice.initGrid();
+                jqGridInvoice.initPager();
+            },
+            afterSubmit: function (response, postdata) {
+                var responseData = response.responseJSON;
+                // Check if an error has occurred
+                if (responseData.hasOwnProperty(&quot;error&quot;)) {
+                    if (responseData.error.length) {
+                        return [false, responseData.error];
+                    }
+                } else {
+                    // refresh grid
+                    $(this).jqGrid(
+                            'setGridParam',
+                            {
+                                datatype: 'json'
+                            }
+                    ).trigger('reloadGrid');
+                }
+                return [true, &quot;&quot;, 0];
+            },
+            getInvoiceLineColModel: function (parentRowKey) {
+              return [
+                  {
+                    label: 'Invoice Line ID',
+                    name: 'INVOICE_LINE_ID',
+                    key: true,
+                    hidden: true
+                  },
+                  {
+                    label: 'Invoice ID',
+                    name: 'INVOICE_ID',
+                    hidden: true,
+                    editrules: {edithidden: true, required: true},
+                    editable: true,
+                    edittype: 'custom',
+                    editoptions: {
+                      custom_element: function (value, options) {
+                          // create hidden input
+                          return $(&quot;&lt;input&gt;&quot;)
+                                 .attr('type', 'hidden')
+                                 .attr('rowid', options.rowId)
+                                 .addClass(&quot;FormElement&quot;)
+                                 .addClass(&quot;form-control&quot;)
+                                 .val(parentRowKey)
+                                 .get(0);
+                      }
+                    }
+                  },
+                  {
+                    label: 'Product ID',
+                    name: 'PRODUCT_ID',
+                    hidden: true,
+                    editrules: {edithidden: true, required: true},
+                    editable: true,
+                    edittype: 'custom',
+                    editoptions: {
+                      custom_element: function (value, options) {
+                          // create hidden input
+                          return $(&quot;&lt;input&gt;&quot;)
+                                 .attr('type', 'hidden')
+                                 .attr('rowid', options.rowId)
+                                 .addClass(&quot;FormElement&quot;)
+                                 .addClass(&quot;form-control&quot;)
+                                 .val(value)
+                                 .get(0);
+                      }
+                    }
+                  },
+                  {
+                    label: 'Product',
+                    name: 'PRODUCT_NAME',
+                    width: 300,
+                    editable: true,
+                    edittype: &quot;text&quot;,
+                    editoptions: {
+                        size: 50,
+                        maxlength: 60,
+                        readonly: true
+                    },
+                    editrules: {required: true}
+                  },
+                  {
+                    label: 'Price',
+                    name: 'SALE_PRICE',
+                    formatter: 'currency',
+                    editable: true,
+                    editoptions: {
+                        readonly: true
+                    },
+                    align: &quot;right&quot;,
+                    width: 100
+                  },
+                  {
+                    label: 'Quantity',
+                    name: 'QUANTITY',
+                    align: &quot;right&quot;,
+                    width: 100,
+                    editable: true,
+                    editrules: {required: true, number: true, minValue: 1},
+                    editoptions: {
+                      dataEvents: [{
+                        type: 'change',
+                        fn: function (e) {
+                          var quantity = $(this).val() - 0;
+                          var price =
+                            $('#dlgEditInvoiceLine input[name=SALE_PRICE]').val()-0;
+                          var total = quantity * price;
+                          $('#dlgEditInvoiceLine input[name=TOTAL]').val(total);
+                        }
+                      }],
+                      defaultValue: 1
+                    }
+                  },
+                  {
+                    label: 'Total',
+                    name: 'TOTAL',
+                    formatter: 'currency',
+                    align: &quot;right&quot;,
+                    width: 100,
+                    editable: true,
+                    editoptions: {
+                        readonly: true
+                    }
+                  }
+              ];
+            },
+            // returns the options for editing the invoice item
+            getEditInvoiceLineOptions: function () {
+              return {
+                url: jqGridInvoice.options.baseAddress + '/invoice/editdetail',
+                reloadAfterSubmit: true,
+                closeOnEscape: true,
+                closeAfterEdit: true,
+                drag: true,
+                modal: true,
+                top: $(&quot;.container.body-content&quot;).position().top + 150,
+                left: $(&quot;.container.body-content&quot;).position().left + 150,
+                template: jqGridInvoice.getTemplateDetail(),
+                afterSubmit: jqGridInvoice.afterSubmit,
+                editData: {
+                  INVOICE_LINE_ID: function () {
+                    var selectedRow = jqGridInvoice.detailGrid
+                                     .getGridParam(&quot;selrow&quot;);
+                    var value = jqGridInvoice.detailGrid
+                               .getCell(selectedRow, 'INVOICE_LINE_ID');
+                    return value;
+                  },
+                  QUANTITY: function () {
+                    return $('#dlgEditInvoiceLine input[name=QUANTITY]').val();
+                  }
+                }
+              };
+            },
+            // returns options for adding an invoice item
+            getAddInvoiceLineOptions: function () {
+              return {
+                url: jqGridInvoice.options.baseAddress + '/invoice/createdetail',
+                reloadAfterSubmit: true,
+                closeOnEscape: true,
+                closeAfterAdd: true,
+                drag: true,
+                modal: true,
+                top: $(&quot;.container.body-content&quot;).position().top + 150,
+                left: $(&quot;.container.body-content&quot;).position().left + 150,
+                template: jqGridInvoice.getTemplateDetail(),
+                afterSubmit: jqGridInvoice.afterSubmit,
+                editData: {
+                  INVOICE_ID: function () {
+                    var selectedRow = jqGridInvoice.dbGrid.getGridParam(&quot;selrow&quot;);
+                    var value = jqGridInvoice.dbGrid
+                               .getCell(selectedRow, 'INVOICE_ID');
+                    return value;
+                  },
+                  PRODUCT_ID: function () {
+                    return $('#dlgEditInvoiceLine input[name=PRODUCT_ID]').val();
+                  },
+                  QUANTITY: function () {
+                    return $('#dlgEditInvoiceLine input[name=QUANTITY]').val();
+                  }
+                }
+              };
+            },
+            // returns the option to delete the invoice item
+            getDeleteInvoiceLineOptions: function () {
+              return {
+                url: jqGridInvoice.options.baseAddress + '/invoice/deletedetail',
+                reloadAfterSubmit: true,
+                closeOnEscape: true,
+                closeAfterDelete: true,
+                drag: true,
+                msg: &quot;Delete the selected item?&quot;,
+                afterSubmit: jqGridInvoice.afterSubmit,
+                delData: {
+                  INVOICE_LINE_ID: function () {
+                    var selectedRow = jqGridInvoice.detailGrid
+                                     .getGridParam(&quot;selrow&quot;);
+                    var value = jqGridInvoice.detailGrid
+                               .getCell(selectedRow, 'INVOICE_LINE_ID');
+                    return value;
+                  }
+                }
+              };
+            },
+            // Event handler for the parent grid expansion event
+            // takes two parameters: the parent record identifier
+            // and the primary record key
+            showChildGrid: function (parentRowID, parentRowKey) {
+                var childGridID = parentRowID + &quot;_table&quot;;
+                var childGridPagerID = parentRowID + &quot;_pager&quot;;
+                // send the primary key of the parent record
+                // to filter the entries of the invoice items
+                var childGridURL = jqGridInvoice.options.baseAddress
+                                 + '/invoice/getdetaildata';
+                childGridURL = childGridURL + &quot;?INVOICE_ID=&quot;
+                             + encodeURIComponent(parentRowKey);
+                // add HTML elements to display the table and page navigation
+                // as children for the selected row in the master grid
+                $('&lt;table&gt;')
+                        .attr('id', childGridID)
+                        .appendTo($('#' + parentRowID));
+                $('&lt;div&gt;')
+                        .attr('id', childGridPagerID)
+                        .addClass('scroll')
+                        .appendTo($('#' + parentRowID));
+                // create and initialize the child grid
+                jqGridInvoice.detailGrid = $(&quot;#&quot; + childGridID).jqGrid({
+                    url: childGridURL,
+                    mtype: &quot;GET&quot;,
+                    datatype: &quot;json&quot;,
+                    page: 1,
+                    colModel: jqGridInvoice.getInvoiceLineColModel(parentRowKey),
+                    loadonce: false,
+                    width: '100%',
+                    height: '100%',
+                    guiStyle: &quot;bootstrap&quot;,
+                    iconSet: &quot;fontAwesome&quot;,
+                    pager: &quot;#&quot; + childGridPagerID
+                });
+                // displaying the toolbar
+                $(&quot;#&quot; + childGridID).jqGrid(
+                    'navGrid', '#' + childGridPagerID,
+                    {
+                        search: false,
+                        add: true,
+                        edit: true,
+                        del: true,
+                        refresh: true
+                    },
+                    jqGridInvoice.getEditInvoiceLineOptions(),
+                    jqGridInvoice.getAddInvoiceLineOptions(),
+                    jqGridInvoice.getDeleteInvoiceLineOptions()
+                );
+            },
+            // returns a template for the invoice item editor
+            getTemplateDetail: function () {
+              var template = &quot;&lt;div style='margin-left:15px;' &quot;;
+              template += &quot;id='dlgEditInvoiceLine'&gt;&quot;;
+              template += &quot;&lt;div&gt;{INVOICE_ID} &lt;/div&gt;&quot;;
+              template += &quot;&lt;div&gt;{PRODUCT_ID} &lt;/div&gt;&quot;;
+              // input field with a button
+              template += &quot;&lt;div&gt; Product &lt;sup&gt;*&lt;/sup&gt;:&lt;/div&gt;&quot;;
+              template += &quot;&lt;div&gt;&quot;;
+              template += &quot;&lt;div style='float: left;'&gt;{PRODUCT_NAME}&lt;/div&gt; &quot;;
+              template += &quot;&lt;a style='margin-left: 0.2em;' class='btn' &quot;;
+              template += &quot;onclick='invoiceGrid.showProductWindow(); &quot;;
+              template += &quot;return false;'&gt;&quot;;
+              template += &quot;&lt;span class='glyphicon glyphicon-folder-open'&gt;&quot;;
+              template += &quot;&lt;/span&gt; Select&lt;/a&gt; &quot;;
+              template += &quot;&lt;div style='clear: both;'&gt;&lt;/div&gt;&quot;;
+              template += &quot;&lt;/div&gt;&quot;;
+              template += &quot;&lt;div&gt; Quantity: &lt;/div&gt;&lt;div&gt;{QUANTITY} &lt;/div&gt;&quot;;
+              template += &quot;&lt;div&gt; Price: &lt;/div&gt;&lt;div&gt;{SALE_PRICE} &lt;/div&gt;&quot;;
+              template += &quot;&lt;div&gt; Total: &lt;/div&gt;&lt;div&gt;{TOTAL} &lt;/div&gt;&quot;;
+              template += &quot;&lt;hr style='width: 100%;'/&gt;&quot;;
+              template += &quot;&lt;div&gt; {sData} {cData}  &lt;/div&gt;&quot;;
+              template += &quot;&lt;/div&gt;&quot;;
+              return template;
+            },
+            // Display selection window from the goods directory.
+            showProductWindow: function () {
+              var dlg = $('&lt;div&gt;')
+                        .attr('id', 'dlgChooseProduct')
+                        .attr('aria-hidden', 'true')
+                        .attr('role', 'dialog')
+                        .attr('data-backdrop', 'static')
+                        .css(&quot;z-index&quot;, '2000')
+                        .addClass('modal')
+                        .appendTo($('body'));
+
+              var dlgContent = $(&quot;&lt;div&gt;&quot;)
+                        .addClass(&quot;modal-content&quot;)
+                        .css('width', '760px')
+                        .appendTo($('&lt;div&gt;')
+                                .addClass('modal-dialog')
+                                .appendTo(dlg));
+
+              var dlgHeader = $('&lt;div&gt;').addClass(&quot;modal-header&quot;)
+                                          .appendTo(dlgContent);
+              $(&quot;&lt;button&gt;&quot;)
+                        .addClass(&quot;close&quot;)
+                        .attr('type', 'button')
+                        .attr('aria-hidden', 'true')
+                        .attr('data-dismiss', 'modal')
+                        .html(&quot;&times;&quot;)
+                        .appendTo(dlgHeader);
+              $(&quot;&lt;h5&gt;&quot;).addClass(&quot;modal-title&quot;)
+                         .html(&quot;Select product&quot;)
+                         .appendTo(dlgHeader);
+              var dlgBody = $('&lt;div&gt;')
+                        .addClass(&quot;modal-body&quot;)
+                        .appendTo(dlgContent);
+              var dlgFooter = $('&lt;div&gt;').addClass(&quot;modal-footer&quot;)
+                                          .appendTo(dlgContent);
+              $(&quot;&lt;button&gt;&quot;)
+                .attr('type', 'button')
+                .addClass('btn')
+                .html('OK')
+                .on('click', function () {
+                    var rowId = $(&quot;#jqGridProduct&quot;)
+                               .jqGrid(&quot;getGridParam&quot;, &quot;selrow&quot;);
+                    var row = $(&quot;#jqGridProduct&quot;)
+                             .jqGrid(&quot;getRowData&quot;, rowId);
+                    $('#dlgEditInvoiceLine input[name=PRODUCT_ID]')
+                        .val(row[&quot;PRODUCT_ID&quot;]);
+                    $('#dlgEditInvoiceLine input[name=PRODUCT_NAME]')
+                        .val(row[&quot;NAME&quot;]);
+                    $('#dlgEditInvoiceLine input[name=SALE_PRICE]')
+                        .val(row[&quot;PRICE&quot;]);
+                    var price = $('#dlgEditInvoiceLine input[name=SALE_PRICE]')
+                        .val()-0;
+                    var quantity = $('#dlgEditInvoiceLine input[name=QUANTITY]')
+                        .val()-0;
+                    var total = Math.round(price * quantity * 100) / 100;
+                    $('#dlgEditInvoiceLine input[name=TOTAL]').val(total);
+                    dlg.modal('hide');
+                })
+                .appendTo(dlgFooter);
+
+              $(&quot;&lt;button&gt;&quot;)
+                    .attr('type', 'button')
+                    .addClass('btn')
+                    .html('Cancel')
+                    .on('click', function () {
+                        dlg.modal('hide');
+                    })
+                    .appendTo(dlgFooter);
+
+              $('&lt;table&gt;')
+                    .attr('id', 'jqGridProduct')
+                    .appendTo(dlgBody);
+              $('&lt;div&gt;')
+                    .attr('id', 'jqPagerProduct')
+                    .appendTo(dlgBody);
+
+              dlg.on('hidden.bs.modal', function () {
+                    dlg.remove();
+              });
+              dlg.modal();
+
+              jqGridProductFactory({
+                  baseAddress: jqGridInvoice.options.baseAddress
+              });
+            },
+            // Display the selection window from the customer's directory.
+            showCustomerWindow: function () {
+                // the main block of the dialog
+                var dlg = $('&lt;div&gt;')
+                        .attr('id', 'dlgChooseCustomer')
+                        .attr('aria-hidden', 'true')
+                        .attr('role', 'dialog')
+                        .attr('data-backdrop', 'static')
+                        .css(&quot;z-index&quot;, '2000')
+                        .addClass('modal')
+                        .appendTo($('body'));
+                // block with the contents of the dialog
+                var dlgContent = $(&quot;&lt;div&gt;&quot;)
+                        .addClass(&quot;modal-content&quot;)
+                        .css('width', '730px')
+                        .appendTo($('&lt;div&gt;')
+                                .addClass('modal-dialog')
+                                .appendTo(dlg));
+                // block with dialog header
+                var dlgHeader = $('&lt;div&gt;').addClass(&quot;modal-header&quot;)
+                                          .appendTo(dlgContent);
+                // button &quot;X&quot; for closing
+                $(&quot;&lt;button&gt;&quot;)
+                        .addClass(&quot;close&quot;)
+                        .attr('type', 'button')
+                        .attr('aria-hidden', 'true')
+                        .attr('data-dismiss', 'modal')
+                        .html(&quot;&times;&quot;)
+                        .appendTo(dlgHeader);
+                // title of dialog
+                $(&quot;&lt;h5&gt;&quot;).addClass(&quot;modal-title&quot;)
+                         .html(&quot;Select customer&quot;)
+                         .appendTo(dlgHeader);
+                // body of dialog
+                var dlgBody = $('&lt;div&gt;')
+                        .addClass(&quot;modal-body&quot;)
+                        .appendTo(dlgContent);
+                // footer of dialog
+                var dlgFooter = $('&lt;div&gt;').addClass(&quot;modal-footer&quot;)
+                                          .appendTo(dlgContent);
+                // &quot;OK&quot; button
+                $(&quot;&lt;button&gt;&quot;)
+                    .attr('type', 'button')
+                    .addClass('btn')
+                    .html('OK')
+                    .on('click', function () {
+                        var rowId = $(&quot;#jqGridCustomer&quot;)
+                                   .jqGrid(&quot;getGridParam&quot;, &quot;selrow&quot;);
+                        var row = $(&quot;#jqGridCustomer&quot;)
+                                 .jqGrid(&quot;getRowData&quot;, rowId);
+                        // Keep the identifier and the name of the customer
+                        // in the input elements of the parent form.
+                        $('#dlgEditInvoice input[name=CUSTOMER_ID]')
+                            .val(rowId);
+                        $('#dlgEditInvoice input[name=CUSTOMER_NAME]')
+                            .val(row[&quot;NAME&quot;]);
+                        dlg.modal('hide');
+                    })
+                    .appendTo(dlgFooter);
+                // &quot;Cancel&quot; button
+                $(&quot;&lt;button&gt;&quot;)
+                        .attr('type', 'button')
+                        .addClass('btn')
+                        .html('Cancel')
+                        .on('click', function () {
+                            dlg.modal('hide');
+                        })
+                        .appendTo(dlgFooter);
+                // add a table to display the customers in the body of the dialog
+                $('&lt;table&gt;')
+                        .attr('id', 'jqGridCustomer')
+                        .appendTo(dlgBody);
+                // add the navigation bar
+                $('&lt;div&gt;')
+                        .attr('id', 'jqPagerCustomer')
+                        .appendTo(dlgBody);
+                dlg.on('hidden.bs.modal', function () {
+                    dlg.remove();
+                });
+                // display dialog
+                dlg.modal();
+                jqGridCustomerFactory({
+                    baseAddress: jqGridInvoice.options.baseAddress
+                });
+            },
+            // A window for displaying the error.
+            alertDialog: function (title, error) {
+                var alertDlg = $('&lt;div&gt;')
+                        .attr('aria-hidden', 'true')
+                        .attr('role', 'dialog')
+                        .attr('data-backdrop', 'static')
+                        .addClass('modal')
+                        .appendTo($('body'));
+                var dlgContent = $(&quot;&lt;div&gt;&quot;)
+                        .addClass(&quot;modal-content&quot;)
+                        .appendTo($('&lt;div&gt;')
+                                .addClass('modal-dialog')
+                                .appendTo(alertDlg));
+                var dlgHeader = $('&lt;div&gt;').addClass(&quot;modal-header&quot;)
+                                          .appendTo(dlgContent);
+                $(&quot;&lt;button&gt;&quot;)
+                        .addClass(&quot;close&quot;)
+                        .attr('type', 'button')
+                        .attr('aria-hidden', 'true')
+                        .attr('data-dismiss', 'modal')
+                        .html(&quot;&times;&quot;)
+                        .appendTo(dlgHeader);
+                $(&quot;&lt;h5&gt;&quot;).addClass(&quot;modal-title&quot;)
+                         .html(title)
+                         .appendTo(dlgHeader);
+                $('&lt;div&gt;')
+                        .addClass(&quot;modal-body&quot;)
+                        .appendTo(dlgContent)
+                        .append(error);
+                alertDlg.on('hidden.bs.modal', function () {
+                    alertDlg.remove();
+                });
+                alertDlg.modal();
+            }
+        };
+        jqGridInvoice.init();
+        return jqGridInvoice;
+    };
+})(jQuery, JqGridProduct, JqGridCustomer);
+        </programlisting>
+      </para>
+      <section id="fbdg30-java-invoice-display-lines">
+        <title>Displaying and Editing Invoice Lines</title>
+        <para>In the invoice module, the main grid is used to display headers and
+        the detail grid, opened with a click, is used to display invoice items. For the
+        child grid to be displayed, the True value is assigned to the <classname>subGrid</classname>
+        property. The child grid is displayed using the <classname>subGridRowExpanded</classname>
+        event connected with the <classname>showChildGrid</classname> method.</para>
+        <para>The items are filtered by the primary key of the invoice. Along with
+        the main buttons on the navigation bar, a custom button for paying for the
+        invoice is added to the invoice header using the
+        <classname>jqGridInvoice.dbGrid.navButtonAdd</classname> function (see the initPager
+        method).</para>
+      </section>
+      <section id="fbdg30-java-invoice-dialog-boxes">
+        <title>Dialog Boxes</title>
+        <para>Dialog boxes for editing secondary modules are much more complicated than
+        their primary counterparts. They often use options selected from other modules.
+        For that reason, these edit dialog boxes cannot be built automatically using
+        jqGrid.  However, this library has an option to build dialog boxes using
+        templates, which we use.</para>
+        <para>The dialog box template is returned by the <classname>getTemplate</classname>
+        function. The invoiceGrid.showCustomerWindow() function opens the customer module
+        for selecting a customer. It uses the functions of the JqGridCustomer module
+        described earlier. After the customer is selected in the modal window, its key is
+        inserted into the CUSTOMER_ID field. Fields that are to be sent to the server
+        using pre-processing or from hidden fields are described in the editData
+        property of the Edit and Add options.</para>
+      </section>
+
+      <section id="fbdg30-java-processing-dates">
+        <title>Processing Dates</title>
+        <para>To get back to processing dates: as we already know, the
+        <classname>InvoiceController</classname> controller returns the date in UTC.
+        Because we want to display it in the current time zone, we specify the
+        <classname>jqGridInvoice.dateTimeFormatter</classname> date formatting function
+        via the <classname>formatter</classname> property of the corresponding
+        INVOICE_DATE field.</para>
+        <para>When sending data to the server, we need the reverse operation&mdash;convert
+        time from the current time zone to UTC. The <classname>convertToUTC</classname>
+        function is responsible for that.</para>
+      </section>
+
+      <para>The custom template returned by the <classname>getTemplateDetail</classname>
+      function is also used for editing invoice items. The <classname>invoiceGrid.showProductWindow()</classname>
+      function opens a window for selecting a product from the product list. This function
+      uses the functions of the JqGridProduct module.</para>
+      <para>The code for the JqGridInvoice module contains detailed comments and more
+      explanation so that you can understand the logic of its workings.</para>
+     </section> <!-- fbdg30-java-invoice-display -->
+  </section> <!-- fbdg30-java-jooq-crt-sec-modules -->
+
+  <section id="fbdg30-java-project-result">
+    <title>The Result</title>
+    <para>Some screenshots from the web application we have developed in our 
+    project.
+      <figure id="java-result-1">
+        <title>Selecting a customer for invoicing</title>
+        <mediaobject>
+          <imageobject>
+          <!-- actual image size is 1275px X 889px -->
+            <imagedata fileref="images/fbdevgd30_java_003_en.png" format="PNG"
+            width="497px" depth="347px"
+            scalefit="1" align="center" />  <!-- 39% -->
+          </imageobject>
+        </mediaobject>
+      </figure>
+    </para>
+
+    <para>
+      <figure id="java-result-2">
+        <title>Editing an invoice header</title>
+        <mediaobject>
+          <imageobject>
+          <!-- actual image size is 1274px X 882px -->
+            <imagedata fileref="images/fbdevgd30_java_004_en.png" format="PNG"
+            width="497px" depth="344px"
+            scalefit="1" align="center" />  <!-- 39% -->
+          </imageobject>
+        </mediaobject>
+      </figure>
+    </para>
+    
+    <para>
+      <figure id="java-result-3">
+        <title>Editing an invoice line</title>
+        <mediaobject>
+          <imageobject>
+          <!-- actual image size is 1273px X 882px -->
+            <imagedata fileref="images/fbdevgd30_java_005_en.png" format="PNG"
+            width="496px" depth="304px"
+            scalefit="1" align="center" />  <!-- 39% -->
+          </imageobject>
+        </mediaobject>
+      </figure>
+    </para>
+
+    <para>
+      <figure id="java-result-4">
+        <title>Selecting a product for an invoice line</title>
+        <mediaobject>
+          <imageobject>
+          <!-- actual image size is 1277px X 912px -->
+            <imagedata fileref="images/fbdevgd30_java_006_en.png" format="PNG"
+            width="498px" depth="356px"
+            scalefit="1" align="center" />  <!-- 39% -->
+          </imageobject>
+        </mediaobject>
+      </figure>
+    </para>
+
+    <section id="fbdg30-java-project-sourcecode">
+      <title>Source Code</title>
+      <para>You can download the source code from the link 
+      <ulink url="https://www.firebirdsql.org/file/documentation/reference_manuals/fbdevgd-en/code/fbjavaex.zip">fbjavaex.zip</ulink>.
+      </para>
+    </section>
+   </section>
+</chapter>
