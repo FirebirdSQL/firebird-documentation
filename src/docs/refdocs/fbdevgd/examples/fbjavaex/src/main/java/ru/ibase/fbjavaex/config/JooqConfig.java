@@ -40,7 +40,7 @@ public class JooqConfig {
     public DataSource getDataSource() {
         BasicDataSource dataSource = new BasicDataSource();
         // JDBC connection configuration
-        dataSource.setUrl("jdbc:firebirdsql://localhost:3053/examples");
+        dataSource.setUrl("jdbc:firebirdsql://localhost/examples");
         dataSource.setDriverClassName("org.firebirdsql.jdbc.FBDriver");
         dataSource.setUsername("SYSDBA");
         dataSource.setPassword("masterkey");
