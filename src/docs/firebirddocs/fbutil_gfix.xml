@@ -15,7 +15,7 @@
       <surname>Dunbar</surname>
     </author>
 
-    <edition>13 February 2018 – Document version 1.5</edition>
+    <edition>21 November 2019 – Document version 1.6</edition>
   </articleinfo>
 
   <section id="gfix-intro">
@@ -893,42 +893,103 @@ Client SQL dialect is set to: 2 and database SQL dialect is: 3</screen>
       This is basically a copy of the row(s) from the table(s) that were being
       updated (or deleted) by the transaction prior to the rollback.</para>
 
+      <para>Almost all garbage is created by committed transactions. Since
+      around V2.5 transactions that rollback are cleaned up immediately -
+      assuming that Firebird is still running.</para>
+
+      <para>The major cause of garbage build-up is long running transactions
+      that require Firebird to keep old versions of records that are
+      frequently updated. Another source of garbage is an application strategy
+      that deletes records and never revisits them. </para>
+
+      <para>What actually happens on delete is that Firebird stores a "deleted
+      stub" with the full record as a back version. Until the delete is mature
+      - meaning that all active transactions started
+      <emphasis>after</emphasis> the delete was committed - the old version
+      must be preserved. </para>
+
+      <para>Imagine a table that's indexed and accessed by date. On some
+      schedule, records age out and are deleted. In the application, records
+      are accessed by date and the deleted records are so old no query every
+      asks for them. So there they sit, taking up space and doing no good to
+      anyone. Even with a garbage collect thread, some active transaction has
+      to <emphasis>stumble</emphasis> over deleted records or records with
+      unneeded back versions before the record will be garbage collected.
+      </para>
+
+      <para>In cooperative garbage collection, that particular record will be
+      cleaned up immediately (or at least when the transaction gets some
+      cycles). The dedicated garbage collection thread should clean up all the
+      records on a page, but not until an active transaction tells it that
+      there's a page that needs cleaning.</para>
+
       <para>Because Firebird uses multi-generational architecture, every time
       a row is updated or deleted, Firebird keeps a copy in the database.
       These copies use space in the pages and can remain in the database for
-      some time.</para>
+      some time, especially if there are no active transactions stumbling
+      across them!</para>
 
-      <para>In addition to taking up space in the database, these old copies
-      can lead to increased transaction startup times.</para>
-
-      <para>There are two types of garbage:</para>
+      <para>There are a number of causes of garbage:</para>
 
       <para><itemizedlist>
           <listitem>
-            <para>Remnants from a committed transaction.</para>
+            <para>Remnants from a committed transaction. This is the main
+            cause of garbage since around Firebird version 2.5.</para>
           </listitem>
 
           <listitem>
-            <para>Remnants from an aborted (rolled back) transaction.</para>
+            <para>Remnants from an aborted (rolled back) transaction
+            <emphasis>may</emphasis> exist in Firebird versions prior to 2.5,
+            newer versions perform immediate clean up after a rollback
+            however, if the Firebird Server, the Operating System or the
+            physical server crashed, then these remnants may still exists,
+            even in later versions of Firebird. </para>
           </listitem>
-        </itemizedlist>These remnants are simply older copies of the rows that
-      were being updated by the respective transactions. The differences are
-      that:</para>
+
+          <listitem>
+            <para>Applications, described above, which delete database
+            records, but then, subsequently, never revisit those deleted
+            versions to garbage collect them automatically.</para>
+          </listitem>
+        </itemizedlist></para>
+
+      <para>With regard to the remnants from aborted or rolled back
+      transactions, Firebird (now) carries out record keeping to facilitate
+      save points. This housekeeping allows Firebird to identify and, if
+      necessary, undo all changes made by a transaction in the event that it
+      is rolled back, or which failed due to a lost connection.</para>
+
+      <para>If a failed transaction is rolled back in either manner, its state
+      is set to <emphasis>committed</emphasis> as there are no differences
+      between a failed transaction and one in which it committed after making
+      no changes.</para>
+
+      <para>These remnants are simply older copies of the rows that were being
+      updated by the respective transactions. The differences are that:</para>
 
       <para><itemizedlist>
           <listitem>
             <para>Whenever a subsequent transaction reaches garbage from a
             <emphasis>committed</emphasis> transaction, that garbage is
-            automatically cleared out.</para>
+            automatically cleared out, but see above for reasons where this
+            may not take place often enough.</para>
           </listitem>
 
           <listitem>
-            <para>Rolled back garbage is <emphasis>never</emphasis>
-            automatically cleared out.</para>
+            <para>Rolled back garbage looks just like record versions created
+            by active transactions. Those records can be accessed either
+            sequentially (during a full table scan) or by index - assuming
+            that the index entry was made before the crash that left the
+            garbage around. The index entries will exist in the case of all
+            but the last change made. When one transaction reads a record
+            version created by a transaction that's listed in the transaction
+            bit vector as active, the reader attempts to get a lock on the
+            apparently active transaction id. If the lock request succeeds,
+            then the other transaction is dead and the reader will either
+            clean up the mess or notify the garbage collect thread to do
+            so.</para>
           </listitem>
-        </itemizedlist>This means that on a database with a lot of rolled back
-      transactions, there could be a large build up of old copies of the rows
-      that were updated and then rolled back.</para>
+        </itemizedlist></para>
 
       <para>Firebird will automatically sweep through the database and remove
       the remnants of rolled back transactions and this has two
@@ -936,8 +997,10 @@ Client SQL dialect is set to: 2 and database SQL dialect is: 3</screen>
 
       <itemizedlist>
         <listitem>
-          <para>The database size is reduced as the old copies of rows are
-          deleted.</para>
+          <para>The space recovered is made available for reuse by the same
+          table, however, if this results in the page becoming completely
+          empty, then it can be used for any purpose within the
+          database.</para>
         </listitem>
 
         <listitem>
@@ -948,7 +1011,14 @@ Client SQL dialect is set to: 2 and database SQL dialect is: 3</screen>
 
       <note>
         <para>One other method of clearing out old rolled back transactions'
-        garbage is simply to carry out a database backup.</para>
+        garbage is simply to carry out a database backup.
+        <application>Gbak</application> reads every table sequentially and
+        thus visits every row in every table. Applications which also visit
+        every row in one or more tables, will also cause the garbage in those
+        tables to be collected.</para>
+
+        <para>Neither will affect the database's OIT (Oldest Intersting
+        Transaction) or OST (Oldest Snapshot) settings however.</para>
       </note>
 
       <para>In the Super Server version of Firebird 2.0, garbage collection
@@ -966,13 +1036,36 @@ Client SQL dialect is set to: 2 and database SQL dialect is: 3</screen>
       </note>
 
       <section>
+        <title>Record Versions</title>
+
+        <para>Normally, when a "back" or old version of a row in a table is
+        created, it will be stored on the same page as the newset version.
+        This is usually fine as the back version is not normally a complete
+        copy of the old version, merely a list of differences from the newest
+        version. Enough information is retained in the old version, to be able
+        to recreate it, if necessary.</para>
+
+        <para>If the database is suffereing from a lack of garbage colecting,
+        either deliberately, or down to the application design, then it is
+        possible that there will be a build up of enough back versions to fill
+        the target page. When the chain of old versions gets too big, Firebird
+        has to move the old versions to a diffreent page which, if it occurs
+        as part of an UPDATE statement, as it normally will, the UPDATE will
+        run a lot slower than usual and will greatly increase the cost of
+        subsequent garbage collection againts that table.</para>
+      </section>
+
+      <section>
         <title>Cooperative Garbage Collection</title>
 
         <para>This is the default setting, indeed the only setting, that
         Classic Server uses. In this mode, the normal operation - as described
         above - takes place. When a full scan is performed (perhaps during a
-        backup) old versions of the rows are deleted at that point in
-        time.</para>
+        backup) old versions of the rows are deleted at that point in time.
+        Record versions which are old enough that no active transactions have
+        any interest in them will be removed, as will any versions created by
+        failed transactions, if there are any present. (Which there shouldn't
+        be!)</para>
       </section>
 
       <section>
@@ -983,7 +1076,11 @@ Client SQL dialect is set to: 2 and database SQL dialect is: 3</screen>
         collector about old versions of updated and deleted rows when they are
         ready to be cleaned up. This helps avoid the need to force a full scan
         of each record in the database tables to get the garbage collector to
-        remove these old versions.</para>
+        remove these old versions. An active transaction has to recognize the
+        need for garbage collection and notify the server which puts that
+        record id on a list for the garbage collect thread. So an unvisited
+        record will not attract the garbage collector unless another record on
+        that page is read and does need cleanup.</para>
 
         <para>When all rows in a table are read by the server, any old record
         versions are flagged to the garbage collector as being ready to be
@@ -1007,7 +1104,7 @@ Client SQL dialect is set to: 2 and database SQL dialect is: 3</screen>
 
       <para>The default sweep interval for a new database is 20,000. The sweep
       interval is the <emphasis>difference</emphasis> between the
-      <emphasis>Oldest Snapshot Transaction</emphasis>, or OST and the 
+      <emphasis>Oldest Snapshot Transaction</emphasis>, or OST and the
       <emphasis>Oldest Interesting Transaction</emphasis> or OIT.</para>
 
       <note>
@@ -1018,7 +1115,8 @@ Client SQL dialect is set to: 2 and database SQL dialect is: 3</screen>
       </note>
 
       <para>An interesting transaction is one which has not yet committed. It
-      may be still active, in limbo or may have been rolled back.</para>
+      may be still active, in limbo or may have been rolled back. (Limbo
+      transactions are never garbage collected.)</para>
 
       <para>The sweep facility runs through the database and gets rid of old
       rows in tables that are out of date. This prevents the database from
@@ -1035,10 +1133,51 @@ Client SQL dialect is set to: 2 and database SQL dialect is: 3</screen>
       <application>gstat</application> utility to check the database header
       page and extract the Oldest Transaction (OIT) and Oldest Snapshot (OST)
       numbers from the output. If OST - OIT is small (less than the sweep
-      interval) then a manual sweep may be in order. Alternatively, the
+      interval) then a manual sweep may be in order. The
       <database><database>SHOW DATABASE</database></database> command in
       <application>isql</application> will also show the details you
       need.</para>
+
+      <para>Alternatively, another idea is to run
+      <application>gstat</application> with the switches set to show old
+      record versions. If that shows a problem, then it may be a good idea to
+      start looking for long running transactions.</para>
+
+      <para>The options for this are:</para>
+
+      <itemizedlist>
+        <listitem>
+          <para><command>gstat &lt;database&gt; -r[ecord]</command></para>
+        </listitem>
+
+        <listitem>
+          <para><command>gstat &lt;database&gt; -d[ata]
+          -r[ecord]</command></para>
+        </listitem>
+
+        <listitem>
+          <para><command>gstat &lt;database&gt; -r[ecord] -t[able]
+          &lt;table_names&gt;</command></para>
+        </listitem>
+      </itemizedlist>
+
+      <para>For example:</para>
+
+      <screen>tux&gt; gstat test.fdb -r -t NORMAN
+
+...
+Analyzing database pages ...
+NORMAN (142)
+    Primary pointer page: 268, Index root page: 269
+    Average record length: 0.00, total records: 15
+    Average version length: 9.00, total versions: 15, max versions: 1
+    Data pages: 1, data page slots: 1, average fill: 16%
+...</screen>
+
+      <para>The information is shown in the 'record versions' statistic. In
+      this example, there are 15 versions and as the 'total records' is also
+      15, then all the records have been deleted and need gargabge
+      collecting.</para>
 
       <para>A manual sweep can be run by using the
       <userinput>-s[weep]</userinput> command. (See below).</para>
@@ -1071,12 +1210,22 @@ Sweep interval:     1000</screen>
 
       <para>This command will force the garbage left over from old rolled back
       transactions to be removed, reducing the database size and improving the
-      performance of new transactions.</para>
+      performance of new transactions. .Rolled back transactions are less of a
+      problem than old versions from committed transactions, however, when the
+      newest versions is being used by all current and future active
+      transactions.</para>
 
       <para>The <userinput>-i[gnore]</userinput> option may be supplied. This
       forces Firebird to ignore checksum errors on database pages. This is not
       a good idea and should rarely need to be used, however, if your database
       has suffered some problems it might be necessary to use it.</para>
+
+      <note>
+        <para>Checksums have not been used for a number of years as it was
+        found that a significant percentage of CPU was consumed by check
+        summing to find partial page writes - none of which were ever found!
+        </para>
+      </note>
 
       <para>The following example shows a manual database sweep being
       implemented:</para>
@@ -1914,8 +2063,21 @@ has been prepared.
           <authorinitials>ND</authorinitials>
 
           <revdescription>
-            <para>DOC-129 - Updated to correct details of the Sweep Interval and how to
-            check what the current interval is.</para>
+            <para>DOC-129 - Updated to correct details of the Sweep Interval
+            and how to check what the current interval is.</para>
+          </revdescription>
+        </revision>
+
+        <revision>
+          <revnumber>1.6</revnumber>
+
+          <date>21 November 2019</date>
+
+          <authorinitials>ND</authorinitials>
+
+          <revdescription>
+            <para>Updated the Garbage section to better explain garbage causes
+            etc. Courtesy of Ann Harrison.</para>
           </revdescription>
         </revision>
       </revhistory></para>
@@ -1939,7 +2101,7 @@ has been prepared.
     <para>The Initial Writer of the Original Documentation is: Norman
     Dunbar.</para>
 
-    <para>Copyright (C) 2007–2018. All Rights Reserved. Initial Writer
+    <para>Copyright (C) 2007–2019. All Rights Reserved. Initial Writer
     contact: NormanDunbar at users dot sourceforge dot net.</para>
   </appendix>
 </article>
