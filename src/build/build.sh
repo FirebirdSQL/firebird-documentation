@@ -1,4 +1,4 @@
-#! /bin/sh
+#! /bin/bash
 
 if [ "$JAVA_HOME" == "" ] ; then
   echo "    Error: The JAVA_HOME environment variable is not set."
