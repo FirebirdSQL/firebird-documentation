@@ -2,7 +2,7 @@ This is the manual/lib folder.
 
 To get the library jars needed to build the documentation, go to
 
-  http://www.firebirdsql.org/doclibs/
+  https://www.firebirdsql.org/doclibs/
 
 and download either all the JAR files or ALLJARS.ZIP. If you've
 downloaded ALLJARS.ZIP, unzip it here. Don't use "Unzip to..."
@@ -40,7 +40,7 @@ Linux shortcut
 On Linux, instead of visiting the site with a browser, you can cd
 to the manual/lib folder and type at the command prompt:
 
-  $ wget http://www.firebirdsql.org/doclibs/ALLJARS.ZIP
+  $ wget https://www.firebirdsql.org/doclibs/ALLJARS.ZIP
   $ unzip ALLJARS.ZIP
 
 This will download and unzip the Java libraries for you.
