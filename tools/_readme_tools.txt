@@ -2,7 +2,7 @@ This is the manual/tools folder.
 
 To get the external tools needed to build the documentation, go to
 
-  http://www.firebirdsql.org/doctools/
+  https://www.firebirdsql.org/doctools/
 
 and download any ZIP files you find there.
 Unzip them right here; they will create their own subdirectories.
