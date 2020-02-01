@@ -14,15 +14,12 @@
                 version='1.0'>
 
   <!-- Import default DocBook stylesheet for fo generation: -->
-  <xsl:import href="../../../tools/docbook-stylesheets/fo/docbook.xsl"/>
+  <xsl:import href="http://docbook.sourceforge.net/release/xsl/current/fo/docbook.xsl"/>
 
 
-  <xsl:output method="xml"
-              indent="no"
-              saxon:next-in-chain="fo/fo-fix.xsl"/>
-  <!-- if the 2nd pass (next-in-chain) is no longer necessary,
-       we should change the method to saxon:net.sf.foxon.FOIndenter -->
-
+<!--  <xsl:output method="xml"-->
+<!--              indent="no"-->
+<!--              saxon:next-in-chain="fo/fo-fix.xsl"/>-->
 
   <!-- then include our own customizations: -->
   <xsl:include href="common/param.xsl"/>
