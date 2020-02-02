@@ -13,7 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.firebirdsql.docbook
+package org.firebirdsql.documentation.docbook
+
+import org.firebirdsql.documentation.DocumentationExtension
+import org.gradle.api.file.FileTree
 
 import javax.xml.parsers.SAXParserFactory
 import javax.xml.transform.Result
@@ -74,14 +77,18 @@ class Docbook extends DefaultTask {
     @OutputDirectory
     final Provider<Directory> docsOutput = outputRoot.dir(xdir)
 
+    @Internal
+    final Property<FileTree> imageSource = project.objects.property(FileTree)
+
     Docbook() {
         xdir.set('.')
     }
 
-    void configureWith(DocbookExtension extension) {
+    void configureWith(DocumentationExtension extension) {
         docRoot.set(extension.docRoot)
         styleDir.set(extension.styleDir)
         outputRoot.set(extension.outputRoot)
+        imageSource.set(extension.imageSource)
     }
 
     @TaskAction

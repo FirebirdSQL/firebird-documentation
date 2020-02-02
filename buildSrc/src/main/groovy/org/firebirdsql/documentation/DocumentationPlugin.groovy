@@ -13,20 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.firebirdsql.docbook
+package org.firebirdsql.documentation
 
+import org.firebirdsql.documentation.docbook.Docbook
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 
-class DocbookPlugin implements Plugin<Project> {
+class DocumentationPlugin implements Plugin<Project> {
 
-    static final String DOCBOOK_EXTENSION = "docbook"
+    static final String DOCUMENTATION_EXTENSION = "documentation"
 
     @Override
     void apply(Project project) {
         project.apply(plugin: 'base')
 
-        DocbookExtension extension = project.extensions.create(DOCBOOK_EXTENSION, DocbookExtension, project)
+        DocumentationExtension extension = project.extensions.create(DOCUMENTATION_EXTENSION, DocumentationExtension, project)
 
         project.tasks.withType(Docbook).whenTaskAdded { task ->
             task.configureWith(extension)

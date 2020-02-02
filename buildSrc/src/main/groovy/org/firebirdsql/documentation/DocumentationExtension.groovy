@@ -13,15 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.firebirdsql.docbook
+package org.firebirdsql.documentation
 
 import org.gradle.api.Project
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileTree
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 
-class DocbookExtension {
+class DocumentationExtension {
     
     // TODO Some documentation might be better moved to the build.gradle file
 
@@ -108,7 +109,9 @@ class DocbookExtension {
      */
     final Provider<Directory> setSource
 
-    DocbookExtension(Project project) {
+    final Provider<FileTree> imageSource
+
+    DocumentationExtension(Project project) {
         this.project = project
         configRootDir = project.objects.directoryProperty()
         styleDir = project.objects.directoryProperty()
@@ -146,9 +149,14 @@ class DocbookExtension {
             }
             return docRootValue.dir(baseName)
         }
+        imageSource = project.provider {
+            return project.fileTree(docRoot.dir('images')) +
+                    project.fileTree(docRoot.dir(baseName.map {baseNameValue -> "$baseNameValue/images" })) +
+                    project.fileTree(docRoot.dir(setName.map {setNameValue -> "$setNameValue/images" }))
+        }
     }
 
-    private String deriveSetName(String baseNameValue) {
+    String deriveSetName(String baseNameValue) {
         if (sfx.getOrElse('') != '') {
             return "${baseNameValue}-${sfx}"
         }
