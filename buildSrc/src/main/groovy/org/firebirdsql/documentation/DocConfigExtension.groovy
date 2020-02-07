@@ -13,25 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.firebirdsql.documentation.docbook
+package org.firebirdsql.documentation
 
-import javax.xml.transform.Transformer
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.model.ObjectFactory
 
 import groovy.transform.CompileStatic
 
-// Parts derived from https://github.com/spring-projects/spring-build-gradle
-
 @CompileStatic
-class DocbookHtml extends Docbook {
+class DocConfigExtension {
+    
+    final DirectoryProperty configRootDir
+    final DirectoryProperty styleDir
+    final DirectoryProperty docRoot
+    final DirectoryProperty outputRoot
 
-    DocbookHtml() {
-        super('html')
-    }
-
-    @Override
-    protected void preTransform(Transformer transformer, File sourceFile, File outputFile) {
-        super.preTransform(transformer, sourceFile, outputFile)
-        transformer.setParameter("root.filename", docId.orElse(setName).get())
-        transformer.setParameter("base.dir", outputFile.getParent() + File.separator)
+    DocConfigExtension(ObjectFactory objectFactory) {
+        configRootDir = objectFactory.directoryProperty()
+        styleDir = objectFactory.directoryProperty()
+        docRoot = objectFactory.directoryProperty()
+        outputRoot = objectFactory.directoryProperty()
     }
 }

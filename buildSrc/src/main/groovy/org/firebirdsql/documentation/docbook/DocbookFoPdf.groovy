@@ -15,48 +15,49 @@
  */
 package org.firebirdsql.documentation.docbook
 
-import javax.xml.transform.Result
-import javax.xml.transform.Source
-import javax.xml.transform.Transformer
 import javax.xml.transform.TransformerFactory
 import javax.xml.transform.sax.SAXResult
 import javax.xml.transform.stream.StreamSource
 
-import org.apache.fop.apps.Fop
-import org.apache.fop.apps.FopFactory
+import groovy.transform.CompileStatic
 import org.apache.fop.apps.FopFactoryBuilder
 import org.apache.fop.apps.MimeConstants
-import org.apache.fop.configuration.Configuration
 import org.apache.fop.configuration.DefaultConfigurationBuilder
 
 // Parts derived from https://github.com/spring-projects/spring-build-gradle
 
+@CompileStatic
 class DocbookFoPdf extends Docbook {
+
+    DocbookFoPdf() {
+        super('fo')
+    }
 
     /**
      * <a href="http://xmlgraphics.apache.org/fop/0.95/embedding.html#render">From the FOP usage guide</a>
      */
     @Override
     protected void postTransform(File foFile) {
+        super.postTransform(foFile)
         // TODO Make configurable
-        DefaultConfigurationBuilder cfgBuilder = new DefaultConfigurationBuilder()
-        Configuration cfg = cfgBuilder.buildFromFile(project.file('config/fop-userconfig.xml'))
-        FopFactoryBuilder fopFactoryBuilder = new FopFactoryBuilder(docsOutput.get().asFile.toURI())
+        def cfgBuilder = new DefaultConfigurationBuilder()
+        def cfg = cfgBuilder.buildFromFile(project.file('config/fop-userconfig.xml'))
+        def fopFactoryBuilder = new FopFactoryBuilder(docsOutput.get().asFile.toURI())
                 .setConfiguration(cfg)
-        FopFactory fopFactory = fopFactoryBuilder.build()
+        def fopFactory = fopFactoryBuilder.build()
 //        fopFactory.setUserConfig(project.file('config/fop-userconfig.xml'))
 
-        final File pdfFile = getPdfOutputFile(foFile)
+        final pdfFile = docsOutput.get().file("${setName.get()}.pdf").asFile
         logger.debug("Transforming 'fo' file $foFile to PDF: $pdfFile")
 
         new BufferedOutputStream(new FileOutputStream(pdfFile)).withCloseable { out ->
-            Fop fop = fopFactory.newFop(MimeConstants.MIME_PDF, out)
+            def fop = fopFactory.newFop(MimeConstants.MIME_PDF, out)
 
-            TransformerFactory factory = TransformerFactory.newInstance()
-            Transformer transformer = factory.newTransformer()
+            def factory = TransformerFactory.newInstance()
+            def transformer = factory.newTransformer()
 
-            Source src = new StreamSource(foFile)
-            Result res = new SAXResult(fop.getDefaultHandler())
+            def src = new StreamSource(foFile)
+            def res = new SAXResult(fop.getDefaultHandler())
             
             transformer.transform(src, res)
         }
@@ -66,7 +67,4 @@ class DocbookFoPdf extends Docbook {
 //        }
     }
 
-    private File getPdfOutputFile(File foFile) {
-        return docsOutput.get().file(nameWithoutFileExtension(foFile) + '.pdf').asFile
-    }
 }

@@ -15,14 +15,16 @@
  */
 package org.firebirdsql.documentation.docbook
 
-import org.firebirdsql.documentation.DocumentationExtension
+import org.gradle.api.file.CopySpec
+import org.gradle.api.file.FileCollection
+import org.gradle.api.provider.SetProperty
+import org.gradle.api.tasks.options.Option
+
+import groovy.transform.CompileStatic
+import org.firebirdsql.documentation.DocConfigExtension
 import org.gradle.api.file.FileTree
 
-import javax.xml.parsers.SAXParserFactory
-import javax.xml.transform.Result
-import javax.xml.transform.Source
 import javax.xml.transform.Transformer
-import javax.xml.transform.TransformerFactory
 import javax.xml.transform.sax.SAXSource
 import javax.xml.transform.stream.StreamResult
 import javax.xml.transform.stream.StreamSource
@@ -40,55 +42,152 @@ import com.icl.saxon.TransformerFactoryImpl
 import org.apache.xml.resolver.CatalogManager
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.xml.sax.InputSource
-import org.xml.sax.XMLReader
+
+import static org.gradle.api.file.DuplicatesStrategy.EXCLUDE
 
 // Parts derived from https://github.com/spring-projects/spring-build-gradle
 
+@CompileStatic
 class Docbook extends DefaultTask {
 
     @Input
-    String extension = 'html'
+    String extension
 
+    /**
+     * Output type name, used for generating the output folder
+     */
     @Input
-    final Property<String> xdir = project.objects.property(String)
+    final Property<String> outputTypeName = project.objects.property(String)
 
-    @InputDirectory
+    /**
+     * 'baseName' is the base set name, without language suffix.
+     * <p>
+     * Currently it can be firebirddocs, rlsnotes, papers or refdocs.
+     * </p>
+     */
+    @Input
+    final Property<String> baseName = project.objects.property(String)
+
+    /**
+     * Language of the documentation (eg 'de', 'ru').
+     * <p>
+     * Should not be set to 'en' for English.
+     * </p>
+     */
+    @Input
+    @Optional
+    @Option(option = 'language', description = "Sets two letter language code for output, don't specify for English")
+    final Property<String> language = project.objects.property(String)
+
+    /**
+     * setName is the base filename of the set, without extension, but already including
+     * the language suffix (if applicable), e.g. firebirddocs, firebirddocs-ru, firebirddocs-es.
+     */
+    @Internal
+    final Provider<String> setName = project.provider {
+        if (language.present) {
+            return "${baseName.get()}-${language.get()}".toString()
+        }
+        return baseName.get()
+    }
+
+    /**
+     * Sources root for the documentation
+     */
+    @Internal
     final DirectoryProperty docRoot = project.objects.directoryProperty()
 
-    @Input
-    final Property<String> sourceFileName = project.objects.property(String)
+    /**
+     * Sources root for the set
+     */
+    @InputDirectory
+    final Provider<Directory> setSource = docRoot.dir(setName)
 
-    @Internal
+    /**
+     * ID of the (sub-)document to render
+     */
+    @Input
+    @Optional
+    @Option(option="docId", description = "Specify the document id (eg nullguide)")
+    final Property<String> docId = project.objects.property(String)
+
+    /**
+     * Directory containing the XSLT files
+     */
+    @InputDirectory
     final DirectoryProperty styleDir = project.objects.directoryProperty()
 
+    /**
+     * Base name of the XSLT (eg html, fo)
+     */
     @Input
-    final Property<String> stylesheet = project.objects.property(String)
+    final Property<String> stylesheetBaseName = project.objects.property(String)
 
-    @Optional
-    @Input
-    final Property<String> outputFilename = project.objects.property(String)
-
+    /**
+     * XSLT filename (eg src/docs/xsl/html-firebirddocs.xsl)
+     */
     @InputFile
-    final Provider<RegularFile> styleSheetFile = styleDir.file(stylesheet)
+    final Provider<RegularFile> styleSheetFile = styleDir
+            .file(baseName.map({baseNameValue -> "${stylesheetBaseName.get()}-${baseNameValue}.xsl"}))
 
     @Internal
     final DirectoryProperty outputRoot = project.objects.directoryProperty()
 
-    @OutputDirectory
-    final Provider<Directory> docsOutput = outputRoot.dir(xdir)
-
     @Internal
-    final Property<FileTree> imageSource = project.objects.property(FileTree)
+    final DirectoryProperty configRootDir = project.objects.directoryProperty()
 
-    Docbook() {
-        xdir.set('.')
+    @InputDirectory
+    final Provider<Directory> languageConfigDir = project.provider {
+        if (language.present) {
+            def candidateDir = configRootDir.dir(language).get()
+            def candidateDirFile = candidateDir.asFile
+            if (candidateDirFile.isDirectory()) {
+                // We have a language specific config directory
+                return candidateDir
+            }
+        }
+        return configRootDir.get()
     }
 
-    void configureWith(DocumentationExtension extension) {
+    @OutputDirectory
+    final Provider<Directory> docsOutput = outputRoot
+            .dir(setName.map({setNameValue -> "${outputTypeName.get()}-${setNameValue}"}))
+
+    @Input
+    final Provider<FileTree> imageSource = project.provider {
+        return project.fileTree(docRoot.dir('images')) +
+                project.fileTree(docRoot.dir(baseName.map {baseNameValue -> "$baseNameValue/images" })) +
+                project.fileTree(docRoot.dir(setName.map {setNameValue -> "$setNameValue/images" }))
+    }
+
+    @Input
+    final SetProperty<String> imageExcludes = project.objects.setProperty(String)
+
+    @Input
+    @Optional
+    final Property<FileCollection> extraFilesToOutput = project.objects.property(FileCollection)
+
+    @Internal
+    final Provider<String> docName = project.provider {
+        if (docId.present) {
+            return docId.get()
+        }
+        return setName.get()
+    }
+
+    Docbook() {
+        this('html')
+    }
+
+    Docbook(String extension) {
+        this.extension = extension
+    }
+
+    void configureWith(DocConfigExtension extension) {
         docRoot.set(extension.docRoot)
         styleDir.set(extension.styleDir)
         outputRoot.set(extension.outputRoot)
-        imageSource.set(extension.imageSource)
+        configRootDir.set(extension.configRootDir)
     }
 
     @TaskAction
@@ -105,27 +204,25 @@ class Docbook extends DefaultTask {
                 logging.captureStandardError(LogLevel.INFO)
         }
 
-        SAXParserFactory factory = new org.apache.xerces.jaxp.SAXParserFactoryImpl()
+        def factory = new org.apache.xerces.jaxp.SAXParserFactoryImpl()
         factory.setXIncludeAware(true)
         docsOutput.get().asFile.mkdirs()
 
-        File srcFile = docRoot.file(sourceFileName).get().asFile
-        String outputFilenameValue = outputFilename
-                .orElse(nameWithoutFileExtension(srcFile) + '.' + extension)
-                .get()
-        File outputFile = docsOutput.get().file(outputFilenameValue).asFile
+        def setNameValue = setName.get()
+        def srcFile = docRoot.get().file("${setNameValue}/${setNameValue}.xml").asFile
+        def outputFile = docsOutput.get().file("${docName.get()}.${extension}").asFile
 
-        Result result = new StreamResult(outputFile.getAbsolutePath())
-        CatalogResolver resolver = new CatalogResolver(createCatalogManager())
-        InputSource inputSource = new InputSource(srcFile.getAbsolutePath())
+        def result = new StreamResult(outputFile.getAbsolutePath())
+        def resolver = new CatalogResolver(createCatalogManager())
+        def inputSource = new InputSource(srcFile.getAbsolutePath())
 
-        XMLReader reader = factory.newSAXParser().getXMLReader()
+        def reader = factory.newSAXParser().getXMLReader()
         reader.setEntityResolver(resolver)
-        TransformerFactory transformerFactory = new TransformerFactoryImpl()
+        def transformerFactory = new TransformerFactoryImpl()
         transformerFactory.setURIResolver(resolver)
-        URL url = styleSheetFile.get().asFile.toURI().toURL()
-        Source source = new StreamSource(url.openStream(), url.toExternalForm())
-        Transformer transformer = transformerFactory.newTransformer(source)
+        def url = styleSheetFile.get().asFile.toURI().toURL()
+        def source = new StreamSource(url.openStream(), url.toExternalForm())
+        def transformer = transformerFactory.newTransformer(source)
 
         preTransform(transformer, srcFile, outputFile)
 
@@ -135,18 +232,42 @@ class Docbook extends DefaultTask {
     }
 
     protected void preTransform(Transformer transformer, File sourceFile, File outputFile) {
+        copyImages()
+        copyExtraFiles()
+        if (docId.isPresent()) {
+            // rootid is used in the stylesheet to represent the root of the document
+            transformer.setParameter("rootid", docId.get())
+        }
     }
 
     protected void postTransform(File outputFile) {
     }
 
+    private void copyImages() {
+        project.copy { CopySpec copySpec ->
+            copySpec.from imageSource.get()
+            copySpec.exclude imageExcludes.get()
+            copySpec.duplicatesStrategy = EXCLUDE
+            copySpec.into docsOutput.get().dir('images')
+        }
+    }
+
+    private void copyExtraFiles() {
+        if (extraFilesToOutput.present) {
+            project.copy { CopySpec copySpec ->
+                copySpec.from extraFilesToOutput.get()
+                copySpec.into docsOutput.get()
+            }
+        }
+    }
+
     private CatalogManager createCatalogManager() {
-        CatalogManager manager = new CatalogManager()
+        def manager = new CatalogManager()
         manager.setIgnoreMissingProperties(true)
-        ClassLoader classLoader = this.getClass().getClassLoader()
-        StringBuilder builder = new StringBuilder()
-        String docbookCatalogName = "docbook/catalog.xml"
-        URL docbookCatalog = classLoader.getResource(docbookCatalogName)
+        def classLoader = this.getClass().getClassLoader()
+        def builder = new StringBuilder()
+        def docbookCatalogName = "docbook/catalog.xml"
+        def docbookCatalog = classLoader.getResource(docbookCatalogName)
 
         if (docbookCatalog == null) {
             throw new IllegalStateException("Docbook catalog " + docbookCatalogName + " could not be found in " + classLoader)
@@ -154,24 +275,14 @@ class Docbook extends DefaultTask {
 
         builder.append(docbookCatalog.toExternalForm())
 
-        Enumeration enumeration = classLoader.getResources("catalog.xml")
+        def enumeration = classLoader.getResources("catalog.xml")
         while (enumeration.hasMoreElements()) {
             builder.append(';')
-            URL resource = (URL) enumeration.nextElement()
+            def resource = enumeration.nextElement()
             builder.append(resource.toExternalForm())
         }
-        String catalogFiles = builder.toString()
-        manager.setCatalogFiles(catalogFiles)
+        manager.setCatalogFiles(builder.toString())
         return manager
-    }
-
-    static String nameWithoutFileExtension(File file) {
-        String name = file.getName()
-        int separator = name.lastIndexOf('.')
-        if (separator > 0) {
-            return name.substring(0, separator)
-        }
-        return name
     }
 
 }
