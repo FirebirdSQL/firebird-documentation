@@ -20,6 +20,7 @@ import org.gradle.api.file.FileCollection
 import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.options.Option
 
+import com.icl.saxon.TransformerFactoryImpl
 import groovy.transform.CompileStatic
 import org.firebirdsql.documentation.DocConfigExtension
 import org.gradle.api.file.FileTree
@@ -38,7 +39,6 @@ import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.*
 
-import com.icl.saxon.TransformerFactoryImpl
 import org.apache.xml.resolver.CatalogManager
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.xml.sax.InputSource
@@ -66,6 +66,7 @@ class Docbook extends DefaultTask {
      * </p>
      */
     @Input
+    @Option(option = 'baseName', description = "The base name of the documentation set, without language suffix")
     final Property<String> baseName = project.objects.property(String)
 
     /**
@@ -188,6 +189,7 @@ class Docbook extends DefaultTask {
         styleDir.set(extension.styleDir)
         outputRoot.set(extension.outputRoot)
         configRootDir.set(extension.configRootDir)
+        baseName.convention(extension.defaultBaseName)
     }
 
     @TaskAction
@@ -212,7 +214,7 @@ class Docbook extends DefaultTask {
         def srcFile = docRoot.get().file("${setNameValue}/${setNameValue}.xml").asFile
         def outputFile = docsOutput.get().file("${docName.get()}.${extension}").asFile
 
-        def result = new StreamResult(outputFile.getAbsolutePath())
+        def result = new StreamResult(outputFile)
         def resolver = new CatalogResolver(createCatalogManager())
         def inputSource = new InputSource(srcFile.getAbsolutePath())
 

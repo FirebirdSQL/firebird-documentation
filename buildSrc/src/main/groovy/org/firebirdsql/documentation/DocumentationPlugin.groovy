@@ -15,11 +15,8 @@
  */
 package org.firebirdsql.documentation
 
-import org.gradle.api.Action
-import org.gradle.api.NamedDomainObjectFactory
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.Task
 
 import groovy.transform.CompileStatic
 import org.firebirdsql.documentation.docbook.Docbook
@@ -39,45 +36,6 @@ class DocumentationPlugin implements Plugin<Project> {
         def extension = project.extensions.create(DOCUMENTATION_EXTENSION, DocConfigExtension, project.objects)
         project.tasks.withType(Docbook).whenTaskAdded { Docbook task ->
             task.configureWith(extension)
-        }
-
-        def docOutputTypes = project.container(DocOutputType, new NamedDomainObjectFactory<DocOutputType>() {
-            @Override
-            DocOutputType create(String name) {
-                return new DocOutputType(name, project.getObjects())
-            }
-        })
-        project.getExtensions().add(DOCUMENTATION_OUTPUT_TYPES, docOutputTypes)
-
-        def documentationSetsContainer = project.container(DocumentationSet, new NamedDomainObjectFactory<DocumentationSet>() {
-            @Override
-            DocumentationSet create(String name) {
-                return new DocumentationSet(name, project.getObjects())
-            }
-        })
-        project.getExtensions().add(DOCUMENTATION_SET_CONTAINER, documentationSetsContainer)
-
-        project.afterEvaluate {
-            docOutputTypes.all { DocOutputType docOutputType ->
-                String outputName = capitalizeFirst(docOutputType.name)
-                documentationSetsContainer.all { DocumentationSet docSet ->
-                    def taskName = "${docSet.name}${outputName}"
-                    project.tasks.register(taskName, docOutputType.taskType.get(), new Action<Task>() {
-                        @Override
-                        void execute(Task task) {
-                            task.group = 'documentation'
-                            task.description = "Builds documentation for set ${docSet.name}, output type ${docOutputType.name}"
-                            if (task instanceof Docbook) {
-                                task.outputTypeName.set(docOutputType.name)
-                                task.baseName.set(docSet.baseName)
-                                task.stylesheetBaseName.set(docOutputType.stylesheetBaseName)
-                                task.imageExcludes.set(docOutputType.imageExcludes)
-                                task.extraFilesToOutput.set(docOutputType.extraFilesToOutput)
-                            }
-                        }
-                    })
-                }
-            }
         }
     }
 

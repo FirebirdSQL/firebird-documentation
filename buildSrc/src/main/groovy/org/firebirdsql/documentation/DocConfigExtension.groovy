@@ -17,6 +17,7 @@ package org.firebirdsql.documentation
 
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.model.ObjectFactory
+import org.gradle.api.provider.Property
 
 import groovy.transform.CompileStatic
 
@@ -27,11 +28,13 @@ class DocConfigExtension {
     final DirectoryProperty styleDir
     final DirectoryProperty docRoot
     final DirectoryProperty outputRoot
+    final Property<String> defaultBaseName
 
     DocConfigExtension(ObjectFactory objectFactory) {
         configRootDir = objectFactory.directoryProperty()
         styleDir = objectFactory.directoryProperty()
         docRoot = objectFactory.directoryProperty()
         outputRoot = objectFactory.directoryProperty()
+        defaultBaseName = objectFactory.property(String)
     }
 }
