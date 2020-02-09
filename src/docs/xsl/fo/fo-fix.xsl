@@ -19,6 +19,19 @@
                 exclude-result-prefixes="exsl"
                 version='1.0'>
 
+<!-- with method foxon:foxon.FOIndenter, indentation always takes
+   place regardless of the indent attrib (for now).
+
+   The namespace prefix is required by the standard (if you use a custom
+   method, that is), but ignored by Saxon.
+   From the Saxon doc:
+   "The prefix of the QName must correspond to a valid namespace URI.
+    It is recommended to use the Saxon URI "http://saxon.sf.net/",
+    but this is not enforced."
+-->
+<xsl:output method="saxon:net.sf.foxon.FOIndenter"/>
+
+
 <!-- Default: copy-through -->
 <xsl:template match="node() | @*">
   <xsl:copy>
