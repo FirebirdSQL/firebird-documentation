@@ -51,7 +51,7 @@ class DocbookFoPdf extends Docbook {
         def fopFactory = fopFactoryBuilder
                 .build()
 
-        final pdfFile = docsOutput.get().file("${setName.get()}.pdf").asFile
+        final pdfFile = docsOutput.get().file("${docName.get()}.pdf").asFile
         logger.debug("Transforming 'fo' file $foFile to PDF: $pdfFile")
 
         new BufferedOutputStream(new FileOutputStream(pdfFile)).withCloseable { out ->

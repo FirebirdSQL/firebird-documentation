@@ -22,6 +22,7 @@ import org.gradle.api.tasks.options.Option
 
 import com.icl.saxon.TransformerFactoryImpl
 import groovy.transform.CompileStatic
+import org.apache.xerces.jaxp.SAXParserFactoryImpl
 import org.firebirdsql.documentation.DocConfigExtension
 import org.gradle.api.file.FileTree
 
@@ -206,7 +207,7 @@ class Docbook extends DefaultTask {
                 logging.captureStandardError(LogLevel.INFO)
         }
 
-        def factory = new org.apache.xerces.jaxp.SAXParserFactoryImpl()
+        def factory = new SAXParserFactoryImpl()
         factory.setXIncludeAware(true)
         docsOutput.get().asFile.mkdirs()
 
