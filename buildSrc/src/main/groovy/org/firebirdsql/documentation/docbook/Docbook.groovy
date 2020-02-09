@@ -82,6 +82,23 @@ class Docbook extends DefaultTask {
     final Property<String> language = project.objects.property(String)
 
     /**
+     * ID of the (sub-)document to render
+     */
+    @Input
+    @Optional
+    @Option(option="docId", description = "The document id (eg nullguide) to of the (sub)-document to generate")
+    final Property<String> docId = project.objects.property(String)
+
+    /**
+     * The filename (without extension) of the resulting document. Defaults to the docId if specified, otherwise the
+     * setName.
+     */
+    @Input
+    @Optional
+    @Option(option="docName", description = "The filename (without extension) of the resulting document")
+    final Property<String> docName = project.objects.property(String)
+
+    /**
      * setName is the base filename of the set, without extension, but already including
      * the language suffix (if applicable), e.g. firebirddocs, firebirddocs-ru, firebirddocs-es.
      */
@@ -104,14 +121,6 @@ class Docbook extends DefaultTask {
      */
     @InputDirectory
     final Provider<Directory> setSource = docRoot.dir(setName)
-
-    /**
-     * ID of the (sub-)document to render
-     */
-    @Input
-    @Optional
-    @Option(option="docId", description = "Specify the document id (eg nullguide)")
-    final Property<String> docId = project.objects.property(String)
 
     /**
      * Directory containing the XSLT files
@@ -169,20 +178,18 @@ class Docbook extends DefaultTask {
     @Optional
     final Property<FileCollection> extraFilesToOutput = project.objects.property(FileCollection)
 
-    @Internal
-    final Provider<String> docName = project.provider {
-        if (docId.present) {
-            return docId.get()
-        }
-        return setName.get()
-    }
-
     Docbook() {
         this('html')
     }
 
     Docbook(String extension) {
         this.extension = extension
+        docName.convention(project.provider {
+            if (docId.present) {
+                return docId.get()
+            }
+            return setName.get()
+        })
     }
 
     void configureWith(DocConfigExtension extension) {
