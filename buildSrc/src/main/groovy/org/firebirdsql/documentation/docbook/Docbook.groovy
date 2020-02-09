@@ -15,33 +15,26 @@
  */
 package org.firebirdsql.documentation.docbook
 
-import org.gradle.api.file.CopySpec
-import org.gradle.api.file.FileCollection
-import org.gradle.api.provider.SetProperty
-import org.gradle.api.tasks.options.Option
-
-import com.icl.saxon.TransformerFactoryImpl
-import groovy.transform.CompileStatic
-import org.apache.xerces.jaxp.SAXParserFactoryImpl
-import org.firebirdsql.documentation.DocConfigExtension
-import org.gradle.api.file.FileTree
-
 import javax.xml.transform.Transformer
 import javax.xml.transform.sax.SAXSource
 import javax.xml.transform.stream.StreamResult
 import javax.xml.transform.stream.StreamSource
 
 import org.gradle.api.DefaultTask
-import org.gradle.api.file.Directory
-import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.file.RegularFile
+import org.gradle.api.file.*
 import org.gradle.api.logging.LogLevel
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
+import org.gradle.api.provider.SetProperty
 import org.gradle.api.tasks.*
+import org.gradle.api.tasks.options.Option
 
+import com.icl.saxon.TransformerFactoryImpl
+import groovy.transform.CompileStatic
+import org.apache.xerces.jaxp.SAXParserFactoryImpl
 import org.apache.xml.resolver.CatalogManager
 import org.apache.xml.resolver.tools.CatalogResolver
+import org.firebirdsql.documentation.DocConfigExtension
 import org.xml.sax.InputSource
 
 import static org.gradle.api.file.DuplicatesStrategy.EXCLUDE
@@ -67,7 +60,7 @@ class Docbook extends DefaultTask {
      * </p>
      */
     @Input
-    @Option(option = 'baseName', description = "The base name of the documentation set, without language suffix")
+    @Option(option = 'baseName', description = 'The base name of the documentation set, without language suffix (eg firebirddocs, rlsnotes, papers or refdocs)')
     final Property<String> baseName = project.objects.property(String)
 
     /**
@@ -78,7 +71,7 @@ class Docbook extends DefaultTask {
      */
     @Input
     @Optional
-    @Option(option = 'language', description = "Sets two letter language code for output, don't specify for English")
+    @Option(option = 'language', description = 'The two letter language code for output (eg de), don\'t specify for English')
     final Property<String> language = project.objects.property(String)
 
     /**
@@ -86,7 +79,7 @@ class Docbook extends DefaultTask {
      */
     @Input
     @Optional
-    @Option(option="docId", description = "The document id (eg nullguide) to of the (sub)-document to generate")
+    @Option(option = "docId", description = 'The document id of the (sub)-document to generate (eg nullguide)')
     final Property<String> docId = project.objects.property(String)
 
     /**
@@ -95,7 +88,7 @@ class Docbook extends DefaultTask {
      */
     @Input
     @Optional
-    @Option(option="docName", description = "The filename (without extension) of the resulting document")
+    @Option(option = "docName", description = 'The filename (without extension) of the resulting document. Defaults to the docId, or otherwise the set name (base name + language).')
     final Property<String> docName = project.objects.property(String)
 
     /**
@@ -139,7 +132,7 @@ class Docbook extends DefaultTask {
      */
     @InputFile
     final Provider<RegularFile> styleSheetFile = styleDir
-            .file(baseName.map({baseNameValue -> "${stylesheetBaseName.get()}-${baseNameValue}.xsl"}))
+            .file(baseName.map({ baseNameValue -> "${stylesheetBaseName.get()}-${baseNameValue}.xsl" }))
 
     @Internal
     final DirectoryProperty outputRoot = project.objects.directoryProperty()
@@ -162,13 +155,13 @@ class Docbook extends DefaultTask {
 
     @OutputDirectory
     final Provider<Directory> docsOutput = outputRoot
-            .dir(setName.map({setNameValue -> "${outputTypeName.get()}-${setNameValue}"}))
+            .dir(setName.map({ setNameValue -> "${outputTypeName.get()}-${setNameValue}" }))
 
     @Input
     final Provider<FileTree> imageSource = project.provider {
         return project.fileTree(docRoot.dir('images')) +
-                project.fileTree(docRoot.dir(baseName.map {baseNameValue -> "$baseNameValue/images" })) +
-                project.fileTree(docRoot.dir(setName.map {setNameValue -> "$setNameValue/images" }))
+                project.fileTree(docRoot.dir(baseName.map { baseNameValue -> "$baseNameValue/images" })) +
+                project.fileTree(docRoot.dir(setName.map { setNameValue -> "$setNameValue/images" }))
     }
 
     @Input

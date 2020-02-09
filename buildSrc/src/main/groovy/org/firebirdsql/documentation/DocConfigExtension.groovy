@@ -23,7 +23,7 @@ import groovy.transform.CompileStatic
 
 @CompileStatic
 class DocConfigExtension {
-    
+
     final DirectoryProperty configRootDir
     final DirectoryProperty styleDir
     final DirectoryProperty docRoot
