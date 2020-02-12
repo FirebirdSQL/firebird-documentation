@@ -11,6 +11,9 @@
   <xsl:param name="fop1.extensions" select="1"/>
     <!-- otherwise broken URLs, and no bookmarks! -->
 
+  <!-- Generate old-style FOP bookmarks, ensures Table of Contents is included, flatter structure -->
+  <xsl:param name="xsl1.1.bookmarks" select="0"/>
+
   <!-- This connects to that URL everytime it is mentioned in the draft pagemasters!
     <xsl:param name="draft.watermark.image"
                select="'http://docbook.sourceforge.net/release/images/draft.png'"/>
