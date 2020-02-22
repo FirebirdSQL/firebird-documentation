@@ -48,4 +48,8 @@ abstract class AbstractFontMetrics extends DefaultTask {
     final Provider<RegularFile> metricsFile = project.layout.buildDirectory.file(metricsFileName
             .map({ metricsFileName -> "font-metrics/${metricsFileName}" }))
 
+    AbstractFontMetrics() {
+        group = "fonts"
+    }
+
 }

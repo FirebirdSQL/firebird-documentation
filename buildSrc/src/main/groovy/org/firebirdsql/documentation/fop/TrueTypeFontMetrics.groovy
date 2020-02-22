@@ -32,6 +32,10 @@ import org.apache.fop.fonts.apps.TTFReader
 @CompileStatic
 class TrueTypeFontMetrics extends AbstractFontMetrics {
 
+    TrueTypeFontMetrics() {
+        description = 'Generates a true type font metrics file'
+    }
+
     @Input
     @Optional
     @Option(option = 'ttcName', description = 'If you\'re reading data from a TrueType Collection (.ttc file) you must specify which font from the collection you will read metrics from. If you read from a .ttc file without this option, the fontnames will be listed for you when specifying --info.')

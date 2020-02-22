@@ -13,6 +13,10 @@ import org.apache.fop.fonts.apps.PFMReader
 @CompileStatic
 class Type1FontMetrics extends AbstractFontMetrics {
 
+    Type1FontMetrics() {
+        description = 'Generates a Type 1 font metrics file'
+    }
+
     @TaskAction
     void generateFontMetrics() {
         // This code is derived from PFMReader.main()
