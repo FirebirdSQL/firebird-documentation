@@ -32,12 +32,12 @@ import org.gradle.api.tasks.options.Option
 import com.icl.saxon.TransformerFactoryImpl
 import groovy.transform.CompileStatic
 import org.apache.xerces.jaxp.SAXParserFactoryImpl
-import org.apache.xml.resolver.CatalogManager
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.firebirdsql.documentation.DocConfigExtension
 import org.firebirdsql.documentation.DocConfigurable
 import org.xml.sax.InputSource
 
+import static org.firebirdsql.documentation.XsltHelper.createCatalogManager
 import static org.gradle.api.file.DuplicatesStrategy.EXCLUDE
 
 // Parts derived from https://github.com/spring-projects/spring-build-gradle
@@ -209,20 +209,23 @@ class Docbook extends DefaultTask implements DocConfigurable {
                 logging.captureStandardError(LogLevel.INFO)
         }
 
-        def factory = new SAXParserFactoryImpl()
-        factory.setXIncludeAware(true)
         docsOutput.get().asFile.mkdirs()
 
         def setNameValue = setName.get()
         def srcFile = docRoot.get().file("${setNameValue}/${setNameValue}.xml").asFile
-        def outputFile = docsOutput.get().file("${docName.get()}.${extension}").asFile
-
-        def result = new StreamResult(outputFile)
-        def resolver = new CatalogResolver(createCatalogManager())
         def inputSource = new InputSource(srcFile.getAbsolutePath())
+
+        def outputFile = docsOutput.get().file("${docName.get()}.${extension}").asFile
+        def result = new StreamResult(outputFile)
+
+        def resolver = new CatalogResolver(createCatalogManager())
+
+        def factory = new SAXParserFactoryImpl()
+        factory.setXIncludeAware(true)
 
         def reader = factory.newSAXParser().getXMLReader()
         reader.setEntityResolver(resolver)
+
         def transformerFactory = new TransformerFactoryImpl()
         transformerFactory.setURIResolver(resolver)
         def url = styleSheetFile.get().asFile.toURI().toURL()
@@ -264,30 +267,6 @@ class Docbook extends DefaultTask implements DocConfigurable {
                 copySpec.into docsOutput.get()
             }
         }
-    }
-
-    private CatalogManager createCatalogManager() {
-        def manager = new CatalogManager()
-        manager.setIgnoreMissingProperties(true)
-        def classLoader = this.getClass().getClassLoader()
-        def builder = new StringBuilder()
-        def docbookCatalogName = "docbook/catalog.xml"
-        def docbookCatalog = classLoader.getResource(docbookCatalogName)
-
-        if (docbookCatalog == null) {
-            throw new IllegalStateException("Docbook catalog " + docbookCatalogName + " could not be found in " + classLoader)
-        }
-
-        builder.append(docbookCatalog.toExternalForm())
-
-        def enumeration = classLoader.getResources("catalog.xml")
-        while (enumeration.hasMoreElements()) {
-            builder.append(';')
-            def resource = enumeration.nextElement()
-            builder.append(resource.toExternalForm())
-        }
-        manager.setCatalogFiles(builder.toString())
-        return manager
     }
 
 }
