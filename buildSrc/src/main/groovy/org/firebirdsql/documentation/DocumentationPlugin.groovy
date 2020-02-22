@@ -20,20 +20,26 @@ import org.gradle.api.Project
 
 import groovy.transform.CompileStatic
 import org.firebirdsql.documentation.docbook.Docbook
+import org.firebirdsql.documentation.fop.TrueTypeFontMetrics
+import org.firebirdsql.documentation.fop.Type1FontMetrics
 
 @CompileStatic
 @SuppressWarnings("unused")
 class DocumentationPlugin implements Plugin<Project> {
 
-    static final String DOCUMENTATION_EXTENSION = "docConfig"
-    static final String DOCUMENTATION_OUTPUT_TYPES = "docOutputTypes"
-    static final String DOCUMENTATION_SET_CONTAINER = "documentationSets"
+    static final String DOCUMENTATION_EXTENSION = 'docConfig'
+    static final String DOCUMENTATION_OUTPUT_TYPES = 'docOutputTypes'
+    static final String DOCUMENTATION_SET_CONTAINER = 'documentationSets'
+    static final String TTF_METRICS_TASK = 'ttfMetrics'
+    static final String T1_FONT_METRICS_TASK = 't1Metrics'
 
     @Override
     void apply(Project project) {
         project.apply(plugin: 'base')
 
         def extension = project.extensions.create(DOCUMENTATION_EXTENSION, DocConfigExtension, project.objects)
+        project.tasks.register(TTF_METRICS_TASK, TrueTypeFontMetrics)
+        project.tasks.register(T1_FONT_METRICS_TASK, Type1FontMetrics)
         project.tasks.withType(Docbook).whenTaskAdded { Docbook task ->
             task.configureWith(extension)
         }
