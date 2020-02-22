@@ -35,6 +35,7 @@ import org.apache.xerces.jaxp.SAXParserFactoryImpl
 import org.apache.xml.resolver.CatalogManager
 import org.apache.xml.resolver.tools.CatalogResolver
 import org.firebirdsql.documentation.DocConfigExtension
+import org.firebirdsql.documentation.DocConfigurable
 import org.xml.sax.InputSource
 
 import static org.gradle.api.file.DuplicatesStrategy.EXCLUDE
@@ -42,7 +43,7 @@ import static org.gradle.api.file.DuplicatesStrategy.EXCLUDE
 // Parts derived from https://github.com/spring-projects/spring-build-gradle
 
 @CompileStatic
-class Docbook extends DefaultTask {
+class Docbook extends DefaultTask implements DocConfigurable {
 
     @Input
     String extension
@@ -185,6 +186,7 @@ class Docbook extends DefaultTask {
         })
     }
 
+    @Override
     void configureWith(DocConfigExtension extension) {
         docRoot.set(extension.docRoot)
         styleDir.set(extension.styleDir)

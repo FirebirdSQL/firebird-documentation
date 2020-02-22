@@ -19,12 +19,13 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 
 import groovy.transform.CompileStatic
-import org.firebirdsql.documentation.docbook.Docbook
+import groovy.util.logging.Slf4j
 import org.firebirdsql.documentation.fop.TrueTypeFontMetrics
 import org.firebirdsql.documentation.fop.Type1FontMetrics
 
 @CompileStatic
 @SuppressWarnings("unused")
+@Slf4j
 class DocumentationPlugin implements Plugin<Project> {
 
     static final String DOCUMENTATION_EXTENSION = 'docConfig'
@@ -38,11 +39,12 @@ class DocumentationPlugin implements Plugin<Project> {
         project.apply(plugin: 'base')
 
         def extension = project.extensions.create(DOCUMENTATION_EXTENSION, DocConfigExtension, project.objects)
+        project.tasks.withType(DocConfigurable).whenTaskAdded { DocConfigurable docConfigurableTask ->
+            log.debug("Configuring task {}", docConfigurableTask)
+            docConfigurableTask.configureWith(extension)
+        }
         project.tasks.register(TTF_METRICS_TASK, TrueTypeFontMetrics)
         project.tasks.register(T1_FONT_METRICS_TASK, Type1FontMetrics)
-        project.tasks.withType(Docbook).whenTaskAdded { Docbook task ->
-            task.configureWith(extension)
-        }
     }
 
     private static String capitalizeFirst(String value) {
