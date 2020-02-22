@@ -15,13 +15,9 @@
  */
 package org.firebirdsql.documentation.fop
 
-import org.gradle.api.DefaultTask
-import org.gradle.api.file.RegularFile
 import org.gradle.api.provider.Property
-import org.gradle.api.provider.Provider
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Optional
-import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.options.Option
 
@@ -34,28 +30,12 @@ import org.apache.fop.fonts.apps.TTFReader
  */
 @Slf4j
 @CompileStatic
-class TrueTypeFontMetrics extends DefaultTask {
-
-    @Input
-    @Option(option = 'fontFile', description = 'Path of the TrueType font (.ttf) or font collection (.ttc) file')
-    final Property<String> fontFile = project.objects.property(String)
-
-    @Input
-    @Option(option = 'metricsFileName', description = 'Filename of the metrics file to create (it will be created in the build directory)')
-    final Property<String> metricsFileName = project.objects.property(String)
+class TrueTypeFontMetrics extends AbstractFontMetrics {
 
     @Input
     @Optional
     @Option(option = 'ttcName', description = 'If you\'re reading data from a TrueType Collection (.ttc file) you must specify which font from the collection you will read metrics from. If you read from a .ttc file without this option, the fontnames will be listed for you when specifying --info.')
     final Property<String> ttcName = project.objects.property(String)
-
-    @Input
-    @Optional
-    @Option(option = 'fontName', description = 'default is to use the fontname in the .ttf file, but you can override that name to make sure that the embedded font is used (if you\'re embedding fonts) instead of installed fonts when viewing documents with Acrobat Reader.')
-    final Property<String> fontName = project.objects.property(String)
-
-    @OutputFile
-    final Provider<RegularFile> metricsFile = project.layout.buildDirectory.file(metricsFileName)
 
     @TaskAction
     void generateFontMetrics() {
