@@ -40,7 +40,7 @@ import static org.firebirdsql.documentation.XsltHelper.createCatalogManager
 /**
  * Task to apply a XSL 1 stylesheet to an input file
  */
-class StylesheetTask extends DefaultTask {
+class XsltTask extends DefaultTask {
 
     @InputFile
     final RegularFileProperty inputFile = project.objects.fileProperty()
