@@ -13,49 +13,59 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.firebirdsql.documentation.docbook
+package org.firebirdsql.documentation.fop
 
-import javax.xml.transform.Transformer
 import javax.xml.transform.TransformerFactory
 import javax.xml.transform.sax.SAXResult
 import javax.xml.transform.stream.StreamSource
 
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.TaskAction
+
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
 import org.apache.fop.apps.FopFactoryBuilder
 import org.apache.fop.apps.MimeConstants
 import org.apache.fop.apps.io.ResourceResolverFactory
 import org.apache.fop.configuration.DefaultConfigurationBuilder
+import org.firebirdsql.documentation.AbstractTransformationTask
 
-// Parts derived from https://github.com/spring-projects/spring-build-gradle
-
+/**
+ * Provides transformation from FO
+ */
 @CompileStatic
-class DocbookFoPdf extends Docbook {
+@Slf4j
+class FoTask extends AbstractTransformationTask {
 
-    DocbookFoPdf() {
-        super('fo')
+    @InputFile
+    final RegularFileProperty inputFoFile = project.objects.fileProperty()
+
+    FoTask() {
+        super('pdf')
+        outputTypeName.convention('pdf')
     }
 
-    /**
-     * <a href="http://xmlgraphics.apache.org/fop/0.95/embedding.html#render">From the FOP usage guide</a>
-     */
-    @Override
-    protected void postTransform(File foFile) {
-        super.postTransform(foFile)
+    @TaskAction
+    void transform() {
+        final foFile = inputFoFile.get().asFile
+        final pdfFile = docsOutput.get().file("${docName.get()}.${extension}").asFile
+
         def cfgBuilder = new DefaultConfigurationBuilder()
         def cfg = cfgBuilder.buildFromFile(languageConfigDir.get().file('fop-userconfig.xml').asFile)
         def fopFactoryBuilder = new FopFactoryBuilder(docsOutput.get().asFile.toURI())
                 .setConfiguration(cfg)
+                .setBaseURI(foFile.getParentFile().toURI())
         def fontManager = fopFactoryBuilder.getFontManager()
         fontManager.setResourceResolver(ResourceResolverFactory
                 .createDefaultInternalResourceResolver(languageConfigDir.get().asFile.toURI()))
         def fopFactory = fopFactoryBuilder
                 .build()
 
-        final pdfFile = docsOutput.get().file("${docName.get()}.pdf").asFile
-        logger.debug("Transforming 'fo' file $foFile to PDF: $pdfFile")
+        logger.info("Transforming 'fo' file $foFile to PDF: $pdfFile")
 
         new BufferedOutputStream(new FileOutputStream(pdfFile)).withCloseable { out ->
-            def fop = fopFactory.newFop(MimeConstants.MIME_PDF, out)
+            def fop = fopFactory.newFop(getMimeType(), out)
 
             def factory = TransformerFactory.newInstance()
             def transformer = factory.newTransformer()
@@ -65,26 +75,17 @@ class DocbookFoPdf extends Docbook {
 
             transformer.transform(src, res)
         }
-
-//        if (!foFile.delete()) {
-//            logger.warn("Failed to delete 'fo' file " + foFile)
-//        }
     }
 
-    @Override
-    protected void preTransform(Transformer transformer, File sourceFile, File outputFile) {
-        super.preTransform(transformer, sourceFile, outputFile)
-        def foParams = new Properties()
-        languageConfigDir.get().file('fo-params.txt').asFile.newInputStream()
-                .withCloseable { inputStream ->
-                    foParams.load(inputStream)
-                }
-        foParams.stringPropertyNames().each { propertyName ->
-            def propertyValue = foParams.getProperty(propertyName)
-            if (propertyValue != null && propertyName.length() > 0) {
-                transformer.setParameter(propertyName, propertyValue)
-            }
+    private String getMimeType() {
+        switch (outputTypeName.get()) {
+            case 'pdf':
+                return MimeConstants.MIME_PDF
+            case 'at':
+                return MimeConstants.MIME_FOP_AREA_TREE
+            default:
+                throw new IllegalArgumentException("Unsupported output type: ${outputTypeName.get()}")
         }
     }
-
+    
 }

@@ -20,21 +20,27 @@ import javax.xml.transform.sax.SAXSource
 import javax.xml.transform.stream.StreamResult
 import javax.xml.transform.stream.StreamSource
 
-import org.gradle.api.DefaultTask
-import org.gradle.api.file.*
+import org.gradle.api.file.CopySpec
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileCollection
+import org.gradle.api.file.FileTree
+import org.gradle.api.file.RegularFile
 import org.gradle.api.logging.LogLevel
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
 import org.gradle.api.provider.SetProperty
-import org.gradle.api.tasks.*
-import org.gradle.api.tasks.options.Option
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.TaskAction
 
 import com.icl.saxon.TransformerFactoryImpl
 import groovy.transform.CompileStatic
 import org.apache.xerces.jaxp.SAXParserFactoryImpl
 import org.apache.xml.resolver.tools.CatalogResolver
+import org.firebirdsql.documentation.AbstractTransformationTask
 import org.firebirdsql.documentation.DocConfigExtension
-import org.firebirdsql.documentation.DocConfigurable
 import org.xml.sax.InputSource
 
 import static org.firebirdsql.documentation.XsltHelper.createCatalogManager
@@ -43,78 +49,7 @@ import static org.gradle.api.file.DuplicatesStrategy.EXCLUDE
 // Parts derived from https://github.com/spring-projects/spring-build-gradle
 
 @CompileStatic
-class Docbook extends DefaultTask implements DocConfigurable {
-
-    @Input
-    String extension
-
-    /**
-     * Output type name, used for generating the output folder
-     */
-    @Input
-    final Property<String> outputTypeName = project.objects.property(String)
-
-    /**
-     * 'baseName' is the base set name, without language suffix.
-     * <p>
-     * Currently it can be firebirddocs, rlsnotes, papers or refdocs.
-     * </p>
-     */
-    @Input
-    @Option(option = 'baseName', description = 'The base name of the documentation set, without language suffix (eg firebirddocs, rlsnotes, papers or refdocs)')
-    final Property<String> baseName = project.objects.property(String)
-
-    /**
-     * Language of the documentation (eg 'de', 'ru').
-     * <p>
-     * Should not be set to 'en' for English.
-     * </p>
-     */
-    @Input
-    @Optional
-    @Option(option = 'language', description = 'The two letter language code for output (eg de), don\'t specify for English')
-    final Property<String> language = project.objects.property(String)
-
-    /**
-     * ID of the (sub-)document to render
-     */
-    @Input
-    @Optional
-    @Option(option = "docId", description = 'The document id of the (sub)-document to generate (eg nullguide)')
-    final Property<String> docId = project.objects.property(String)
-
-    /**
-     * The filename (without extension) of the resulting document. Defaults to the docId if specified, otherwise the
-     * setName.
-     */
-    @Input
-    @Optional
-    @Option(option = "docName", description = 'The filename (without extension) of the resulting document. Defaults to the docId, or otherwise the set name (base name + language).')
-    final Property<String> docName = project.objects.property(String)
-
-    /**
-     * setName is the base filename of the set, without extension, but already including
-     * the language suffix (if applicable), e.g. firebirddocs, firebirddocs-ru, firebirddocs-es.
-     */
-    @Internal
-    final Provider<String> setName = project.provider {
-        if (language.present) {
-            return "${baseName.get()}-${language.get()}".toString()
-        }
-        return baseName.get()
-    }
-
-    /**
-     * Sources root for the documentation
-     */
-    @Internal
-    final DirectoryProperty docRoot = project.objects.directoryProperty()
-
-    /**
-     * Sources root for the set
-     */
-    @InputDirectory
-    final Provider<Directory> setSource = docRoot.dir(setName)
+class Docbook extends AbstractTransformationTask {
 
     /**
      * Directory containing the XSLT files
@@ -135,29 +70,6 @@ class Docbook extends DefaultTask implements DocConfigurable {
     final Provider<RegularFile> styleSheetFile = styleDir
             .file(baseName.map({ baseNameValue -> "${stylesheetBaseName.get()}-${baseNameValue}.xsl" }))
 
-    @Internal
-    final DirectoryProperty outputRoot = project.objects.directoryProperty()
-
-    @Internal
-    final DirectoryProperty configRootDir = project.objects.directoryProperty()
-
-    @InputDirectory
-    final Provider<Directory> languageConfigDir = project.provider {
-        if (language.present) {
-            def candidateDir = configRootDir.dir(language).get()
-            def candidateDirFile = candidateDir.asFile
-            if (candidateDirFile.isDirectory()) {
-                // We have a language specific config directory
-                return candidateDir
-            }
-        }
-        return configRootDir.get()
-    }
-
-    @OutputDirectory
-    final Provider<Directory> docsOutput = outputRoot
-            .dir(setName.map({ setNameValue -> "${outputTypeName.get()}-${setNameValue}" }))
-
     @Input
     final Provider<FileTree> imageSource = project.provider {
         return project.fileTree(docRoot.dir('images')) +
@@ -177,22 +89,13 @@ class Docbook extends DefaultTask implements DocConfigurable {
     }
 
     Docbook(String extension) {
-        this.extension = extension
-        docName.convention(project.provider {
-            if (docId.present) {
-                return docId.get()
-            }
-            return setName.get()
-        })
+        super(extension)
     }
 
     @Override
     void configureWith(DocConfigExtension extension) {
-        docRoot.set(extension.docRoot)
-        styleDir.set(extension.styleDir)
-        outputRoot.set(extension.outputRoot)
-        configRootDir.set(extension.configRootDir)
-        baseName.convention(extension.defaultBaseName)
+        super.configureWith(extension)
+        styleDir.convention(extension.styleDir)
     }
 
     @TaskAction
@@ -215,7 +118,7 @@ class Docbook extends DefaultTask implements DocConfigurable {
         def srcFile = docRoot.get().file("${setNameValue}/${setNameValue}.xml").asFile
         def inputSource = new InputSource(srcFile.getAbsolutePath())
 
-        def outputFile = docsOutput.get().file("${docName.get()}.${extension}").asFile
+        def outputFile = mainOutputFile.get().asFile
         def result = new StreamResult(outputFile)
 
         def resolver = new CatalogResolver(createCatalogManager())
