@@ -1,6 +1,6 @@
 <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:exsl="http://exslt.org/common"
-		version="1.0"
+		        version="1.0"
                 exclude-result-prefixes="exsl">
 
   <!--
@@ -21,9 +21,9 @@
   <xsl:import href="htmlbase.xsl"/>
 
   <!-- Import/include the standard DocBook chunking stylesheets: -->
-  <xsl:import href="../../../tools/docbook-stylesheets/html/chunk-common.xsl"/>
-  <xsl:include href="../../../tools/docbook-stylesheets/html/manifest.xsl"/>
-  <xsl:include href="../../../tools/docbook-stylesheets/html/chunk-code.xsl"/>
+  <xsl:import href="http://docbook.sourceforge.net/release/xsl/current/html/chunk-common.xsl"/>
+  <xsl:include href="http://docbook.sourceforge.net/release/xsl/current/html/manifest.xsl"/>
+  <xsl:include href="http://docbook.sourceforge.net/release/xsl/current/html/chunk-code.xsl"/>
 
   <!-- Include our custom templates specific to chunked html: -->
   <xsl:include href="html/chunker.xsl"/>

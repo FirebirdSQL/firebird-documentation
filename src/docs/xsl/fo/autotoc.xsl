@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" 
+<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
                 xmlns:src="http://nwalsh.com/xmlns/litprog/fragment"
                 xmlns:fo="http://www.w3.org/1999/XSL/Format"
+                xmlns:axf="http://www.antennahouse.com/names/XSL/Extensions"
                 exclude-result-prefixes="src"
                 version="1.0">
 
