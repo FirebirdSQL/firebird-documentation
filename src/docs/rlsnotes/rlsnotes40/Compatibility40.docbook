@@ -1,0 +1,203 @@
+<chapter id="rnfb40-compat">
+  <chapterinfo>
+    <title>Compatibility Issues</title>
+  </chapterinfo>
+  <para>In this section are features and modifications that might affect the way you have
+  installed and used Firebird in earlier releases.</para>
+
+  <section id="rnfb40-compat-sql"><!-- Level 1 -->
+    <title>SQL</title>
+    <para>Changes that may affect existing SQL code:</para>
+
+    <section id="rnfb40-compat-udfs"><!-- Level 2 -->
+      <title>Deprecation of External Functions (UDFs)</title>
+      <para>Support for the external function (UDF) feature is deprecated in Firebird 4.
+      Its immediate effect, out of the box, is that UDFs cannot be used with the default 
+      configuration, where the parameter <code>UdfAccess</code> in <filename>firebird.conf</filename>
+      is set to <code>NONE</code>) and the UDF libraries <filename>ib_udf</filename> and
+      <filename>fbudf</filename> are withdrawn from the distribution.</para>
+      
+      <para>Most of the functions in those libraries were already deprecated in previous
+      Firebird versions and replaced with built-in analogs.  Safe replacements for a few
+      of the remaining functions are now available, either in a new library of user-defined
+      routines (UDRs) named <filename>[lib]udf_compat.[dll/so/dylib]</filename>, or as
+      scripted conversions to PSQL stored functions.  They are listed below;  those
+      marked with asterisks (*) are the UDR conversions.
+        <simplelist type="horiz" columns="3">
+          <member>ADDDAY()</member> <member>*DOW()</member> <member>ROUND()</member>
+          <member>ADDDAY2()</member> <member>DPOWER()</member> <member>RTRIM()</member>
+          <member>ADDHOUR()</member> <member>GETEXACTTIMESTAMP</member> <member>*SDOW()</member>
+          <member>ADDMILLISECOND()</member> <member>*GETEXACTTIMESTAMPUTC</member> <member>SNULLIF()</member>
+          <member>ADDMINUTE()</member> <member>I64NULLIF()</member> <member>SNVL()</member>
+          <member>ADDMONTH()</member> <member>I64NVL()</member> <member>SRIGHT()</member>
+          <member>ADDSECOND()</member> <member>I64ROUND()</member> <member>STRING2BLOB()</member>
+          <member>ADDWEEK()</member> <member>I64TRUNCATE()</member> <member>STRLEN()</member>
+          <member>ADDYEAR()</member> <member>INULLIF()</member> <member>SUBSTR()</member>
+          <member>*DIV()</member> <member>INVL()</member> <member>SUBSTRLEN()</member>
+          <member>DNULLIF()</member> <member>ISLEAPYEAR()</member> <member>TRUNCATE()</member>
+          <member>DNVL()</member> <member>LTRIM(</member> <member>*UDF_FRAC() or *FRAC()</member>
+        </simplelist>
+      The Firebird 4 distribution contains a script to migrate all (or any) of those UDF
+      declarations. You can edit and extract from it to suit, if you wish, but you must keep the
+      respective re-declarations and conversions intact as scripted.</para>
+
+      <section id="rnfb40-compat-udfs-migrate-script"><!-- Level 3 -->
+        <title>The UDF Migration Script</title>
+        <para>The SQL script that you can use to upgrade the declarations for the UDFs
+        listed above to the analog UDRs or stored functions is located beneath the 
+        Firebird root, in
+        <filename>misc/upgrade/v4.0/udf_replace.sql</filename>.</para>
+
+        <section id="rnfb40-compat-udfs-migrate-script-howto"><!-- Level 4 -->
+          <title>How to Work with the Script</title>
+          <para>During the restore of your Firebird 3 backup, <emphasis>gbak</emphasis>
+          will issue warnings about any UDFs that are affected but the restore will proceed.
+          It would be useful to output the <code>-verbose</code> reporting to a file if
+          you want a list of the affected function declarations.  You will note items like
+
+          <literallayout class="monospaced">
+  gbak: WARNING:function UDF_FRAC is not defined
+  gbak: WARNING:    module name or entrypoint could not be found
+          </literallayout>
+          It means you have a UDF that is declared in the database but whose
+          library is missing&mdash;which, of course, we know is true.</para>
+
+          <bridgehead renderas="sect4"><emphasis>Running the Script</emphasis></bridgehead>
+          <para>From the command shell:
+            <programlisting>
+isql -user sysdba -pas masterkey -i udf_replace.sql {your-database}
+            </programlisting>
+          </para>
+          <warning>
+            <title>REMINDER</title>
+            <para>This script will have no effect on declarations for UDFs from 
+            third-party libraries!</para>
+          </warning>
+        </section><!-- rnfb40-compat-udfs-migrate-script-howto L4 -->
+      </section><!-- rnfb40-compat-udfs-migrate-script L3 -->
+
+      <section id="rnfb40-compat-udfs-must-use"><!-- Level 3 -->
+        <title>What If You MUST Use a UDF?</title>
+        <para>In the short term, if you absolutely cannot avoid retaining the use of a
+        UDF, you must configure the <code>UdfAccess</code> parameter to
+        <code> Restrict &lt;path-list&gt;</code>.  The default <code>&lt;path-list&gt;</code> points
+        to the <filename>UDF</filename> sub-directory beneath the Firebird root.  The
+        (uncommented!) line in firebird.conf should be:
+          <literallayout class="monospaced">
+  UdfAccess = Restrict UDF
+          </literallayout>
+        </para>
+        <para>The libraries <filename>[lib]ib_udf.[dll/so/dylib]</filename> and
+        <filename>[lib]fbudf.[dll/so/dylib]</filename> that were distributed with
+        Firebird 3 were tested to work with Firebird 4.  No tests were done for any 
+        third-party or custom UDF libraries but, considering that nothing changed in 
+        the way Firebird works with UDFs, other than the default value for <code>UdfAccess</code>,
+        they should also work.</para>
+
+        <important>
+          <para>The recommended long-term solution for any UDFs which you absolutely <emphasis>must</emphasis>
+          use is to replace them with UDRs or stored functions.</para>
+        </important>
+      </section><!-- L3 -->
+    </section><!-- L2 -->
+
+    <section id="rnfb40-compat-sql-timezone-changes"><!-- Level 2 -->
+      <title>Changes in DDL and DML Due to Timezone Support</title>
+      <para>Timezone support introduces some changes in DDL and DML which could
+      affect compatibility with existing databases and applications.</para>
+
+      <section id="rnfb40-compat-sql-timezone-datatypes"><!-- Level 3 -->
+        <title>Changes to Data Types TIMESTAMP and TIME</title>
+        <para>The syntax for declaring the data types <code>TIMESTAMP</code> and
+        <code>TIME</code> has been extended to include arguments defining whether
+        the column, domain, parameter or variable should be defined with or
+        without time zone adjustments, i.e.,
+          <programlisting>
+```
+TIME [ { WITHOUT | WITH } TIME ZONE ]
+
+TIMESTAMP [ { WITHOUT | WITH } TIME ZONE ]
+```
+          </programlisting>
+        The default in both cases is <code>WITHOUT TIME ZONE</code>.  If you are shifting
+        migrated databases and/or applications to use the zoned date/time features, it is 
+        advisable to run reality checks on any calculations, computed fields, domains,
+        query sets ordered or grouped by dates or timestamps, etc.</para>
+        <para>For more details, see <link linkend="rnfb40-ddl-timezone-datatypes">Data
+        Type Extensions for Time Zone Support</link> in the DDL chapter.</para>
+      </section><!-- L3 -->
+
+      <section id="rnfb40-compat-sql-timezone-expressions"><!-- Level 3 -->
+        <title>CURRENT_TIME and CURRENT_TIMESTAMP</title>
+        <para>In version 4.0, <code>CURRENT_TIME</code> and <code>CURRENT_TIMESTAMP</code>
+        are changed:  they now return <code>TIME WITH TIME ZONE</code> and
+        <code>TIMESTAMP WITH TIME ZONE</code>, with the time zone set by the session time
+        zone. In previous versions, <code>CURRENT_TIME</code> and <code>CURRENT_TIMESTAMP</code>
+        returned the respective types according to the system clock, i.e., without any
+        time zone.</para>
+
+        <para>The expressions <code>LOCALTIMESTAMP</code> and <code>LOCALTIME</code> now
+        replace the former functionality of <code>CURRENT_TIMESTAMP</code> and
+        <code>CURRENT_TIME</code>, respectively.
+        <note>
+          <title>Firebird 3.0.4 LOCALTIME and LOCALTIMESTAMP</title>
+          <para>To ease the transition, <code>LOCALTIME</code> and <code>LOCALTIMESTAMP</code>
+          were added at v3.0.4, allowing developers to adjust application and PSQL code
+          without any functional changes, before  migrating to Firebird 4.</para>
+        </note>
+        </para>
+      </section><!-- L3 -->
+    </section><!-- L2 -->
+
+    <section id="rnfb40-compat-sql-prefaced-literals"><!-- Level 2 -->
+      <title>Prefaced Implicit Date/Time Literals Now Rejected</title>
+      <para>The literal date/time preface syntax (DATE, TIME or TIMESTAMP
+      prefacing the quoted value) used together with the implict date/time
+      literal expressions ('NOW', 'TODAY', etc.) was known to evaluate those 
+      expressions in ways that would produce unexpected results, often undetected:
+      <itemizedlist>
+        <listitem>In stored procedures and functions, evaluation would occur at compile 
+        time but not during the procedure or function call, storing the result in BLR and 
+        retrieving that stale value at runtime</listitem>
+
+        <listitem>In DSQL, this style of usage in DSQL causes the evaluation to 
+        occur st prepare time, not at each iteration of the statement as would be
+        expected with correct usage of the implicit date/time literals.  The time 
+        difference between statement preparation and execution may be too small to 
+        discover the issue, particularly with 'NOW', which is a timestamp.  Users
+        could have been misled thinking the expression was evaluated at each iteration
+        of the statement at runtime, when in fact it happened at prepare time.</listitem>
+      </itemizedlist>
+      
+      If something like <code>TIMESTAMP 'NOW'</code> has been used in DSQL queries in
+      application code or in migrated PSQL, there will be a compatibility issue with 
+      Firebird 4.
+      </para>
+      <para>The behaviour was considered undesirable&mdash;the Firebird 4.0 engine 
+      and above will now reject such expressions in both PSQL and DSQL.</para>
+      <para>Example of such usage that will now be rejected:
+        <programlisting>
+..
+DECLARE VARIABLE moment TIMESTAMP;
+  ..
+  SELECT TIMESTAMP('NOW') FROM RDB$DATABASE INTO :moment;
+/* here, the variable :moment will 'frozen' as the timestamp at the moment
+   the procedure or function was last compiled */
+  ..
+        </programlisting>
+      </para>
+      <para><code>TIMESTAMP '&lt;constant&gt;'</code> is for explict date/time literals, e.g.
+      <code>DATE '2019.02.20'</code> is legal. The implicit date/time literals,
+      such as 'NOW' or 'YESTERDAY' are for use in expressions.  Enforcemnt of
+      the appropriate usage means that attempting to combine both becomes
+      explicitly invalid syntax.</para>
+
+      <para>Existing code where usage does not break the rule remains
+      unaffected. Both <code>'NOW'</code> and <code>CAST('NOW' AS TIMESTAMP)</code>
+      continue to work as before, as well as code that correctly uses the 
+      date/time prefaces with explicit literals,  like <code>DATE '2019.02.20'</code>.</para>
+    </section><!-- L2 -->
+  </section><!-- L1 rnfb40-compat-sql -->
+
+
+</chapter>
