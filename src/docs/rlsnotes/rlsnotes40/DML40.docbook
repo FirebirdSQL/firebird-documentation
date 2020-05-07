@@ -9,6 +9,9 @@
     <title>Quick Links</title>
     <itemizedlist spacing="compact">
       <listitem>
+        <para><link linkend="rnfb40-dml-lateral">Lateral Derived Tables</link></para>
+      </listitem>
+      <listitem>
         <para><link linkend="rnfb40-dml-context_default">DEFAULT Context Value for Inserting and Updating</link></para>
       </listitem>
       <listitem>
@@ -28,13 +31,16 @@
       </listitem>
       <listitem>
         <para><link linkend="rnfb40-dml-autocommit">Optional AUTOCOMMIT for SET TRANSACTION</link></para>
-     </listitem>
+      </listitem>
+      <listitem>
+        <para><link linkend="rnfb40-dml-set-tran-snapshot">Sharing Transaction Snapshots</link></para>
+      </listitem>
       <listitem>
         <para><link linkend="rnfb40-dml-built-in-functions">Expressions and Built-in Functions</link></para>
-     </listitem>
+      </listitem>
       <listitem>
         <para><link linkend="rnfb40-dml-udfs">UDF Changes</link></para>
-     </listitem>
+      </listitem>
       <listitem>
         <para><link linkend="rnfb40-dml-improvement-01">Improved Error Message for an Invalid
         Write Operation</link></para>
@@ -49,6 +55,39 @@
     </itemizedlist>
   </section>
 
+  <section id="rnfb40-dml-lateral"><!-- Level 1 section -->
+    <title>Lateral Derived Tables</title>
+    <author><firstname>Dmitry</firstname><surname>Yemanov</surname></author>
+    <para>Tracker ticket <ulink url="http://tracker.firebirdsql.org/browse/CORE-3435">CORE-3435</ulink></para>
+    <para>A derived table defined with the <code>LATERAL keyword</code> is called a lateral derived table.
+    If a derived table is defined as lateral, then it is allowed to refer to other tables in the same
+    FROM clause, but only those declared before it in the FROM clause.</para>
+    <para>The feature is defined in (SQL:2011): 7.6 &lt;table reference&gt; (Feature T491).</para>
+    <para><emphasis role="bold">Examples</emphasis>
+      <programlisting>
+select dt.population, dt.city_name, c.country_name
+from (select distinct country_name from cities) AS c,
+  LATERAL (select first 1 city_name, population
+           from cities
+           where cities.country_name = c.country_name
+           order by population desc) AS dt;
+--
+select salespeople.name,
+       max_sale.amount,
+       customer_of_max_sale.customer_name
+from salespeople,
+  LATERAL ( select max(amount) as amount from all_sales
+            where all_sales.salesperson_id = salespeople.id
+  ) as max_sale,
+  LATERAL ( select customer_name from all_sales
+            where all_sales.salesperson_id = salespeople.id
+  and all_sales.amount = max_sale.amount
+) as customer_of_max_sale;
+      </programlisting>
+    </para>
+
+  </section><!-- L1 -->
+
   <section id="rnfb40-dml-context_default"><!-- Level 1 section -->
     <title>DEFAULT Context Value for Inserting and Updating</title>
     <author><firstname>Adriano</firstname><surname>dos Santos Fernandes</surname></author>
@@ -60,13 +99,13 @@
     column.</para>
     <para>The feature is defined in (SQL:2011): 6.5 &lt;contextually typed value specification&gt;.</para>
     <para><emphasis role="bold">Simple Examples</emphasis>
-      <literallayout class="monospaced">
-  insert into sometable (id, column1)
-  values (DEFAULT, 'name')
-  --
-  update sometable 
-    set column1 = 'a', column2 = default
-      </literallayout>
+      <programlisting>
+insert into sometable (id, column1)
+values (DEFAULT, 'name')
+--
+update sometable 
+  set column1 = 'a', column2 = default
+      </programlisting>
 
       <note>
         <title>Notes</title>
@@ -499,13 +538,36 @@ select count(*) filter (where status = 'A') status_a,
     <title>Optional AUTOCOMMIT for SET TRANSACTION</title>
     <author><firstname>Dmitry</firstname><surname>Yemanov</surname></author>
     <para>Tracker ticket <ulink url="http://tracker.firebirdsql.org/browse/CORE-5119">CORE-5119</ulink></para>
-     <para>Autocommit mode is now supported in the SET TRANSACTION statement
+     <para>Autocommit mode is now supported in the <code>SET TRANSACTION</code> statement
      syntax.</para>
      <bridgehead renderas="sect4">Example</bridgehead>
      <programlisting>
 SET TRANSACTION SNAPSHOT NO WAIT AUTO COMMIT;
      </programlisting>
    </section><!-- L1 -->
+
+  <section id="rnfb40-dml-set-tran-snapshot"><!-- Level 1 -->
+    <title>Sharing Transaction Snapshots</title>
+    <author><firstname>Adriano</firstname><surname>dos Santos Fernandes</surname></author>
+    <para>Tracker ticket <ulink url="http://tracker.firebirdsql.org/browse/CORE-6018">CORE-6018</ulink></para>
+    <para>With this feature it's possible to create parallel (using different attachments) processes reading
+    consistent data from a database. For example, a backup process may create multiple threads reading data
+    from the database in parallel. Or a web service may dispatch distributed sub-services doing some processing
+    in parallel.</para>
+    <para>For this purpose, the <code>SET TRANSACTION</code> statement is extended with the
+    <code>SNAPSHOT [ AT NUMBER &lt;snapshot number&gt; ]</code> option. Alternatively, this feature can also
+    be used via API, new Transaction Parameter Buffer item
+    <code>isc_tpb_at_snapshot_number &lt;snapshot number length&gt; &lt;snapshot number&gt;</code> is added
+    for this purpose.</para>
+    <para>The &lt;snapshot number&gt; from the priorly started transaction may be obtained with
+    <code>RDB$GET_CONTEXT('SYSTEM', 'SNAPSHOT_NUMBER')</code> in SQL or using the transaction information
+    API call with <code>fb_info_tra_snapshot_number</code> information tag. Note that the
+    &lt;snapshot number&gt; passed to the new transaction must be a snapshot of a currently active transaction.</para>
+    <bridgehead renderas="sect4">Example</bridgehead>
+    <programlisting>
+SET TRANSACTION SNAPSHOT AT NUMBER 12345;
+    </programlisting>
+  </section><!-- L1 -->
 
   <section id="rnfb40-dml-built-in-functions"> <!-- Level 1 -->
     <title>Expressions and Built-in Functions</title>
@@ -663,9 +725,10 @@ select last_day(of week from date '2017-11-01') from rdb$database;
             <listitem><link linkend="rnfb4-builtin-crypto-rsa-verify">RSA_VERIFY()</link></listitem>
           </itemizedlist>
         </para>
-        <para>Also, three related non-cryptographic functions:
+        <para>Also, five related non-cryptographic functions:
           <itemizedlist>
             <listitem><link linkend="rnfb4-builtin-noncrypto-base64">BASE64_ENCODE() and BASE64_DECODE</link></listitem>
+            <listitem><link linkend="rnfb4-builtin-noncrypto-hex">HEX_ENCODE() and HEX_DECODE</link></listitem>
             <listitem><link linkend="rnfb4-builtin-noncrypto-crc32">CRC32()</link></listitem>
           </itemizedlist>
         </para>
@@ -820,6 +883,78 @@ SQL&gt; select v, pic, quantize(v, pic) from examples;
         </para>
       </section><!-- rnfb40-dml-new-get-cn -->
       
+      <section id="rnfb40-dml-new-make-dbkey">
+        <title>Function MAKE_DBKEY</title>
+          <author>
+            <firstname>Vlad</firstname><surname>Khorsun</surname>
+          </author>
+        <para>Creates a DBKEY value using relation name or ID, record number, and (optionally)
+        logical number of data page and pointer page. Result type is BINARY(8).</para>
+        <para><emphasis role="bold">Format</emphasis>
+          <literallayout class="monospaced">
+  MAKE_DBKEY( &lt;relation&gt;, &lt;recnum&gt; [, &lt;dpnum&gt; [, &lt;ppnum&gt;]] )
+          </literallayout>
+        </para>
+        <para><emphasis role="bold">Notes</emphasis>
+        <orderedlist>
+          <listitem>If <emphasis>relation</emphasis> is a string expression or literal, then it is
+          treated as a relation name and the engine searches for the corresponding relation ID.
+          The search is case-sensitive. In the case of string literal, relation ID is evaluated
+          at query preparation time. In the case of expression, relation ID is evaluated at
+          execution time. If the relation could not be found, then error <emphasis>isc_relnotdef</emphasis>
+          is raised.</listitem>
+          <listitem>If <emphasis>relation</emphasis> is a numeric expression or literal, then it is
+          treated as a relation ID and used "as is", without verification against existing relations.
+          If the argument value is negative or greater than the maximum allowed relation ID
+          (65535 currently), then NULL is returned.</listitem>
+          <listitem>Argument <emphasis>recnum</emphasis> represents an absolute record number
+          in relation (if the next arguments <emphasis>dpnum</emphasis> and <emphasis>ppnum</emphasis>
+          are missing), or a record number relative to the first record, specified by the next
+          arguments.</listitem>
+          <listitem>Argument <emphasis>dpnum</emphasis> is a logical number of data page in
+          relation (if the next argument <emphasis>ppnum</emphasis> is missing), or number of data page
+          relative to the first data page addressed by the given <emphasis>ppnum</emphasis>.</listitem>
+          <listitem>Argument <emphasis>ppnum</emphasis> is a logical number of pointer page
+          in relation.</listitem>
+          <listitem>All numbers are zero-based.  Maximum allowed value for <emphasis>dpnum</emphasis>
+          and <emphasis>ppnum</emphasis> is 2^32 (4294967296). If <emphasis>dpnum</emphasis> is
+          specified, then <emphasis>recnum</emphasis> could be negative. If <emphasis>dpnum</emphasis>
+          is missing and <emphasis>recnum</emphasis> is negative, then NULL is returned. If
+          <emphasis>ppnum</emphasis> is specified, then <emphasis>dpnum</emphasis> could be negative.
+          If <emphasis>ppnum</emphasis> is missing and <emphasis>dpnum</emphasis> is negative, then
+          NULL is returned.</listitem>
+          <listitem>If any of specified arguments has NULL value, the result is also NULL.</listitem>
+          <listitem>Argument <emphasis>relation</emphasis> is described as INTEGER during query
+          preparation, but it could be overriden by a client application as VARCHAR or CHAR. Arguments
+	      <emphasis>recnum</emphasis>, <emphasis>dpnum</emphasis> and <emphasis>ppnum</emphasis> are
+          described as BIGINT.</listitem>
+        </orderedlist>
+        </para>
+        <para><emphasis role="bold">Examples</emphasis>
+          <programlisting>
+-- (1) Select record using relation name (note: relation name is uppercased)
+
+select * from rdb$relations where rdb$db_key = make_dbkey('RDB$RELATIONS', 0)
+
+-- (2) Select record using relation ID
+
+select * from rdb$relations where rdb$db_key = make_dbkey(6, 0)
+
+-- (3) Select all records physically residing on the first data page
+
+select * from rdb$relations
+  where rdb$db_key &gt;= make_dbkey(6, 0, 0)
+	and rdb$db_key &lt; make_dbkey(6, 0, 1)
+
+-- (4) Select all records physically residing on the first data page of 6th pointer page
+
+select * from SOMETABLE
+  where rdb$db_key &gt;= make_dbkey('SOMETABLE', 0, 0, 5)
+	and rdb$db_key &lt; make_dbkey('SOMETABLE', 0, 1, 5)
+          </programlisting>
+        </para>
+      </section><!-- rnfb40-dml-new-make-dbkey -->
+
       <section id="rnfb40-dml-new-crypto"><!-- BETA 1 -->
         <title>Cryptographic Functions</title>
         <author>
@@ -873,6 +1008,29 @@ SQL&gt; select v, pic, quantize(v, pic) from examples;
         </variablelist>
         </para>
       </section><!-- rnfb40-dml-new-crypto -->
+
+      <section id="rnfb40-dml-new-other">
+        <title>Other Functions</title>
+        <author>
+          <firstname>Alex</firstname><surname>Peshkov</surname>
+        </author>
+        <para>
+        <variablelist>
+          <varlistentry>
+            <term><link linkend="rnfb4-builtin-noncrypto-base64">BASE64_ENCODE() and BASE64_DECODE()</link></term>
+            <listitem>Converts a binary string to its base64 encoding form and vice versa.</listitem>
+          </varlistentry>
+          <varlistentry>
+            <term><link linkend="rnfb4-builtin-noncrypto-hex">HEX_ENCODE() and HEX_DECODE()</link></term>
+            <listitem>Converts a binary string to its hexadecimal form and vice versa.</listitem>
+          </varlistentry>
+          <varlistentry>
+            <term><link linkend="rnfb4-builtin-noncrypto-crc32">CRC32()</link></term>
+            <listitem>Computes a CRC32 checksum for the given string.</listitem>
+          </varlistentry>
+        </variablelist>
+        </para>
+      </section><!-- rnfb40-dml-new-other -->
 
     </section> <!-- rnfb40-dml-new-built-in-functions -->
 
