@@ -937,11 +937,9 @@ database = /data/mydb.fdb
           any non-zero timeout that is applicable at database level.</para>
           <important>
             <para>Take note of the difference between the time units at each level.
-            At database level, in the <filename>conf</filename> file, the default unit for
-            SessionTimeout is in seconds but can be configured in hours or minutes.
-            In SQL, the default unit is seconds but can be expressed in hours or minutes
-            explicitly.</para>
-            <para>At the API level, the unit is milliseconds.</para>
+            At database level, in the <filename>conf</filename> file, the unit for
+            SessionTimeout is minutes. In SQL, the default unit is minutes but
+            can be expressed in hours or seconds explicitly. At the API level, the unit is seconds.</para>
             <para>Absolute precision is not guaranteed in any case, especially when the system
             load is high, but timeouts are guaranteed not to expire earlier than the moment
             specified.</para>
@@ -1107,10 +1105,10 @@ interface Attachment
 
           <important>
             <para>Take note of the difference between the time units at each level.
-            At database level, in the conf file, the default unit for StatementTimeout
-            is in seconds but can be configured in hours or minutes. In SQL, the default
-            unit is seconds but can be expressed in hours, minutes or milliseconds
-            explicitly. At the API level, the unit is milliseconds.</para>
+            At database level, in the conf file, the unit for StatementTimeout
+            is seconds. In SQL, the default unit is seconds but can be expressed
+            in hours, minutes or milliseconds explicitly. At the API level, the unit
+            is milliseconds.</para>
             <para>Absolute precision is not guaranteed in any case, especially when
             the system load is high, but timeouts are guaranteed not to expire earlier
             than the moment specified.</para>
@@ -1292,9 +1290,8 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
     <section id="rnfb40-engine-commit-order"><!-- L2 -->
       <title>The 'Commit Order' Approach</title>
 
-      <para>Firebird 4 takes a new approach to establishing how a transaction
-      captures the state of the most recent write committed for the record version that
-      the current transaction wants to read, change or delete.  This new approach uses
+      <para>Firebird 4 takes a new approach to establishing a consistent view of the
+      database state visible to running transactions. This new approach uses
       the concept of <firstterm>commit order</firstterm>.</para>
 
       <para>It is sufficient to know the <firstterm>order of commits</firstterm>
@@ -1393,16 +1390,16 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
         a transaction ID and its item value is the corresponding Commit Number. </para>
         <para>The whole array is split into fixed-size blocks containing the CN's
         for all transactions between the OIT and Next Transaction markers.  When
-        Next Transaction moves out of the scope the highest block, a new block is
+        Next Transaction moves out of the scope of the highest block, a new block is
         allocated.  An old block is released when the OIT moves out of the scope of
         the lowest block.</para>
 
         <section id="rnfb40-engine-CN-blocksize"><!-- L4 -->
           <title>Block Size</title>
-          <para>The default size of the TIP page cache block is
-          4MB, providing capacity for 512 * 1024 transactions.  It is configurable
-          in <filename>firebird.conf</filename> and <filename>databases.conf</filename>
-          using the new parameter <firstterm>TipCacheBlockSize</firstterm>.</para>
+          <para>The default size of a TIP cache block is 4MB, providing capacity
+          for 512 * 1024 transactions.  It is configurable in <filename>firebird.conf</filename>
+          and <filename>databases.conf</filename> using the new parameter
+          <firstterm>TipCacheBlockSize</firstterm>.</para>
         </section><!-- L4 -->
       </section><!-- L3 -->
 
@@ -1488,70 +1485,75 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
           <title>Handling of Update Conflicts</title>
           <para>When a statement executes in a READ COMMITTED READ CONSISTENCY transaction,
           its database view is retained in a fashion similar to a SNAPSHOT transaction.
-          This makes it pointless to wait for the concurrent
-          transaction to commit, in the hope of being able to read the newly-committed record
-          version. So, when a READ COMMITTED transaction reads the data and finds
-          a primary record version has been created by a concurrently active transaction, it
-          reads the next back version in the versions chain to check the state of the transaction
-          that created the back version.
-          <itemizedlist spacing="compact">>
-            <listitem>If the state is committed then this back version is the one that is
-            visible to the current transaction.</listitem>
-            <listitem>If the state is active, the next backversion is read&mdash;until a backversion
-            is found whose transaction is committed.</listitem>
-          </itemizedlist>
-          A READ COMMITTED transaction using NO RECORD VERSION, on the other hand, does not consider
-          the back version.  Instead, it waits for the state of the conflicting transaction to become
-          inactive, either committed or dead.
+          This makes it pointless to wait for the concurrent transaction to commit, in the
+          hope of being able to read the newly-committed record version. So, when a
+          READ COMMITTED READ CONSISTENCY transaction reads data, it behaves similarly to
+          READ COMMITTED RECORD VERSION transaction: walks the back versions chain looking
+          for a record version visible to the current snapshot.
           </para>
 
           <para>When an update conflict occurs, the behaviour of a READ COMMITTED READ
           CONSISTENCY transaction is different to that of one in READ COMMITTED RECORD
-          VERSION:
-          <itemizedlist>
-            <listitem>If the concurrent transaction is active, the engine waits for the
-            duration of the transaction lock timeout;  if the concurrent transaction is
-            then still uncommitted, an update conflict error is returned and any changes
-            made by the statement are undone automatically.</listitem>
-            <listitem>If the concurrent transaction is committed, then the current statement
-            cannot continue executing because its own current snapshot would still see the
-            committed transaction as if it were still active. Thus, the statement has to
-            create a new snapshot to continue executing.  For consistency, it must undo
-            all the changes made so far and start everything again.
-            <note>
-              <para>The implementation of this restart logic, as at Beta 1, is not ideal
-              and could be changed before the final release.</para>
-            </note>
-            </listitem>
-          </itemizedlist>
+          VERSION. The following actions are performed:
+          <orderedlist>
+            <listitem>Transaction isolation mode is temporarily switched to READ COMMITTED
+            NO RECORD VERSION.</listitem>
+            <listitem>Write lock is taken for the conflicting record.</listitem>
+            <listitem>Remaining records of the current UPDATE/DELETE cursor are processed and
+            they are write-locked too.</listitem>
+            <listitem>Once the cursor is fetched, all modifications performed since the
+            top-level statement was started are undone, already taken write locks for every
+            updated/deleted/locked record are preserved, all inserted records are removed.</listitem>
+            <listitem>Transaction isolation mode is restored to READ COMMITTED READ CONSISTENCY,
+            new statement-level snapshot is created and the top-level statement is restarted.</listitem>
+          </orderedlist>
           </para>
 
-          <para>The logic is very similar to that commonly employed by user applications
-          for handling update conflicts but it is a little more efficient as it does not
-          entail network roundtrips between client and host.
-          <note>
-            <para>This restart logic is not applied to selectable stored procedures
-            if the update conflict happens after any records are returned to the client
-            application. In this case an <code>isc_update_conflict</code> error is returned.
-            For historical reasons, <code>isc_update_conflict</code> is reported as a
-            secondary error to the primary error <code>isc_deadlock</code>.</para>
-          </note>
+          <para>This algorithm ensures that already updated records remain locked after restart,
+          they are visible to the new snapshot, and could be updated again with no further conflicts. Also,
+          due to READ CONSISTENCY nature, the modified record set remains consistent.</para>
+
+          <para>Notes:
+            <itemizedlist>
+              <listitem>This restart algorithm is applied to UPDATE, DELETE, SELECT WITH LOCK and MERGE
+              statements, with or without the RETURNING clause, executed directly by a client application
+              or inside some PSQL object (stored procedure/function, trigger, EXECUTE BLOCK, etc).</listitem>
+              <listitem>If UPDATE/DELETE statement is positioned on some explicit cursor (using the
+              <code>WHERE CURRENT OF</code> clause), then the step (3) above is skipped, i.e. remaining
+              cursor records are not fetched and write-locked.</listitem>
+              <listitem>If the top-level statement is selectable and update conflict happens after one
+              or more records was returned to the client side, then the update conflict error is reported
+              as usual and restart is not initiated.</listitem>
+              <listitem>Restart does not happen for statements executed inside autonomous blocks
+              (<code>IN AUTONOMOUS TRANSACTION DO ...</code>).</listitem>
+              <listitem>After 10 unsuccessful attempts the restart algorithm is aborted, all write locks are released,
+              transaction isolation mode is restored to READ COMMITTED READ CONSISTENCY and the update conflict
+              error is raised.</listitem>
+              <listitem>Any not handled error at step (3) above aborts the restart algorithm and statement
+              execution is continued normally.</listitem>
+              <listitem>UPDATE/DELETE triggers fire multiple times for the same record if the statement execution
+              was restarted and record is updated/deleted again.</listitem>
+              <listitem>Due to historical reasons, error <emphasis>isc_update_conflict</emphasis> is reported as
+              the secondary error code, with the primary error code being <emphasis>isc_deadlock</emphasis>.</listitem>
+            </itemizedlist>
           </para>
         </section><!-- rnfb40-engine-read-consistency-conflicts -->
 
         <section id="rnfb40-engine-read-consistency-precommit">
           <title>No Pre-Committed Transactions</title>
           <para>In the existing implementation, READ COMMITTED transactions in READ ONLY
-          mode are marked as committed when the transaction starts.  This provides a
+          mode are marked as committed when the transaction starts. This provides a
           benefit in that record versions in such transactions are never <quote>interesting</quote>
           from the perspective of garbage collection. It is not a problem if the
           transaction has no need for a database snapshot, i.e., when the isolation sub-level
           is RECORD VERSION or NO RECORD VERSION.</para>
           <para>However, it would defeat statement-level snapshot consistency if the
-          READ COMMITTED READ ONLY transaction in the READ CONSISTENCY sub-level were
-          allowed to be pre-committed.  Thus, the record versions involved in this
+          READ COMMITTED READ ONLY transaction in the READ CONSISTENCY mode was
+          allowed to be pre-committed. Therefore, READ CONSISTENCY READ ONLY transactions are not
+          started as pre-committed. Thus, the record versions involved in this
           style of transaction remain <quote>interesting</quote>, as do those involved
-          in READ WRITE transactions.</para>
+          in READ WRITE transactions. Other kinds of READ COMMITTED READ ONLY transactions
+          (namely: RECORD VERSION and NO RECORD VERSION) remain marked as pre-committed when started.</para>
         </section><!-- rnfb40-engine-read-consistency-precommit -->
 
         <section id="rnfb40-engine-read-consistency-syntax">
@@ -1635,6 +1637,7 @@ SET TRANSACTION READ COMMITTED READ CONSISTENCY
       during the following processes:
       <itemizedlist>
         <listitem>sweep</listitem>
+        <listitem>table scan during index creation</listitem>
         <listitem>background garbage collection in SuperServer</listitem>
         <listitem>in every user attachment after an updated or delete record
         is committed</listitem>
