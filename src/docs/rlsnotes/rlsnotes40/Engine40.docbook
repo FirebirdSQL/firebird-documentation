@@ -10,14 +10,14 @@
   and international time zone support.</para>
 
   <para>Firebird 4 creates databases with the on-disk structure numbered
-  13&mdash;<quote>ODS 13</quote>. The remote interface protocol number is 16.</para>
+  13 &mdash; <quote>ODS 13</quote>. The remote interface protocol number is 16.</para>
 
   <section id="rnfb40-engine-maxpagesize"><!-- L1 -->
     <title>Extended Maximum Page Size</title>
     <author><firstname>Dmitry</firstname><surname>Yemanov</surname></author>
     <para>Tracker ticket <ulink url="http://tracker.firebirdsql.org/browse/CORE-2192">CORE-2192</ulink></para>
     <para>The maximum page size for databases created under ODS 13 has been
-    extended from 16 Kb to 32 Kb.</para>
+    extended from 16 KB to 32 KB.</para>
   </section><!-- L1 -->
   
   <section id="rnfb40-engine-deprecated-udfs"><!-- L1 -->
@@ -79,8 +79,10 @@
       <title>Session Time Zone</title>
       <para>As the name implies, the session time zone, can be different for each database attachment. 
       It can be set explicitly in the DPB or SPB with the item <code>isc_dpb_session_time_zone</code>;
-      otherwise, by default, it starts defined as the same time zone used by the operating system Firebird 
-      process.</para>
+      otherwise, by default, it uses the same time zone as the operating system of the Firebird server
+      process. But this default may be overriden in <filename>firebird.conf</filename>,
+      see <link linkend="rnfb40-config-deftimezone">DefaultTimeZone setting</link> in the Configuration
+      Additions and Changes chapter.</para>
       <para>Subsequently, the time zone can be changed to a given time zone using a 
       <code>SET TIME ZONE</code> statement or reset to its original value 
       with <code>SET TIME ZONE LOCAL</code>.</para>
@@ -286,12 +288,20 @@ select *
       through the ICU library. The ICU library presented in the Firebird kit (Windows),
       or installed in a POSIX operating system, can sometimes have an outdated time 
       zone database.</para>
-      <para>An update procedure is described in the online ICU user guide,
-      in the article 
-      <ulink url="http://userguide.icu-project.org/datetime/timezone#TOC-Updating-the-Time-Zone-Data">Updating 
-      the Time Zone Data</ulink>. The simplest way to update is to download the
-      <filename>*.res</filename> files into a directory and set the environment variable
-      <code>ICU_TIMEZONE_FILES_DIR</code> to point to it.</para>
+      <para>An updated database can be found on
+      <ulink url="https://github.com/FirebirdSQL/firebird/tree/master/extern/icu/tzdata">
+      this Firebird's page at GitHub</ulink>. Filename <filename>le.zip</filename> stands
+      for little-endian and is the necessary file for most computer architectures
+      (Intel/AMD compatible x86 or x64), while <filename>be.zip</filename> stands for
+      big-endian architectures and is necessary mostly for RISC computer architectures.
+      The content of the zip file must be extracted in the <filename>/tzdata</filename>
+      sub-directory of the Firebird installation, overwriting existing *.res files belonging
+      to the database.</para>
+      <note>
+        <filename>/tzdata</filename> is the default directory where Firebird looks for the
+        time zone database. It can be overriden with the ICU_TIMEZONE_FILES_DIR
+        environment variable.
+      </note>
     </section>
   </section>
   
@@ -485,7 +495,8 @@ ALTER DATABASE DROP TABLE T1, T2, T3 FROM PUBLICATION
           <para>Tables enabled for replication inside the database can be additionally filtered using
           two settings in <filename>replication.conf</filename>: <code>include_filter</code> and
           <code>exclude_filter</code>. They are regular expressions that are applied to table names,
-          defining the rules for including or excluding them from the replication set.</para>
+          defining the rules for including or excluding them from the replication set. The regular
+          expression syntax used to match table names is the same as in SIMILAR TO boolean expressions.</para>
         </section>
         
         <section id="rnfb40-replication-setup-master-sync"><!-- level 4 -->
@@ -541,7 +552,8 @@ database = /data/mydb.fdb
 }
             </literallayout>
           &mdash;where <code>$(logpathname)</code> and <code>$(archpathname)</code>
-          are built-in macros that provide the custom shell command with real file names.
+          are built-in macros that are expanded to full path names when running the specified
+          custom shell command.
           </para>
           <note>
             <title>About custom archiving</title>
@@ -554,6 +566,9 @@ database = /data/mydb.fdb
             replica storage can be remotely attached to the master host, it becomes just a
             matter of copying the segment files. In other cases, some transport solution is
             required.</para>
+            <para>If custom archiving is used, the setting <code>log_archive_directory</code>
+            can be omitted, unless <code>log_archive_command</code> mentions the
+            <code>$(archpathname)</code> macro.</para>
           </note>
           <para>The same setup, with archiving performed every 10 seconds:
             <literallayout class="monospaced">
@@ -571,14 +586,15 @@ database = /data/mydb.fdb
 
         <section id="rnfb40-replication-setup-master-applying"><!-- level 4 -->
           <title>Applying the Master Side Settings</title>
-          <para>To apply any changes to the master-side settings, all users must
-          be reconnected.</para>
+          <para>To take into effect changes applied to the master-side settings, all users connected to
+          a database must be disconnected (or a database must be shutdown). After that, all users
+          connected again would use an updated configuration.</para>
         </section>
       </section>
 
       <section id="rnfb40-replication-setup-replica"><!-- level 3 -->
         <title>Setting Up the Replica Side</title>
-        <para>The same <filename>replication.conf</filename> file is used for
+        <para><filename>replication.conf</filename> file is also used for
         setting up the replica side.  Setting the parameter <code>log_source_directory</code>
         specifies the location that the Firebird server scans for the transmitted segments.
         In addition, the DBA may specify explicitly which source database is accepted for
@@ -600,14 +616,14 @@ database = /data/mydb.fdb
 
         <section id="rnfb40-replication-setup-replica-applying"><!-- level 4 -->
           <title>Applying the Replica Side Settings</title>
-          <para>To apply changes to any replica-side settings, the Firebird server
+          <para>To take into effect changes applied to replica-side settings, the Firebird server
           must be restarted.</para>
         </section>
 
         <section id="rnfb40-replication-setup-replica-create"><!-- level 4 -->
           <title>Creating a Replica Database</title>
           <bridgehead renderas="sect4">Task 1&mdash;Make the initial replica</bridgehead>
-          <para>In the Beta 1 release, any physical copying method can be used to
+          <para>In this Beta release, any physical copying method can be used to
           create an initial replica of the source database:
             <itemizedlist>
               <listitem>File-level copy while the Firebird server is shut down</listitem>
@@ -795,12 +811,12 @@ database = /data/mydb.fdb
         </varlistentry>
         <varlistentry>
           <term>ALTER EXTERNAL CONNECTIONS POOL CLEAR ALL</term>
-          <listitem>Closes all idle connections and instigates dissociation of all active
-          connections immediately they become unused</listitem>
+          <listitem>Closes all idle connections and instigates dissociation of all
+          active connections so they are immediately closed when they become unused</listitem>
         </varlistentry>
         <varlistentry>
           <term>ALTER EXTERNAL CONNECTIONS POOL CLEAR OLDEST</term>
-          <listitem>Closea expired idle connections</listitem>
+          <listitem>Closes expired idle connections</listitem>
         </varlistentry>
       </variablelist>
 
@@ -870,7 +886,7 @@ database = /data/mydb.fdb
           calling connection) a special idle timer associated with the current
           connection is started</listitem>
           <listitem>When another user API call from that connection enters the engine,
-          the idle timer is stopped</listitem>
+          the idle timer is stopped and reset to zero</listitem>
           <listitem>
             <para>If the idle time is attained, the engine immediately closes the
             connection in the same way as with asynchronous connection cancellation:
@@ -981,14 +997,14 @@ interface Attachment
           </para>
            <note>
              <title>Notes regarding remote client implementation</title>
-             <orderedlist>
+             <orderedlist spacing="compact">
                <listitem>Attachment::setIdleTimeout() issues a <quote>SET SESSION IDLE TIMEOUT</quote>
                SQL statement</listitem>
                <listitem>Attachment::getIdleTimeout() calls isc_database_info() with the
                fb_info_ses_idle_timeout_att tag</listitem>
                <listitem>If the protocol of the remote Firebird server is less than 16,
                it does not support idle connection timeouts.  If that is the case,
-                 <itemizedlist>
+                 <itemizedlist spacing="compact">
                    <listitem>Attachment::setIdleTimeout() will return the error isc_wish_list</listitem>
                    <listitem>Attachment::getIdleTimeout() will return zero and set the isc_wish_list
                    error</listitem>
@@ -1044,7 +1060,7 @@ interface Attachment
           <note>FETCH does not reset this timer.</note>
         </para>
         <para>When the timeout point is reached:
-          <itemizedlist spacing="compact">
+          <itemizedlist>
             <listitem>if statement execution is active, it stops at closest possible moment</listitem>
             <listitem>if statement is not active currently (between fetches, for example),
             it is marked as cancelled and the next fetch will actually break execution and
@@ -1055,7 +1071,7 @@ interface Attachment
           <title>Statement types excluded from timeouts</title>
           <para>Statement timeouts are not applicable to some types of statement and
           will simply be ignored:
-            <itemizedlist>
+            <itemizedlist spacing="compact">
               <listitem>All DDL statements</listitem>
               <listitem>All internal queries issued by the engine itself</listitem>
             </itemizedlist>
@@ -1127,7 +1143,7 @@ interface Attachment
 
         <section id="rnfb40-stmnt-timeout-notes"><!-- L4 -->
           <title>Notes about Statement Timeouts</title>
-          <orderedlist>
+          <orderedlist spacing="compact">
             <listitem>A client application could wait longer than the time than set by
             the timeout value if the engine needs to undo a large number of actions as
             a result of the statement cancellation</listitem>
@@ -1197,7 +1213,7 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
 
           <note>
             <title>Notes regarding remote client implementation</title>
-            <orderedlist>
+            <orderedlist spacing="compact">
               <listitem>Attachment::setStatementTimeout() issues a <quote>SET STATEMENT
               TIMEOUT</quote> SQL statement</listitem>
               <listitem>Attachment::getStatementTimeout() calls isc_database_info() with
@@ -1208,7 +1224,7 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
               <listitem>fb_dsql_set_timeout() is a wrapper over Statement::setTimeout()</listitem>
               <listitem>If the protocol of the remote Firebird server is less than 16,
               it does not support statement timeouts.  If that is the case,
-                <itemizedlist>
+                <itemizedlist spacing="compact">
                   <listitem><quote>set</quote> and <quote>get</quote> functions will return
                   an isc_wish_list error</listitem>
                   <listitem><quote>info</quote> will return the usual isc_info_error tag in the info
@@ -1381,6 +1397,10 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
           be queried using a new built-in function,
           <link linkend="rnfb40-dml-new-get-cn">RDB$GET_TRANSACTION_CN</link>.</para>
         </note>
+        <para>SNAPSHOT transactions now use the <emphasis>database snapshot</emphasis>
+        described above. Instead of taking a private copy of TIP when started it just
+        remembers value of global Commit Number at that moment.</para>
+
       </section><!-- L3 -->
 
       <section id="rnfb40-engine-CN-implementation"><!-- L3 -->
@@ -1401,6 +1421,7 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
           and <filename>databases.conf</filename> using the new parameter
           <firstterm>TipCacheBlockSize</firstterm>.</para>
         </section><!-- L4 -->
+
       </section><!-- L3 -->
 
   </section><!-- rnfb40-engine-commit-order --> <!-- L2 -->
@@ -1438,8 +1459,8 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
       <para>CASE 3 is the problem referred to as <firstterm>inconsistent read at the
       statement level</firstterm>.  It matters because, by definition, each
       <firstterm>statement</firstterm> in a READ COMMITTED transaction has its own
-      distinct view of database state.  In the existing implementation, the statement's
-      view is not certain to remain stable for the duration of its execution:  it could
+      distinct view of database state. In the existing implementation, the statement's
+      view is not certain to remain stable for the duration of its execution: it could
       change between the start of execution and the completion.</para>
 
       <para>Statements running in a SNAPSHOT transaction do not have this problem,
@@ -1455,11 +1476,11 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
         <para>The obvious solution to the inconsistent read problem is to have the
         read-committed transaction use a stable database snapshot during execution of
         a statement. Each new top-level statement creates its own database snapshot
-        that sees the most recently committed data.</para>
-        <para>With snapshots based on commit order it is a very cheap operation.
-        Nested statements (triggers, nested stored procedures and functions,
-        dynamic statements, etc.) use the same database snapshot that was created
-        by the top-level statement.</para>
+        that sees the most recently committed data. With snapshots based on commit order
+        it is a very cheap operation. Let this snapshot be called a
+        <emphasis>statement-level snapshot</emphasis> for further references. Nested
+        statements (triggers, nested stored procedures and functions, dynamic statements,
+        etc.) use the same statement-level snapshot that was created by the top-level statement.</para>
 
         <section id="rnfb40-engine-read-consistency">
           <title>New Isolation Sub-Level for READ COMMITTED</title>
@@ -1467,9 +1488,9 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
           introduced: READ COMMITTED READ CONSISTENCY.</para>
 
           <para>The existing sub-levels for READ COMMITTED isolation,
-          RECORD VERSION and NO RECORD VERSION, are still supported but should
-          be regarded as <quote>legacy</quote>, with the recommendation to
-          avoid them.</para>
+          RECORD VERSION and NO RECORD VERSION, are still supported and operate as before
+          (without using statement-level snapshots), but could be regarded as <quote>legacy</quote>
+          in future Firebird versions.</para>
 
           <para>In summary, the three variants for transactions in READ
           COMMITTED isolation are now:
@@ -1513,8 +1534,9 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
           they are visible to the new snapshot, and could be updated again with no further conflicts. Also,
           due to READ CONSISTENCY nature, the modified record set remains consistent.</para>
 
-          <para>Notes:
-            <itemizedlist>
+          <note>
+            <title>Notes</title>
+            <itemizedlist spacing="compact">
               <listitem>This restart algorithm is applied to UPDATE, DELETE, SELECT WITH LOCK and MERGE
               statements, with or without the RETURNING clause, executed directly by a client application
               or inside some PSQL object (stored procedure/function, trigger, EXECUTE BLOCK, etc).</listitem>
@@ -1533,76 +1555,64 @@ ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULO
               execution is continued normally.</listitem>
               <listitem>UPDATE/DELETE triggers fire multiple times for the same record if the statement execution
               was restarted and record is updated/deleted again.</listitem>
+              <listitem>Statement restart is usually fully transparent to client applications and no special
+              actions should be taken by developers to handle it in any way. The only exception is the code
+              with side effects that are outside the transactional control, for example:
+                <itemizedlist spacing="compact">
+                  <listitem>usage of external tables, sequences or context variables</listitem>
+                  <listitem>sending e-mails using UDF</listitem>
+                  <listitem>usage of autonomous transactions or external queries</listitem>
+                </itemizedlist>
+              and so on. Beware that such code could be executed more than once if update conflict happens.</listitem>
+              <listitem>There is no way to detect whether a restart happened, but it could be done manually using
+              code with side effects as described above, for example using a context variable.</listitem>
               <listitem>Due to historical reasons, error <emphasis>isc_update_conflict</emphasis> is reported as
               the secondary error code, with the primary error code being <emphasis>isc_deadlock</emphasis>.</listitem>
             </itemizedlist>
-          </para>
+          </note>
         </section><!-- rnfb40-engine-read-consistency-conflicts -->
 
-        <section id="rnfb40-engine-read-consistency-precommit">
-          <title>No Pre-Committed Transactions</title>
+        <section id="rnfb40-engine-read-committed-read-only">
+          <title>Read Committed Read-Only Transactions</title>
           <para>In the existing implementation, READ COMMITTED transactions in READ ONLY
-          mode are marked as committed when the transaction starts. This provides a
-          benefit in that record versions in such transactions are never <quote>interesting</quote>
-          from the perspective of garbage collection. It is not a problem if the
-          transaction has no need for a database snapshot, i.e., when the isolation sub-level
-          is RECORD VERSION or NO RECORD VERSION.</para>
-          <para>However, it would defeat statement-level snapshot consistency if the
-          READ COMMITTED READ ONLY transaction in the READ CONSISTENCY mode was
-          allowed to be pre-committed. Therefore, READ CONSISTENCY READ ONLY transactions are not
-          started as pre-committed. Thus, the record versions involved in this
-          style of transaction remain <quote>interesting</quote>, as do those involved
-          in READ WRITE transactions. Other kinds of READ COMMITTED READ ONLY transactions
-          (namely: RECORD VERSION and NO RECORD VERSION) remain marked as pre-committed when started.</para>
+          mode are marked as committed when the transaction starts. This provides a benefit in that
+          record versions in such transactions are never <quote>interesting</quote>, thus not inhibiting the
+          regular garbage collection and not delaying the advance of the OST marker.</para>
+          <para>READ CONSISTENCY READ ONLY transactions are still started as pre-committed, but in order
+          to avoid the regular garbage collection breaking future statement-level snapshots, it delays the
+          advance of the OST marker in the same way as it happens for SNAPSHOT transactions.</para>
+          <note>
+            This delays only the <emphasis>regular</emphasis> (traditional) garbage collection, the
+            <emphasis>intermediate</emphasis> garbage collection (see below) is not affected.
+          </note>
         </section><!-- rnfb40-engine-read-consistency-precommit -->
 
         <section id="rnfb40-engine-read-consistency-syntax">
           <title>Syntax and Configuration</title>
           <para>Support for the new READ COMMITTED READ CONSISTENCY isolation level is found
           in SQL syntax, in the API and in configuration settings.</para>
-
-          <section id="rnfb40-engine-read-consistency-sql">
-            <title>* SQL Syntax</title>
-            <para>Where SET TRANSACTION is available in SQL, the new isolation sub-level
-            is set as follows:
-              <programlisting>
+          <para>Where SET TRANSACTION is available in SQL, the new isolation sub-level
+          is set as follows:
+            <programlisting>
 SET TRANSACTION READ COMMITTED READ CONSISTENCY
-              </programlisting>
-            </para>
-          </section><!-- rnfb40-engine-read-consistency-sql -->
-
-          <section id="rnfb40-engine-read-consistency-api">
-            <title>* New API Constant in the TPB</title>
-            <para>To start a READ COMMITTED READ CONSISTENCY transaction via
-            the ISC API, use the new constant <code>isc_tpb_read_consistency</code>
-            in the Transaction Parameter Buffer.</para>
-          </section><!-- rnfb40-engine-read-consistency-api -->
-
-          <section id="rnfb40-engine-read-consistency-config">
-            <title>* Configuration Parameter ReadConsistency</title>
-            <para>Future versions of Firebird may deprecate the traditional handling of
-            read-committed transactions.  For now, existing applications can be tested
-            with the new READ COMMITTED READ CONSISTENCY isolation level by setting the
-            new configuration parameter <emphasis role="bold">ReadConsistency</emphasis>.
-            Possible values are 1 and 0.
-            <variablelist>
-              <varlistentry>
-                <term>ReadConsistency = 1</term>
-                <listitem>(Default) The engine ignores [NO] RECORD VERSION flags
-                and makes all read-committed transactions READ COMMITTED READ
-                CONSISTENCY.</listitem>
-              </varlistentry>
-
-              <varlistentry>
-                <term>ReadConsistency = 0</term>
-                <listitem>Allows the legacy engine behaviour, with the RECORD VERSION
-                and NO RECORD VERSION sub-levels valid to use.  READ COMMITTED READ
-                CONSISTENCY is available but needs to be be specified explicitly.</listitem>
-              </varlistentry>
-            </variablelist>
-            </para>
-          </section><!-- rnfb40-engine-read-consistency-config -->
-
+            </programlisting>
+          </para>
+          <para>To start a READ COMMITTED READ CONSISTENCY transaction via
+          the ISC API, use the new constant <code>isc_tpb_read_consistency</code>
+          in the Transaction Parameter Buffer.</para>
+          <para>Starting with Firebird 4, usage of the legacy READ COMMITTED modes
+          (RECORD VERSION and NO RECORD VERSION) is discouraged and READ CONSISTENCY
+          mode is recommended to be used instead. For now, existing applications can
+          be tested with the new READ COMMITTED READ CONSISTENCY isolation level by
+          setting the new configuration parameter
+          <link linkend="rnfb40-config-readconsistency">ReadConsistency</link> described
+          in the Configuration Additions and Changes chapter.</para>
+          <important>
+            Please pay attention that the ReadConsistency configuration setting is
+            enabled by default, thus forcing all READ COMMITTED transactions to be
+            executed in the READ CONSISTENCY mode. Consider disabling this setting
+            if the legacy behaviour of READ COMMITTED transactions must be preserved.
+          </important>
         </section><!-- rnfb40-engine-read-consistency-syntax -->
       </section><!-- rnfb40-engine-stmt-level-consistency-solution -->
     </section><!-- rnfb40-engine-stmt-level-consistency -->
@@ -1635,7 +1645,7 @@ SET TRANSACTION READ COMMITTED READ CONSISTENCY
 
       <para>The engine performs garbage collection of intermediate record versions
       during the following processes:
-      <itemizedlist>
+      <itemizedlist spacing="compact">
         <listitem>sweep</listitem>
         <listitem>table scan during index creation</listitem>
         <listitem>background garbage collection in SuperServer</listitem>
@@ -1643,6 +1653,11 @@ SET TRANSACTION READ COMMITTED READ CONSISTENCY
         is committed</listitem>
       </itemizedlist>
       </para>
+
+      <note>
+        Regular (traditional) garbage collection mechanism is not changed and still works
+        the same way as in prior Firebird versions.
+      </note>
 
       <para>To make it work, the engine maintains in shared memory an array of
       all active database snapshots.  When it needs to find the oldest active snapshot
@@ -1658,16 +1673,21 @@ SET TRANSACTION READ COMMITTED READ CONSISTENCY
 
   </section><!-- rnfb40-engine-trans-commit-order -->
 
-  <section id="rnfb40-engine-expr-prcsn-fix"><!-- L1 --><!-- BETA 1 -->
-    <title>Precision Improvement for NUMERIC and DECIMAL</title>
+  <section id="rnfb40-engine-expr-prcsn-fix"><!-- L1 -->
+    <title>Precision Improvement for Calculations Involving NUMERIC and DECIMAL</title>
     <author><firstname>Alex</firstname><surname>Peshkov</surname></author>
     <para>Tracker ticket <ulink url="http://tracker.firebirdsql.org/browse/CORE-4409">CORE-4409</ulink></para>
-    <para>As a side-effect of implementing DECFLOAT and INT128 data types, some
-    improvements were made to the way Firebird handles the precision of intermadiate results
-    from calculations involving long (more than 18 digits) NUMERIC and DECIMAL data types.</para>
+    <para>As a side-effect of implementing the internal 128-bit integer data type, some
+    improvements were made to the way Firebird handles the precision of intermediate results
+    from calculations involving long NUMERIC and DECIMAL data types. In prior Firebird versions,
+    numerics backed internally by the BIGINT data type (i.e. with precision between 10 and 18
+    decimal digits) were multiplied/divided using the same BIGINT data type for the result,
+    which could cause overflow errors due to limited precision available. In Firebird 4, such
+    calculations are performed using 128-bit integers, thus reducing possibilities for
+    unexpected overflows.</para>
   </section><!-- L1 -->
 
-  <section id="rnfb40-engine-formats-views"><!-- L1 --><!-- BETA 1 -->
+  <section id="rnfb40-engine-formats-views"><!-- L1 -->
     <title>Increased Number of Formats for Views</title>
     <author><firstname>Adriano</firstname><surname>dos Santos Fernandes</surname></author>
     <para>Tracker ticket <ulink url="http://tracker.firebirdsql.org/browse/CORE-5647">CORE-5647</ulink></para>
@@ -1678,7 +1698,7 @@ SET TRANSACTION READ COMMITTED READ CONSISTENCY
     </note>
   </section><!-- L1 -->
 
-  <section id="rnfb40-engine-expr-grpby-fix"><!-- L1 --><!-- BETA 1 -->
+  <section id="rnfb40-engine-expr-grpby-fix"><!-- L1 -->
     <title>Optimizer Improvement for GROUP BY</title>
     <author><firstname>Dmitry</firstname><surname>Yemanov</surname></author>
     <para>Tracker ticket <ulink url="http://tracker.firebirdsql.org/browse/CORE-4529">CORE-4529</ulink></para>
@@ -1696,7 +1716,7 @@ SET TRANSACTION READ COMMITTED READ CONSISTENCY
     firebird process for every connection&mdash;similarly to what happens on Windows.</para>
   </section><!-- L1 -->
 
-  <section id="rnfb40-engine-risc-v64"><!-- L1 --><!-- BETA 1 -->
+  <section id="rnfb40-engine-risc-v64"><!-- L1 -->
     <title>Support for RISC v.64 Platform</title>
     <author><firstname>Richard</firstname><surname>Jones</surname></author>
     <para>Tracker ticket <ulink url="http://tracker.firebirdsql.org/browse/CORE-5779">CORE-5779</ulink></para>
