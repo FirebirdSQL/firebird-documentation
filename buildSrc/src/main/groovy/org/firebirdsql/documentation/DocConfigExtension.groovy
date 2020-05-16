@@ -15,11 +15,14 @@
  */
 package org.firebirdsql.documentation
 
+import org.firebirdsql.documentation.asciidoc.AsciidocConfig
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property
 
 import groovy.transform.CompileStatic
+
+import static groovy.lang.Closure.DELEGATE_FIRST
 
 @CompileStatic
 class DocConfigExtension {
@@ -29,6 +32,7 @@ class DocConfigExtension {
     final DirectoryProperty docRoot
     final DirectoryProperty outputRoot
     final Property<String> defaultBaseName
+    final AsciidocConfig asciidocConfig
 
     DocConfigExtension(ObjectFactory objectFactory) {
         configRootDir = objectFactory.directoryProperty()
@@ -36,5 +40,15 @@ class DocConfigExtension {
         docRoot = objectFactory.directoryProperty()
         outputRoot = objectFactory.directoryProperty()
         defaultBaseName = objectFactory.property(String)
+        asciidocConfig = new AsciidocConfig(objectFactory)
+        asciidocConfig.sourceDir.convention(docRoot.dir('asciidoc'))
+        asciidocConfig.outputDir.convention(outputRoot.dir('asciidoc'))
+    }
+
+    void asciidocConfig(Closure cfg) {
+        Closure configurator = (Closure) cfg.clone()
+        configurator.delegate = asciidocConfig
+        configurator.resolveStrategy = DELEGATE_FIRST
+        configurator.call()
     }
 }
