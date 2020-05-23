@@ -1,3 +1,7 @@
+import org.asciidoctor.gradle.jvm.AsciidoctorJExtension
+import org.asciidoctor.gradle.jvm.pdf.AsciidoctorPdfThemesExtension
+import org.firebirdsql.documentation.asciidoc.FbAsciidocHtmlTask
+import org.firebirdsql.documentation.asciidoc.FbAsciidocPdfTask
 import org.firebirdsql.documentation.docbook.DocbookFo
 import org.firebirdsql.documentation.docbook.DocbookHtml
 import org.firebirdsql.documentation.fop.FoTask
@@ -5,6 +9,31 @@ import org.firebirdsql.documentation.generic.XsltTask
 
 plugins {
     id 'org.firebirdsql.documentation'
+    // Version controlled through buildSrc/build.gradle
+    id 'org.asciidoctor.jvm.base'
+    id 'org.asciidoctor.jvm.pdf' apply false
+}
+
+repositories {
+    jcenter()
+}
+
+asciidoctorj {
+    modules {
+        pdf {
+            version '1.5.3'
+        }
+    }
+}
+
+extensions.create(AsciidoctorPdfThemesExtension.NAME, AsciidoctorPdfThemesExtension, project)
+extensions.getByType(AsciidoctorJExtension).modules.pdf.use()
+
+pdfThemes {
+    local 'firebird', {
+        themeDir = file('src/theme/firebird-pdf')
+        themeName = 'firebird'
+    }
 }
 
 docConfig {
@@ -13,6 +42,48 @@ docConfig {
     styleDir.set(file('src/docs/xsl'))
     outputRoot.set(layout.buildDirectory.dir('docs'))
     defaultBaseName.set('firebirddocs')
+}
+
+def asciidocHtml = tasks.register('asciidocHtml', FbAsciidocHtmlTask) {
+    group 'Documentation'
+    description 'Generate HTML documentation from asciidoc'
+    baseDirFollowsSourceFile()
+    attributes 'stylesdir': stylesDir, 'stylesheet': 'firebird.css',
+            'docinfo': 'shared', 'docinfodir': stylesDir.file('docinfo')
+    // TODO move definitions of images to copy to the task
+    resources {
+        from(stylesDir.file('docinfo')) {
+            include 'images/**/*'
+        }
+    }
+    doFirst {
+        // TODO move definition of includePattern to the task
+        sources {
+            include includePattern.get()
+        }
+        languages.each { lang ->
+            resources lang, {
+                from(sourceDirProperty.file(lang)) {
+                    include 'images/**/*'
+                }
+            }
+        }
+    }
+}
+
+def asciidocPdf = tasks.register('asciidocPdf', FbAsciidocPdfTask) {
+    group 'Documentation'
+    description 'Generate PDF documentation from asciidoc'
+    baseDirFollowsSourceFile()
+    attributes 'revnumber': null, 'source-highlighter': 'rouge', 'media': 'prepress', 'toc': 'macro', 'compress': '',
+            'toclevels': 3
+    theme 'firebird'
+    doFirst {
+        // TODO move definition of includePattern to the task
+        sources {
+            include includePattern.get()
+        }
+    }
 }
 
 task docbookHtml(type: DocbookHtml, group: 'documentation') {
@@ -43,7 +114,7 @@ docbookPdfTask.configure { fo2pdf ->
     fo2pdf.inputFoFile.set(docbookFoTask.get().mainOutputFile)
     fo2pdf.dependsOn docbookFoTask
 }
-docbookFoTask.configure  { docbookFo ->
+docbookFoTask.configure { docbookFo ->
     docbookFo.group 'documentation'
     docbookFo.description 'Generate FO documentation'
     docbookFo.stylesheetBaseName.set('fo')
