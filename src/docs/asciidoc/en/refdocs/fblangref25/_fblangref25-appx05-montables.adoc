@@ -1,0 +1,671 @@
+:sectnums!:
+
+[appendix]
+[[fblangref25-appx05-montables]]
+= Monitoring Tables
+
+The Firebird engine can monitor activities in a database and make them available for user queries via the monitoring tables.
+The definitions of these tables are always present in the database, all named with the prefix MON$.
+The tables are virtual: they are populated with data only at the moment when the user queries them.
+That is also one good reason why it is no use trying to create triggers for them!
+
+The key notion in understanding the monitoring feature is an __activity snapshot__.
+The activity snapshot represents the current state of the database at the start of the transaction in which the monitoring table query runs.
+It delivers a lot of information about the database itself, active connections, users, transactions prepared, running queries and more.
+
+The snapshot is created when any monitoring table is queried for the first time.
+It is preserved until the end of the current transaction to maintain a stable, consistent view for queries across multiple tables, such as a master-detail query.
+In other words, monitoring tables always behave as though they were in `SNAPSHOT TABLE STABILITY` ("`consistency`") isolation, even if the current transaction is started with a lower isolation level.
+
+To refresh the snapshot, the current transaction must be completed and the monitoring tables must be re-queried in a new transaction context.
+
+.Access Security
+* SYSDBA and the database owner have full access to all information available from the monitoring tables
+* Regular users can see information about their own connections;
+other connections are not visible to them
+
+[WARNING]
+====
+In a highly loaded environment, collecting information via the monitoring tables could have a negative impact on system performance.
+====
+
+[[fblangref25-appx05-tbl-montables]]
+.List of Monitoring Tables
+`MON$ATTACHMENTS`::
+Information about active attachments to the database
+
+`MON$CALL_STACK`::
+Calls to the stack by active queries of stored procedures and triggers
+
+`MON$CONTEXT_VARIABLES`::
+Information about custom context variables
+
+`MON$DATABASE`::
+Information about the database to which the CURRENT_CONNECTION is attached
+
+`MON$IO_STATS`::
+Input/output statistics
+
+`MON$MEMORY_USAGE`::
+Memory usage statistics
+
+`MON$RECORD_STATS`::
+Record-level statistics
+
+`MON$STATEMENTS`::
+Statements prepared for execution
+
+`MON$TRANSACTIONS`::
+Started transactions
+
+[[fblangref-appx05-monattach]]
+== MON$ATTACHMENTS
+
+MON$ATTACHMENTS displays information about active attachments to the database.
+
+[[fblangref25-appx05-tbl-monattach]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$ATTACHMENT_ID
+|INTEGER
+|Connection identifier
+
+|MON$SERVER_PID
+|INTEGER
+|Server process identifier
+
+|MON$STATE
+|SMALLINT
+|Connection state:
+
+`0` - idle +
+`1` - active
+
+|MON$ATTACHMENT_NAME
+|VARCHAR(255)
+|Connection string -- the file name and full path to the primary database file
+
+|MON$USER
+|CHAR(31)
+|The name of the user who is using this connection
+
+|MON$ROLE
+|CHAR(31)
+|The role name specified when the connection was established.
+If no role was specified when the connection was established, the field contains the text NONE
+
+|MON$REMOTE_PROTOCOL
+|VARCHAR(10)
+|Remote protocol name
+
+|MON$REMOTE_ADDRESS
+|VARCHAR(255)
+|Remote address (address and server name)
+
+|MON$REMOTE_PID
+|INTEGER
+|Remote client process identifier
+
+|MON$CHARACTER_SET_ID
+|SMALLINT
+|Connection character set identifier (see RDB$CHARACTER_SET in system table RDB$TYPES)
+
+|MON$TIMESTAMP
+|TIMESTAMP
+|The date and time when the connection was started
+
+|MON$GARBAGE_COLLECTION
+|SMALLINT
+|Garbage collection flag (as specified in the attachment's DPB): 1=allowed, 0=not allowed
+
+|MON$REMOTE_PROCESS
+|VARCHAR(255)
+|The full file name and path to the executable file that established this connection
+
+|MON$STAT_ID
+|INTEGER
+|Statistics identifier
+|===
+
+[[fblangref-appx05-monattach-kill]]
+=== Using MON$ATTACHMENTS to Kill a Connection
+
+Monitoring tables are read-only.
+However, the server has a built-in mechanism for deleting (and only deleting) records in the MON$ATTACHMENTS table, which makes it possible to close a connection to the database. 
+
+.Notes
+[NOTE]
+====
+* All the current activity in the connection being deleted is immediately stopped and all active transactions are rolled back
+* The closed connection will return an error with the `isc_att_shutdown` code to the application
+* Later attempts to use this connection (i.e., use its handle in API calls) will return errors
+====
+
+.Example
+Closing all connections except for your own (current): 
+[source]
+----
+DELETE FROM MON$ATTACHMENTS
+  WHERE MON$ATTACHMENT_ID <> CURRENT_CONNECTION
+----
+
+[[fblangref-appx05-moncallstk]]
+== MON$CALL_STACK
+
+MON$CALL_STACK displays calls to the stack from queries executing in stored procedures and triggers.
+
+[[fblangref25-appx05-tbl-moncallstk]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$CALL_ID
+|INTEGER
+|Call identifier
+
+|MON$STATEMENT_ID
+|INTEGER
+|The identifier of the top-level SQL statement, the one that initiated the chain of calls.
+Use this identifier to find the records about the active statement in the MON$STATEMENTS table
+
+|MON$CALLER_ID
+|INTEGER
+|The identifier of the calling trigger or stored procedure
+
+|MON$OBJECT_NAME
+|CHAR(31)
+|PSQL object (module) name
+
+|MON$OBJECT_TYPE
+|SMALLINT
+|PSQL object type (trigger or stored procedure):
+
+`2` - trigger +
+`5` - stored procedure
+
+|MON$TIMESTAMP
+|TIMESTAMP
+|The date and time when the call was started
+
+|MON$SOURCE_LINE
+|INTEGER
+|The number of the source line in the SQL statement being executed at the moment of the snapshot
+
+|MON$SOURCE_COLUMN
+|INTEGER
+|The number of the source column in the SQL statement being executed at the moment of the snapshot
+
+|MON$STAT_ID
+|INTEGER
+|Statistics identifier
+|===
+
+.`EXECUTE STATEMENT` Calls
+Information about calls during the execution of the EXECUTE STATEMENT statement does not get into the call stack.
+
+.Example using MON$CALL_STACK
+Getting the call stack for all connections except own:
+
+[source]
+----
+WITH RECURSIVE
+  HEAD AS (
+    SELECT
+      CALL.MON$STATEMENT_ID, CALL.MON$CALL_ID,
+      CALL.MON$OBJECT_NAME, CALL.MON$OBJECT_TYPE
+    FROM MON$CALL_STACK CALL
+    WHERE CALL.MON$CALLER_ID IS NULL
+    UNION ALL
+    SELECT
+      CALL.MON$STATEMENT_ID, CALL.MON$CALL_ID,
+      CALL.MON$OBJECT_NAME, CALL.MON$OBJECT_TYPE
+    FROM MON$CALL_STACK CALL
+      JOIN HEAD ON CALL.MON$CALLER_ID = HEAD.MON$CALL_ID
+  )
+SELECT MON$ATTACHMENT_ID, MON$OBJECT_NAME, MON$OBJECT_TYPE
+FROM HEAD
+  JOIN MON$STATEMENTS STMT ON STMT.MON$STATEMENT_ID = HEAD.MON$STATEMENT_ID
+WHERE STMT.MON$ATTACHMENT_ID <> CURRENT_CONNECTION
+----
+
+[[fblangref-appx05-contxtvars]]
+== MON$CONTEXT_VARIABLES
+
+MON$CONTEXT_VARIABLES displays information about custom context variables.
+
+[[fblangref25-appx05-tbl-contxtvars]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$ATTACHMENT_ID
+|INTEGER
+|Connection identifier.
+It contains a valid value only for a connection-level context variable.
+For transaction-level variables it is NULL.
+
+|MON$TRANSACTION_ID
+|INTEGER
+|Transaction identifier.
+It contains a valid value only for transaction-level context variables.
+For connection-level variables it is NULL.
+
+|MON$VARIABLE_NAME
+|VARCHAR(80)
+|Context variable name
+
+|MON$VARIABLE_VALUE
+|VARCHAR(255)
+|Context variable value
+|===
+
+[[fblangref-appx05-mondb]]
+== MON$DATABASE
+
+MON$DATABASE displays the header information from the database the current user is connected to.
+
+[[fblangref25-appx05-tbl-mondb]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$DATABASE_NAME
+|VARCHAR(255)
+|The file name and full path of the primary database file, or the database alias
+
+|MON$PAGE_SIZE
+|SMALLINT
+|Database page size in bytes
+
+|MON$ODS_MAJOR
+|SMALLINT
+|Major ODS version, e.g., 11
+
+|MON$ODS_MINOR
+|SMALLINT
+|Minor ODS version, e.g., 2
+
+|MON$OLDEST_TRANSACTION
+|INTEGER
+|The number of the oldest [interesting] transaction (OIT)
+
+|MON$OLDEST_ACTIVE
+|INTEGER
+|The number of the oldest active transaction (OAT)
+
+|MON$OLDEST_SNAPSHOT
+|INTEGER
+|The number of the transaction that was active at the moment when the OAT was started -- oldest snapshot transaction (OST)
+
+|MON$NEXT_TRANSACTION
+|INTEGER
+|The number of the next transaction, as it stood when the monitoring snapshot was taken
+
+|MON$PAGE_BUFFERS
+|INTEGER
+|The number of pages allocated in RAM for the database page cache
+
+|MON$SQL_DIALECT
+|SMALLINT
+|Database SQL Dialect: 1 or 3
+
+|MON$SHUTDOWN_MODE
+|SMALLINT
+|The current shutdown state of the database:
+
+`0` - the database is online +
+`1` - multi-user shutdown +
+`2` - single-user shutdown +
+`3` - full shutdown
+
+|MON$SWEEP_INTERVAL
+|INTEGER
+|Sweep interval
+
+|MON$READ_ONLY
+|SMALLINT
+|Flag indicating whether the database is read-only (value 1) or read-write (value 0)
+
+|MON$FORCED_WRITES
+|SMALLINT
+|Indicates whether the write mode of the database is set for synchronous write (forced writes ON, value is 1) or asynchronous write (forced writes OFF, value is 0)
+
+|MON$RESERVE_SPACE
+|SMALLINT
+|The flag indicating reserve_space (value 1) or use_all_space (value 0) for filling database pages
+
+|MON$CREATION_DATE
+|TIMESTAMP
+|The date and time when the database was created or was last restored
+
+|MON$PAGES
+|BIGINT
+|The number of pages allocated for the database on an external device
+
+|MON$STAT_ID
+|INTEGER
+|Statistics identifier
+
+|MON$BACKUP_STATE
+|SMALLINT
+|Current physical backup (nBackup) state:
+
+`0` - normal +
+`1` - stalled +
+`2` - merge
+|===
+
+[[fblangref-appx05-iostats]]
+== MON$IO_STATS
+
+MON$IO_STATS displays input/output statistics.
+The counters are cumulative, by group, for each group of statistics.
+
+[[fblangref25-appx05-tbl-iostats]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$STAT_ID
+|INTEGER
+|Statistics identifier
+
+|MON$STAT_GROUP
+|SMALLINT
+|Statistics group:
+
+`0` - database +
+`1` - connection +
+`2` - transaction +
+`3` - statement +
+`4` - call
+
+|MON$PAGE_READS
+|BIGINT
+|Count of database pages read
+
+|MON$PAGE_WRITES
+|BIGINT
+|Count of database pages written to
+
+|MON$PAGE_FETCHES
+|BIGINT
+|Count of database pages fetched
+
+|MON$PAGE_MARKS
+|BIGINT
+|Count of database pages marked
+|===
+
+[[fblangref-appx05-memusage]]
+== MON$MEMORY_USAGE
+
+MON$MEMORY_USAGE displays memory usage statistics.
+
+[[fblangref25-appx05-tbl-memusage]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$STAT_ID
+|INTEGER
+|Statistics identifier
+
+|MON$STAT_GROUP
+|SMALLINT
+|Statistics group:
+
+`0` - database +
+`1` - connection +
+`2` - transaction +
+`3` - operator +
+`4` - call
+
+|MON$MEMORY_USED
+|BIGINT
+|The amount of memory in use, in bytes.
+This data is about the high-level memory allocation performed by the server.
+It can be useful to track down memory leaks and excessive memory usage in connections, procedures, etc.
+
+|MON$MEMORY_ALLOCATED
+|BIGINT
+|The amount of memory allocated by the operating system, in bytes.
+This data is about the low-level memory allocation performed by the Firebird memory manager -- the amount of memory allocated by the operating system -- which can allow you to control the physical memory usage.
+
+|MON$MAX_MEMORY_USED
+|BIGINT
+|The maximum number of bytes used by this object
+
+|MON$MAX_MEMORY_ALLOCATED
+|BIGINT
+|The maximum number of bytes allocated for this object by the operating system
+|===
+
+[NOTE]
+====
+Not all records in this table have non-zero values.
+MON$DATABASE and objects related to memory allocation have non-zero values.
+Minor memory allocations are not accrued here but are added to the database memory pool instead.
+====
+
+[[fblangref-appx05-recstats]]
+== MON$RECORD_STATS
+
+MON$RECORD_STATS displays record-level statistics.
+The counters are cumulative, by group, for each group of statistics.
+
+[[fblangref25-appx05-tbl-recstats]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$STAT_ID
+|INTEGER
+|Statistics identifier
+
+|MON$STAT_GROUP
+|SMALLINT
+|Statistics group:
+
+`0` - database +
+`1` - connection +
+`2` - transaction +
+`3` - statement +
+`4` - call
+
+|MON$RECORD_SEQ_READS
+|BIGINT
+|Count of records read sequentially
+
+|MON$RECORD_IDX_READS
+|BIGINT
+|Count of records read via an index
+
+|MON$RECORD_INSERTS
+|BIGINT
+|Count of inserted records
+
+|MON$RECORD_UPDATES
+|BIGINT
+|Count of updated records
+
+|MON$RECORD_DELETES
+|BIGINT
+|Count of deleted records
+
+|MON$RECORD_BACKOUTS
+|BIGINT
+|Count of records backed out
+
+|MON$RECORD_PURGES
+|BIGINT
+|Count of records purged
+
+|MON$RECORD_EXPUNGES
+|BIGINT
+|Count of records expunged
+|===
+
+[[fblangref-appx05-statements]]
+== MON$STATEMENTS
+
+MON$STATEMENTS displays statements prepared for execution.
+
+[[fblangref25-appx05-tbl-statements]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$STATEMENT_ID
+|INTEGER
+|Statement identifier
+
+|MON$ATTACHMENT_ID
+|INTEGER
+|Connection identifier
+
+|MON$TRANSACTION_ID
+|INTEGER
+|Transaction identifier
+
+|MON$STATE
+|SMALLINT
+|Statement state:
+
+`0` - idle +
+`1` - active +
+`2` - stalled
+
+|MON$TIMESTAMP
+|TIMESTAMP
+|The date and time when the statement was prepared
+
+|MON$SQL_TEXT
+|BLOB TEXT
+|Statement text in SQL
+
+|MON$STAT_ID
+|INTEGER
+|Statistics identifier
+|===
+
+The STALLED state indicates that, at the time of the snapshot, the statement had an open cursor and was waiting for the client to resume fetching rows.
+
+[[fblangref-appx05-statements01]]
+=== Using `MON$STATEMENTS` to Cancel a Query
+
+Monitoring tables are read-only.
+However, the server has a built-in mechanism for deleting (and only deleting) records in the MON$STATEMENTS table, which makes it possible to cancel a running query. 
+
+.Notes
+[NOTE]
+====
+* If no statements are currently being executed in the connection, any attempt to cancel queries will not proceed
+* After a query is cancelled, calling execute/fetch API functions will return an error with the `isc_cancelled` code
+* Subsequent queries from this connection will proceed as normal
+====
+
+.Example
+Cancelling all active queries for the specified connection: 
+[source]
+----
+DELETE FROM MON$STATEMENTS
+  WHERE MON$ATTACHMENT_ID = 32
+----
+
+[[fblangref-appx05-transacs]]
+== MON$TRANSACTIONS
+
+MON$TRANSACTIONS reports started transactions. 
+
+[[fblangref25-appx05-tbl-transacs]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripies="none"]
+|===
+^| Column Name
+^| Data Type
+^| Description
+
+|MON$TRANSACTION_ID
+|INTEGER
+|Transaction identifier (number)
+
+|MON$ATTACHMENT_ID
+|INTEGER
+|Connection identifier
+
+|MON$STATE
+|SMALLINT
+|Transaction state:
+
+`0` - idle +
+`1` - active
+
+|MON$TIMESTAMP
+|TIMESTAMP
+|The date and time when the transaction was started
+
+|MON$TOP_TRANSACTION
+|INTEGER
+|Top-level transaction identifier (number)
+
+|MON$OLDEST_TRANSACTION
+|INTEGER
+|Transaction ID of the oldest [interesting] transaction (OIT)
+
+|MON$OLDEST_ACTIVE
+|INTEGER
+|Transaction ID of the oldest active transaction (OAT)
+
+|MON$ISOLATION_MODE
+|SMALLINT
+|Isolation mode (level):
+
+`0` - consistency (snapshot table stability) +
+`1` - concurrency (snapshot) +
+`2` - read committed record version +
+`3` - read committed no record version
+
+|MON$LOCK_TIMEOUT
+|SMALLINT
+|Lock timeout:
+
+`-1` - wait forever +
+`0` - no waiting +
+`1` or greater - lock timeout in seconds
+
+|MON$READ_ONLY
+|SMALLINT
+|Flag indicating whether the transaction is read-only (value 1) or read-write (value 0)
+
+|MON$AUTO_COMMIT
+|SMALLINT
+|Flag indicating whether automatic commit is used for the transaction (value 1) or not (value 0)
+
+|MON$AUTO_UNDO
+|SMALLINT
+|Flag indicating whether the logging mechanism _automatic undo_ is used for the transaction (value 1) or not (value 0)
+
+|MON$STAT_ID
+|INTEGER
+|Statistics identifier
+|===
+
+:sectnums:

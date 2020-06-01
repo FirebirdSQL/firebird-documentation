@@ -1,0 +1,1212 @@
+[[fblangref25-security]]
+= Security
+
+Databases must be secure and so must the data stored in them.
+Firebird provides two levels of data security protection: user authentication at the server level and SQL privileges within databases.
+This chapter tells you how to manage security at both levels.
+
+[[fblangref25-security-auth]]
+== User Authentication
+
+The security of the entire database depends on identifying a user on verifying its authority, a  procedure known as [term]_authentication_.
+The information about users authorised to access a specific Firebird server is stored in a special security database named `security2.fdb`.
+Each record in `security2.fdb` is a user account for one user.
+
+A user name, consisting of up to 31 characters, is a case-insensitive system identifier.
+A user must have a  password, of which the first eight are significant.
+Whilst it is valid to enter a password longer than eight characters, any subsequent characters are ignored.
+Passwords are case-sensitive.
+
+If the user specified during the connection is the SYSDBA, the database owner or a specially privileged user, that user will have unlimited access to the database.
+
+[[fblangref25-security-auth-special]]
+=== Specially Privileged Users
+
+In Firebird, the SYSDBA account is a "`Superuser`" that exists beyond any security restrictions.
+It has complete access to all objects in all regular databases on the server, and full read/write access to the accounts in the security database `security2.fdb`.
+No user has access to the metadata of the security database.
+
+The default SYSDBA password on Windows and MacOS is "`masterkey`" -- or "`masterke`", to be exact, because of the 8-character length limit.
+
+.Extremely Important!
+[IMPORTANT]
+====
+The default password "`masterkey`" is known across the universe.
+It should be changed as soon as the Firebird server installation is complete. 
+====
+
+Other users can acquire elevated privileges in several ways, some of which are dependent on the operating system platform.
+These are discussed in the sections that follow and are  summarised in <<fblangref25-security-administrators>>.
+
+[[fblangref25-security-auth-special-posix]]
+==== POSIX Hosts
+
+On POSIX systems, including MacOSX, Firebird will interpret a POSIX user account as though it were a Firebird user account in its own security database, provided the server sees the client machine as a trusted host and the system user accounts exist on both the client and the server.
+To establish a "`trusted`" relationship with the client host, the corresponding entries must be included in one of the files `/etc/hosts.equiv` or `/etc/gds_hosts.equiv` on Firebird's host server.
+
+* The file `hosts.equiv` contains trusted relationships at operating system level, encompassing all services (rlogin, rsh, rcp, and so on)
+* The file `gds_hosts.equiv` contains trusted relationships between Firebird hosts only.
+
+The format is identical for both files and looks like this:
+
+[listing,subs=+quotes]
+----
+_hostname_ [_username_]
+----
+
+[[fblangref25-security-auth-sysdba-posix]]
+===== The `SYSDBA` User on POSIX
+
+On POSIX hosts, other than MacOSX, the `SYSDBA` user does not have a default password.
+If the full installation is done using the standard scripts, a one-off password will be created and stored in a text file in the same directory as `security2.fdb`, commonly `/opt/firebird/`.
+The name of the password file is `SYSDBA.password`.
+
+[NOTE]
+====
+In an installation performed by a distribution-specific installer, the location of the security database and the password file may be different from the standard one.
+====
+
+[[fblangref25-security-auth-root-posix]]
+===== The _root_ User
+
+The *root* user can act directly as `SYSDBA` on POSIX host systems.
+Firebird interprets *root* as though it were `SYSDBA` and it provides access to all databases on the server.
+
+[[fblangref25-security-auth-special-windows]]
+==== Windows Hosts
+
+On Windows server-capable operating systems, operating system accounts can be used.
+Trusted Authentication must be enabled by setting the _Authentication_ parameter to _Trusted_ or _Mixed_ in the configuration file, `firebird.conf`.
+
+Even with trusted authentication enabled, Windows operating system Administrators are not automatically granted SYSDBA privileges when they connect to a database.
+To make that happen, the internally-created role `RDB$ADMIN` must be altered by SYSDBA or the database owner, to enable it.
+For details, refer to the later section entitled <<fblangref25-security-autoadminmapping>>.
+
+The embedded version of Firebird server on Windows does not use server-level authentication.
+However, because objects within a database are subject to SQL privileges, a valid user name and, if applicable, a role, may be required in the connection parameters.
+
+[[fblangref25-security-auth-special-dbowner]]
+==== The Database Owner
+
+The "`owner`" of a database is either the user who was `CURRENT_USER` at the time of creation or, if the parameters `USER` and `PASSWORD` were supplied in the `CREATE DATABASE` statement, the user cited there.
+
+"`Owner`" is not a user name.
+The user who is the owner of a database has full <<fblangref25-security-administrators,administrator rights>> with respect to that database, including the right to drop it, to restore it from a backup and to enable or disable the <<fblangref25-security-autoadminmapping>> capability.
+
+[NOTE]
+====
+Prior to Firebird 2.1, the owner had no automatic privileges over any database objects that were created by other users.
+====
+
+[[fblangref25-security-rdbadmin]]
+=== `RDB$ADMIN` Role
+
+The internally-created role `RDB$ADMIN` is present in every database.
+Assigning the `RDB$ADMIN` role to a regular user in a database grants that user the privileges of the `SYSDBA`, in the current database only.
+
+The elevated privileges take effect when the user is logged in to that regular database under the `RDB$ADMIN` role and give full control over all objects in the database.
+
+Being granted the `RDB$ADMIN` role in the security database confers the authority to create, edit and delete user accounts.
+
+In both cases, the user with the elevated privileges can assign `RDB$ADMIN` role to any other user.
+In other words, specifying `WITH ADMIN OPTION` is unnecessary because it is built into the role.
+
+[[fblangref25-security-rdbadmin03]]
+==== Granting the `RDB$ADMIN` Role in the Security Database
+
+Since nobody -- not even ``SYSDBA`` -- can connect to the security database, the `GRANT` and `REVOKE` statements are of no use for this task.
+Instead, the `RDB$ADMIN` role is granted and revoked using the SQL statements for user management:
+
+[listing,subs=+quotes]
+----
+CREATE USER _new_user_
+  PASSWORD '_password_'
+  GRANT ADMIN ROLE;
+
+ALTER USER _existing_user_
+  GRANT ADMIN ROLE;
+
+ALTER USER _existing_user_
+  REVOKE ADMIN ROLE;
+----
+
+[NOTE]
+====
+`GRANT ADMIN ROLE` and `REVOKE ADMIN ROLE` are not statements in the `GRANT` and `REVOKE` lexicon.
+They are three-word parameters to the statements `CREATE USER` and `ALTER USER`.
+====
+
+[[fblangref25-security-tbl-rdbadmin]]
+.Parameters for `RDB$ADMIN` Role `GRANT` and `REVOKE`
+[cols="1,3", options="header"]
+|===
+^| Parameter
+^| Description
+
+|new_user
+|Using `CREATE USER`, name for the new user
+
+|existing_user
+|Using `ALTER USER`, Name of an existing user
+
+|password
+|Using `CREATE USER`, password for the new user.
+Its theoretical limit is 31 bytes but only the first 8 characters are considered.
+|===
+
+The grantor must be already logged in as an <<fblangref25-security-administrators,administrator>>.
+
+.See also
+<<fblangref25-security-auth-create-user>>, <<fblangref25-security-auth-alter-user>>
+
+[[fblangref25-security-rdbadmin04]]
+===== Doing the Same Task Using _gsec_
+
+An alternative is to use _gsec_ with the `-admin` parameter to store the `RDB$ADMIN` attribute on the user's record:
+
+[listing,subs=+quotes]
+----
+gsec -add _new_user_ -pw _password_ -admin yes
+gsec -mo _existing_user_ -admin yes
+gsec -mo _existing_user_ -admin no
+----
+
+[NOTE]
+====
+Depending on the adminstrative status of the current user, more parameters may be needed when invoking _gsec_, e.g., `-user` and `-pass`, or `-trusted`.
+====
+
+[[fblangref25-security-rdbadmin05]]
+===== Using the `RDB$ADMIN` Role in the Security Database
+
+To manage user accounts through SQL, the grantee must specify the `RDB$ADMIN` role when connecting.
+No user can connect to the security database, so the solution is that the user connects to a regular database where he also has `RDB$ADMIN` rights, supplying the `RDB$ADMIN` role in his login parameters.
+From there, he can submit any SQL user management command.
+
+The SQL route for the user is blocked for any database in which he has not been the granted the `RDB$ADMIN` role.
+
+[[fblangref25-security-rdbadmin0]]
+====== Using _gsec_ with `RDB$ADMIN Rights`
+
+To perform user management with _gsec_, the user must provide the extra switch `-role rdb$admin`.
+
+[[fblangref25-security-rdbadmin01]]
+==== Granting the `RDB$ADMIN` Role in a Regular Database
+
+In a regular database, the `RDB$ADMIN` role is granted and revoked with the usual syntax for granting and revoking roles:
+
+[listing,subs=+quotes]
+----
+GRANT [ROLE] RDB$ADMIN TO _username_
+
+REVOKE [ROLE] RDB$ADMIN FROM _username_
+----
+
+In order to grant and revoke the `RDB$ADMIN` role, the grantor must be logged in as an <<fblangref25-security-administrators,administrator>>.
+
+.See also
+<<fblangref25-security-privs-grant>>, <<fblangref25-security-privs-revoke>>
+
+[[fblangref25-security-rdbadmin02]]
+===== Using the `RDB$ADMIN` Role in a Regular Database
+
+To exercise his `RDB$ADMIN` privileges, the grantee simply includes the role in the connection attributes when connecting to the database.
+
+[[fblangref25-security-autoadminmapping]]
+==== `AUTO ADMIN MAPPING`
+
+In Firebird 2.1, Windows Administrators would automatically receive `SYSDBA` privileges if trusted authentication was configured for server connections.
+In Firebird 2.5, it is no longer automatic.
+The setting of the `AUTO ADMIN MAPPING` switch now determines whether Administrators have automatic `SYSDBA` rights, on a database-by-database basis.
+By default, when a database is created, it is disabled.
+
+If `AUTO ADMIN MAPPING` is enabled in the database, it will take effect whenever a Windows Administrator connects:
+
+[loweralpha]
+. using trusted authentication, and
+. without specifying any role
+
+After a successful "`auto admin`" connection, the current role is set to `RDB$ADMIN`.
+
+[[fblangref25-security-autoadminmapping01]]
+===== Auto Admin Mapping in Regular Databases
+
+To enable and disable automatic mapping in a regular database:
+
+[listing]
+----
+ALTER ROLE RDB$ADMIN
+  SET AUTO ADMIN MAPPING;  -- enable it
+
+ALTER ROLE RDB$ADMIN
+  DROP AUTO ADMIN MAPPING; -- disable it
+----
+
+Either statement must be issued by a user with sufficient rights, that is: 
+
+* the database owner
+* an <<fblangref25-security-administrators,administrator>>
+
+In regular databases, the status of `AUTO ADMIN MAPPING` is checked only at connection time.
+If an Administrator has the `RDB$ADMIN` role because auto-mapping was on when he logged in, he will keep that role for the duration of the session, even if he or someone else turns off the mapping in the meantime.
+
+Likewise, switching on `AUTO ADMIN MAPPING` will not change the current role to `RDB$ADMIN` for Administrators who were already connected.
+
+[[fblangref25-security-autoadminmapping02]]
+===== Auto Admin Mapping in the Security Database
+
+No SQL statements exist to switch automatic mapping on and off in the security database.
+Instead, _gsec_ must be used:
+
+[listing]
+----
+gsec -mapping set
+
+gsec -mapping drop
+----
+
+More _gsec_ switches may be needed, depending on what kind of log-in you used to connect, e.g., `-user` and `-pass`, or `-trusted`.
+
+Only `SYSDBA` can set the auto-mapping on if it is disabled.
+Any administrator can drop (disable) it.
+
+[[fblangref25-security-administrators]]
+=== Administrators
+
+As a general description, an administrator is a user that has sufficient rights to read, write to, create, alter or delete any object in a database to which that user's administrator status applies.
+The table summarises how "`Superuser`" privileges are enabled in the various Firebird security contexts.
+
+[[fblangref25-security-tbl-admins]]
+.Administrator ("`Superuser`") Characteristics
+[cols="<1,<1,<3", frame="none", options="header"]
+|===
+| User
+| RDB$ADMIN Role
+| Comments
+
+|`SYSDBA`
+|Auto
+|Exists automatically at server level.
+Has full privileges to all objects in all databases.
+Can create, alter and drop users but has no direct access to the security database
+
+|_root_ user on POSIX
+|Auto
+|Exactly like SYSDBA
+
+|Superuser on POSIX
+|Auto
+|Exactly like SYSDBA
+
+|Windows Administrator
+|Set as `CURRENT_ROLE` if login succeeds
+a|Exactly like `SYSDBA` if all of the following are true:
+
+[%autowidth,cols="2*",frame=none,grid=none,stripes=none]
+!===
+!In `firebird.conf` file
+!`Authentication` = `mixed` or `trusted` and Firebird is restarted before proceeding
+
+!AUTO ADMIN MAPPING
+!Enabled in all databases in which the user needs Superuser privileges
+
+!Login
+!Does not include a role
+!===
+
+|Database owner
+|Auto
+|Like `SYSDBA`, but only in the database of which he is the owner
+
+|Regular user
+|Must be previously granted;
+must be supplied at login
+|Like `SYSDBA`, but only in the database(s) where the role is granted
+
+|POSIX OS user
+|Must be previously granted;
+must be supplied at login
+|Like `SYSDBA`, but only in the database(s) where the role is granted
+
+|Windows user
+|Must be previously granted;
+must be supplied at login
+|Like `SYSDBA`, but only in the database(s) where the role is granted.
+Not available if config file parameter `Authentication` = `native`
+|===
+
+[[fblangref25-security-auth-manage-users]]
+=== SQL Statements for User Management
+
+In Firebird 2.5 and above, user accounts are created, modified and deleted using a series of SQL statements that can be submitted by a user with full administrator rights in the security database. 
+
+[NOTE]
+====
+For a Windows Administrator, `AUTO ADMIN MAPPING` enabled only in a regular database is not sufficient to permit management of other users.
+For instructions to enable it in the security database, see <<fblangref25-security-autoadminmapping02>>.
+====
+
+Non-privileged users can use only the `ALTER USER` statement and then only to edit some data in their own accounts.
+
+[[fblangref25-security-auth-create-user]]
+==== `CREATE USER`
+
+.Used for
+Creating a Firebird user account
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE USER _username_ PASSWORD '_password_'
+  [FIRSTNAME '_firstname_']
+  [MIDDLENAME '_middlename_']
+  [LASTNAME '_lastname_']
+  [GRANT ADMIN ROLE]
+----
+
+[[fblangref25-security-tbl-createuser]]
+.`CREATE USER` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|username
+|User name.
+The maximum length is 31 characters, following the rules for Firebird regular identifiers.
+It is always case-insensitive
+
+|password
+|User password.
+Its theoretical limit is 31 bytes but only the first 8 characters are considered.
+Case-sensitive
+
+|firstname
+|Optional: User's first name.
+Maximum length 31 characters
+
+|middlename
+|Optional: User's middle name.
+Maximum length 31 characters
+
+|lastname
+|Optional: User's last name.
+Maximum length 31 characters
+|===
+
+Use a `CREATE USER` statement to create a new Firebird user account.
+The user must not already exist in the Firebird security database, or a primary key violation error message will be returned.
+
+The _username_ argument must follow the rules for Firebird regular identifiers: see <<fblangref25-structure-identifiers,[ref]_Identifiers_>> in the [ref]_Structure_ chapter.
+User names are always case-insensitive.
+Supplying a user name enclosed in double quotes will not cause an exception: the quotes will be ignored.
+If a space is the only illegal character supplied, the user name will be truncated back to the first space character.
+Other illegal characters will cause an exception.
+
+The `PASSWORD` clause specifies the user's password.
+A password of more than eight characters is accepted with a warning but any surplus characters will be ignored.
+
+The optional `FIRSTNAME`, `MIDDLENAME` and `LASTNAME` clauses can be used to specify additional user properties, such as the person's first name, middle name and last name, respectively.
+They are just simple `VARCHAR(31)` fields and can be used to store anything you prefer.
+
+If the `GRANT ADMIN ROLE` clause is specified, the new user account is created with the privileges of the RDB$ADMIN role in the security database (`security2.fdb`).
+It allows the new user to manage user accounts from any regular database he logs into, but it does not grant the user any special privileges on objects in those databases.
+
+To create a user account, the current user must have <<fblangref25-security-administrators,administrator privileges>> in the security database.
+Administrator privileges only in regular databases are not sufficient.
+
+[NOTE]
+====
+`CREATE/ALTER/DROP USER` are DDL statements.
+Remember to COMMIT your work.
+In _isql_, the command `SET AUTO ON` will enable autocommit on DDL statements.
+In third-party tools and other user applications, this may not be the case.
+====
+
+.Examples
+. Creating a user with the username `bigshot`:
++
+[source]
+----
+CREATE USER bigshot PASSWORD 'buckshot';
+----
+. Creating the user `john` with additional properties (first and last names):
++
+[source]
+----
+CREATE USER john PASSWORD 'fYe_3Ksw'
+FIRSTNAME 'John'
+LASTNAME 'Doe';
+----
+. Creating the user `superuser` with user management privileges:
++
+[source]
+----
+CREATE USER superuser PASSWORD 'kMn8Kjh'
+GRANT ADMIN ROLE;
+----
+
+.See also
+<<fblangref25-security-auth-alter-user>>, <<fblangref25-security-auth-drop-user>>
+
+[[fblangref25-security-auth-alter-user]]
+==== `ALTER USER`
+
+.Used for
+Modifying a Firebird user account
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER USER _username_ [SET]
+  [PASSWORD '_password_']
+  [FIRSTNAME '_firstname_']
+  [MIDDLENAME '_middlename_']
+  [LASTNAME '_lastname_']
+  [{GRANT | REVOKE} ADMIN ROLE]
+----
+
+[[fblangref25-security-tbl-alteruser]]
+.`ALTER USER` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|username
+|User name.
+Cannot be changed.
+
+|password
+|User password.
+Its theoretical limit is 31 bytes but only the first 8 characters are considered.
+Case-sensitive
+
+|firstname
+|Optional: User's first name, or other optional text.
+Max. length is 31 characters
+
+|middlename
+|Optional: User's middle name, or other optional text.
+Max. length is 31 characters
+
+|lastname
+|Optional: User's last name, or other optional text.
+Max. length is 31 characters
+|===
+
+Use an `ALTER USER` statement to edit the details in the named Firebird user account.
+To modify the account of another user, the current user must have <<fblangref25-security-administrators,administrator privileges>> in the security database.
+Administrator privileges only in regular databases are not sufficient.
+
+Any user can alter his or her own account, except that only an administrator may use `GRANT/REVOKE ADMIN ROLE`.
+
+All of the arguments are optional but at least one of them must be present: 
+
+* The `PASSWORD` parameter is for specifying a new password for the user
+* `FIRSTNAME`, `MIDDLENAME` and `LASTNAME` allow updating of the optional user properties, such as the person's first name, middle name and last name respectively
+* Including the clause `GRANT ADMIN ROLE` grants the user the privileges of the `RDB$ADMIN` role in the security database (`security2.fdb`), enabling him/her to manage the accounts of other users.
+It does not grant the user any special privileges in regular databases.
+* Including the clause `REVOKE ADMIN ROLE` removes the user's administrator in the security database which, once the transaction is committed, will deny that user the ability to alter any user account except his or her own
+
+[NOTE]
+====
+Remember to commit your work if you are working in an application that does not auto-commit DDL.
+====
+
+.Examples
+. Changing the password for the user `bobby` and granting him user management privileges:
++
+[source]
+----
+ALTER USER bobby PASSWORD '67-UiT_G8'
+GRANT ADMIN ROLE;
+----
+. Editing the optional properties (the first and last names) of the user `dan`:
++
+[source]
+----
+ALTER USER dan
+FIRSTNAME 'No_Jack'
+LASTNAME 'Kennedy';
+----
+. Revoking user management privileges from user `dumbbell`:
++
+[source]
+----
+ALTER USER dumbbell
+DROP ADMIN ROLE;
+----
+
+.See also
+<<fblangref25-security-auth-create-user>>, <<fblangref25-security-auth-drop-user>>
+
+[[fblangref25-security-auth-drop-user]]
+==== `DROP USER`
+
+.Used for
+Deleting a Firebird user account
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP USER _username_
+----
+
+[[fblangref25-security-tbl-dropuser]]
+.`DROP USER` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|username
+|User name
+|===
+
+Use the statement `DROP USER` to delete a Firebird user account.
+The current user requires <<fblangref25-security-administrators,administrator privileges>>.
+
+[NOTE]
+====
+Remember to commit your work if you are working in an application that does not auto-commit DDL.
+====
+
+.Example
+Deleting the user `bobby`:
+
+[source]
+----
+DROP USER bobby;
+----
+
+.See also
+<<fblangref25-security-auth-create-user>>, <<fblangref25-security-auth-alter-user>>
+
+[[fblangref25-security-privs]]
+== SQL Privileges
+
+The second level of Firebird's security model is SQL privileges.
+Whilst a successful login -- the first level -- authorises a user's access to the server and to all databases under that server, it does not imply that he has access to any objects in any databases.
+When an object is created, only the user that created it (its owner) and administrators have access to it.
+The user needs [term]_privileges_ on each object he needs to access.
+As a general rule, privileges must be [term]_granted_ explicitly to a user by the object owner or an <<fblangref25-security-administrators,administrator>> of the database.
+
+A privilege comprises a DML access type (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `EXECUTE` and `REFERENCES`), the name of a database object (table, view, procedure, role) and the name of the user (user, procedure, trigger, role) to which it is granted.
+Various means are available to grant multiple types of access on an object to multiple users in a single `GRANT` statement.
+Privileges may be withdrawn from a user with `REVOKE` statements.
+
+Privileges are are stored in the database to which they apply and are not applicable to any other database.
+
+[[fblangref25-security-privs-owner]]
+=== The Object Owner
+
+The user who creates a database object becomes its owner.
+Only the owner of an object and users with administrator privileges in the database, including the database owner, can alter or drop the database object.
+
+.Some Ownership Drawbacks
+[IMPORTANT]
+====
+Any authenticated user can access any database and create any valid database object.
+Up to and including this release, the issue is not controlled.
+
+Because not all database objects are associated with an owner -- domains, external functions (UDFs), BLOB filters, generators (sequences) and exceptions -- ownerless objects must be regarded as vulnerable on a server that is not adequately protected.
+====
+
+SYSDBA, the database owner or the object owner can grant privileges to and revoke them from other users, including privileges to grant privileges to other users.
+The process of granting and  revoking SQL privileges is implemented with two statements of the general form:
+
+[listing,subs=+quotes]
+----
+GRANT <privilege> ON <object-type> _object-name_
+  TO { _user-name_ | ROLE _role-name_ }
+
+REVOKE <privilege> ON <OBJECT-TYPE> _object-name_
+  FROM { _user-name_ | ROLE _role-name_ }
+----
+
+The _object-type_ is not required for every type of privilege.
+For some types of privilege, extra parameters are available, either as options or as requirements. 
+
+[[fblangref25-security-privs-granting]]
+=== Statements for Granting Privileges
+
+A `GRANT` statement is used for granting privileges -- including roles -- to users and other database objects.
+
+[[fblangref25-security-privs-grant]]
+==== `GRANT`
+
+.Used for
+Granting privileges and assigning roles
+
+.Available in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+GRANT
+  { <privileges> ON [TABLE] {_tablename_ | _viewname_}
+  | EXECUTE ON PROCEDURE _procname_ }
+  TO <grantee_list>
+  [WITH GRANT OPTION]} | [{GRANTED BY | AS} [USER] _grantor_]
+
+GRANT <role_granted>
+  TO <role_grantee_list> [WITH ADMIN OPTION]
+  [{GRANTED BY | AS} [USER] _grantor_]
+
+<privileges> ::= ALL [PRIVILEGES] | <privilege_list>
+
+<privilege_list> ::= {<privilege> [, <privilege> [, … ] ] }
+
+<privilege> ::=
+    SELECT
+  | DELETE
+  | INSERT
+  | UPDATE [(_col_ [, _col_ …])]
+  | REFERENCES [(_col_ [, _col_ …])]
+
+<grantee_list> ::= {<grantee> [, <grantee> [, …] ]}
+
+<grantee>  ::=
+  [USER] _username_ | [ROLE] _rolename_ |  GROUP _Unix_group_
+  | PROCEDURE _procname_ | TRIGGER _trigname_ | VIEW _viewname_ | PUBLIC
+
+<role_granted> ::= _rolename_ [, _rolename_ …]
+
+<role_grantee_list> ::= [USER] <role_grantee> [,[USER] <role_grantee> [, …]]
+
+<role_grantee> ::= {_username_ | PUBLIC }
+----
+
+[[fblangref25-security-tbl-grant]]
+.`GRANT` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|tablename
+|The name of the table the privilege applies to
+
+|viewname
+|The name of the view the privilege applies to
+
+|procname
+|The name of the stored procedure the `EXECUTE` privilege applies to;
+or the name of the procedure to be granted the privilege[s]
+
+|col
+|The table column the privilege is to apply to
+
+|Unix_group
+|The name of a user group in a POSIX operating system
+
+|username
+|The user name to which the privileges are granted to or to which the role is assigned
+
+|rolename
+|Role name
+
+|trigname
+|Trigger name
+
+|grantor
+|The user granting the privilege[s]
+|===
+
+A `GRANT` statement grants one or more privileges on database objects to users, roles, stored procedures, triggers or views.
+
+A regular, authenticated user has no privileges on any database object until they are explicitly granted, either to that individual user or to all users bundled as the user `PUBLIC`.
+When an object is created, only the user who has created it (the owner) and  <<fblangref25-security-administrators,administrators>> have privileges for it and can grant privileges to other users, roles or objects.
+
+Different sets of privileges apply to different types of metadata objects.
+The different types of privileges will be described separately later.
+
+[[fblangref25-security-privs-grant-to]]
+===== The `TO` Clause
+
+The `TO` clause is used for listing the users, roles and database objects (procedures, triggers and views) that are to be granted the privileges enumerated in _privileges_.
+The clause is mandatory.
+
+The optional `USER` and `ROLE` keywords in the `TO` clause allow you to specify exactly who or what is granted the privilege.
+If a `USER` or `ROLE` keyword is not specified, the server checks for a role with this name and, if there is none, the privileges are granted to the user without further checking.
+
+[[fblangref25-security-privs-role]]
+====== Packaging Privileges in a `ROLE` Object
+
+A role is a "`container`" object that can be used to package a collection of privileges.
+Use of the role is then granted to each user that requires those privileges.
+A role can also be granted to a list of users.
+
+The role must exist before privileges can be granted to it.
+See <<fblangref25-ddl-createrole,`CREATE ROLE`>> in the DDL chapter for the syntax and rules.
+The role is maintained by granting privileges to it and, when required, revoking privileges from it.
+If a role is dropped (see <<fblangref25-ddl-droprole,`DROP ROLE`>>), all users lose the privileges acquired through the role.
+Any privileges that were granted additionally to an affected user by way of a different grant statement are retained.
+
+A user that is granted a role must supply that role with his login credentials in order to exercise the associated privileges.
+Any other privileges granted to the user are not affected by logging in with a role.
+
+More than one role can be granted to the same user but logging in with multiple roles simultaneously is not supported.
+
+A role can be granted only to a user.
+
+.Please note:
+[IMPORTANT]
+====
+* When a `GRANT` statement is executed, the security database is not checked for the existence of the grantee user.
+This is not a bug: SQL permissions are concerned with controlling data access for authenticated users, both native and trusted, and trusted operating system users are not stored in the security database.
+* When granting a privilege to a database object, such as a procedure, trigger or view, you must specify the object type between the keyword `TO` and the object name.
+* Although the `USER` and `ROLE` keywords are optional, it is advisable to use them, in order to avoid ambiguity.
+====
+
+[[fblangref25-security-privs-grant-public]]
+===== The User `PUBLIC`
+
+Firebird has a predefined user named `PUBLIC`, that represents all users.
+Privileges for operations on a particular object that are granted to the user `PUBLIC` can be exercised by any user that has been authenticated at login.
+
+[IMPORTANT]
+====
+If privileges are granted to the user `PUBLIC`, they should be revoked from the user `PUBLIC` as well.
+====
+
+[[fblangref25-security-privs-withgrantoption]]
+===== The `WITH GRANT OPTION` Clause
+
+The optional `WITH GRANT OPTION` clause allows the users specified in the user list to grant the privileges specified in the privilege list to other users.
+
+[CAUTION]
+====
+It is possible to assign this option to the user `PUBLIC`.
+Do not do this!
+====
+
+[[fblangref25-security-privs-grant-grantedby]]
+===== The `GRANTED BY` Clause
+
+By default, when privileges are granted in a database, the current user is recorded as the grantor.
+The `GRANTED BY` clause enables the current user to grant those privileges as another user.
+
+If the REVOKE statement is used, it will fail if the current user is not the user that was named in the `GRANTED BY` clause.
+
+The clauses `GRANTED BY` and `AS` can be used only by the database owner and  <<fblangref25-security-administrators,administrators>>.
+The object owner cannot use it unless he also has administrator privileges.
+
+[[fblangref25-security-privs-grant-grant-as]]
+====== Alternative Syntax Using `AS __username__`
+
+The non-standard `AS` clause is supported as a synonym of the `GRANTED BY` clause to simplify migration from other database systems.
+
+[[fblangref25-security-privs-table]]
+===== Privileges on Tables and Views
+
+In theory, one `GRANT` statement grants one privilege to one user or object.
+In practice, the syntax allows multiple privileges to be granted to multiple users in one `GRANT` statement.
+
+.Syntax extract
+[listing,subs=+quotes]
+----
+...
+<privileges> ::= ALL [PRIVILEGES] | <privilege_list>
+
+<privilege_list> ::= {<privilege> [, <privilege> [, … ] ] }
+
+<privilege> ::=
+    SELECT
+  | DELETE
+  | INSERT
+  | UPDATE [(_col_ [, _col_ …])]
+  | REFERENCES [(_col_ [, _col_ …])]
+----
+
+[[fblangref25-security-tbl-tableprivs]]
+.List of Privileges on Tables
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Privilege
+^| Description
+
+|`SELECT`
+|Permits the user or object to `SELECT` data from the table or view
+
+|`INSERT`
+|Permits the user or object to `INSERT` rows into the table or view
+
+|`UPDATE`
+|Permits the user or object to `UPDATE` rows in the table or view, optionally restricted to specific columns
+
+|col
+|(Optional) name of a column to which the user's `UPDATE` or `REFERENCES` privilege is restricted
+
+|`DELETE`
+|Permits the user or object to `DELETE` rows from the table or view
+
+|`REFERENCES`
+|Permits the user or object to reference the table via a foreign key, optionally restricted to the specified columns.
+If the primary or unique key referenced by the foreign key of the other table is composite then all columns of the key must be specified.
+
+|`ALL`
+|Combines `SELECT`, `INSERT`, `UPDATE`, `DELETE` and `REFERENCES` privileges in a single package
+|===
+
+.Examples of `GRANT <privilege>` on Tables
+. `SELECT` and `INSERT` privileges to the user `ALEX`:
++
+[source]
+----
+GRANT SELECT, INSERT ON TABLE SALES
+  TO USER ALEX;
+----
+. The `SELECT` privilege to the `MANAGER`, `ENGINEER` roles and to the user `IVAN`:
++
+[source]
+----
+GRANT SELECT ON TABLE CUSTOMER
+  TO ROLE MANAGER, ROLE ENGINEER, USER IVAN;
+----
+. All privileges to the `ADMINISTRATOR` role, together with the authority to grant the same privileges to others:
++
+[source]
+----
+GRANT ALL ON TABLE CUSTOMER
+  TO ROLE ADMINISTRATOR
+  WITH GRANT OPTION;
+----
+. The `SELECT` and `REFERENCES` privileges on the `NAME` column to all users and objects:
++
+[source]
+----
+GRANT SELECT, REFERENCES (NAME) ON TABLE COUNTRY
+TO PUBLIC;
+----
+. The `SELECT` privilege being granted to the user `IVAN` by the user `ALEX`:
++
+[source]
+----
+GRANT SELECT ON TABLE EMPLOYEE
+  TO USER IVAN
+  GRANTED BY ALEX;
+----
+. Granting the `UPDATE` privilege on the `FIRST_NAME`, `LAST_NAME` columns:
++
+[source]
+----
+GRANT UPDATE (FIRST_NAME, LAST_NAME) ON TABLE EMPLOYEE
+  TO USER IVAN;
+----
+. Granting the `INSERT` privilege to the stored procedure `ADD_EMP_PROJ`:
++
+[source]
+----
+GRANT INSERT ON EMPLOYEE_PROJECT
+  TO PROCEDURE ADD_EMP_PROJ;
+----
+
+[[fblangref25-security-privs-execute]]
+===== The `EXECUTE` Privilege
+
+The EXECUTE privilege applies to stored procedures.
+It allows the grantee to execute the stored procedure and, if applicable, to retrieve its output.
+In the case of selectable stored procedures, it acts somewhat like a `SELECT` privilege, insofar as this style of stored procedure is executed in response to a `SELECT` statement.
+
+.Example
+Granting the EXECUTE privilege on a stored procedure to a role:
+
+[source]
+----
+GRANT EXECUTE ON PROCEDURE ADD_EMP_PROJ
+  TO ROLE MANAGER;
+----
+
+[[fblangref25-security-privs-assignroles]]
+===== Assigning Roles
+
+Assigning a role is similar to granting a privilege.
+One or more roles can be assigned to one or more users, including the <<fblangref25-security-privs-grant-public,user `PUBLIC`>>, using one `GRANT` statement.
+
+[[fblangref25-security-privs-withadminoption]]
+====== The `WITH ADMIN OPTION` Clause
+
+The optional `WITH ADMIN OPTION` clause allows the users specified in the user list to grant the role[s] specified to other users.
+
+[CAUTION]
+====
+It is possible to assign this option to `PUBLIC`.
+Do not do this!
+====
+
+====== Examples of Role Assignment
+
+. Assigning the `DIRECTOR` and `MANAGER` roles to the user `IVAN`:
++
+[source]
+----
+GRANT DIRECTOR, MANAGER TO USER IVAN;
+----
+. Assigning the `ADMIN` role to the user `ALEX` with the authority to assign this role to other users:
++
+[source]
+----
+GRANT MANAGER TO USER ALEX WITH ADMIN OPTION;
+----
+
+.See also
+<<fblangref25-security-privs-revoke>>
+
+[[fblangref25-security-privs-revoking]]
+=== Statements for Revoking Privileges
+
+A `REVOKE` statement is used for revoking privileges -- including roles -- from users and other database objects.
+
+[[fblangref25-security-privs-revoke]]
+==== `REVOKE`
+
+.Used for
+Revoking privileges or role assignments
+
+.Available in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+REVOKE [GRANT OPTION FOR]
+  { <privileges> ON [TABLE] {_tablename_ | _viewname_} |
+    EXECUTE ON PROCEDURE _procname_ }
+  FROM <grantee_list>
+  [{GRANTED BY | AS} [USER] _grantor_]
+
+REVOKE [ADMIN OPTION FOR] <role_granted>
+  FROM {PUBLIC | <role_grantee_list>}
+  [{GRANTED BY | AS} [USER] _grantor_]
+
+REVOKE ALL ON ALL FROM <grantee_list>
+
+<privileges> ::= ALL [PRIVILEGES] | <privilege_list>
+
+<privilege_list> ::= {<privilege> [, <privilege> [, … ] ] }
+
+<privilege> ::=
+    SELECT
+  | DELETE
+  | INSERT
+  | UPDATE [(_col_ [, _col_ …])]
+  | REFERENCES [(_col_ [, _col_ …])]
+
+<grantee_list> ::= {<grantee> [, <grantee> [, …] ]}
+
+<grantee>  ::=
+  [USER] _username_ | [ROLE] _rolename_ | GROUP _Unix_group_
+  | PROCEDURE _procname_ | TRIGGER _trigname_ | VIEW _viewname_ | PUBLIC
+
+<role_granted> ::= _rolename_ [, _rolename_ …]
+
+<role_grantee_list> ::= [USER] <role_grantee> [,[USER] <role_grantee> [, …]]
+
+<role_grantee> ::= {_username_ | PUBLIC }
+----
+
+[[fblangref25-security-tbl-revoke]]
+.`REVOKE` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|tablename
+|The name of the table the privilege is to be revoked from
+
+|viewname
+|The name of the view the privilege is to be revoked from
+
+|procname
+|The name of the stored procedure the `EXECUTE` privilege is to be revoked from;
+or the name of the procedure that is to have the privilege[s] revoked
+
+|trigname
+|Trigger name
+
+|col
+|The table column the privilege is to be revoked from
+
+|username
+|The user name from which the privileges are to be revoked from or the role is to be removed from
+
+|rolename
+|Role name
+
+|Unix_group
+|The name of a user group in a POSIX operating system
+
+|grantor
+|The grantor user on whose behalf the the privilege[s] are being revoked
+|===
+
+The `REVOKE` statement is used for revoking privileges from users, roles, stored procedures, triggers and views that were granted using the GRANT statement.
+See <<fblangref25-security-privs-grant>> for detailed descriptions of the various types of privileges.
+
+Only the user who granted the privilege can revoke it.
+
+[[fblangref25-security-privs-revoke-from]]
+===== The `FROM` Clause
+
+The `FROM` clause is used to specify the list of users, roles and database objects (procedures, triggers and views) that will have the enumerated privileges revoked.
+The optional `USER` and `ROLE` keywords in the `FROM` clause allow you to specify exactly which type is to have the privilege revoked.
+If a `USER` or `ROLE` keyword is not specified, the server checks for a role with this name and, if there is none, the privileges are revoked from the user without further checking. 
+
+.Tips
+[TIP]
+====
+* Although the `USER` and `ROLE` keywords are optional, it is advisable to use them in order to avoid ambiguity.
+* The `GRANT` statement does not check for the existence of the user from which the privileges are being revoked.
+* When revoking a privilege from a database object, you must specify its object type
+====
+
+.Revoking Privileges from user `PUBLIC`
+[IMPORTANT]
+====
+Privileges that were granted to the special user named `PUBLIC` must be revoked from the user `PUBLIC`.
+User `PUBLIC` provides a way to grant privileges to all users at once but it is not "`a group of users`".
+====
+
+[[fblangref25-security-privs-revoke-grantoption]]
+===== Revoking the `GRANT OPTION`
+
+The optional `GRANT OPTION FOR` clause revokes the user's privilege to grant privileges on the table, view, trigger or stored procedure to other users or to roles.
+It does not revoke the privilege with which the grant option is associated.
+
+[[fblangref25-security-privs-revoke-role]]
+===== Removing the Privilege to One or More Roles
+
+One usage of the `REVOKE` statement is to remove roles that were assigned to a user, or a group of users, by a `GRANT` statement.
+In the case of multiple roles and/or multiple grantees, the `REVOKE` verb is followed by the list of roles that will be removed from the list of users specified after the `FROM` clause.
+
+The optional `ADMIN OPTION FOR` clause provides the means to revoke the grantee's "`administrator`" privilege, the ability to assign the same role to other users, without revoking the grantee's privilege to the role.
+
+Multiple roles and grantees can be processed in a single statement.
+
+[[fblangref25-security-privs-revoke-exgrantby]]
+===== Revoking Privileges That Were `GRANTED BY`
+
+A privilege that has been granted using the `GRANTED BY` clause is internally attributed explicitly to the grantor designated by that original `GRANT` statement.
+To revoke a privilege that was obtained by this method, the current user must be logged in either with full administrative privileges or as the user designated as _grantor_ by that `GRANTED BY` clause.
+
+[NOTE]
+====
+The same rule applies if the syntax used in the original `GRANT` statement used the synonymous `AS` form to introduce the clause, instead of the standard `GRANTED BY` form.
+====
+
+[[fblangref25-security-privs-revoke-allonall]]
+===== Revoking `ALL ON ALL`
+
+If the current user is logged in with full <<fblangref25-security-administrators,administrator>> privileges in the database, the statement
+
+[listing]
+----
+REVOKE ALL ON ALL FROM <grantee_list>
+----
+
+can be used to revoke all privileges (including role memberships) on all objects from one or more users and/or roles.
+All privileges for the user will be removed, regardless of who granted them.
+It is a quick way to "`clear`" privileges when access to the database must be blocked for a particular user or role.
+
+If the current user is not logged in as an administrator, the only privileges revoked will be those that were granted originally by that user.
+
+The `REVOKE ALL ON ALL` statement cannot be used to revoke privileges that have been granted to stored procedures, triggers or views.
+
+[NOTE]
+====
+The `GRANTED BY` clause is not supported.
+====
+
+===== Examples using REVOKE
+
+. Revoking the privileges for reading and inserting into the `SALES`
++
+[source]
+----
+REVOKE SELECT, INSERT ON TABLE SALES FROM USER ALEX;
+----
+. Revoking the privilege for reading the `CUSTOMER` table from the `MANAGER` and `ENGINEER` roles and from the user `IVAN`:
++
+[source]
+----
+REVOKE SELECT ON TABLE CUSTOMER
+FROM ROLE MANAGER, ROLE ENGINEER, USER IVAN;
+----
+. Revoking from the `ADMINISTRATOR` role the authority to grant any privileges on the `CUSTOMER` table to other users or roles:
++
+[source]
+----
+REVOKE GRANT OPTION FOR ALL ON TABLE CUSTOMER
+FROM ROLE ADMINISTRATOR;
+----
+. Revoking the privilege for reading the `COUNTRY` table and the authority to reference the `NAME` column of the `COUNTRY` table from any user, via the special user `PUBLIC`:
++
+[source]
+----
+REVOKE SELECT, REFERENCES (NAME) ON TABLE COUNTRY
+  FROM PUBLIC;
+----
+. Revoking the privilege for reading the `EMPLOYEE` table from the user `IVAN`, that was granted by the user `ALEX`:
++
+[source]
+----
+REVOKE SELECT ON TABLE EMPLOYEE
+  FROM USER IVAN GRANTED BY ALEX;
+----
+. Revoking the privilege for updating the `FIRST_NAME` and `LAST_NAME` columns of the `EMPLOYEE` table from the user `IVAN`:
++
+[source]
+----
+REVOKE UPDATE (FIRST_NAME, LAST_NAME) ON TABLE EMPLOYEE
+  FROM USER IVAN;
+----
+. Revoking the privilege for inserting records into the `EMPLOYEE_PROJECT` table from the `ADD_EMP_PROJ` procedure:
++
+[source]
+----
+REVOKE INSERT ON EMPLOYEE_PROJECT
+  FROM PROCEDURE ADD_EMP_PROJ;
+----
+. Revoking the privilege for executing the procedure `ADD_EMP_PROJ` from the `MANAGER` role:
++
+[source]
+----
+REVOKE EXECUTE ON PROCEDURE ADD_EMP_PROJ
+  FROM ROLE MANAGER;
+----
+. Revoking the `DIRECTOR` and `MANAGER` roles from the user `IVAN`:
++
+[source]
+----
+REVOKE DIRECTOR, MANAGER FROM USER IVAN;
+----
+. Revoke from the user `ALEX` the authority to assign the `MANAGER` role to other users:
++
+[source]
+----
+REVOKE ADMIN OPTION FOR MANAGER FROM USER IVAN;
+----
+. Revoking all privileges (including roles) on all objects from the user `IVAN`:
++
+[source]
+----
+REVOKE ALL ON ALL FROM IVAN;
+----
++
+After this statement is executed, the user `IVAN` will have no privileges whatsoever.
+
+.See also
+<<fblangref25-security-privs-grant>>
