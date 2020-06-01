@@ -1,17 +1,21 @@
 package org.firebirdsql.documentation.asciidoc
 
 import groovy.transform.CompileStatic
+import org.asciidoctor.gradle.base.AsciidoctorUtils
 import org.asciidoctor.gradle.jvm.pdf.AsciidoctorPdfTask
 import org.firebirdsql.documentation.DocConfigExtension
 import org.firebirdsql.documentation.DocConfigurable
+import org.gradle.api.file.FileTree
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.*
 import org.gradle.api.tasks.options.Option
+import org.gradle.api.tasks.util.PatternSet
 import org.gradle.workers.WorkerExecutor
 
 import javax.inject.Inject
+
+import static org.gradle.api.tasks.PathSensitivity.RELATIVE
 
 @CompileStatic
 class FbAsciidocPdfTask extends AsciidoctorPdfTask implements DocConfigurable {
@@ -44,6 +48,28 @@ class FbAsciidocPdfTask extends AsciidoctorPdfTask implements DocConfigurable {
             return "${baseName.get()}/**/${docId.get()}/*".toString()
         }
         return "${baseName.get()}/**/*".toString()
+    }
+
+    // This is a bit of a hack to get the include pattern to be updated and to force dirty detection
+    @InputFiles
+    @SkipWhenEmpty
+    @PathSensitive(RELATIVE)
+    final Provider<FileTree> forceSourceFiles = includePattern.map { includePatternValue ->
+        clearSources()
+        sources(includePatternValue)
+        def patternSet = new PatternSet().include(includePatternValue)
+        if (languages.empty) {
+            return project.fileTree(sourceDir)
+                    .matching(patternSet)
+                    .filter(AsciidoctorUtils.ACCEPT_ONLY_FILES)
+                    .asFileTree
+        }
+        return languages.sum { lang ->
+            project.fileTree(new File(sourceDir, lang))
+                    .matching(patternSet)
+                    .filter(AsciidoctorUtils.ACCEPT_ONLY_FILES)
+                    .asFileTree
+        } as FileTree
     }
 
     @Inject
