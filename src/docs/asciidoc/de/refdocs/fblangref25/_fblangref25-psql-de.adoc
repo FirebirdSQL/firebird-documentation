@@ -1,0 +1,2642 @@
+[[fblangref25-psql-de]]
+= Prozedurale SQL-Anweisungen (PSQL)
+
+Prozedurales SQL (PSQL) ist eine prozedurale Erweiterung von SQL.
+Diese Sprachuntermenge  wird zum Schreiben von gespeicherten Prozeduren, Triggern und PSQL-Blöcken verwendet.
+
+PSQL bietet alle grundlegenden Konstrukte traditioneller strukturierter Programmiersprachen und enthält auch DML-Anweisungen (`SELECT`, `INSERT`, `UPDATE`, `DELETE` usw.), in einigen Fällen  mit geringfügigen Änderungen der Syntax.
+
+[[fblangref25-psql-elements-de]]
+== Elemente der PSQL
+
+Eine prozedurale Erweiterung kann Deklarationen von lokalen Variablen und Cursorn, Zuweisungen, bedingten Anweisungen, Schleifen, Anweisungen zum Abrufen von benutzerdefinierten Ausnahmen, Fehlerbehandlung und Senden von Nachrichten (Ereignissen) an Clientanwendungen enthalten.
+Trigger haben Zugriff auf spezielle Kontextvariablen, zwei Arrays, die die ``NEW``-Werte für alle Spalten während der Einfüge- und Aktualisierungsaktivität bzw. die ``OLD``-Werte während der Aktualisierungs- und Löscharbeiten speichern.
+
+Anweisungen, die Metadaten ändern (DDL), sind in PSQL nicht verfügbar.
+
+[[fblangref25-psql-elements-dml-de]]
+=== DML-Anweisungen mit Parametern
+
+Wenn DML-Anweisungen (`SELECT`, `INSERT`, `UPDATE`, `DELETE` usw.) im Rumpf des Moduls (Prozedur, Trigger oder Block) Parameter verwenden, können nur benannte Parameter verwendet werden und sie müssen "`existieren`" bevor die Anweisung diese verwenden kann.
+Sie können verfügbar gemacht werden, indem sie entweder als Ein- oder Ausgabeparameter im Header des Moduls oder als  lokale Variablen in ``DECLARE [VARIABLE]``-Anweisungen im unteren Headerbereich deklariert werden.
+
+Wenn eine DML-Anweisung mit Parametern im PSQL-Code enthalten ist, muss dem Parameternamen in den meisten Situationen ein Doppelpunkt ('```:```') vorangestellt werden.
+Der Doppelpunkt ist in PSQL-spezifischer Anweisungssyntax wie Zuweisungen und Bedingungen optional.
+Das Doppelpunktpräfix für Parameter ist nicht erforderlich, wenn gespeicherte Prozeduren von einem anderen PSQL-Modul oder in DSQL aufgerufen werden.
+
+[[fblangref25-psql-elements-transacs-de]]
+=== Transaktionen
+
+Gespeicherte Prozeduren werden im Kontext der Transaktion ausgeführt, in der sie aufgerufen werden.
+Trigger werden als ein intrinsischer Teil der Operation der DML-Anweisung ausgeführt: ihre Ausführung befindet sich also innerhalb des gleichen Transaktionskontextes wie die Anweisung selbst.
+Einzelne Transaktionen werden für Datenbank-Trigger gestartet.
+
+Anweisungen, die Transaktionen starten und beenden, sind in PSQL nicht verfügbar, aber es ist möglich, eine Anweisung oder einen Anweisungsblock in einer autonomen Transaktion auszuführen.
+
+[[fblangref25-psql-elements-structure-de]]
+=== Modulstruktur
+
+PSQL-Codemodule bestehen aus einem Header und einem Body.
+Die DDL-Anweisungen zum Definieren dieser sind _komplexe Anweisungen_;
+das heißt, sie sind Bestandteile einer einzigen Anweisung, die Blöcke von mehreren Anweisungen umfasst.
+Diese Anweisungen beginnen mit einem Verb (`CREATE`, `ALTER`, `DROP`, `RECREATE`, `CREATE OR ALTER`) und enden mit die letzten ``END``-Anweisung des Bodys.
+
+[[fblangref25-psql-elements-header-de]]
+==== Der Modul-Header
+
+Der Header gibt den Modulnamen an und definiert alle Parameter und Variablen, die im Rumpf verwendet werden.
+Gespeicherte Prozeduren und PSQL-Blöcke können Ein- und Ausgangsparameter haben.
+Trigger haben keine Ein- oder Ausgangsparameter.
+
+Der Header eines Triggers zeigt das Datenbankereignis (Einfügen, Aktualisieren oder Löschen oder eine Kombination)  und die Betriebsphase (vor (`BEFORE`) oder nach (`AFTER`) diesem Ereignis) an, die dazu führt, dass dieser "`ausgelöst wird`".
+
+[[fblangref25-psql-elements-body-de]]
+==== Der Modul-Body
+
+Der Rumpf eines PSQL-Moduls ist ein Block von Anweisungen, die wie ein Programm in einer logischen Reihenfolge ablaufen.
+Ein Anweisungsblock ist in einer ``BEGIN``- und einer ``END``-Anweisung enthalten.
+Der Hauptblock `BEGIN ... END` kann beliebig viele andere ``BEGIN ... END``-Blöcke enthalten, sowohl eingebettete als auch sequenzielle.
+Alle Anweisungen außer `BEGIN` und `END` werden durch Semikolons ('```;```') abgeschlossen.
+Kein anderes Zeichen ist als Terminator für PSQL-Anweisungen gültig.
+
+[[fblangref25-sidebar01-de]]
+.Umschalten des Terminators in _isql_
+****
+Hier werden wir ein wenig abschweifen, um zu erklären, wie man das Terminatorzeichen im Dienstprogramm  _isql_ umschaltet, um es zu ermöglichen, PSQL-Module in dieser Umgebung zu definieren, ohne mit _isql_ selbst in Konflikt zu geraten, da _isql_ dasselbe Zeichen, Semikolon ('```;```'), als eigenen Anweisungsabschluss verwendet.
+
+[float]
+==== isql-Befehl SET TERM
+
+.Verwendet für
+Ändern des Terminatorzeichens, um Konflikte mit dem Terminatorzeichen in PSQL-Anweisungen zu vermeiden
+
+.Verfügbar in
+nur in ISQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET TERM _new_terminator_ _old_terminator_
+----
+
+[[fblangref25-psql-tbl-setterm-de]]
+.``SET TERM``-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|new_terminator
+|Neuer Terminator
+
+|old_terminator
+|Alter Terminator
+|===
+
+Wenn Sie Ihre Trigger und gespeicherten Prozeduren in _isql_ schreiben, entweder in der interaktiven Schnittstelle oder in Skripten, müssen Sie eine ``SET TERM``-Anweisung ausführen, um das normale __isql__-Anweisungsterminal vom Semikolon zu einem anderen Zeichen oder einer kurzen Zeichenfolge umzuschalten.
+Hierdurch werden Konflikte mit dem nicht änderbaren Semikolon-Terminator in PSQL zu vermieden.
+Der Wechsel zu einem alternativen Terminator muss durchgeführt werden, bevor Sie beginnen, PSQL-Objekte zu definieren oder Ihre Skripte auszuführen.
+
+Der alternative Terminator kann eine beliebige Zeichenkette sein, mit Ausnahme eines Leerzeichens, eines Apostrophs oder des aktuellen Terminatorzeichens.
+Bei jedem Buchstabenzeichen wird zwischen Groß- und Kleinschreibung unterschieden.
+
+.Beispiel
+Ändern Sie das Standard-Semikolon in '```^```' (Caret) und verwenden Sie es, um eine Stored Procedure-Definition zu übergeben: Zeichen als alternatives Terminatorzeichen:
+
+[source]
+----
+SET TERM ^;
+
+CREATE OR ALTER PROCEDURE SHIP_ORDER (
+  PO_NUM CHAR(8))
+AS
+BEGIN
+  /* Stored procedure body */
+END^
+
+/* Other stored procedures and triggers */
+
+SET TERM ;^
+
+/* Other DDL statements */
+----
+****
+
+[[fblangref25-psql-storedprocs-de]]
+== Gespeicherte Prozeduren
+
+Eine gespeicherte Prozedur ist ein Programm, das in den Datenbankmetadaten zur Ausführung auf dem Server gespeichert ist.
+Eine gespeicherte Prozedur kann durch gespeicherte Prozeduren (einschließlich sich selbst), Trigger und Clientanwendungen aufgerufen werden.
+Eine Prozedur, die sich selbst aufruft, heißt _rekursiv_.
+
+[[fblangref25-psql-storedprocs-benefits-de]]
+=== Vorteile von gespeicherten Prozeduren
+
+Gespeicherten Prozeduren besitzen die folgenden Vorteile:
+
+[horizontal]
+Modularität:: Anwendungen, die mit der Datenbank arbeiten, können die gleiche gespeicherte Prozedur verwenden, wodurch die Größe des Anwendungscodes reduziert wird und eine Codeduplizierung vermieden wird.
+
+Vereinfachte Anwendungsunterstützung:: Wenn eine gespeicherte Prozedur geändert wird, werden Änderungen sofort allen Host-Anwendungen angezeigt, ohne dass sie bei unveränderten Parametern neu kompiliert werden müssen.
+
+Verbesserte Leistung:: Da gespeicherte Prozeduren auf einem Server statt auf dem Client ausgeführt werden, wird der Netzwerkverkehr reduziert, wodurch die Leistung verbessert wird.
+
+[[fblangref25-psql-storedprocs-types-de]]
+=== Varianten der gespeicherten Prozeduren
+
+Firebird untertützt zwei Arten der gespeicherten Prozeduren: _executable_ (ausführbar) _selectable_ (abfragbar).
+
+[[fblangref25-psql-storedprocs-executable-de]]
+==== Ausführbare Prozeduren
+
+Ausführbare Prozeduren ändern normalerweise Daten in einer Datenbank.
+Sie können Eingabeparameter empfangen und einen einzigen Satz von Ausgabeparametern (`RETURNS`) zurückgeben.
+Sie werden mit der Anweisung `EXECUTE PROCEDURE` aufgerufen.
+Siehe auch <<create-procedure-examples-de,ein Beispiel für eine ausführbare gespeicherte Prozedur>> am Ende des  <<fblangref25-ddl-proc-create-de,Abschnitts `CREATE PROCEDURE`>> von Kapitel 5.
+
+[[fblangref25-psql-storedprocs-selectable-de]]
+==== Abfragbare Prozeduren
+
+Abfragbare bzw. auswählbare gespeicherte Prozeduren rufen normalerweise Daten aus einer Datenbank ab und geben eine  beliebige Anzahl von Zeilen an den Aufrufer zurück.
+Der Aufrufer erhält die Ausgabe Zeile für Zeile aus einem Zeilenpuffer, der von der Datenbank-Engine darauf vorbereitet wird.
+
+Auswählbare Prozeduren können nützlich sein, um komplexe Datensätze zu erhalten, die mit regulären DSQL ``SELECT``-Abfragen oft nicht oder nur schwer oder zu langsam abgerufen werden können.
+Typischerweise iteriert diese Art der Prozedur durch einen Schleifenprozess des Extrahierens von Daten, wobei sie möglicherweise transformiert wird, bevor die Ausgangsvariablen (Parameter) bei jeder Iteration der Schleife mit frischen Daten gefüllt werden.
+Eine ``SUSPEND``-Anweisung am Ende der Iteration füllt den Puffer und wartet darauf, dass der Aufrufer die Zeile abfragt.
+Die Ausführung der nächsten Iteration der Schleife beginnt, wenn der Puffer gelöscht wurde.
+
+Auswählbare Prozeduren können Eingabeparameter haben, und der Ausgabesatz wird durch die Klausel `RETURNS` im Header angegeben.
+
+Eine wählbare gespeicherte Prozedur wird mit einer ``SELECT``-Anweisung aufgerufen.
+Siehe auch <<create-procedure-examples-de,ein Beispiel für eine abfragbare gespeicherte Prozedur>> am Ende des  <<fblangref25-ddl-proc-create-de,Abschnitts `CREATE PROCEDURE`>> von Kapitel 5.
+
+[[fblangref25-psql-storedprocs-creating-de]]
+=== Erstellen einer gespeicherte Prozedur
+
+Die Syntax zum Erstellen ausführbarer gespeicherter Prozeduren und wählbarer gespeicherter Prozeduren ist exakt gleich.
+Der Unterschied liegt in der Logik des Programmcodes.
+
+.Syntax (partiell)
+[listing,subs=+quotes]
+----
+CREATE PROCEDURE _procname_
+  [(<inparam> [, <inparam> ...])]
+  [RETURNS (<outparam> [, <outparam> ...])]
+AS
+  [<declarations>]
+BEGIN
+  [<PSQL_statements>]
+END
+----
+
+Der Header einer gespeicherten Prozedur muss den Prozedurnamen enthalten und muss unter den Namen gespeicherter Prozeduren, Tabellen und Ansichten eindeutig sein.
+Es kann auch einige Ein- und Ausgabeparameter definieren.
+Eingabeparameter werden nach dem Prozedurnamen in Klammern angegeben.
+Ausgabeparameter, die für auswählbare Prozeduren obligatorisch sind, sind innerhalb einer Klausel `RETURNS` eingeklammert.
+
+Das letzte Element im Header (oder das erste Element im Textkörper, abhängig von Ihrer Ansicht darüber, wo die Grenze liegt) umfasst eine oder mehrere Deklarationen von lokalen Variablen und / oder benannten Cursorn die Ihre Prozedur möglicherweise erfordert.
+
+Nach den Deklarationen folgt der Hauptblock `BEGIN ... END`, der den PSQL-Code der Prozedur beschreibt.
+Innerhalb dieses Blocks könnten PSQL- und DML-Anweisungen, Ablaufsteuerungsblöcke, Sequenzen anderer ``BEGIN ... END``-Blöcke einschließlich eingebetteter Blöcke sein.
+Blöcke, einschließlich des Hauptblocks, können leer sein und die Prozedur wird trotzdem kompiliert.
+Es ist nicht ungewöhnlich, ein Verfahren in Stufen aus einem Gliederung zu entwickeln.
+
+.Weitere Informationen zum Erstellen gespeicherter Prozeduren
+Siehe auch <<fblangref25-ddl-proc-create-de,`CREATE PROCEDURE`>> in Kapitel 5, [ref]_Data Definition (DDL) Statements_.
+
+[[fblangref25-psql-storedprocs-modifying-de]]
+=== Anpassen einer gespeicherte Prozedur
+
+Eine vorhandene gespeicherte Prozedur kann geändert werden, um die Sätze von Ein- und Ausgabeparametern und alles im Prozedurhauptteil zu ändern.
+
+.Syntax (partiell)
+[listing,subs=+quotes]
+----
+ALTER PROCEDURE _procname_
+  [(<inparam> [, <inparam> ...])]
+  [RETURNS (<outparam> [, <outparam> ...])]
+AS
+  [<declarations>]
+BEGIN
+  [<PSQL_statements>]
+END
+----
+
+.Weitere Informationen zum Ändern gespeicherter Prozeduren
+Siehe auch <<fblangref25-ddl-proc-alter-de,`ALTER PROCEDURE`>>, <<fblangref25-ddl-proc-crtoralter-de,`CREATE OR ALTER PROCEDURE`>>, <<fblangref25-ddl-proc-recreate-de,`RECREATE PROCEDURE`>>, in Kapitel 5, [ref]_Data Definition (DDL) Statements_.
+
+[[fblangref25-psql-storedprocs-deleting-de]]
+=== Löschen einer gespeicherte Prozedur
+
+Die Anweisung `DROP PROCEDURE` wird verwendet um gespeicherte Prozeduren zu löschen.
+
+.Syntax (vollständig)
+[source,subs=+quotes]
+----
+DROP PROCEDURE _procname_
+----
+
+.Weitere Informationen zum Löschen gespeicherter Prozeduren
+See <<fblangref25-ddl-proc-drop-de,`DROP PROCEDURE`>> in Kapitel 5, [ref]_Data Definition (DDL) Statements_.
+
+[[fblangref25-psql-storedfuncs-de]]
+== Gespeicherte Funktionen (Stored Functions)
+
+Gespeicherte PSQL-Skalarfunktionen werden in dieser Version nicht unterstützt, sie kommen jedoch in Firebird 3.
+In Firebird 2.5 und niedriger können Sie stattdessen eine abfragbare gespeicherte Prozedur schreiben, die ein Skalarergebnis zurückgibt, und `SELECT` aus Ihrer DML-Abfrage oder Unterabfrage.
+
+.Beispiel
+[source]
+----
+SELECT
+  PSQL_FUNC(T.col1, T.col2) AS col3,
+  col3
+FROM T
+----
+
+kann ersetzt werden durch
+
+[source]
+----
+SELECT
+  (SELECT output_column FROM  PSQL_PROC(T.col1)) AS col3,
+  col2
+FROM T
+----
+
+oder
+
+[source]
+----
+SELECT
+  output_column AS col3,
+  col2,
+FROM T
+LEFT JOIN PSQL_PROC(T.col1)
+----
+
+[[fblangref25-psql-dynblocks-de]]
+== PSQL-Blöcke
+
+Ein in sich abgeschlossener, unbenannter ("`anonymous`") Block von PSQL-Code kann dynamisch in DSQL unter Verwendung der Syntax `EXECUTE BLOCK` ausgeführt werden.
+Der Header eines anonymen PSQL-Blocks kann optional Eingabe- und Ausgabeparameter enthalten.
+Der Körper kann lokale Variablen und Cursordeklarationen enthalten.
+Ein Block von PSQL-Anweisungen folgt.
+
+Ein anonymer PSQL-Block wird nicht definiert und als Objekt gespeichert, im Gegensatz zu gespeicherten Prozeduren und Triggern.
+Er wird zur Laufzeit ausgeführt und kann nicht auf sich selbst verweisen.
+
+Genau wie gespeicherte Prozeduren können anonyme PSQL-Blöcke verwendet werden, um Daten zu verarbeiten und Daten aus der Datenbank abzurufen.
+
+.Syntax (unvollständig)
+[listing]
+----
+EXECUTE BLOCK
+  [(<inparam> = ? [, <inparam> = ? ...])]
+  [RETURNS (<outparam> [, <outparam> ...])]
+AS
+  [<declarations>]
+BEGIN
+  [<PSQL_statements>]
+END
+----
+
+[[fblangref25-psql-tbl-dynblock-de]]
+.PSQL Block Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|inparam
+|Beschreibung der Eingabeparameter
+
+|outparam
+|Beschreibung der Ausgangsparameter
+
+|declarations
+|Ein Abschnitt zum Deklarieren lokaler Variablen und benannter Cursor
+
+|PSQL statements
+|PSQL- und DML-Anweisungen
+|===
+
+.Weiterlesen
+Siehe auch <<fblangref25-dml-execblock-de,`EXECUTE BLOCK`>> für weitere Details.
+
+[[fblangref25-psql-triggers-de]]
+== Trigger
+
+Ein Trigger ist eine andere Form von ausführbarem Code, der in den Metadaten der Datenbank zur Ausführung durch den Server gespeichert wird.
+Ein Trigger kann nicht direkt aufgerufen werden.
+Er wird automatisch aufgerufen ("`gefeuert`"), wenn Datenänderungsereignisse mit einer bestimmten Tabelle oder Sicht (View) auftreten.
+
+Ein Trigger gilt für genau eine Tabelle oder Sicht und nur eine _Phase_ in einem Ereignis (vor (`BEFORE`) oder nach (`AFTER`) dem Ereignis).
+Ein einzelner Trigger kann nur dann ausgelöst werden, wenn ein bestimmtes Datenänderungsereignis auftritt (`INSERT` / `UPDATE` / `DELETE`) oder wenn es auf mehr als eines dieser Ereignisse angewendet werden soll.
+
+Ein DML-Trigger wird im Kontext der Transaktion ausgeführt, in der die datenändernde DML-Anweisung ausgeführt wird.
+Bei Triggern, die auf Datenbankereignisse reagieren, ist die Regel unterschiedlich: Für einige von ihnen wird eine Standardtransaktion gestartet.
+
+[[fblangref25-psql-firingorder-de]]
+=== Reihenfolge der Ausführung
+
+Für jede Phase-Ereignis-Kombination kann mehr als ein Trigger definiert werden.
+Die Reihenfolge, in der sie ausgeführt werden (bekannt als "`firing order`", kann explizit mit dem optionalen  Argument `POSITION` in der Triggerdefinition angegeben werden.)
+Sie haben 32.767 Nummern zur Auswahl.
+Die niedrigsten Positionsnummern feuern zuerst.
+
+Wenn eine Klausel `POSITION` weggelassen wird oder mehrere übereinstimmende Ereignisphasen-Trigger die gleiche Positionsnummer haben, werden die Trigger in alphabetischer Reihenfolge ausgelöst.
+
+[[fblangref25-psql-dmltriggers-de]]
+=== DML-Trigger
+
+DML-Trigger sind solche, die ausgelöst werden, wenn eine DML-Operation den Datenstatus ändert: Zeilen in Tabellen ändern, neue Zeilen einfügen oder Zeilen löschen.
+Sie können sowohl für Tabellen als auch für Ansichten definiert werden.
+
+[[fblangref25-psql-triggeroptions-de]]
+==== Trigger-Optionen
+
+Für die Ereignis-Phasen-Kombination für Tabellen und Ansichten stehen sechs Basisoptionen zur Verfügung:
+
+[[fblangref25-psql-tbl-dmltriggers-de]]
+[%autowidth,cols="<1,<1m", frame="none", grid="none", stripes="none"]
+|===
+|Bevor eine neue Zeile eingefügt wird
+|BEFORE INSERT
+
+|Nachdem eine neue Zeile eingefügt wurde
+|AFTER INSERT
+
+|Bevor eine Zeile aktualisiert wird
+|BEFORE UPDATE
+
+|Nachdem eine Zeile aktualisiert wurde
+|AFTER UPDATE
+
+|Bevor eine Zeile gelöscht wird
+|BEFORE DELETE
+
+|Nachdem eine Zeile gelöscht wurde
+|AFTER DELETE
+|===
+
+Diese Basisformulare dienen zum Erstellen von Einzelphasen- / Einzelereignisauslösern.
+Firebird unterstützt auch Formulare zum Erstellen von Auslösern für eine Phase und mehrere Ereignisse, z.B. `BEFORE INSERT OR UPDATE OR DELETE`, oder `AFTER UPDATE OR DELETE`: Die Kombinationen unterliegen Ihrer Wahl.
+
+[NOTE]
+====
+"`Multiphasen-`"-Trigger, wie `BEFORE OR AFTER`..., sind nicht möglich.
+====
+
+[[fblangref25-psql-oldnew-de]]
+==== Kontextvariablen `OLD` und `NEW`
+
+Für DML-Trigger bietet die Firebird-Engine Zugriff auf Sätze von ``OLD``- und ``NEW``-Kontextvariablen.
+Jedes ist ein Array der Werte der gesamten Zeile: eine für die Werte, wie sie vor dem Datenänderungsereignis sind (die ``BEFORE``-Phase) und eine für die Werte, wie sie nach dem Ereignis sein werden (die ``AFTER``-Phase).
+Sie werden in Anweisungen referenziert, die das Formular `NEW.column_name` bzw. `OLD.column_name` verwenden.
+`column_name` kann eine beliebige Spalte in der Definition der Tabelle sein, nicht nur die, die gerade aktualisiert wird.
+
+Die Variablen `NEW` und `OLD` unterliegen einigen Regeln:
+
+* In allen Triggern ist der ``OLD``-Wert schreibgeschützt
+* In `BEFORE UPDATE` und `BEFORE INSERT` Code wird der ``NEW``-Wert gelesen / geschrieben, sofern es sich nicht um eine ``COMPUTED BY``-Spalte handelt
+* In ``INSERT``-Triggern sind Verweise auf die ``OLD``-Variablen ungültig und lösen eine Ausnahme aus
+* In ``DELETE``-Triggern sind Verweise auf die ``NEW``-Variablen ungültig und lösen eine Ausnahme aus
+* In allen ``AFTER``-Triggercodes sind die ``NEW``-Variablen schreibgeschützt
+
+[[fblangref25-psql-dbtriggers-de]]
+=== Datenbank-Trigger
+
+Ein mit einer Datenbank oder einem Transaktionsereignis verknüpfter Trigger kann für die folgenden Ereignisse definiert werden:
+
+[[fblangref25-psql-tbl-dbtriggers-de]]
+[%autowidth,cols="<4,<3m,<5", frame="none", grid="none", stripes="none"]
+|===
+|Verbindung mit einer Datenbank herstellen
+|ON CONNECT
+|Bevor der Trigger ausgeführt wird, wird automatisch eine Standardtransaktion gestartet
+
+|Trennen von einer Datenbank
+|ON DISCONNECT
+|Bevor der Trigger ausgeführt wird, wird automatisch eine Standardtransaktion gestartet
+
+|Wenn eine Transaktion gestartet wird
+|ON TRANSACTION START
+|Der Trigger wird im aktuellen Transaktionskontext ausgeführt
+
+|Wenn eine Transaktion übergeben wird
+|ON TRANSACTION COMMIT
+|Der Trigger wird im aktuellen Transaktionskontext ausgeführt
+
+|Wenn eine Transaktion abgebrochen wird
+|ON TRANSACTION ROLLBACK
+|Der Trigger wird im aktuellen Transaktionskontext ausgeführt
+|===
+
+[[fblangref25-psql-triggercreate-de]]
+=== Trigger erstellen
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE TRIGGER _trigname_ {
+    <relation_trigger_legacy>
+  | <relation_trigger_sql2003>
+  | <database_trigger> }
+AS
+  [<declarations>]
+BEGIN
+  [<PSQL_statements>]
+END
+
+<relation_trigger_legacy> ::=
+  FOR {_tablename_ | _viewname_}
+  [ACTIVE | INACTIVE]
+  {BEFORE | AFTER} <mutation_list>
+  [POSITION _number_]
+
+<relation_trigger_sql2003> ::=
+  [ACTIVE | INACTIVE]
+  {BEFORE | AFTER} <mutation_list>
+  [POSITION _number_]
+  ON {_tablename_ | _viewname_}
+
+<database_trigger> ::=
+  [ACTIVE | INACTIVE]
+  ON <db_event>
+  [POSITION _number_]
+
+<mutation_list> ::=
+  <mutation> [OR <mutation> [OR <mutation>]]
+
+<mutation> ::= { INSERT | UPDATE | DELETE }
+
+<db_event> ::=
+    CONNECT
+  | DISCONNECT
+  | TRANSACTION START
+  | TRANSACTION COMMIT
+  | TRANSACTION ROLLBACK
+----
+
+Der Header muss einen Namen für den Trigger enthalten, der unter den Triggernamen eindeutig ist.
+Er muss das Ereignis oder die Ereignisse enthalten, die den Auslöser auslösen.
+Für einen DML-Trigger müssen Sie außerdem die Ereignisphase und den Namen der Tabelle oder Ansicht angeben, die den  Trigger "`besitzen`" soll.
+
+Der Rumpf des Triggers kann durch die Deklarationen von lokalen Variablen und Cursorn, falls vorhanden, geleitet werden.
+Innerhalb des umschließenden Hauptblocks von `BEGIN ... END` befinden sich ein oder mehrere Blöcke von PSQL-Anweisungen, die leer sein können.
+
+.Weitere Informationen zum Erstellen von Triggern
+Siehe <<fblangref25-ddl-trgr-create-de,`CREATE TRIGGER`>> in Kapitel 5, [ref]_Data Definition (DDL) Statements_.
+
+[[fblangref25-psql-triggermodify-de]]
+=== Trigger ändern
+
+Das Ändern der Status-, Phasen-, Tabellen- oder Ansichtsereignisse, der Auslöseposition und des Codes im Rumpf eines DML-Triggers ist möglich.
+Sie können jedoch einen DML-Trigger nicht ändern, um ihn in einen Datenbank-Trigger zu konvertieren, und umgekehrt.
+Jedes nicht angegebene Element wird von `ALTER TRIGGER` nicht geändert.
+Die alternativen Anweisungen `CREATE OR ALTER TRIGGER` und `RECREATE TRIGGER` ersetzen die ursprüngliche Triggerdefinition vollständig.
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER TRIGGER _trigname_
+  [ACTIVE | INACTIVE]
+  [{BEFORE | AFTER} <mutation_list> | ON <db_event>]
+  [POSITION _number_]
+  [
+    AS
+      [<declarations>]
+    BEGIN
+      [<PSQL_statements>]
+    END
+  ]
+
+<mutation_list> ::=
+  <mutation> [OR <mutation> [OR <mutation>]]
+
+<mutation> ::= { INSERT | UPDATE | DELETE }
+
+<db_event> ::=
+  { CONNECT
+  | DISCONNECT
+  | TRANSACTION START
+  | TRANSACTION COMMIT
+  | TRANSACTION ROLLBACK }
+----
+
+.Weitere Informationen zum Ändern von Triggern
+Siehe <<fblangref25-ddl-trgr-alter-de,`ALTER TRIGGER`>>, <<fblangref25-ddl-trgr-crtalter-de,`CREATE OR ALTER TRIGGER`>>, <<fblangref25-ddl-trgr-recreate-de,`RECREATE TRIGGER`>> in Kapitel 5, [ref]_Data Definition (DDL) Statements_.
+
+[[fblangref25-psql-triggerdelete-de]]
+=== Trigger löschen
+
+Die Anweisung `DROP TRIGGER` dient zum Löschen von Triggern.
+
+.Syntax (vollständig)
+[listing,subs=+quotes]
+----
+DROP TRIGGER _trigname_
+----
+
+.Weitere Informationen zum Löschen von Triggern
+Siehe <<fblangref25-ddl-trgr-drop-de,`DROP TRIGGER`>> in Kapitel 5, [ref]_Data Definition (DDL) Statements_.
+
+[[fblangref25-psql-coding-de]]
+== Schreiben des Body-Codes
+
+In diesem Abschnitt werden die prozeduralen SQL-Sprachkonstrukte und -Anweisungen näher betrachtet, die zum Codieren des Rumpfs einer gespeicherten Prozedur, eines Triggers oder eines anonymen PSQL-Blocks verfügbar sind.
+
+[sidebar]
+.Doppelpunkt-Markierungspräfix ('```:```')
+Das Doppelpunkt-Markierungspräfix ('```:```') wird in PSQL verwendet, um einen Verweis auf eine Variable in einer DML-Anweisung zu markieren.
+Der Doppelpunkt-Marker ist vor Variablennamen in anderem Code nicht erforderlich und sollte niemals auf Kontextvariablen angewendet werden.
+
+[[fblangref25-psql-coding-assign-de]]
+=== Zuweisungs-Statements
+
+.Verwendet für
+Zuweisen eines Werts zu einer Variablen
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+_varname_ = <value_expr>
+----
+
+[[fblangref25-psql-tbl-assign-de]]
+.Zuweisungs-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|varname
+|Name eines Parameters oder einer lokalen Variablen
+
+|value_expr
+|Ein Ausdruck, eine Konstante oder eine Variable, dessen Wert in den gleichen Datentyp wie _varname_
+|===
+
+PSQL verwendet das Äquivalenzsymbol ('```=```') als Zuweisungsoperator.
+Die Zuweisungsanweisung weist der Variablen links vom Operator den rechten SQL-Ausdruckswert zu.
+Der Ausdruck kann ein beliebiger gültiger SQL-Ausdruck sein: Er kann Literale, interne Variablennamen, Arithmetik-, logische und Zeichenfolgenoperationen, Aufrufe von internen Funktionen oder externe Funktionen (UDFs) enthalten.
+
+.Beispiel mit Zuweisungsanweisungen
+[source]
+----
+CREATE PROCEDURE MYPROC (
+  a INTEGER,
+  b INTEGER,
+  name VARCHAR (30)
+)
+RETURNS (
+  c INTEGER,
+  str VARCHAR(100))
+AS
+BEGIN
+  -- assigning a constant
+  c = 0;
+  str = '';
+  SUSPEND;
+  -- assigning expression values
+  c = a + b;
+  str = name || CAST(b AS VARCHAR(10));
+  SUSPEND;
+  -- assigning expression value
+  -- built by a query
+  c = (SELECT 1 FROM rdb$database);
+  -- assigning a value from a context variable
+  str = CURRENT_USER;
+  SUSPEND;
+END
+----
+
+.Siehe auch
+<<fblangref25-psql-declare-variable-de,`DECLARE VARIABLE`>>
+
+[[fblangref25-psql-declare-cursor-de]]
+=== `DECLARE CURSOR`
+
+.Verwendet für
+Deklarieren eines benannten Cursors
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DECLARE [VARIABLE] _cursorname_ CURSOR FOR (<select>) [FOR UPDATE]
+----
+
+[[fblangref25-psql-tbl-declare-cursor-de]]
+.``DECLARE CURSOR``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|cursorname
+|Name des Cursors
+
+|select
+|``SELECT``-Statement
+|===
+
+
+Die Anweisung `DECLARE CURSOR ... FOR` bindet einen benannten Cursor an die Ergebnismenge, die in der in der Klausel `FOR` angegebenen ``SELECT``-Anweisung ermittelt wurde.
+Im Body-Code kann der Cursor geöffnet werden, um zeilenweise durch die Ergebnismenge zu gehen und zu schließen.
+Während der Cursor geöffnet ist, kann der Code positionierte Aktualisierungen und Löschungen unter Verwendung der Anweisung `WHERE CURRENT OF` für `UPDATE` oder `DELETE` durchführen.
+
+[[fblangref25-psql-idio-cursor-de]]
+==== Cursor-Idiosynkrasien
+
+* Die optionale Klausel `FOR UPDATE` kann in der ``SELECT``-Anweisung enthalten sein, ihre Abwesenheit verhindert jedoch nicht die erfolgreiche Ausführung einer positionierten Aktualisierung oder Löschung.
+* Es sollte darauf geachtet werden, dass die Namen von deklarierten Cursorn nicht mit Namen in Konflikt geraten, die später in Anweisungen für ``AS CURSOR``-Klauseln verwendet werden.
+* Wenn der Cursor nur zum Durchlaufen der Ergebnismenge benötigt wird, ist es fast immer einfacher und weniger fehleranfällig, eine Anweisung `FOR SELECT` mit der Klausel `AS CURSOR` zu verwenden.
+Deklarierte Cursor müssen zum Abrufen von Daten explizit geöffnet und geschlossen werden.
+Die Kontextvariable `ROW_COUNT` muss nach jedem Abruf überprüft werden.
+Wenn der Wert Null ist, muss die Schleife beendet werden.
+Eine ``FOR SELECT``-Anweisung überprüft dies automatisch.
++ 
+Dennoch bieten deklarierte Cursor ein hohes Maß an Kontrolle über sequentielle Ereignisse und ermöglichen die parallele Verwaltung mehrerer Cursor.
+* Das ``SELECT``-Statement kann Parameter enthalten. Zum Beispiel: 
++
+[source]
+----
+SELECT NAME || :SFX FROM NAMES WHERE NUMBER = :NUM
+----
++
+Jeder Parameter muss zuvor als PSQL-Variable deklariert worden sein, auch wenn sie als Ein- und Ausgabeparameter entstehen.
+Wenn der Cursor geöffnet wird, wird dem Parameter der aktuelle Wert der Variablen zugewiesen.
+
+.Achtung!
+[WARNING]
+====
+Wenn sich der Wert einer PSQL-Variablen, die in der ``SELECT``-Anweisung verwendet wird, während der Schleife ändert, kann der neue Wert (jedoch nicht immer) für die verbleibenden Zeilen verwendet werden.
+Es ist besser, solche Situationen nicht unbeabsichtigt entstehen zu lassen.
+Wenn Sie dieses Verhalten wirklich benötigen, sollten Sie Ihren Code sorgfältig testen, um sicherzustellen, dass Sie genau wissen, wie sich Änderungen in der Variablen auf das Ergebnis auswirken.
+
+Beachten Sie besonders, dass das Verhalten möglicherweise vom Abfrageplan abhängt, insbesondere von den verwendeten Indizes.
+Es gibt derzeit keine strengen Regeln für solche Situationen, aber das könnte sich in zukünftigen Versionen von Firebird ändern.
+====
+
+[[fblangref25-psql-cursor-examples-de]]
+==== Beispiel für benannte Cursor
+
+. Declaring a named cursor in the trigger.
++
+[source]
+----
+CREATE OR ALTER TRIGGER TBU_STOCK
+  BEFORE UPDATE ON STOCK
+AS
+  DECLARE C_COUNTRY CURSOR FOR (
+    SELECT
+      COUNTRY,
+      CAPITAL
+    FROM COUNTRY
+  );
+BEGIN
+  /* PSQL statements */
+END
+----
+. Eine Sammlung von Skripts zum Erstellen von Ansichten mit einem PSQL-Block unter Verwendung von benannten Cursors.
++
+[source]
+----
+EXECUTE BLOCK
+RETURNS (
+  SCRIPT BLOB SUB_TYPE TEXT)
+AS
+  DECLARE VARIABLE FIELDS VARCHAR(8191);
+  DECLARE VARIABLE FIELD_NAME TYPE OF RDB$FIELD_NAME;
+  DECLARE VARIABLE RELATION RDB$RELATION_NAME;
+  DECLARE VARIABLE SOURCE TYPE OF COLUMN RDB$RELATIONS.RDB$VIEW_SOURCE;
+  DECLARE VARIABLE CUR_R CURSOR FOR (
+    SELECT
+      RDB$RELATION_NAME,
+      RDB$VIEW_SOURCE
+    FROM
+      RDB$RELATIONS
+    WHERE
+      RDB$VIEW_SOURCE IS NOT NULL);
+-- Declaring a named cursor where
+-- a local variable is used
+  DECLARE CUR_F CURSOR FOR (
+    SELECT
+      RDB$FIELD_NAME
+    FROM
+      RDB$RELATION_FIELDS
+    WHERE
+      -- It is important that the variable must be declared earlier
+      RDB$RELATION_NAME = :RELATION);
+BEGIN
+  OPEN CUR_R;
+  WHILE (1 = 1) DO
+  BEGIN
+    FETCH CUR_R
+    INTO :RELATION, :SOURCE;
+    IF (ROW_COUNT = 0) THEN
+      LEAVE;
+
+    FIELDS = NULL;
+    -- The CUR_F cursor will use the value
+    -- of the RELATION variable initiated above
+    OPEN CUR_F;
+    WHILE (1 = 1) DO
+    BEGIN
+      FETCH CUR_F
+      INTO :FIELD_NAME;
+      IF (ROW_COUNT = 0) THEN
+        LEAVE;
+      IF (FIELDS IS NULL) THEN
+        FIELDS = TRIM(FIELD_NAME);
+      ELSE
+        FIELDS = FIELDS || ', ' || TRIM(FIELD_NAME);
+    END
+    CLOSE CUR_F;
+
+    SCRIPT = 'CREATE VIEW ' || RELATION;
+
+    IF (FIELDS IS NOT NULL) THEN
+      SCRIPT = SCRIPT || ' (' || FIELDS || ')';
+
+    SCRIPT = SCRIPT || ' AS ' || ASCII_CHAR(13);
+    SCRIPT = SCRIPT || SOURCE;
+
+    SUSPEND;
+  END
+  CLOSE CUR_R;
+END
+----
+
+.Siehe auch
+<<fblangref25-psql-open-de>>, <<fblangref25-psql-fetch-de>>, <<fblangref25-psql-close-de>>
+
+[[fblangref25-psql-declare-variable-de]]
+=== `DECLARE VARIABLE`
+
+.Verwendet für
+Deklaration einer lokalen Variablen
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DECLARE [VARIABLE] _varname_
+  {<datatype> | _domain_ | TYPE OF {_domain_ | COLUMN _rel_._col_}
+    [NOT NULL]  [CHARACTER SET _charset_] [COLLATE _collation_]
+    [{DEFAULT | = } <initvalue>];
+
+<datatype> ::=
+    {SMALLINT | INTEGER | BIGINT}
+  | {FLOAT | DOUBLE PRECISION}
+  | {DATE | TIME | TIMESTAMP}
+  | {DECIMAL | NUMERIC} [(_precision_ [, _scale_])]
+  | {CHAR | CHARACTER [VARYING] | VARCHAR} [(_size_)]
+    [CHARACTER SET _charset_]
+  | {NCHAR | NATIONAL {CHARACTER | CHAR}} [VARYING]
+    [(_size_)]
+  | BLOB [SUB_TYPE {_subtype_num_ | _subtype_name_}]
+    [SEGMENT SIZE _seglen_] [CHARACTER SET _charset_]
+  | BLOB [(_seglen_ [, _subtype_num_])]
+
+<initvalue> ::= <literal> | <context_var>
+----
+
+[[fblangref25-psql-tbl-declare-variable-de]]
+.``DECLARE VARIABLE``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|varname
+|Name der lokalen Variable
+
+|datatype
+|Ein SQL-Datentyp
+
+|domain
+|Der Name einer bestehenden Domain in dieser Datenbank
+
+|rel.col
+|Beziehungsname (Tabelle oder Sicht) in dieser Datenbank und der Name einer Spalte in dieser Beziehung
+
+|precision
+|Präzision.
+Von 1 bis 18
+
+|scale
+|Rahmen.
+Von 0 bis 18 muss es kleiner oder gleich der Genauigkeit sein
+
+|size
+|Die maximale Größe einer Zeichenfolge in Zeichen
+
+|subtype_num
+|``BLOB``-Untertyp-Nummer
+
+|subtype_name
+|Mnemonischer Name des ``BLOB``-Untertyp
+
+|seglen
+|Segmentgröße, nicht größer als 65.535
+
+|initvalue
+|Anfangswert für diese Variable
+
+|literal
+|Literal eines Typs, der mit dem Typ der lokalen Variablen kompatibel ist
+
+|context_var
+|Jede Kontextvariable, deren Typ mit dem Typ der lokalen Variablen kompatibel ist
+
+|charset
+|Zeichensatz
+
+|collation
+|Sortierfolge
+|===
+
+Die Anweisung `DECLARE [VARIABLE]` wird zum Deklarieren einer lokalen Variable verwendet.
+Das Schlüsselwor `VARIABLE` kann weggelassen werden.
+Je ein ``DECLARE [VARIABLE]``-Statement ist für jede Variable notwendig.
+Jede beliebige Anzahl von ``DECLARE [VARIABLE]``-Statements kann in jeglicher Reihenfolge eingefügt werden.
+Der Name jeder lokalen Variable muss eindeutig innerhalb der lokalen Variablen und Ausgabeparametern in der Moduldeklaration sein.
+
+[[fblangref25-psql-variable-type-de]]
+==== Datentypen für Variablen
+
+Eine lokale Variable kann von einem anderen SQL-Typ als ein Array sein. 
+
+* Ein Domainname kann als Typ angegeben werden und die Variable erbt alle ihre Attribute.
+* Wenn die ``TYPE OF __domain__``-Klausel verwendet wird, erbt die Variable nur den Datentyp der Domain und gegebenenfalls ihre Zeichensatz- und Sortierattribute.
+Alle Standardwerte oder Einschränkungen wie ``NOT NULL``- oder ``CHECK``-Einschränkungen werden nicht vererbt.
+* Wenn die Option `TYPE OF COLUMN __relation__.__column__` verwendet wird, um Daten aus einer Spalte in einer Tabelle oder Sicht zu "`leihen`", wird die Variable nur den Datentyp der Spalte erben, und gegebenenfalls ihren Zeichensatz und Sortierattribute.
+Alle anderen Attribute werden ignoriert.
+
+==== ``NOT NULL``-Constraint
+
+Die Variable kann bei Bedarf auf `NOT NULL` beschränkt werden.
+Wenn eine Domain als Datentyp angegeben wurde und bereits die ``NOT NULL``-Einschränkung enthält, ist sie nicht erforderlich.
+Bei den anderen Formen, einschließlich der Verwendung einer Domain, die nullwertfähig ist, sollte das ``NOT NULL``-Attribut bei Bedarf eingefügt werden.
+
+==== ``CHARACTER SET``- und ``COLLATE``-Klauseln
+
+Sofern nicht anders angegeben, sind der Zeichensatz und die Sortierfolge einer String-Variablen die Standardeinstellungen der Datenbank.
+Eine Klausel `CHARACTER SET` kann bei Bedarf eingefügt werden, um Zeichenkettendaten zu verarbeiten, die sich in einem anderen Zeichensatz befinden.
+Eine gültige Sortierreihenfolge (``COLLATE``-Klausel) kann ebenfalls mit oder ohne die Zeichensatzklausel eingeschlossen werden.
+
+==== Initialisieren einer Variablen
+
+Lokale Variablen sind `NULL`, wenn die Ausführung des Moduls beginnt.
+Sie können initialisiert werden, sodass ein Start- oder Standardwert verfügbar ist, wenn sie zum ersten Mal referenziert werden.
+Die Form `DEFAULT <initvalue>` kann verwendet werden, oder nur der Zuweisungsoperator, '```=```': `= <initvalue>`.
+Der Wert kann ein beliebiges Typ-kompatibles Literal oder eine Kontextvariable sein.
+
+[IMPORTANT]
+====
+Stellen Sie sicher, dass Sie diese Klausel für alle Variablen verwenden, die auf `NOT NULL` festgelegt sind und ansonsten keinen Standardwert haben.
+====
+
+==== Beispiele für verschiedene Möglichkeiten, lokale Variablen zu deklarieren
+
+[source]
+----
+CREATE OR ALTER PROCEDURE SOME_PROC
+AS
+  -- Declaring a variable of the INT type
+  DECLARE I INT;
+  -- Declaring a variable of the INT type that does not allow NULL
+  DECLARE VARIABLE J INT NOT NULL;
+  -- Declaring a variable of the INT type with the default value of 0
+  DECLARE VARIABLE K INT DEFAULT 0;
+  -- Declaring a variable of the INT type with the default value of 1
+  DECLARE VARIABLE L INT = 1;
+  -- Declaring a variable based on the COUNTRYNAME domain
+  DECLARE FARM_COUNTRY COUNTRYNAME;
+  -- Declaring a variable of the type equal to the COUNTRYNAME domain
+  DECLARE FROM_COUNTRY TYPE OF COUNTRYNAME;
+  -- Declaring a variable with the type of the CAPITAL column in the COUNTRY table
+  DECLARE CAPITAL TYPE OF COLUMN COUNTRY.CAPITAL;
+BEGIN
+  /* PSQL statements */
+END
+----
+
+.Siehe auch
+<<fblangref25-datatypes-de,Datentypen und Unterdatentypen>>, <<fblangref25-datatypes-custom-de,Benutzerdefinierte Datentypen -- Domains>>, <<fblangref25-ddl-domn-de,`CREATE DOMAIN`>>
+
+[[fblangref25-psql-beginend-de]]
+=== `BEGIN ... END`
+
+.Verwendet für
+Einen Block von Anweisungen abgrenzen
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing]
+----
+<block> ::=
+  BEGIN
+    [<compound_statement>
+    …]
+  END
+
+<compound_statement> ::= {<block> | <statement>;}
+----
+
+Das Konstrukt `BEGIN ... END` ist eine zweiteilige Anweisung, die einen Block von Anweisungen umhüllt, die als eine Codeeinheit ausgeführt werden.
+Jeder Block beginnt mit der Halb-Anweisung `BEGIN` und endet mit der anderen Halb-Anweisung `END`.
+Blöcke können in unbegrenzter Tiefe verschachtelt werden.
+Sie können leer sein, so dass sie als Stubs fungieren können, ohne dass Dummy-Anweisungen geschrieben werden müssen.
+
+Die Anweisungen `BEGIN` und `END` haben keine Zeilenabschlußzeichen.
+Wenn jedoch ein PSQL-Modul im Dienstprogramm _isql_ definiert oder geändert wird, muss für diese Anwendung der letzten ``END``-Anweisung ein eigenes Terminatorzeichen folgen, das zuvor mithilfe von `SET TERM` auf eine andere Zeichenfolge als ein Semikolon umgeschaltet wurde.
+Dieser Terminator ist nicht Teil der PSQL-Syntax.
+
+Die letzte oder äußerste ``END``-Anweisung in einem Trigger beendet den Trigger.
+Was die letzte Anweisung `END` in einer gespeicherten Prozedur macht, hängt vom Typ der Prozedur ab:
+
+* In einer wählbaren Prozedur gibt die endgültige Anweisung `END` die Steuerung an den Aufrufer zurück und gibt SQLCODE 100 zurück, um anzugeben, dass keine weiteren Zeilen abgerufen werden müssen.
+* In einer ausführbaren Prozedur gibt die endgültige Anweisung `END` die Kontrolle an den Aufrufer zurück, zusammen mit den aktuellen Werten aller definierten Ausgabeparameter.
+
+.Beispiel
+Eine Beispielprozedur aus der Datenbank `employee.fdb`, die die einfache Verwendung der Blöcke `BEGIN ... END` zeigt:
+
+[source]
+----
+SET TERM ^;
+CREATE OR ALTER PROCEDURE DEPT_BUDGET (
+  DNO CHAR(3))
+RETURNS (
+  TOT DECIMAL(12,2))
+AS
+  DECLARE VARIABLE SUMB DECIMAL(12,2);
+  DECLARE VARIABLE RDNO CHAR(3);
+  DECLARE VARIABLE CNT  INTEGER;
+BEGIN
+  TOT = 0;
+
+  SELECT
+    BUDGET
+  FROM
+    DEPARTMENT
+  WHERE DEPT_NO = :DNO
+  INTO :TOT;
+
+  SELECT
+    COUNT(BUDGET)
+  FROM
+    DEPARTMENT
+  WHERE HEAD_DEPT = :DNO
+  INTO :CNT;
+
+  IF (CNT = 0) THEN
+    SUSPEND;
+
+  FOR
+    SELECT
+      DEPT_NO
+    FROM
+      DEPARTMENT
+    WHERE HEAD_DEPT = :DNO
+    INTO :RDNO
+  DO
+  BEGIN
+    EXECUTE PROCEDURE DEPT_BUDGET(:RDNO)
+    RETURNING_VALUES :SUMB;
+    TOT = TOT + SUMB;
+  END
+
+  SUSPEND;
+END^
+SET TERM ;^
+----
+
+.Siehe auch
+<<fblangref25-psql-exit-de>>, <<fblangref25-psql-leave-de>>, <<fblangref25-sidebar01-de,`SET TERM`>>
+
+[[fblangref25-psql-ifthen-de]]
+=== `IF ... THEN ... ELSE`
+
+.Verwendet für
+Bedingte Sprünge
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing]
+----
+IF (<condition>)
+  THEN <compound_statement>
+  [ELSE <compound_statement>]
+----
+
+[[fblangref25-psql-tbl-ifthen-de]]
+.`IF ... THEN ... ELSE` Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|condition
+|Eine logische Bedingung, die TRUE, FALSE oder UNKNOWN zurückgibt
+
+|single_statement
+|Eine einzelne Anweisung wurde mit einem Semikolon abgeschlossen
+
+|compound_statement
+|Zwei oder mehr Anweisungen, die in `BEGIN ... END` verpackt sind
+|===
+
+Die bedingte Sprunganweisung `IF ... THEN` wird verwendet, um den Ausführungsprozess in einem PSQL-Modul zu verzweigen.
+Die Bedingung ist immer in Klammern eingeschlossen.
+Wenn es den Wert TRUE zurückgibt, verzweigt die Ausführung in die Anweisung oder den Anweisungsblock nach dem Schlüsselwort `THEN`.
+Wenn eine `ELSE` vorhanden ist und die Bedingung FALSE oder UNKNOWN zurückgibt, verzweigt die Ausführung in die Anweisung oder den Anweisungsblock danach.
+
+[[multijump-de]]
+.Verzweigungen mit mehreren Unterverzweigungen
+****
+PSQL bietet keine Multi-Branch-Sprünge wie `CASE` oder `SWITCH`.
+Nichtsdestoweniger ist die ``CASE``-Suchanweisung von DSQL in PSQL verfügbar und kann zumindest einige Anwendungsfälle in der Art eines Schalters erfüllen:
+
+[listing]
+----
+CASE <test_expr>
+  WHEN <expr> THEN <result>
+  [WHEN <expr> THEN <result> ...]
+  [ELSE <defaultresult>]
+END
+
+CASE
+  WHEN <bool_expr> THEN <result>
+  [WHEN <bool_expr> THEN <result> ...]
+  [ELSE <defaultresult>]
+END
+----
+
+.Beispiel in PSQL
+[source]
+----
+...
+C = CASE
+      WHEN A=2 THEN 1
+      WHEN A=1 THEN 3
+      ELSE 0
+    END;
+...
+----
+****
+
+.Beispiel
+Ein Beispiel mit der ``IF``-Anweisung.
+Angenommen, die Variablen `FIRST`, `LINE2` und `LAST` wurden früher deklariert.
+
+[source]
+----
+...
+IF (FIRST IS NOT NULL) THEN
+  LINE2 = FIRST || ' ' || LAST;
+ELSE
+  LINE2 = LAST;
+...
+----
+
+.Siehe auch
+<<fblangref25-psql-while-de>>, <<fblangref25-commons-conditional-case-de,`CASE`>>
+
+[[fblangref25-psql-while-de]]
+=== `WHILE ... DO`
+
+.Verwendet für
+Schleifenkonstrukte
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing]
+----
+WHILE <condition> DO
+  <compound_statement>
+----
+
+[[fblangref25-psql-tbl-while-de]]
+.`WHILE ... DO` Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|condition
+|Eine logische Bedingung, die TRUE, FALSE oder UNKNOWN zurückgibt
+
+|single_statement
+|Eine einzelne Anweisung wurde mit einem Semikolon abgeschlossen
+
+|compound_statement
+|Zwei oder mehr Anweisungen, die in `BEGIN ... END` verpackt sind
+|===
+
+Eine ``WHILE``-Anweisung implementiert das Schleifenkonstrukt in PSQL.
+Die Anweisung oder der Anweisungsblock wird ausgeführt, bis die Bedingung TRUE zurückgibt.
+Schleifen können beliebig tief verschachtelt werden.
+
+.Beispiel
+Eine Prozedur, die die Summe der Zahlen von 1 bis I berechnet, zeigt, wie das Schleifenkonstrukt verwendet wird.
+
+[source]
+----
+CREATE PROCEDURE SUM_INT (I INTEGER)
+RETURNS (S INTEGER)
+AS
+BEGIN
+  s = 0;
+  WHILE (i > 0) DO
+  BEGIN
+    s = s + i;
+    i = i - 1;
+  END
+END
+----
+
+Ausführen der Prozedur in __isql__:
+
+[source]
+----
+EXECUTE PROCEDURE SUM_INT(4);
+----
+
+Das Ergebnis ist:
+
+[source]
+----
+S
+==========
+10
+----
+
+.Siehe auch
+<<fblangref25-psql-ifthen-de>>, <<fblangref25-psql-leave-de>>, <<fblangref25-psql-exit-de>>, <<fblangref25-psql-forselect-de>>, <<fblangref25-psql-forexec-de>>
+
+[[fblangref25-psql-leave-de]]
+=== `LEAVE`
+
+.Verwendet für
+Eine Schleife beenden
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+[_label_:]
+<loop_stmt>
+BEGIN
+  ...
+  LEAVE [_label_];
+  ...
+END
+
+<loop_stmt> ::=
+    FOR <select_stmt> INTO <var_list> DO
+  | FOR EXECUTE STATEMENT ... INTO <var_list> DO
+  | WHILE (<condition>)} DO
+----
+
+[[fblangref25-psql-tbl-leave-de]]
+.``LEAVE``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|label
+|Label
+
+|select_stmt
+|``SELECT``-Statement
+
+|condition
+|Eine logische Bedingung, die TRUE, FALSE oder UNKNOWN zurückgibt
+|===
+
+Eine ``LEAVE``-Anweisung beendet sofort die innere Schleife einer `WHILE` oder `FOR` Schleifenanweisung.
+Der Parameter `LABEL` ist optional.
+
+`LEAVE` kann auch zum Beenden von äußeren Schleifen führen.
+Code wird weiterhin von der ersten Anweisung nach der Beendigung des äußeren Schleifenblocks ausgeführt.
+
+.Beispiele
+. Eine Schleife verlassen, wenn bei einem Einfügen in die ``NUMBERS``-Tabelle ein Fehler auftritt.
+Der Code wird weiterhin von der Zeile `C = 0` ausgeführt.
++
+[source]
+----
+...
+WHILE (B < 10) DO
+BEGIN
+  INSERT INTO NUMBERS(B)
+  VALUES (:B);
+  B = B + 1;
+  WHEN ANY DO
+  BEGIN
+    EXECUTE PROCEDURE LOG_ERROR (
+      CURRENT_TIMESTAMP,
+      'ERROR IN B LOOP');
+    LEAVE;
+  END
+END
+C = 0;
+...
+----
+. Ein Beispiel für die Verwendung von Labels in der ``LEAVE``-Anweisung.
+`LEAVE LOOPA` beendet die äußere Schleife und `LEAVE LOOPB` beendet die innere Schleife.
+Beachten Sie, dass die einfache Anweisung `LEAVE` ausreichen würde, um die innere Schleife zu beenden.
++
+[source]
+----
+...
+STMT1 = 'SELECT NAME FROM FARMS';
+LOOPA:
+FOR EXECUTE STATEMENT :STMT1
+INTO :FARM DO
+BEGIN
+  STMT2 = 'SELECT NAME ' || 'FROM ANIMALS WHERE FARM = ''';
+  LOOPB:
+  FOR EXECUTE STATEMENT :STMT2 || :FARM || ''''
+  INTO :ANIMAL DO
+  BEGIN
+    IF (ANIMAL = 'FLUFFY') THEN
+      LEAVE LOOPB;
+    ELSE IF (ANIMAL = FARM) THEN
+      LEAVE LOOPA;
+    ELSE
+      SUSPEND;
+  END
+END
+...
+----
+
+.Siehe auch
+<<fblangref25-psql-exit-de>>
+
+[[fblangref25-psql-exit-de]]
+=== `EXIT`
+
+.Verwendet für
+Beenden der Modulausführung
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing]
+----
+EXIT
+----
+
+Die Anweisung `EXIT` bewirkt, dass die Ausführung der Prozedur oder des Triggers von jedem Punkt des Codes zur endgültigen ``END``-Anweisung springt, wodurch das Programm beendet wird.
+
+.Beispiel
+Verwenden der ``EXIT``-Anweisung in einer auswählbaren Prozedur:
+
+[source]
+----
+CREATE PROCEDURE GEN_100
+RETURNS (
+  I INTEGER
+)
+AS
+BEGIN
+  I = 1;
+  WHILE (1=1) DO
+  BEGIN
+    SUSPEND;
+    IF (I=100) THEN
+      EXIT;
+    I = I + 1;
+  END
+END
+----
+
+.Siehe auch
+<<fblangref25-psql-leave-de>>, <<fblangref25-psql-suspend-de>>
+
+[[fblangref25-psql-suspend-de]]
+=== `SUSPEND`
+
+.Verwendet für
+Übergeben der Ausgabe an den Puffer und Aussetzen der Ausführung, während darauf gewartet wird, dass der Aufrufer sie abruft
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing]
+----
+SUSPEND
+----
+
+Die Anweisung `SUSPEND` wird in einer auswählbaren gespeicherten Prozedur verwendet, um die Werte von Ausgabeparametern an einen Puffer zu übergeben und die Ausführung anzuhalten.
+Die Ausführung bleibt ausgesetzt, bis die aufrufende Anwendung den Inhalt des Puffers abruft.
+Die Ausführung wird von der Anweisung direkt nach der ``SUSPEND``-Anweisung fortgesetzt.
+In der Praxis ist dies wahrscheinlich eine neue Iteration eines Schleifenprozesses.
+
+.Wichtige Hinweise
+[IMPORTANT]
+====
+. Anwendungen, die Schnittstellen verwenden, die die API umschließen, führen die Abrufe von auswählbaren Prozeduren transparent aus.
+. Wenn eine ``SUSPEND``-Anweisung in einer ausführbaren gespeicherten Prozedur ausgeführt wird, entspricht dies der Ausführung der Anweisung `EXIT`, was zu einer sofortigen Beendigung der Prozedur führt.
+. `SUSPEND` "`unterbricht`" die Atomizität des Blocks, in dem es sich befindet.
+Wenn in einer auswählbaren Prozedur ein Fehler auftritt, werden Anweisungen, die nach der endgültigen ``SUSPEND``-Anweisung ausgeführt werden, zurückgesetzt.
+Anweisungen, die vor der endgültigen ``SUSPEND``-Anweisung ausgeführt wurden, werden erst zurückgesetzt, wenn die Transaktion zurückgesetzt wird.
+====
+
+.Beispiel
+Verwenden der Anweisung `SUSPEND` in einer auswählbaren Prozedur:
+
+[source]
+----
+CREATE PROCEDURE GEN_100
+RETURNS (
+  I INTEGER
+)
+AS
+BEGIN
+  I = 1;
+  WHILE (1=1) DO
+  BEGIN
+    SUSPEND;
+    IF (I=100) THEN
+      EXIT;
+    I = I + 1;
+  END
+END
+----
+
+.Siehe auch
+<<fblangref25-psql-exit-de>>
+
+[[fblangref25-psql-execstmt-de]]
+=== `EXECUTE STATEMENT`
+
+.Verwendet für
+Ausführen dynamisch erstellter SQL-Anweisungen
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+<execute_statement> ::= EXECUTE STATEMENT <argument>
+  [<option> …]
+  [INTO <variables>]
+
+<argument> ::= <paramless_stmt>
+            | (<paramless_stmt>)
+            | (<stmt_with_params>) (<param_values>)
+
+<param_values> ::= <named_values> | <positional_values>
+
+<named_values> ::= _paramname_ := <value_expr>
+   [, _paramname_ := <value_expr> ...]
+
+<positional_values> ::= <value_expr> [, <value_expr> ...]
+
+<option> ::= WITH {AUTONOMOUS | COMMON} TRANSACTION
+           | WITH CALLER PRIVILEGES
+           | AS USER _user_
+           | PASSWORD _password_
+           | ROLE _role_
+           | ON EXTERNAL [DATA SOURCE] <connect_string>
+
+<connect_string> ::= [<hostspec>] {_filepath_ | _db_alias_}
+
+<hostspec> ::= <tcpip_hostspec> | <NamedPipes_hostspec>
+
+<tcpip_hostspec> ::= _hostname_[/_port_]:
+
+<NamePipes_hostspec> ::= {backslash}{backslash}__hostname__\
+
+<variables> ::= [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
+----
+
+[[fblangref25-psql-tbl-execstmt-de]]
+.``EXECUTE STATEMENT``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|paramless_stmt
+|Literale Zeichenfolge oder Variable, die eine nicht parametrisierte SQL-Abfrage enthält
+
+|stmt_with_params
+|Literale Zeichenfolge oder Variable, die eine parametrisierte SQL-Abfrage enthält
+
+|paramname
+|Name des SQL-Abfrageparameters
+
+|value_expr
+|SQL-Ausdruck, der in einen Wert aufgelöst wird
+
+|user
+|Nutzername.
+Dies kann eine Zeichenfolge, `CURRENT_USER` oder eine Zeichenfolgenvariable sein
+
+|password
+|Passwort.
+Es kann eine Zeichenfolge oder eine Zeichenfolgevariable sein
+
+|role
+|Rolle.
+Dies kann eine Zeichenfolge, `CURRENT_ROLE` oder eine Zeichenfolgenvariable sein
+
+|connection_string
+|Verbindungszeichenfolge.
+Es kann eine Zeichenfolge oder eine Zeichenfolgevariable sein
+
+|filepath
+|Pfad zur primären Datenbankdatei
+
+|db_alias
+|Datenbankalias
+
+|hostname
+|Computername oder IP-Adresse
+
+|varname
+|Variable
+|===
+
+Die Anweisung `EXECUTE STATEMENT` verwendet einen Zeichenfolgenparameter und führt ihn wie eine DSQL-Anweisung aus.
+Wenn die Anweisung Daten zurückgibt, kann sie über eine `INTO` -Klausel an lokale Variablen übergeben werden.
+
+[[fblangref25-psql-execstmt-wparams-de]]
+==== Parametrisierte Anweisungen
+
+Sie können die Parameter -- entweder benannt oder positional -- in der DSQL-Anweisungsfolge verwenden.
+Jedem Parameter muss ein Wert zugewiesen werden.
+
+[[fblangref25-psql-execstmt-wparams01-de]]
+===== Spezielle Regeln für parametrisierte Anweisungen
+
+. Benannte und positionale Parameter können nicht in einer Abfrage gemischt werden
+. Wenn die Anweisung Parameter hat, müssen sie beim Aufruf von `EXECUTE STATEMENT` in Klammern stehen, unabhängig davon, ob sie direkt als Strings, als Variablennamen oder als Ausdrücke verwendet werden
+. Jedem benannten Parameter muss in der Anweisungszeichenfolge ein Doppelpunkt ('```:```') vorangestellt werden,  jedoch nicht, wenn dem Parameter ein Wert zugewiesen ist
+. Positionsparameter müssen ihre Werte in derselben Reihenfolge erhalten, in der sie im Abfragetext erscheinen
+. Der Zuweisungsoperator für Parameter ist der Spezialoperator "```:=```", ähnlich dem Zuweisungsoperator in Pascal
+. Jeder benannte Parameter kann mehrmals in der Anweisung verwendet werden, sein Wert muss jedoch nur einmal zugewiesen werden
+. Bei Positionsparametern muss die Anzahl der zugewiesenen Werte genau der Anzahl der Parameterplatzhalter  (Fragezeichen) in der Anweisung entsprechen
+
+===== Beispiele
+
+Mit benannten Paramtern:
+
+[source]
+----
+...
+DECLARE license_num VARCHAR(15);
+DECLARE connect_string VARCHAR (100);
+DECLARE stmt VARCHAR (100) =
+  'SELECT license
+   FROM cars
+   WHERE driver = :driver AND location = :loc';
+BEGIN
+  ...
+  SELECT connstr
+  FROM databases
+  WHERE cust_id = :id
+  INTO connect_string;
+  ...
+  FOR
+    SELECT id
+    FROM drivers
+    INTO current_driver
+  DO
+  BEGIN
+    FOR
+      SELECT location
+      FROM driver_locations
+      WHERE driver_id = :current_driver
+      INTO current_location
+    DO
+    BEGIN
+      ...
+      EXECUTE STATEMENT (stmt)
+        (driver := current_driver,
+         loc := current_location)
+      ON EXTERNAL connect_string
+      INTO license_num;
+      ...
+----
+
+Derselbe Code mit Positionsparametern:
+
+[source]
+----
+DECLARE license_num VARCHAR (15);
+DECLARE connect_string VARCHAR (100);
+DECLARE stmt VARCHAR (100) =
+  'SELECT license
+   FROM cars
+   WHERE driver = ? AND location = ?';
+BEGIN
+  ...
+  SELECT connstr
+  FROM databases
+  WHERE cust_id = :id
+  into connect_string;
+  ...
+  FOR
+    SELECT id
+    FROM drivers
+    INTO current_driver
+  DO
+  BEGIN
+    FOR
+      SELECT location
+      FROM driver_locations
+      WHERE driver_id = :current_driver
+      INTO current_location
+    DO
+    BEGIN
+      ...
+      EXECUTE STATEMENT (stmt)
+        (current_driver, current_location)
+      ON EXTERNAL connect_string
+      INTO license_num;
+      ...
+----
+
+[[fblangref25-psql-execstmt-wautonomous-de]]
+==== `WITH {AUTONOMOUS | COMMON} TRANSACTION`
+
+Üblicherweise lief die ausgeführte SQL-Anweisung immer innerhalb der aktuellen Transaktion, und dies ist immer noch der Standardwert.
+`WITH AUTONOMOUS TRANSACTION` bewirkt, dass eine separate Transaktion mit denselben Parametern wie die aktuelle Transaktion gestartet wird.
+Es wird festgeschrieben, wenn die Anweisung ohne Fehler ausgeführt wird und andernfalls zurückgesetzt wird.
+`WITH COMMON TRANSACTION` verwendet, wenn möglich, die aktuelle Transaktion.
+
+Wenn die Anweisung in einer separaten Verbindung ausgeführt werden muss, wird eine bereits gestartete Transaktion innerhalb dieser Verbindung verwendet, sofern verfügbar.
+Andernfalls wird eine neue Transaktion mit den gleichen Parametern wie die aktuelle Transaktion gestartet.
+Alle neuen Transaktionen, die unter dem "`COMMON`"-Regime gestartet wurden, werden mit der aktuellen Transaktion festgeschrieben oder zurückgesetzt.
+
+[[fblangref25-psql-execstmt-wcaller-de]]
+==== `WITH CALLER PRIVILEGES`
+
+Standardmäßig wird die SQL-Anweisung mit den Berechtigungen des aktuellen Benutzers ausgeführt.
+Die Angabe von `WITH CALLER PRIVILEGES` fügt dazu die Privilegien der aufrufenden Prozedur oder des Triggers hinzu, so als ob die Anweisung direkt von der Routine ausgeführt würde.
+`WITH WITH CALLER PRIVILEGES` hat keine Auswirkung, wenn die Klausel `ON EXTERNAL` ebenfalls vorhanden ist.
+
+[[fblangref25-psql-execstmt-onexternal-de]]
+==== `ON EXTERNAL [DATA SOURCE]`
+
+Mit `ON EXTERNAL [DATA SOURCE]` wird die SQL-Anweisung in einer separaten Verbindung zu derselben oder einer anderen Datenbank ausgeführt, möglicherweise sogar auf einem anderen Server.
+Wenn die Verbindungszeichenfolge NULL oder "```''```" (leere Zeichenfolge) ist, wird die gesamte Klausel `ON EXTERNAL [DATA SOURCE]` als abwesend betrachtet und die Anweisung wird für die aktuelle Datenbank ausgeführt.
+
+[[fblangref25-psql-execstmt-onext-connpool-de]]
+===== Verbindungspooling
+
+* Externe Verbindungen, die durch Anweisungen `WITH COMMON TRANSACTION` (der Standardwert) hergestellt werden, bleiben geöffnet, bis die aktuelle Transaktion beendet wird.
+Sie können durch nachfolgende Aufrufe an `EXECUTE STATEMENT` wiederverwendet werden, aber nur, wenn die Verbindungszeichenfolge genau gleich ist, einschließlich case
+* Externe Verbindungen, die durch Anweisungen `WITH AUTONOMOUS TRANSACTION` hergestellt werden, werden geschlossen, sobald die Anweisung ausgeführt wurde
+* Beachten Sie, dass Statements unter ``WITH AUTONOMOUS TRANSACTION``-Verbindungen, die zuvor von Anweisungen unter `WITH COMMON TRANSACTION` geöffnet wurden, wiederverwendet werden.
+Wenn dies geschieht, bleibt die wiederverwendete Verbindung nach der Ausführung der Anweisung offen.
+(Dies geschieht, da es mindestens eine nicht-abgeschlossene Transaktion gibt!)
+
+[[fblangref25-psql-execstmt-onext-transpool-de]]
+===== Transaktionspooling
+
+* Wenn `WITH COMMON TRANSACTION` aktiviert ist, werden Transaktionen so oft wie möglich wiederverwendet.
+Sie werden zusammen mit der aktuellen Transaktion festgeschrieben oder zurückgesetzt
+* Wenn `WITH AUTONOMOUS TRANSACTION` angegeben ist, wird immer eine neue Transaktion für die Anweisung gestartet.
+Diese Transaktion wird unmittelbar nach der Ausführung der Anweisung festgeschrieben oder zurückgesetzt
+
+[[fblangref25-psql-execstmt-onext-errhandling-de]]
+===== Ausnahmebehandlung
+
+Ausnahmebehandlung: Wenn `ON EXTERNAL` verwendet wird, erfolgt die zusätzliche Verbindung immer über einen sogenannten externen Provider, auch wenn die Verbindung zur aktuellen Datenbank besteht.
+Eine der Folgen ist, dass Ausnahmen nicht auf die übliche Art und Weise abgefangen werden können.
+Jede von der Anweisung verursachte Ausnahme wird entweder in einen ``eds_connection``- oder einen ``eds_statement``-Fehler enden.
+Um sie in Ihrem PSQL-Code abzufangen, müssen Sie `WHEN GDSCODE eds_connection`,  `WHEN GDSCODE eds_statement` oder `WHEN ANY` verwenden.
+
+[NOTE]
+====
+Ohne `ON EXTERNAL` werden Ausnahmen auf die übliche Weise abgefangen, selbst wenn eine zusätzliche Verbindung zur aktuellen Datenbank hergestellt wird.
+====
+
+[[fblangref25-psql-execstmt-onext-morenotes-de]]
+===== Verschiedene Hinweise
+
+* Der für die externe Verbindung verwendete Zeichensatz ist der gleiche wie für die aktuelle Verbindung
+* Zweiphasen-Commits werden nicht unterstützt
+
+[[fblangref25-psql-execstmt-asuser-de]]
+==== `AS USER`, `PASSWORD` und `ROLE`
+
+Die optionalen Klauseln `AS USER`, `PASSWORD` und `ROLE` erlauben die Angabe unter welchem Benutzer und unter welcher Rolle das SQL-Statement ausgeführt wird.
+Die Methode der Benutzeranmeldung und die Existenz einer separaten offenen Verbindung hängt von dem Vorhandensein und den Werten der Klauseln `ON EXTERNAL [DATA SOURCE]`, `AS USER`, `PASSWORD` und `ROLE` ab:
+
+* Wenn `ON EXTERNAL` verwendet wird, wird immer eine neue Verbindung aufgebaut und:
+** Wenn mindestens eines von `AS USER`, `PASSWORD` und `ROLE` vorhanden ist, wird die native Authentifizierung mit den angegebenen Parameterwerten versucht (lokal oder remote abhängig von der Verbindungszeichenfolge).
+Für fehlende Parameter werden keine Standardwerte verwendet
+** Wenn alle drei nicht vorhanden sind und die Verbindungszeichenfolge keinen Hostnamen enthält, wird die neue Verbindung auf dem lokalen Host mit demselben Benutzer und derselben Rolle wie die aktuelle Verbindung hergestellt.
+Der Begriff "lokal" bedeutet hier "`auf der gleichen Maschine wie der Server`".
+Dies ist nicht unbedingt der Standort des Clients
+** Wenn alle drei nicht vorhanden sind und die Verbindungszeichenfolge einen Hostnamen enthält, wird eine vertrauenswürdige Authentifizierung auf dem Remote-Host versucht (aus der Perspektive des Servers wiederum "Remote").
+Wenn dies erfolgreich ist, gibt das Remote-Betriebssystem den Benutzernamen an (normalerweise das Betriebssystemkonto, unter dem der Firebird-Prozess ausgeführt wird).
+* Fehlt `ON EXTERNAL`:
+** Wenn mindestens eines von `AS USER`, `PASSWORD` und `ROLE` vorhanden ist, wird eine neue Verbindung zur aktuellen Datenbank mit den angegebenen Parameterwerten geöffnet.
+Für fehlende Parameter werden keine Standardwerte verwendet
+** Wenn alle drei nicht vorhanden sind, wird die Anweisung innerhalb der aktuellen Verbindung ausgeführt
+
+.Hinweis
+[NOTE]
+====
+Wenn ein Parameterwert `NULL` oder "```''```" (leere Zeichenfolge) ist, wird der gesamte Parameter als abwesend betrachtet.
+Darüber hinaus gilt `AS USER` als abwesend, wenn der Wert gleich `CURRENT_USER` und `ROLE` wenn es identisch mit `CURRENT_ROLE` ist.
+====
+
+[[fblangref25-psql-execstmt-caveats-de]]
+==== Vorsicht mit `EXECUTE STATEMENT`
+
+. Es gibt keine Möglichkeit, die Syntax der enthaltenen Anweisung zu überprüfen
+. Es gibt keine Abhängigkeitsprüfungen, um festzustellen, ob Tabellen oder Spalten gelöscht wurden
+. Obwohl die Leistung in Schleifen in Firebird 2.5 erheblich verbessert wurde, ist die Ausführung immer noch erheblich langsamer als wenn dieselben Anweisungen direkt gestartet werden
+. Rückgabewerte werden streng auf den Datentyp überprüft, um unvorhersehbare Ausnahmen für das Typcasting zu vermeiden.
+Beispielsweise würde die Zeichenfolge `'1234'` in eine Ganzzahl, 1234, konvertiert, aber `'abc'` würde einen  Konvertierungsfehler ergeben
+
+Alles in allem sollte diese Funktion sehr vorsichtig verwendet werden und Sie sollten immer die Vorbehalte berücksichtigen.
+Wenn Sie das gleiche Ergebnis mit PSQL und / oder DSQL erzielen können, ist dies fast immer vorzuziehen.
+
+.Siehe auch
+<<fblangref25-psql-forexec-de>>
+
+[[fblangref25-psql-forselect-de]]
+=== `FOR SELECT`
+
+.Verwendet für
+Zeilenweises Durchlaufen einer ausgewählten Ergebnismenge
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+FOR <select_stmt> [AS CURSOR _cursorname_]
+  DO <compound_statement>
+----
+
+[[fblangref25-psql-tbl-forselect-de]]
+.``FOR SELECT``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|select_stmt
+|``SELECT``-Statement
+
+|cursorname
+|Name des Cursors.
+Dieser muss eindeutig unter den Cursor-Namen im PSQL-Modul (gespeicherte Prozedur, Trigger oder PSQL-Block) sein
+
+|single_statement
+|Eine einzelne Anweisung, die mit einem Doppelpunkt abgeschlossen wird und die gesamte Verarbeitung für diese ``FOR``-Schleife ausführt
+
+|compound_statement
+|Ein Anweisungsblock, der in `BEGIN ... END` eingeschlossen ist und der die gesamte Verarbeitung für diese ``FOR``-Schleife ausführt
+|===
+
+Ein ``FOR SELECT``-Statement 
+
+* ruft jede Zeile sequenziell aus der Ergebnismenge ab und führt die Anweisung oder den Anweisungsblock in der Zeile aus.
+In jeder Iteration der Schleife werden die Feldwerte der aktuellen Zeile in vordefinierte Variablen kopiert.
++ 
+Mit der Klausel `AS CURSOR` können positionierte Löschungen und Aktualisierungen durchgeführt werden, siehe unten
+* kann andere ``FOR SELECT``-Anweisungen einbetten
+* kann benannte Parameter enthalten, die zuvor in der ``DECLARE VARIABLE``-Anweisung deklariert werden müssen, oder als Eingabe- oder Ausgabeparameter der Prozedur vorhanden sein
+* erfordert eine ``INTO``-Klausel, die sich am Ende der ``SELECT ... FROM ...``-Spezifikation befindet.
+In jeder Iteration der Schleife werden die Feldwerte in der aktuellen Zeile in die Liste der Variablen kopiert, die in der Klausel `INTO` angegeben sind.
+Die Schleife wird wiederholt, bis alle Zeilen abgerufen wurden.
+Danach wird sie beendet
+* kann mit einem ``LEAVE``-Statement beendet werden, bevor alle Zeilen abgeholt wurden.
+
+[[fblangref25-psql-undeclaredcursor-de]]
+==== Der undeklarierte Cursor
+
+Die optionale ``AS CURSOR``-Klausel behandelt den Satz in der ``FOR SELECT``-Struktur als nicht deklarierten benannten Cursor, der mit der ``WHERE CURRENT OF``-Klausel bearbeitet werden kann, innerhalb der Anweisung oder des Blocks nach dem Befehl `DO`, um die aktuelle Zeile zu löschen oder zu aktualisieren, bevor die Ausführung zur nächsten Iteration übergeht.
+
+Weitere Punkte, die in Bezug auf nicht deklarierte Cursor berücksichtigt werden müssen: 
+
+. Die Anweisungen `OPEN`, `FETCH` und `CLOSE` können nicht auf einen Cursor angewendet werden, der durch die Klausel `AS CURSOR` angezeigt wird
+. Das Argument cursorname, das einer Klausel `AS CURSOR` zugeordnet ist, darf nicht mit Namen kollidieren, die von den Anweisungen `DECLARE VARIABLE` oder `DECLARE CURSOR` am Anfang der body-Codes, noch mit anderen Cursorn, die durch eine Klausel `AS CURSOR` erstellt wurden
+. Die optionale Klausel `FOR UPDATE` in der Anweisung `SELECT` ist für ein positioniertes Update nicht erforderlich
+
+==== Beispiele für die Verwendung von `FOR SELECT`
+
+. Eine einfache Schleife durch Abfrageergebnisse:
++
+[source]
+----
+CREATE PROCEDURE SHOWNUMS
+RETURNS (
+  AA INTEGER,
+  BB INTEGER,
+  SM INTEGER,
+  DF INTEGER)
+AS
+BEGIN
+  FOR SELECT DISTINCT A, B
+      FROM NUMBERS
+    ORDER BY A, B
+    INTO AA, BB
+  DO
+  BEGIN
+    SM = AA + BB;
+    DF = AA - BB;
+    SUSPEND;
+  END
+END
+----
+. Geschachtelte ``FOR SELECT``-Schleife:
++
+[source]
+----
+CREATE PROCEDURE RELFIELDS
+RETURNS (
+  RELATION CHAR(32),
+  POS INTEGER,
+  FIELD CHAR(32))
+AS
+BEGIN
+  FOR SELECT RDB$RELATION_NAME
+      FROM RDB$RELATIONS
+      ORDER BY 1
+      INTO :RELATION
+  DO
+  BEGIN
+    FOR SELECT
+          RDB$FIELD_POSITION + 1,
+          RDB$FIELD_NAME
+        FROM RDB$RELATION_FIELDS
+        WHERE
+          RDB$RELATION_NAME = :RELATION
+        ORDER BY RDB$FIELD_POSITION
+        INTO :POS, :FIELD
+    DO
+    BEGIN
+      IF (POS = 2) THEN
+        RELATION = ' "';
+
+      SUSPEND;
+    END
+  END
+END
+----
+. Verwenden Sie die ``AS CURSOR``-Klausel, um einen Cursor für das positionierte Löschen eines Datensatzes zu verwenden:
++
+[source]
+----
+CREATE PROCEDURE DELTOWN (
+  TOWNTODELETE VARCHAR(24))
+RETURNS (
+  TOWN VARCHAR(24),
+  POP INTEGER)
+AS
+BEGIN
+  FOR SELECT TOWN, POP
+      FROM TOWNS
+      INTO :TOWN, :POP AS CURSOR TCUR
+  DO
+  BEGIN
+    IF (:TOWN = :TOWNTODELETE) THEN
+      -- Positional delete
+      DELETE FROM TOWNS
+      WHERE CURRENT OF TCUR;
+    ELSE
+      SUSPEND;
+  END
+END
+----
+
+.Siehe auch
+<<fblangref25-psql-declare-cursor-de>>, <<fblangref25-psql-leave-de>>, <<fblangref25-dml-select-de,`SELECT`>>, <<fblangref25-dml-update-de,`UPDATE`>>, <<fblangref25-dml-delete-de,`DELETE`>>
+
+[[fblangref25-psql-forexec-de]]
+=== `FOR EXECUTE STATEMENT`
+
+.Verwendet für
+Ausführen von dynamisch erstellten SQL-Anweisungen, die einen Zeilensatz zurückgeben
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing]
+----
+FOR <execute_statement> DO <compound_statement>
+----
+
+[[fblangref25-psql-tbl-forexec-de]]
+.``FOR EXECUTE STATEMENT``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|execute_stmt
+|Ein ``EXECUTE STATEMENT``-String
+
+|single_statement
+|Eine einzelne Anweisung, die mit einem Doppelpunkt abgeschlossen wird und die gesamte Verarbeitung für diese ``FOR``-Schleife ausführt
+
+|compound_statement
+|Ein Anweisungsblock, der in `BEGIN ... END` eingeschlossen ist und der die gesamte Verarbeitung für diese ``FOR``-Schleife ausführt
+|===
+
+Die Anweisung `FOR EXECUTE STATEMENT` wird in Analogie zu `FOR SELECT` verwendet, um die Ergebnismenge einer dynamisch ausgeführten Abfrage, die mehrere Zeilen zurückgibt, zu durchlaufen.
+
+.Beispiel
+Ausführen einer dynamisch erstellten Abfrage `SELECT`, die einen Datensatz zurückgibt:
+
+[source]
+----
+CREATE PROCEDURE DynamicSampleThree (
+   Q_FIELD_NAME VARCHAR(100),
+   Q_TABLE_NAME VARCHAR(100)
+) RETURNS(
+  LINE VARCHAR(32000)
+)
+AS
+  DECLARE VARIABLE P_ONE_LINE VARCHAR(100);
+BEGIN
+  LINE = '';
+  FOR
+    EXECUTE STATEMENT
+      'SELECT T1.' || :Q_FIELD_NAME ||
+      ' FROM ' || :Q_TABLE_NAME || ' T1 '
+    INTO :P_ONE_LINE
+  DO
+    IF (:P_ONE_LINE IS NOT NULL) THEN
+      LINE = :LINE || :P_ONE_LINE || ' ';
+  SUSPEND;
+END
+----
+
+.Siehe auch
+<<fblangref25-psql-execstmt-de>>
+
+[[fblangref25-psql-open-de]]
+=== `OPEN`
+
+.Verwendet für
+Öffnen eines deklarierten Cursors
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+OPEN _cursorname_
+----
+
+[[fblangref25-psql-tbl-open-de]]
+.`OPEN` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|cursorname
+|Name des Cursors.
+Ein Cursor mit diesem Namen muss zuvor mit einer ``DECLARE CURSOR``-Anweisung deklariert werden
+|===
+
+Eine `OPEN` -Anweisung öffnet einen zuvor deklarierten Cursor, führt die für sie deklarierte ``SELECT``-Anweisung aus und macht den ersten Datensatz zum abzurufenden Ergebnisdatensatz.
+`OPEN` kann nur auf zuvor in einer ``DECLARE VARIABLE``-Anweisung deklarierte Cursor angewendet werden.
+
+[NOTE]
+====
+Wenn die für den Cursor deklarierte Anweisung `SELECT` über Parameter verfügt, müssen sie als lokale Variablen deklariert sein oder als Ein- oder Ausgabeparameter vor dem Deklarieren des Cursors vorhanden sein.
+Wenn der Cursor geöffnet wird, wird dem Parameter der aktuelle Wert der Variablen zugewiesen.
+====
+
+.Beispiele
+. Verwenden der ``OPEN``-Anweisung:
++
+[source]
+----
+SET TERM ^;
+
+CREATE OR ALTER PROCEDURE GET_RELATIONS_NAMES
+RETURNS (
+  RNAME CHAR(31)
+)
+AS
+  DECLARE C CURSOR FOR (
+    SELECT RDB$RELATION_NAME
+    FROM RDB$RELATIONS);
+BEGIN
+  OPEN C;
+  WHILE (1 = 1) DO
+  BEGIN
+    FETCH C INTO :RNAME;
+    IF (ROW_COUNT = 0) THEN
+      LEAVE;
+    SUSPEND;
+  END
+  CLOSE C;
+END^
+
+SET TERM ;^
+----
+. Eine Sammlung von Skripts zum Erstellen von Ansichten mit einem PSQL-Block mit benannten Cursorn:
++
+[source]
+----
+EXECUTE BLOCK
+RETURNS (
+  SCRIPT BLOB SUB_TYPE TEXT)
+AS
+  DECLARE VARIABLE FIELDS VARCHAR(8191);
+  DECLARE VARIABLE FIELD_NAME TYPE OF RDB$FIELD_NAME;
+  DECLARE VARIABLE RELATION RDB$RELATION_NAME;
+  DECLARE VARIABLE SOURCE TYPE OF COLUMN RDB$RELATIONS.RDB$VIEW_SOURCE;
+  -- named cursor
+  DECLARE VARIABLE CUR_R CURSOR FOR (
+    SELECT
+      RDB$RELATION_NAME,
+      RDB$VIEW_SOURCE
+    FROM
+      RDB$RELATIONS
+    WHERE
+      RDB$VIEW_SOURCE IS NOT NULL);
+  -- named cursor with local variable
+  DECLARE CUR_F CURSOR FOR (
+    SELECT
+      RDB$FIELD_NAME
+    FROM
+      RDB$RELATION_FIELDS
+    WHERE
+      -- Important! The variable shall be declared earlier
+      RDB$RELATION_NAME = :RELATION);
+BEGIN
+  OPEN CUR_R;
+  WHILE (1 = 1) DO
+  BEGIN
+    FETCH CUR_R
+    INTO :RELATION, :SOURCE;
+    IF (ROW_COUNT = 0) THEN
+      LEAVE;
+
+    FIELDS = NULL;
+    -- The CUR_F cursor will use
+    -- variable value of RELATION initialized above
+    OPEN CUR_F;
+    WHILE (1 = 1) DO
+    BEGIN
+      FETCH CUR_F
+      INTO :FIELD_NAME;
+      IF (ROW_COUNT = 0) THEN
+        LEAVE;
+      IF (FIELDS IS NULL) THEN
+        FIELDS = TRIM(FIELD_NAME);
+      ELSE
+        FIELDS = FIELDS || ', ' || TRIM(FIELD_NAME);
+    END
+    CLOSE CUR_F;
+
+    SCRIPT = 'CREATE VIEW ' || RELATION;
+
+    IF (FIELDS IS NOT NULL) THEN
+      SCRIPT = SCRIPT || ' (' || FIELDS || ')';
+
+    SCRIPT = SCRIPT || ' AS ' || ASCII_CHAR(13);
+    SCRIPT = SCRIPT || SOURCE;
+
+    SUSPEND;
+  END
+  CLOSE CUR_R;
+END
+----
+
+
+.Siehe auch
+<<fblangref25-psql-declare-cursor-de>>, <<fblangref25-psql-fetch-de>>, <<fblangref25-psql-close-de>>
+
+[[fblangref25-psql-fetch-de]]
+=== `FETCH`
+
+.Verwendet für
+Abrufen aufeinanderfolgender Datensätze aus einem Datensatz, der mit einem Cursor abgerufen wurde
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+FETCH _cursorname_ INTO [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
+----
+
+[[fblangref25-psql-tbl-fetch-de]]
+.``FETCH``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|cursorname
+|Name des Cursors.
+Ein Cursor mit diesem Namen muss zuvor mit einer ``DECLARE CURSOR``-Anweisung deklariert und durch eine ``OPEN``-Anweisung geöffnet werden.
+
+|varname
+|Variablenname
+|===
+
+Eine ``FETCH``-Anweisung ruft die erste und die folgenden Zeilen aus der Ergebnismenge des Cursors ab und weist PSQL-Variablen die Spaltenwerte zu.
+Die Anweisung `FETCH` kann nur mit einem Cursor verwendet werden, der mit der Anweisung `DECLARE CURSOR` deklariert wurde.
+
+Die ``INTO``-Klausel ruft Daten aus der aktuellen Zeile des Cursors ab und lädt sie in PSQL-Variablen.
+
+Um zu überprüfen, ob alle Datensatzzeilen abgerufen wurden, gibt die Kontextvariable `ROW_COUNT` die Anzahl der Zeilen zurück, die von der Anweisung abgerufen wurden.
+Es ist positiv, bis alle Zeilen überprüft wurden.
+Ein `ROW_COUNT` von 1 gibt an, dass der nächste Abruf der letzte sein wird.
+
+.Beispiel
+Verwenden der ``FETCH``-Anweisung:
+
+[source]
+----
+SET TERM ^;
+
+CREATE OR ALTER PROCEDURE GET_RELATIONS_NAMES
+RETURNS (
+  RNAME CHAR(31)
+)
+AS
+  DECLARE C CURSOR FOR (
+    SELECT RDB$RELATION_NAME
+    FROM RDB$RELATIONS);
+BEGIN
+  OPEN C;
+  WHILE (1 = 1) DO
+  BEGIN
+    FETCH C INTO :RNAME;
+    IF (ROW_COUNT = 0) THEN
+      LEAVE;
+    SUSPEND;
+  END
+  CLOSE C;
+END^
+
+SET TERM ;^
+----
+
+.Siehe auch
+<<fblangref25-psql-declare-cursor-de>>, <<fblangref25-psql-open-de>>, <<fblangref25-psql-close-de>>
+
+[[fblangref25-psql-close-de]]
+=== `CLOSE`
+
+.Verwendet für
+Einen deklarierten Cursor schließen
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CLOSE _cursorname_
+----
+
+[[fblangref25-psql-tbl-close-de]]
+.``CLOSE``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+^|cursorname
+<|Name des Cursors.
+Ein Cursor mit diesem Namen muss zuvor mit einer ``DECLARE CURSOR``-Anweisung deklariert und durch eine ``OPEN``-Anweisung geöffnet werden
+|===
+
+Eine Anweisung `CLOSE` schließt einen geöffneten Cursor.
+Alle Cursor, die noch geöffnet sind, werden automatisch geschlossen, nachdem der Modulcode ausgeführt wurde.
+Nur ein Cursor, der mit `DECLARE CURSOR` deklariert wurde, kann mit einer ``CLOSE``-Anweisung geschlossen werden.
+
+.Beispiel
+Verwenden der ``CLOSE``-Anweisung:
+
+[source]
+----
+SET TERM ^;
+
+CREATE OR ALTER PROCEDURE GET_RELATIONS_NAMES
+RETURNS (
+  RNAME CHAR(31)
+)
+AS
+  DECLARE C CURSOR FOR (
+    SELECT RDB$RELATION_NAME
+    FROM RDB$RELATIONS);
+BEGIN
+  OPEN C;
+  WHILE (1 = 1) DO
+  BEGIN
+    FETCH C INTO :RNAME;
+    IF (ROW_COUNT = 0) THEN
+      LEAVE;
+    SUSPEND;
+  END
+  CLOSE C;
+END^
+----
+
+.Siehe auch
+<<fblangref25-psql-declare-cursor-de>>, <<fblangref25-psql-open-de>>, <<fblangref25-psql-fetch-de>>
+
+[[fblangref25-psql-inauton-de]]
+=== `IN AUTONOMOUS TRANSACTION`
+
+.Verwendet für
+Eine Anweisung oder einen Block von Anweisungen in einer autonomen  Transaktion ausführen
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing]
+----
+IN AUTONOMOUS TRANSACTION DO <compound_statement>
+----
+
+[[fblangref25-psql-tbl-inauton-de]]
+.`IN AUTONOMOUS TRANSACTION` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|compound_statement
+|Ein Statement oder ein Block von Statements
+|===
+
+Eine Anweisung `IN AUTONOMOUS TRANSACTION` ermöglicht die Ausführung einer Anweisung oder eines Anweisungsblocks in einer autonomen Transaktion.
+Code, der in einer autonomen Transaktion ausgeführt wird, wird unmittelbar nach seiner erfolgreichen Ausführung unabhängig vom Status seiner übergeordneten Transaktion festgeschrieben.
+Dies kann erforderlich sein, wenn bestimmte Vorgänge nicht zurückgesetzt werden sollen, auch wenn in der übergeordneten Transaktion ein Fehler auftritt.
+
+Eine autonome Transaktion hat dieselbe Isolationsstufe wie ihre übergeordnete Transaktion.
+Jede Ausnahme, die im Block des autonomen Transaktionscodes ausgelöst wird, führt dazu, dass die autonome Transaktion zurückgesetzt wird und alle vorgenommenen Änderungen storniert werden.
+Wenn der Code erfolgreich ausgeführt wird, wird die autonome Transaktion festgeschrieben.
+
+.Beispiel
+Verwenden einer autonomen Transaktion in einem Trigger für das Datenbankereignis `ON CONNECT`, um alle Verbindungsversuche einschließlich der fehlgeschlagenen zu protokollieren:
+
+[source]
+----
+CREATE TRIGGER TR_CONNECT ON CONNECT
+AS
+BEGIN
+  -- Logging all attempts to connect to the database
+  IN AUTONOMOUS TRANSACTION DO
+    INSERT INTO LOG(MSG)
+    VALUES ('USER ' || CURRENT_USER || ' CONNECTS.');
+  IF (CURRENT_USER IN (SELECT
+                         USERNAME
+                       FROM
+                         BLOCKED_USERS)) THEN
+  BEGIN
+    -- Logging that the attempt to connect
+    -- to the database failed and sending
+    -- a message about the event
+    IN AUTONOMOUS TRANSACTION DO
+    BEGIN
+      INSERT INTO LOG(MSG)
+      VALUES ('USER ' || CURRENT_USER || ' REFUSED.');
+      POST_EVENT 'CONNECTION ATTEMPT' || ' BY BLOCKED USER!';
+    END
+    -- now calling an exception
+    EXCEPTION EX_BADUSER;
+  END
+END
+----
+
+.Siehe auch
+<<fblangref25-transacs-de,`Transaktionskontrolle`>>
+
+[[fblangref25-psql-postevent-de]]
+=== `POST_EVENT`
+
+.Verwendet für
+Benachrichtigung von Listening-Clients über Datenbankereignisse in einem Modul
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+POST_EVENT _event_name_
+----
+
+[[fblangref25-psql-tbl-postevent-de]]
+.`POST_EVENT` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|event_name
+|Ereignisname (Nachricht) ist auf 127 Byte beschränkt
+|===
+
+Die Anweisung `POST_EVENT` benachrichtigt den Ereignismanager über das Ereignis, das es in einer Ereignistabelle speichert.
+Wenn die Transaktion festgeschrieben wird, benachrichtigt der Ereignismanager Anwendungen, die ihr Interesse an dem Ereignis signalisieren.
+
+Der Ereignisname kann eine Art Code oder eine kurze Nachricht sein: Die Auswahl ist offen, da sie nur eine Zeichenfolge von bis zu 127 Bytes ist.
+
+Der Inhalt der Zeichenfolge kann ein Zeichenfolgenliteral, eine Variable oder ein beliebiger gültiger SQL-Ausdruck sein, der in eine Zeichenfolge aufgelöst wird.
+
+.Beispiel
+Benachrichtigung der zuhörenden Anwendungen über das Einfügen eines Datensatzes in die ``SALES``-Tabelle:
+
+[source]
+----
+SET TERM ^;
+CREATE TRIGGER POST_NEW_ORDER FOR SALES
+ACTIVE AFTER INSERT POSITION 0
+AS
+BEGIN
+  POST_EVENT 'new_order';
+END^
+SET TERM ;^
+----
+
+[[fblangref25-psql-handleexceptions-de]]
+== Abfangen und Behandeln von Fehlern
+
+Firebird hat ein nützliches Lexikon von PSQL-Anweisungen und -Ressourcen, um Fehler in Modulen einzufangen und sie zu behandeln.
+Intern implementierte Ausnahmen existieren, um die Ausführung anzuhalten, wenn jeder Standardfehler in DDL, DSQL und der physischen Umgebung auftritt.
+
+Im PSQL-Code werden Ausnahmen mit der ``WHEN``-Anweisung behandelt.
+Bei der Behandlung einer Ausnahme im Code wird entweder das Problem in situ behoben oder es wird übergangen.
+Bei beiden Lösungen kann die Ausführung fortgesetzt werden, ohne dass eine Ausnahmebedingungsnachricht an den Client zurückgegeben wird.
+
+Eine Ausnahme führt dazu, dass die Ausführung im Block beendet wird.
+Anstatt die Ausführung an die ``END``-Anweisung zu übergeben, bewegt sich die Prozedur durch Ebenen von verschachtelten Blöcken nach außen, beginnend mit dem Block, in dem die Ausnahme abgefangen wird, nach dem Code des Handlers, der diese Ausnahme "`kennt`".
+Sie stoppt die Suche, wenn die erste ``WHEN``-Anweisung gefunden wird, die diese Ausnahme verarbeiten kann.
+
+[[fblangref25-ddl-sysexcept-de]]
+=== Systemausnahmen
+
+Eine Ausnahme ist eine Nachricht, die generiert wird, wenn ein Fehler auftritt.
+
+Alle Ausnahmen, die von Firebird behandelt werden, haben vordefinierte numerische Werte für Kontextvariablen  (Symbole) und Textnachrichten, die ihnen zugeordnet sind.
+Fehlermeldungen werden standardmäßig in Englisch ausgegeben.
+Lokalisierte Firebird-Builds sind verfügbar, in denen Fehlermeldungen in andere Sprachen übersetzt werden.
+
+Vollständige Auflistungen der Systemausnahmen finden Sie in <<fblangref25-appx02-errorcodes-de,[ref]_Anhang B: Fehlercodes und Meldungen_>>: 
+
+* <<fblangref25-appx02-sqlstates-de,SQLSTATE Fehlercodes und Beschreibungen>>
+* <<fblangref25-appx02-sqlcodes-de,"GDSCODE Fehlercodes, SQLCODEs und Beschreibungen">>
+
+[[fblangref25-ddl-customexcept-de]]
+=== Benutzerdefinierte Ausnahmen
+
+Benutzerdefinierte Ausnahmen können in der Datenbank als permanente Objekte deklariert und im PSQL-Code aufgerufen werden, um bestimmte Fehler zu signalisieren, zum Beispiel, um bestimmte Geschäftsregeln durchzusetzen.
+Eine benutzerdefinierte Ausnahme besteht aus einem Bezeichner und einer Standardnachricht von ungefähr 1000 Byte.
+Weitere Informationen finden Sie unter <<fblangref25-ddl-exception-create-de,`CREATE EXCEPTION`>>.
+
+[[fblangref25-psql-exception-de]]
+=== `EXCEPTION`
+
+.Verwendet für
+Eine benutzerdefinierte Ausnahme auslösen oder eine Ausnahme erneut auslösen
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+EXCEPTION [_exception_name_ [_custom_message_]]
+----
+
+[[fblangref25-psql-tbl-exception-de]]
+.``EXCEPTION``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|exception_name
+|Name der Ausnahme
+
+|custom_message
+|Alternativer Nachrichtentext, der an die Aufruferschnittstelle zurückgegeben wird, wenn eine Ausnahme ausgelöst wird.
+Die maximale Länge der Textnachricht beträgt 1.021 Byte
+|===
+
+Eine Anweisung `EXCEPTION` löst die benutzerdefinierte Ausnahme mit dem angegebenen Namen aus.
+Ein alternativer Nachrichtentext von bis zu 1.021 Byte kann optional den Standardnachrichtentext der Ausnahme überschreiben.
+
+Die Ausnahmebedingung kann in der Anweisung behandelt werden, indem sie nur mit einem bestimmten ``WHEN ... DO``-Handler belassen wird und dem Trigger oder der gespeicherten Prozedur erlaubt wird, alle Operationen zu beenden und rückgängig zu machen.
+Die aufrufende Anwendung erhält den alternativen Nachrichtentext, sofern einer angegeben wurde.
+Andernfalls empfängt es die ursprünglich für diese Ausnahme definierte Nachricht.
+
+Innerhalb des Ausnahmebehandlungsblocks -- und nur innerhalb davon -- kann die abgefangene Ausnahme erneut ausgelöst werden, indem die Anweisung `EXCEPTION` ohne Parameter ausgeführt wird.
+Wenn der Befehl außerhalb des Blocks liegt, hat die erneut aufgerufene ``EXCEPTION``-Anweisung keine Auswirkung.
+
+[NOTE]
+====
+Benutzerdefinierte Ausnahmen werden in der Systemtabelle <<fblangref-appx04-exceptions-de,`RDB$EXCEPTIONS`>> gespeichert.
+====
+
+.Beispiele
+. Eine Ausnahme mit dynamisch erzeugtem Text auslösen:
++
+[source]
+----
+…
+EXCEPTION EX_BAD_TYPE
+  'Incorrect record type with id ' || new.id;
+…
+----
+. Eine Ausnahme für eine Bedingung in der gespeicherten ``SHIP_ORDER``-Prozedur auslösen:
++
+[source]
+----
+CREATE OR ALTER PROCEDURE SHIP_ORDER (
+  PO_NUM CHAR(8))
+AS
+  DECLARE VARIABLE ord_stat  CHAR(7);
+  DECLARE VARIABLE hold_stat CHAR(1);
+  DECLARE VARIABLE cust_no   INTEGER;
+  DECLARE VARIABLE any_po    CHAR(8);
+BEGIN
+  SELECT
+    s.order_status,
+    c.on_hold,
+    c.cust_no
+  FROM
+    sales s, customer c
+  WHERE
+    po_number = :po_num AND
+    s.cust_no = c.cust_no
+  INTO :ord_stat,
+       :hold_stat,
+       :cust_no;
+
+  IF (ord_stat = 'shipped') THEN
+    EXCEPTION order_already_shipped;
+  /* Other statements */
+END
+----
+. Eine Ausnahme bei einer Bedingung auslösen und die ursprüngliche Nachricht durch eine alternative Nachricht ersetzen:
++
+[source]
+----
+CREATE OR ALTER PROCEDURE SHIP_ORDER (
+  PO_NUM CHAR(8))
+AS
+  DECLARE VARIABLE ord_stat  CHAR(7);
+  DECLARE VARIABLE hold_stat CHAR(1);
+  DECLARE VARIABLE cust_no   INTEGER;
+  DECLARE VARIABLE any_po    CHAR(8);
+BEGIN
+  SELECT
+    s.order_status,
+    c.on_hold,
+    c.cust_no
+  FROM
+    sales s, customer c
+  WHERE
+    po_number = :po_num AND
+    s.cust_no = c.cust_no
+  INTO :ord_stat,
+       :hold_stat,
+       :cust_no;
+
+  IF (ord_stat = 'shipped') THEN
+    EXCEPTION order_already_shipped
+      'Order status is "' || ord_stat || '"';
+  /* Other statements */
+END
+----
+. Einen Fehler protokollieren und erneut in den ``WHEN``-Block werfen:
++
+[source]
+----
+CREATE PROCEDURE ADD_COUNTRY (
+  ACountryName COUNTRYNAME,
+  ACurrency VARCHAR(10) )
+AS
+BEGIN
+  INSERT INTO country (country,
+                       currency)
+  VALUES (:ACountryName,
+          :ACurrency);
+  WHEN ANY DO
+  BEGIN
+    -- write an error in log
+    IN AUTONOMOUS TRANSACTION DO
+      INSERT INTO ERROR_LOG (PSQL_MODULE,
+                             GDS_CODE,
+                             SQL_CODE,
+                             SQL_STATE)
+      VALUES ('ADD_COUNTRY',
+              GDSCODE,
+              SQLCODE,
+              SQLSTATE);
+    -- Re-throw exception
+    EXCEPTION;
+  END
+END
+----
+
+.Siehe auch
+<<fblangref25-ddl-exception-create-de,`CREATE EXCEPTION`>>, <<fblangref25-psql-when-de>>
+
+[[fblangref25-psql-when-de]]
+=== `WHEN ... DO`
+
+.Verwendet für
+Eine Ausnahme abfangen und den Fehler behandeln
+
+.Verfügbar in
+PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+WHEN {<error> [, <error> …] | ANY}
+DO <compound_statement>
+
+<error> ::=
+  { EXCEPTION _exception_name_
+  | SQLCODE _number_
+  | GDSCODE _errcode_ }
+----
+
+[[fblangref25-psql-tbl-when-de]]
+.``WHEN ... DO``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|exception_name
+|Name der Ausnahme
+
+|number
+|``SQLCODE`` Fehler-Code
+
+|errcode
+|Symbolischer ``GDSCODE``-Fehlername
+
+|compound_statement
+|Ein Statement oder ein Block von Statements
+|===
+
+Die Anweisung `WHEN ... DO` wird verwendet, um Fehler und benutzerdefinierte Ausnahmen zu behandeln.
+Die Anweisung erfasst alle Fehler und benutzerdefinierten Ausnahmen, die nach dem Schlüsselwort `WHEN` aufgeführt sind.
+Wenn `WHEN` das Schlüsselwort `ANY` folgt, fängt die Anweisung jeden Fehler oder jede benutzerdefinierte Ausnahme ab, auch wenn sie bereits in einer ``WHEN``-Anweisung weiter oben im Block behandelt wurden.
+
+Der ``WHEN ... DO``-Block muss sich am Ende eines Anweisungsblocks befinden, vor der Anweisung `END` des Blocks.
+
+Auf das Schlüsselwort `DO` folgt eine Anweisung oder ein Anweisungsblock innerhalb eines ``BEGIN ... END``-Wrappers, der die Ausnahme behandelt.
+Die Kontextvariablen `SQLCODE`, `GDSCODE` und `SQLSTATE` stehen im Kontext dieser Anweisung oder dieses Blocks zur Verfügung.
+Die Anweisung `EXCEPTION` ohne Parameter kann auch in diesem Kontext verwendet werden, um den Fehler oder die Ausnahme erneut zu werfen.
+
+[[fblangref25-psql-when-gdscode-de]]
+.Bezüglich `GDSCODE`
+****
+Das Argument für die Klausel `WHEN GDSCODE` ist der symbolische Name, der der intern definierten Ausnahme zugeordnet ist, z.B. `grant_obj_notfound` für den GDS-Fehler 335544551.
+
+Nach der ``DO``-Klausel wird eine weitere ``GDSCODE``-Kontextvariable, die den numerischen Code enthält, für die Verwendung in der Anweisung oder dem Anweisungsblock verfügbar, die den Error-Handler codieren.
+Dieser numerische Code ist erforderlich, wenn Sie eine ``GDSCODE``-Ausnahme mit einem gezielten Fehler vergleichen möchten.
+****
+
+Die ``WHEN ... DO``-Anweisung oder der ``WHEN ... DO``-Block werden niemals ausgeführt, es sei denn, eines der Ereignisse, auf die die Bedingungen abzielen, wird zur Laufzeit ausgeführt.
+Wenn die Anweisung ausgeführt wird, wird die Ausführung fortgesetzt, so als ob kein Fehler aufgetreten wäre: Der Fehler oder die benutzerdefinierte Ausnahme beendet weder die Operationen des Triggers noch der gespeicherten Prozedur.
+
+Wenn jedoch die ``WHEN ... DO``-Anweisung oder der ``WHEN ... DO``-Block nichts zum Behandeln oder Beheben des Fehlers tut, wird die DML-Anweisung (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `MERGE`), die den Fehler verursacht hat zurückgerollt, und keine der Anweisungen darunter im selben Anweisungsblock wird ausgeführt.
+
+[IMPORTANT]
+====
+. Wenn der Fehler nicht durch eine der DML-Anweisungen (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `MERGE`) verursacht wird, wird der gesamte Block der Anweisungen zurückgesetzt, nicht nur der, der einen Fehler verursacht hat.
+Alle Operationen in der ``WHEN ... DO``-Anweisung werden ebenfalls zurückgesetzt.
+Dieselbe Einschränkung gilt für die Anweisung `EXECUTE PROCEDURE`.
+Lesen Sie eine interessante Diskussion über das Phänomen im Firebird Tracker-Ticket http://tracker.firebirdsql.org/browse/CORE-4483[CORE-4483].
+. Bei auswählbaren gespeicherten Prozeduren bleiben Ausgabezeilen, die bereits in früheren Iterationen einer ``FOR SELECT ... DO ... SUSPEND``-Schleife an den Client übergeben wurden erhalten, wenn beim Abrufen von Zeilen eine Ausnahme ausgelöst wird.
+====
+
+[[fblangref25-psql-whendo-scope-de]]
+==== Anwendungsbereiche einer `WHEN ... DO` Anweisung
+
+Eine Anweisung `WHEN ... DO` fängt Fehler und Ausnahmen im aktuellen Anweisungsblock ab.
+Es fängt auch ähnliche Ausnahmen in verschachtelten Blöcken ab, wenn diese Ausnahmen nicht in ihnen behandelt wurden.
+
+Alle Änderungen, die vor der Anweisung vorgenommen wurden, die den Fehler verursacht hat, sind für eine ``WHEN ... DO``-Anweisung sichtbar.
+Wenn Sie jedoch versuchen, sie in einer autonomen Transaktion zu protokollieren, sind diese Änderungen nicht verfügbar, da die Transaktion, bei der die Änderungen stattfanden, zu dem Zeitpunkt, zu dem die autonome Transaktion gestartet wird, nicht festgeschrieben ist.
+Das untere Beispiel 4 zeigt dieses Verhalten.
+
+[TIP]
+====
+Bei der Behandlung von Ausnahmen ist es manchmal wünschenswert, die Ausnahme zu behandeln, indem eine Protokollnachricht geschrieben wird, um den Fehler zu markieren, und die Ausführung über den fehlerhaften Datensatz hinaus fortgesetzt wird.
+Protokolle können in reguläre Tabellen geschrieben werden, aber es gibt ein Problem damit: Die Protokolldatensätze "`verschwinden`", wenn ein nicht behandelter Fehler dazu führt, dass das Modul nicht mehr ausgeführt wird und ein Rollback erfolgt.
+Die Verwendung von <<fblangref25-ddl-tbl-external-de,externen Tabellen>> kann hier nützlich sein, da Daten, die an sie geschrieben werden, transaktionsunabhängig sind.
+Die verknüpfte externe Datei ist immer noch vorhanden, unabhängig davon, ob der Gesamtprozess erfolgreich ist oder nicht.
+====
+
+==== Beispiele zur Verwendung von `WHEN...DO`
+
+. Ersetzen des Standardfehlers durch einen benutzerdefinierten Fehler:
++
+[source]
+----
+CREATE EXCEPTION COUNTRY_EXIST '';
+SET TERM ^;
+CREATE PROCEDURE ADD_COUNTRY (
+  ACountryName COUNTRYNAME,
+  ACurrency VARCHAR(10) )
+AS
+BEGIN
+  INSERT INTO country (country, currency)
+  VALUES (:ACountryName, :ACurrency);
+
+  WHEN SQLCODE -803 DO
+    EXCEPTION COUNTRY_EXIST 'Country already exists!';
+END^
+SET TERM ^;
+----
+. Einen Fehler protokollieren und erneut in den ``WHEN``-Block werfen:
++
+[source]
+----
+CREATE PROCEDURE ADD_COUNTRY (
+  ACountryName COUNTRYNAME,
+  ACurrency VARCHAR(10) )
+AS
+BEGIN
+  INSERT INTO country (country,
+                       currency)
+  VALUES (:ACountryName,
+          :ACurrency);
+  WHEN ANY DO
+  BEGIN
+    -- write an error in log
+    IN AUTONOMOUS TRANSACTION DO
+      INSERT INTO ERROR_LOG (PSQL_MODULE,
+                             GDS_CODE,
+                             SQL_CODE,
+                             SQL_STATE)
+      VALUES ('ADD_COUNTRY',
+              GDSCODE,
+              SQLCODE,
+              SQLSTATE);
+    -- Re-throw exception
+    EXCEPTION;
+  END
+END
+----
+. Behandeln mehrerer Fehler in einem ``WHEN``-Block
++
+[source]
+----
+...
+WHEN GDSCODE GRANT_OBJ_NOTFOUND,
+	 GDSCODE GRANT_FLD_NOTFOUND,
+	 GDSCODE GRANT_NOPRIV,
+	 GDSCODE GRANT_NOPRIV_ON_BASE
+DO
+BEGIN
+  EXECUTE PROCEDURE LOG_GRANT_ERROR(GDSCODE);
+  EXIT;
+END
+...
+----
+
+.Siehe auch
+<<fblangref25-psql-exception-de>>, <<fblangref25-ddl-exception-create-de,`CREATE EXCEPTION`>>, <<fblangref25-appx02-tbl-errcodes01-de,SQLCODE und GDSCODE Fehlercodes und Meldungen>> und <<fblangref25-appx02-tbl-sqlstates-de,SQLSTATE Fehlercodes und Meldungen>>

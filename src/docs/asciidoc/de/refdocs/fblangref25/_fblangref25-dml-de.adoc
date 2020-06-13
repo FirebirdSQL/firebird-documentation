@@ -1,0 +1,4476 @@
+[[fblangref25-dml-de]]
+= Statements der Data Manipulation Language (DML)
+
+.ÜBERPRÜFUNGSSTATUS
+[IMPORTANT]
+====
+Alle Abschnitte von diesem Punkt bis zum Ende des Kapitels warten auf  technische und redaktionelle Überprüfung.
+====
+
+DML -- Datenbearbeitungssprache -- ist die Teilmenge von SQL, die von Anwendungen und prozeduralen Modulen zum Extrahieren und Ändern von Daten verwendet wird.
+Die Extraktion zum Lesen sowohl roher als auch manipulierter Daten wird mit der Anweisung `SELECT` erreicht.
+`INSERT` dient zum Hinzufügen neuer Daten und `DELETE` dient zum Löschen von Daten, die nicht mehr benötigt werden.
+`UPDATE`, `MERGE` und `UPDATE OR INSERT` ändern alle Daten auf verschiedene Arten.
+
+[[fblangref25-dml-select-de]]
+== `SELECT`
+
+.Verwendet für
+Retrieving data
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Globale Syntax
+[listing,subs=+quotes]
+----
+SELECT
+[WITH [RECURSIVE] <cte> [, <cte> ...]]
+SELECT
+  [FIRST _m_] [SKIP _n_]
+  [DISTINCT | ALL] <columns>
+FROM
+  <source> [[AS] _alias_]
+  [<joins>]
+[WHERE <condition>]
+[GROUP BY <grouping-list>
+[HAVING <aggregate-condition>]]
+[PLAN <plan-expr>]
+[UNION [DISTINCT | ALL] <other-select>]
+[ORDER BY <ordering-list>]
+[ROWS <m> [TO <n>]]
+[FOR UPDATE [OF <columns>]]
+[WITH LOCK]
+[INTO <variables>]
+
+<variables> ::= [:]varname [, [:]varname ...]
+----
+
+[float]
+[[select]]
+===== Beschreibung
+
+Die Anweisung `SELECT` ruft Daten aus der Datenbank ab und übergibt sie an die Anwendung oder die umschließende  SQL-Anweisung.
+Daten werden in null oder mehr [term]_Zeilen_ zurückgegeben, die jeweils eine oder mehrere [term]_Spalten_ oder [term]_Felder_ enthalten.
+Die Summe der zurückgegebenen Zeilen ist die [term]_Ergebnismenge_ der Anweisung.
+
+Die einzigen obligatorischen Teile der Anweisung `SELECT` sind:
+
+* Das Schlüsselwort `SELECT` gefolgt von einer Spaltenliste.
+Dieser Teil spezifiziert _was_ Sie abrufen möchten.
+* Das Schlüsselwort `FROM` gefolgt von einem auswählbaren Objekt.
+Dies sagt der Engine _von wo_ Sie Daten erhalten möchten.
+
+In der einfachsten Form ruft `SELECT` eine Anzahl von Spalten aus einer einzelnen Tabelle oder Sicht ab, wie folgt:
+
+[source]
+----
+select id, name, address
+  from contacts
+----
+
+Oder, um alle Spalten abzurufen:
+
+[source]
+----
+select * from sales
+----
+
+In der Praxis werden die abgerufenen Zeilen oft durch eine Klausel `WHERE` begrenzt.
+Die Ergebnismenge kann nach einer ``ORDER BY``-Klausel sortiert werden.
+`FIRST`, `SKIP` oder `ROWS` können die Anzahl der Ausgabezeilen eingrenzen.
+Die Spaltenliste kann alle Arten von Ausdrücken anstelle von nur Spaltennamen enthalten, und die Quelle muss keine Tabelle oder Sicht sein;
+sie kann auch eine abgeleitete Tabelle, ein allgemeiner Tabellenausdruck (CTE) oder eine auswählbare gespeicherte  Prozedur (SP) sein.
+Mehrere Quellen können in einer `JOIN` kombiniert werden, und mehrere Ergebnismengen können in einer `UNION` kombiniert  werden.
+
+In den folgenden Abschnitten werden die verfügbaren `SELECT` Unterklauseln und ihre Verwendung im Detail erläutert.
+
+[[fblangref25-dml-select-first-skip-de]]
+=== `FIRST`, `SKIP`
+
+.Verwendet für
+Abrufen eines Teiles von Zeilen aus einer geordneten Menge
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+SELECT
+  [FIRST <m>] [SKIP <n>]
+  FROM ...
+  ...
+
+<m>, <n>  ::=
+    <integer-literal>
+  | <query-parameter>
+  | (<integer-expression>)
+----
+
+[[fblangref25-dml-tbl-firstskip-de]]
+.Argumente für die ``FIRST``- und ``SKIP``-Klauseln
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|integer literal
+|Ganzzahliges Literal
+
+|query parameter
+|Abfrageparameter-Platzhalter.
+`?` in DSQL und `:paramname` in PSQL
+
+|integer-expression
+|Ausdruck, der einen Ganzzahlwert zurückgibt
+|===
+
+.`FIRST` und `SKIP` sind keine Standardsyntax
+[NOTE]
+====
+`FIRST` und `SKIP` sind Firebird-spezifische, nicht-SQL-konforme Schlüsselwörter.
+Es wird dringend empfohlen die <<fblangref25-dml-select-rows-de,`ROWS`>>-Syntax zu verwenden.
+====
+
+[float]
+[[firstskip]]
+===== Beschreibung
+
+`FIRST` begrenz die Ausgabe der Abfrage auf die ersten _m_ Zeilen.
+`SKIP` übergeht die ersten _n_ Zeilen, bevor mit der Ausgabe begonnen wird.
+
+`FIRST` und `SKIP` sind optional.
+Bei Verwendung in "```FIRST __m__ SKIP __n__```" werden die obersten _n_ Zeilen der Ausgabe verworfen und die ersten _m_ Zeilen des Rests der Menge zurückgegeben.
+
+[[fblangref25-dml-select-first-skip01-de]]
+==== Eigenschaften von `FIRST` und `SKIP`
+
+* Jedes Argument für `FIRST` und `SKIP`, das kein Integer-Literal oder ein SQL-Parameter ist, muss in Klammern stehen.
+Dies bedeutet, dass ein Unterabfrageausdruck in _zwei_ Klammern eingeschlossen sein muss.
+* `SKIP 0` ist erlaubt, jedoch vollkommen sinnlos.
+* `FIRST 0` ist ebenfalls erlaubt und gibt eine leere Ergebnismenge zurück.
+* Negative Werte für `SKIP` und/oder `FIRST` resultieren in einem Fehler.
+* Wenn eine `SKIP` hinter dem Ende des Datensatzes landet, wird ein leerer Satz zurückgegeben.
+* Wenn die Anzahl der Zeilen im Datensatz (oder der Rest nach einem `SKIP`) kleiner als der Wert des __m__-Arguments für `FIRST` ist, wird die kleinere Anzahl von Zeilen zurückgegeben.
+Dies sind gültige Ergebnisse, keine Fehler.
+
+[CAUTION]
+====
+Wenn Sie `FIRST` in Unterabfragen verwenden, tritt ein Fehler auf.
+Diese Abfrage
+
+[source]
+----
+DELETE FROM MYTABLE
+  WHERE ID IN (SELECT FIRST 10 ID FROM MYTABLE)
+----
+
+löscht *alle* Datensätze aus der Tabelle.
+Die Unterabfrage ruft jedesmal 10 Zeilen ab, löscht sie und die Operation wird wiederholt, bis die Tabelle leer ist.
+Beachten Sie dies!
+Oder, besser, verwenden Sie die Klausel <<fblangref25-dml-select-rows-de,`ROWS`>> in der ``DELETE``-Anweisung.
+====
+
+[[firstskipexamples-de]]
+==== Beispiele
+
+Die folgende Abfrage gibt die ersten 10 Namen aus der ``People``-Tabelle zurück:
+
+[source]
+----
+select first 10 id, name from People
+  order by name asc
+----
+
+Die folgende Abfrage gibt alles zurück, _aber_ die ersten 10 Namen:
+
+[source]
+----
+select skip 10 id, name from People
+  order by name asc
+----
+
+Und dieser gibt die letzten 10 Zeilen zurück.
+Beachten Sie die doppelten Klammern:
+
+[source]
+----
+select skip ((select count(*) - 10 from People))
+  id, name from People
+  order by name asc
+----
+
+Diese Abfrage gibt die Zeilen 81 bis 100 der People-Tabelle zurück:
+
+[source]
+----
+select first 20 skip 80 id, name from People
+  order by name asc
+----
+
+.Siehe auch
+<<fblangref25-dml-select-rows-de,`ROWS`>>
+
+[[fblangref25-dml-select-column-list-de]]
+=== Die ``SELECT``-Spaltenliste
+
+Die Spaltenliste enthält einen oder mehrere durch Kommas getrennte Wertausdrücke.
+Jeder Ausdruck liefert einen Wert für eine Ausgabespalte.
+Alternativ kann `{asterisk}`  ("`select star`") verwendet werden, um für alle Spalten in einer Beziehung zu stehen (d.H. Für eine Tabelle, eine Ansicht oder eine auswählbare gespeicherte Prozedur).
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+SELECT
+  [...]
+  [DISTINCT | ALL] <output-column> [, <output-column> ...]
+  [...]
+  FROM ...
+
+<output-column> ::=
+    [<qualifier>.]*
+  | <value-expression> [COLLATE _collation_] [[AS] _alias_]
+
+<value-expression> ::=
+    [<qualifier>.{endsb}__table-column__
+  | [<qualifier>.{endsb}__view-column__
+  | [<qualifier>.{endsb}__selectable-SP-outparm__
+  | <literal>
+  | <context-variable>
+  | <function-call>
+  | <single-value-subselect>
+  | <CASE-construct>
+  | _any other expression returning a single_
+    _value of a Firebird data type or NULL_
+
+<qualifier> ::= _a relation name or alias_
+----
+
+[[fblangref25-dml-tbl-columnslist-de]]
+.Argumente der ``SELECT``-Spaltenliste
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|qualifier
+|Name der Beziehung (Sicht, gespeicherte Prozedur, abgeleitete Tabelle);
+oder ein Alias dafür
+
+|collation
+|Nur für zeichenartige Spalten: Ein Collations-Name der für den Zeichensatz der Daten existiert und gültig ist
+
+|alias
+|Spalten- oder Feldalias
+
+|table-column
+|Name einer Tabellenspalte
+
+|view-column
+|Name einer Ansichtsspalte
+
+|selectable-SP-outparm
+|Deklarierter Name eines Ausgabeparameters einer auswählbaren gespeicherten Prozedur
+
+|constant
+|Eine Konstante
+
+|context-variable
+|Kontextvariable
+
+|function-call
+|Skalarer oder Aggregatfunktionsaufrufausdruck
+
+|single-value-subselect
+|Eine Unterabfrage, die einen Skalarwert zurückgibt (Singleton)
+
+|CASE-construct
+|``CASE``-Konstrukt, dass Bedingungen für einen Rückgabewert definiert
+
+|other-single-value-expr
+|Jeder andere Ausdruck, der einen einzelnen Wert eines Firebird-Datentyps zurückgibt;
+oder `NULL`
+|===
+
+[float]
+===== Beschreibung
+
+Es ist immer gültig, einen Spaltennamen zu qualifizieren (oder "```{asterisk}```").
+Dies geschieht mit dem Namen oder Alias der Tabelle, Ansicht oder abfragbaren gespeicherten Prozedur, gefolgt von einem Punkt, z.B. `relationname.columnname`, `relationname.{asterisk}`, `alias.columnname`, `alias.{asterisk}`.
+Qualifizierend ist _required_, wenn der Spaltenname in mehr als einer Relation auftritt, die an einem Join beteiligt ist.
+Qualifizierendes  "```{asterisk}```" ist immer obligatorisch, wenn es nicht das einzige Element in der Spaltenliste ist.
+
+[IMPORTANT]
+====
+Aliase verschleiern den ursprünglichen Beziehungsnamen: Sobald eine Tabelle, eine Sicht oder eine Prozedur mit einem Alias versehen wurde, kann nur der Alias als Qualifikationsmerkmal für die gesamte Abfrage verwendet werden.
+Der Beziehungsname selbst ist nicht mehr verfügbar.
+====
+
+Der Spaltenliste kann optional eines der Schlüsselwörter `DISTINCT` or `ALL` vorangestellt werden: 
+
+* `DISTINCT` filtert alle doppelten Zeilen aus.
+Das heißt, wenn zwei oder mehr Zeilen die gleichen Werte in jeder entsprechenden Spalte haben, ist nur einer von ihnen in der Ergebnismenge enthalten
+* `ALL` ist der Standard: es gibt alle Zeilen zurück, einschließlich Duplikate.
+`ALL` wird selten verwendet;
+Es wird für die Einhaltung des SQL-Standards unterstützt.
+
+Eine Klausel `COLLATE` ändert das Erscheinungsbild der Spalte als solche nicht.
+Wenn die angegebene Sortierung jedoch die Groß- / Kleinschreibung der Spalte ändert, kann dies folgende Auswirkungen haben:
+
+* Die Reihenfolge, wenn eine Klausel `ORDER BY` ebenfalls vorhanden ist und diese Spalte umfasst
+* Gruppierung, wenn die Spalte Teil einer Klausel `GROUP BY` ist
+* Die abgerufenen Zeilen (und damit die Gesamtzahl der Zeilen in der Ergebnismenge), wenn `DISTINCT` verwendet wird
+
+[float]
+===== Beispiele für ``SELECT``-Abfragen mit verschiedenen Arten von Spaltenlisten
+
+Ein einfaches `SELECT`, das nur Spaltennamen verwendet:
+
+[source]
+----
+select cust_id, cust_name, phone
+  from customers
+  where city = 'London'
+----
+
+Eine Abfrage mit einem Verkettungsausdruck und einem Funktionsaufruf in der Spaltenliste:
+
+[source]
+----
+select 'Mr./Mrs. ' || lastname, street, zip, upper(city)
+  from contacts
+  where date_last_purchase(id) = current_date
+----
+
+Eine Abfrage mit zwei Unterabfragen
+
+[source]
+----
+select p.fullname,
+  (select name from classes c where c.id = p.class) as class,
+  (select name from mentors m where m.id = p.mentor) as mentor
+from pupils p
+----
+
+
+Die folgende Abfrage führt dasselbe wie das vorherige  mit Joins statt Unterabfragen durch:
+
+[source]
+----
+select p.fullname,
+  c.name as class,
+  m.name as mentor
+  join classes c on c.id = p.class
+from pupils p
+  join mentors m on m.id = p.mentor
+----
+
+
+Diese Abfrage verwendet ein ``CASE``-Konstrukt, um die korrekte Anrede zu ermitteln, z.B. für das Senden von E-Mails an eine Person:
+
+[source]
+----
+select case upper(sex)
+    when 'F' then 'Mrs.'
+    when 'M' then 'Mr.'
+    else ''
+  end as title,
+  lastname,
+  address
+from employees
+----
+
+Abfrage einer auswählbaren gespeicherten Prozedur:
+
+[source]
+----
+select * from interesting_transactions(2010, 3, 'S')
+  order by amount
+----
+
+Auswahl aus Spalten einer abgeleiteten Tabelle.
+Eine abgeleitete Tabelle ist eine  eingeklammerte ``SELECT``-Anweisung, deren Ergebnismenge in einer einschließenden Abfrage so verwendet wird, als wäre sie eine reguläre Tabelle oder Sicht.
+Die abgeleitete Tabelle ist hier fett dargestellt:
+
+[source]
+----
+select fieldcount,
+  count(relation) as num_tables
+from (select r.rdb$relation_name as relation,
+        count(*) as fieldcount
+      from rdb$relations r
+        join rdb$relation_fields rf
+          on rf.rdb$relation_name = r.rdb$relation_name
+      group by relation)
+group by fieldcount
+----
+
+Die Zeit durch eine Kontextvariable abfragen (`CURRENT_TIME`):
+
+[source]
+----
+select current_time from rdb$database
+----
+
+
+Für diejenigen, die mit `RDB$DATABASE` nicht vertraut sind: Dies ist eine Systemtabelle, die in allen Firebird-Datenbanken vorhanden ist und nur genau eine Zeile enthält.
+Obwohl es für diesen Zweck nicht erstellt wurde, ist es unter Firebird-Programmierern Standard geworden, diese Tabelle abzufragen, wenn Sie "`aus nichts`" abfragen möchten, d.h. wenn Sie Daten benötigen, die nicht an eine Tabelle oder Ansicht gebunden sind, diese aber über Ausdrücke in den Ausgabespalten abgeleitet werden können.
+Ein anderes Beispiel ist:
+
+[source]
+----
+select power(12, 2) as twelve_squared, power(12, 3) as twelve_cubed
+  from rdb$database
+----
+
+Zum Schluss ein Beispiel, in dem Sie aussagekräftige Informationen  aus `RDB$DATABASE` selbst ermitteln:
+
+[source]
+----
+select rdb$character_set_name from rdb$database
+----
+
+Wie Sie vielleicht schon vermutet haben, erhalten Sie den Standardzeichensatz der Datenbank.
+
+.Siehe auch
+<<fblangref25-functions-de,Eingebaute Funktionen>>, <<fblangref25-functions-aggfuncs-de,Aggregatfunktionen>>, <<fblangref25-contextvars-de,Kontextvariablen>>, <<fblangref25-commons-conditional-case-de,`CASE`>>, <<fblangref25-commons-subqueries-de,Unterabfragen>>
+
+[[fblangref25-dml-select-from-de]]
+=== Die ``FROM``-Klausel
+
+Die Klausel `FROM` gibt die Quelle(n) an, aus der die Daten abgerufen werden sollen.
+In seiner einfachsten Form ist dies nur eine einzelne Tabelle oder Ansicht.
+Die Quelle kann jedoch auch eine auswählbare gespeicherte Prozedur, eine abgeleitete Tabelle oder ein allgemeiner Tabellenausdruck sein.
+Mehrere Quellen können mit verschiedenen Arten von Joins kombiniert werden.
+
+Dieser Abschnitt konzentriert sich auf Single-Source-Selects.
+<<fblangref25-dml-select-joins-de,Joins>> werden in einem der folgenden Abschnitte behandelt.
+
+.Syntax
+[listing,subs=+quotes]
+----
+SELECT
+  ...
+  FROM <source>
+  [<joins>]
+  [...]
+
+<source> ::=
+  {   _table_
+    | _view_
+    | _selectable-stored-procedure_ [(<args>)]
+    | <derived-table>
+    | <common-table-expression>
+  } [[AS] _alias_]
+
+<derived-table> ::=
+  (<select-statement>) [[AS] _alias_] [(<column-aliases>)]
+
+<common-table-expression> ::=
+  WITH [RECURSIVE] <cte-def> [, <cte-def> ...]
+  <select-statement>
+
+<cte-def> ::= _name_ [(<column-aliases>)] AS (<select-statement>)
+
+<column-aliases> ::= _column-alias_ [, _column-alias_ ...]
+----
+
+[[fblangref25-dml-tbl-from-de]]
+.Argumente der ``FROM``-Klausel
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|table
+|Name einer Tabelle
+
+|view
+|Name einer Ansicht
+
+|selectable-stored-procedure
+|Name einer auswählbaren gespeicherten Prozedur
+
+|args
+|Auswählbare Argumente für gespeicherte Prozeduren
+
+|derived table
+|Abgeleiteter Tabellenabfrageausdruck
+
+|cte-def
+|Definition des gemeinsamen Tabellenausdrucks (Common Table Expression, CTE), einschließlich eines "`ad hoc`"-Namens
+
+|select-statement
+|Beliebige SELECT-Anweisung
+
+|column-aliases
+|Alias für eine Spalte in einer Relation, CTE oder abgeleitete Tabelle
+
+|name
+|Der "`ad hoc`"-Name für eine CTE
+
+|alias
+|Der Alias einer Datenquelle (Tabelle, View, Prozedur, CTE, abgeleitete Tabelle)
+|===
+
+[[fblangref25-dml-select-from-table-view-de]]
+==== Abfragen einer Tabelle oder Ansicht mit `FROM`
+
+Bei der Auswahl aus einer einzelnen Tabelle oder Sicht muss die ``FROM``-Klausel nichts mehr als den Namen enthalten.
+Ein Alias kann nützlich oder sogar notwendig sein, wenn es Unterabfragen gibt, die auf die Haupt-Select-Anweisung verweisen (wie sie es sooft tun -- Unterabfragen wie diese werden auch [term]_korrelierte Unterabfragen_ genannt).
+
+[float]
+===== Beispiele
+
+[source]
+----
+select id, name, sex, age from actors
+where state = 'Ohio'
+----
+
+[source]
+----
+select * from birds
+where type = 'flightless'
+order by family, genus, species
+----
+
+[source]
+----
+select firstname,
+  middlename,
+  lastname,
+  date_of_birth,
+  (select name from schools s where p.school = s.id) schoolname
+from pupils p
+where year_started = '2012'
+order by schoolname, date_of_birth
+----
+
+.Mischen Sie niemals Spaltennamen mit Spaltenaliasnamen!
+[IMPORTANT]
+====
+Wenn Sie einen Alias für eine Tabelle oder eine Sicht angeben, müssen Sie diesen Alias anstelle des Tabellennamens immer verwenden, wenn Sie die Spalten der Relation abfragen (und wo auch immer Sie auf Spalten verweisen, z.B. ``ORDER BY``-, ``GROUP BY``- und ``WHERE``-Klauseln).
+
+Richtige Verwendung:
+
+[source]
+----
+SELECT PEARS
+FROM FRUIT;
+
+SELECT FRUIT.PEARS
+FROM FRUIT;
+
+SELECT PEARS
+FROM FRUIT F;
+
+SELECT F.PEARS
+FROM FRUIT F;
+----
+
+Falsche Verwendung:
+
+[source]
+----
+SELECT FRUIT.PEARS
+FROM FRUIT F;
+----
+====
+
+[[fblangref25-dml-select-sp-de]]
+==== Abfragen einer gespeicherten Prozedur mit `FROM`
+
+Eine [term]_auswählbare gespeicherte Prozedur_ ist eine Prozedur, die:
+
+* enthält mindestens einen Ausgabeparameter und
+* das Schlüsselwort `SUSPEND` verwendet, damit der Aufrufer die Ausgabezeilen nacheinander abrufen kann, genau so wie bei der Auswahl aus einer Tabelle oder Ansicht.
+
+Die Ausgabeparameter einer auswählbaren gespeicherten Prozedur entsprechen den Spalten einer regulären Tabelle.
+
+Die Abfrage aus einer gespeicherten Prozedur ohne Eingabeparameter entspricht der Abfrage aus einer Tabelle oder Ansicht:
+
+[source]
+----
+select * from suspicious_transactions
+  where assignee = 'John'
+----
+
+Alle erforderlichen Eingabeparameter müssen nach dem in Klammern angegebenen Prozedurnamen angegeben werden:
+
+[source]
+----
+select name, az, alt from visible_stars('Brugge', current_date, '22:30')
+  where alt >= 20
+  order by az, alt
+----
+
+Werte für optionale Parameter (d.h. Parameter, für die Standardwerte definiert wurden) können weggelassen oder bereitgestellt werden.
+Wenn Sie diese jedoch nur teilweise angeben, müssen die Parameter, die Sie weglassen, alle am Ende stehen.
+
+Angenommen, die Prozedur `visible_stars` aus dem vorherigen Beispiel hat zwei optionale Parameter: `min_magn` (`numeric(3,1)`)  und `spectral_class` (`varchar(12)`).
+Die folgenden Abfragen sind alle gültig:
+
+[source]
+----
+select name, az, alt
+from visible_stars('Brugge', current_date, '22:30');
+
+select name, az, alt
+from visible_stars('Brugge', current_date, '22:30', 4.0);
+
+select name, az, alt
+from visible_stars('Brugge', current_date, '22:30', 4.0, 'G');
+----
+
+Diese jedoch nicht, da es ein "`Loch`" in der Parameterliste gibt:
+
+[source]
+----
+select name, az, alt
+from visible_stars('Brugge', current_date, '22:30', 'G');
+----
+
+Ein Alias für eine auswählbare gespeicherte Prozedur wird _nach_ der Parameterliste angegeben:
+
+[source]
+----
+select
+  number,
+  (select name from contestants c where c.number = gw.number)
+from get_winners('#34517', 'AMS') gw
+----
+
+
+Wenn Sie auf einen Ausgabeparameter ("`column`") verweisen, indem Sie ihn mit dem vollständigen Prozedurnamen qualifizieren, sollte die Parameterliste weggelassen werden:
+
+[source]
+----
+select
+  number,
+  (select name from contestants c where c.number = get_winners.number)
+from get_winners('#34517', 'AMS')
+----
+
+.Siehe auch
+<<fblangref25-psql-storedprocs-de,Gespeicherte Prozeduren>>, <<fblangref25-ddl-proc-create-de,`CREATE PROCEDURE`>>
+
+[[fblangref25-dml-select-from-dt-de]]
+==== Abfragen aus einer abgeleiteten Tabelle mittels `FROM`
+
+Eine abgeleitete Tabelle ist eine gültige ``SELECT``-Anweisung, die in Klammern eingeschlossen ist, optional gefolgt von einem Tabellenalias und / oder Spaltenaliasnamen.
+Die Ergebnismenge der Anweisung fungiert als virtuelle Tabelle, die die umschließende Anweisung abfragen kann.
+
+.Syntax
+[listing,subs=+quotes]
+----
+(<select-query>)
+  [[AS] _derived-table-alias_]
+  [(<derived-column-aliases>)]
+
+<derived-column-aliases> := _column-alias_ [, _column-alias_ ...]
+----
+
+Die von diesem "```SELECT FROM(SELECT FROM ...)```"-Stil der Anweisung zurückgegebene Datenmenge ist eine virtuelle Tabelle, die innerhalb der umschließenden Anweisung abgefragt werden kann, als wäre sie eine normale Tabelle oder Ansicht.
+
+[float]
+===== Beispiel mit einer abgeleiteten Tabelle
+
+Die abgeleitete Tabelle in der folgenden Abfrage gibt die Liste der Tabellennamen in der Datenbank und die Anzahl der Spalten in jeder Datenbank zurück.
+Eine "`Drill-Down`"-Abfrage für die abgeleitete Tabelle gibt die Anzahl der Felder und die Anzahl der Tabellen mit jeder Feldanzahl zurück:
+
+[source]
+----
+SELECT
+  FIELDCOUNT,
+  COUNT(RELATION) AS NUM_TABLES
+FROM (SELECT
+        R.RDB$RELATION_NAME RELATION,
+        COUNT(*) AS FIELDCOUNT
+      FROM RDB$RELATIONS R
+        JOIN RDB$RELATION_FIELDS RF
+        ON RF.RDB$RELATION_NAME = R.RDB$RELATION_NAME
+        GROUP BY RELATION)
+GROUP BY FIELDCOUNT
+----
+
+Ein triviales Beispiel, das demonstriert, wie der Alias einer abgeleiteten Tabelle und die Liste der Spaltenaliase (beide optional) verwendet werden können:
+
+[source]
+----
+SELECT
+  DBINFO.DESCR, DBINFO.DEF_CHARSET
+FROM (SELECT *
+      FROM RDB$DATABASE) DBINFO
+        (DESCR, REL_ID, SEC_CLASS, DEF_CHARSET)
+----
+
+.Mehr über abgeleitete Tabellen
+[NOTE]
+====
+Abgeleitete Tabellen können 
+
+* verschachtelt werden
+* Unions sein und in Unions verwendet werden
+* Aggregatfunktionen, Unterabfragen und Joins enthalten
+* in Aggregatfunktionen, Unterabfragen und Joins verwendet werden
+* Aufrufe an abfragbare gespeicherte Prozeduren oder Abfragen auf diese sein
+* ``WHERE``-, ``ORDER BY``- und ``GROUP BY``-Klauseln, `FIRST`/``SKIP``- oder ``ROWS``-Direktiven, usw enthalten.
+
+Weiter gilt: 
+
+* Jede Spalte in einer abgeleiteten Tabelle muss einen Namen haben.
+Wenn sie keinen Namen hat, z.B. wenn es sich um einen Konstanten- oder einen Laufzeitausdruck handelt, sollte ihr ein Alias zugewiesen werden, entweder auf reguläre Weise oder durch einfügen in die Liste der Spaltenaliase in der Spezifikation der abgeleiteten Tabelle.
+** _Die Liste der Spaltenaliase ist optional, aber falls vorhanden, muss sie einen Alias für jede Spalte in der abgeleiteten Tabelle enthalten_
+* Der Optimierer kann abgeleitete Tabellen sehr effektiv verarbeiten.
+Wenn eine abgeleitete Tabelle jedoch in einem Inner Join enthalten ist und eine Unterabfrage enthält, kann der Optimierer keine Join-Reihenfolge verwenden.
+====
+
+[float]
+===== Ein nützlicheres Beispiel
+
+Angenommen, wir haben eine Tabelle `COEFFS`, die die Koeffizienten einer Anzahl von quadratischen Gleichungen enthält, die wir lösen müssen.
+Diese wurde folgendermaßen definiert:
+
+[source]
+----
+create table coeffs (
+  a double precision not null,
+  b double precision not null,
+  c double precision not null,
+  constraint chk_a_not_zero check (a <> 0)
+)
+----
+
+Abhängig von den Werten für `a`, `b` und `c`  kann jede Gleichung null, eine oder zwei Lösungen haben.
+Es ist möglich, diese Lösungen mit einer einstufigen Abfrage für die Tabelle `COEFFS` zu finden, aber der Code sieht ziemlich unordentlich aus und mehrere Werte (wie die Diskriminante) müssen mehrmals pro Zeile berechnet werden.
+Eine abgeleitete Tabelle kann dabei helfen, die Dinge sauber zu halten:
+
+[source]
+----
+select
+  iif (D >= 0, (-b - sqrt(D)) / denom, null) sol_1,
+  iif (D >  0, (-b + sqrt(D)) / denom, null) sol_2
+  from
+    (select b, b*b - 4*a*c, 2*a from coeffs) (b, D, denom)
+----
+
+Wenn wir die Koeffizienten neben den Lösungen anzeigen möchten (was keine schlechte Idee ist), können wir die Abfrage folgendermaßen ändern:
+
+[source]
+----
+select
+  a, b, c,
+  iif (D >= 0, (-b - sqrt(D)) / denom, null) sol_1,
+  iif (D >  0, (-b + sqrt(D)) / denom, null) sol_2
+  from
+    (select a, b, c, b*b - 4*a*c as D, 2*a as denom
+     from coeffs)
+----
+
+Beachten Sie, dass, während die erste Abfrage eine Liste mit Spaltenaliasen für die abgeleitete Tabelle verwendet, nutzt die zweite Abfrage intern hinzugefügte Alias, wo diese benötigt werden.
+Beide Methoden funktionieren, solange jede Spalte einen Namen hat.
+
+[[fblangref25-dml-select-from-cte-de]]
+==== Abfragen einer CTE mittels `FROM`
+
+Ein allgemeiner Tabellenausdruck (Common Table Expression) oder _CTE_ ist eine komplexere Variante der abgeleiteten Tabelle, aber auch leistungsfähiger.
+Eine Präambel, beginnend mit dem Schlüsselwort `WITH`, definiert einen oder mehrere benannte _CTE_ mit jeweils einer optionalen  Spalten-Alias-Liste.
+Die Hauptabfrage, die der Präambel folgt, kann dann auf diese _CTE_ wie normale Tabellen oder Ansichten zugreifen.
+Sobald die Hauptabfrage ausgeführt wurde, werden die __CTE__s nicht mehr betrachtet.
+
+Für eine vollständige Beschreibung der __CTE__s, beachten Sie bitte den Abschnitt <<fblangref25-dml-select-cte-de,[ref]_Common Table Expressions (WITH ... AS ... SELECT)_>>.
+
+Das folgende ist eine andere Variante unseres abgeleiteten Tabellenbeispiels als _CTE_:
+
+[source]
+----
+with vars (b, D, denom) as (
+  select b, b*b - 4*a*c, 2*a from coeffs
+)
+select
+  iif (D >= 0, (-b - sqrt(D)) / denom, null) sol_1,
+  iif (D >  0, (-b + sqrt(D)) / denom, null) sol_2
+from vars
+----
+
+Abgesehen von der Tatsache, dass die Berechnungen, die zuerst gemacht werden müssen, jetzt am Anfang stehen, ist dies keine große Verbesserung gegenüber der abgeleiteten Tabellenversion.
+Aber wir können jetzt auch die doppelte Berechnung von sqrt (D) für jede Zeile eliminieren:
+
+[source]
+----
+with vars (b, D, denom) as (
+  select b, b*b - 4*a*c, 2*a from coeffs
+),
+vars2 (b, D, denom, sqrtD) as (
+  select b, D, denom, iif (D >= 0, sqrt(D), null) from vars
+)
+select
+  iif (D >= 0, (-b - sqrtD) / denom, null) sol_1,
+  iif (D >  0, (-b + sqrtD) / denom, null) sol_2
+from vars2
+----
+
+Der Code ist jetzt etwas komplizierter, könnte aber effizienter ausgeführt werden (abhängig davon, was mehr Zeit benötigt: die Ausführung der Funktion `SQRT` oder die Übergabe der Werte von `b`, `D` und `denom` durch eine weitere  _CTE_).
+Übrigens hätten wir das Gleiche mit abgeleiteten Tabellen tun können, aber das würde Verschachtelung bedeuten.
+
+.Siehe auch
+<<fblangref25-dml-select-cte-de,[ref]_Common Table Expressions (WITH ... AS ... SELECT)_>>.
+
+[[fblangref25-dml-select-joins-de]]
+=== Joins
+
+Joins kombinieren Daten aus zwei Quellen zu einem einzelnen Satz.
+Dies wird durch einen Zeile-für-Zeilen-Vergleich durchgeführt und beinhaltet üblicherweise eine [term]_Join-Bedingung_, um festzulegen welche Zeilen zusammengeführt werden sollen und im Ergebnisdatensatz erscheinen sollen.
+Es gibt unterschiedliche Arten (`INNER`, `OUTER`) und Klassen (qualifiziert, natürlich, etc.), jede mit eigener Syntax und Regeln.
+
+Da Joins verkettet werden können, können die an einem Join beteiligten  Datensätze selbst verbundene Sets sein.
+
+.Syntax
+[listing,subs=+quotes]
+----
+SELECT
+   ...
+   FROM <source>
+   [<joins>]
+   [...]
+
+<source> ::=
+  {   _table_
+    | _view_
+    | _selectable-stored-procedure_ [(<args>)]
+    | <derived-table>
+    | <common-table-expression>
+  } [[AS] _alias_]
+
+<joins> ::= <join> [<join> ...]
+
+<join> ::=
+    [<join-type>] JOIN <source> <join-condition>
+  | NATURAL [<join-type>] JOIN <source>
+  | {CROSS JOIN | ,} <source>
+
+<join-type> ::= INNER | {LEFT | RIGHT | FULL} [OUTER]
+
+<join-condition> ::= ON <condition> | USING (<column-list>)
+----
+
+[[fblangref25-dml-tbl-join-de]]
+.Argumente für ``JOIN``-Klauseln
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|table
+|Name einer Tabelle
+
+|view
+|Name einer Ansicht
+
+|selectable-stored-procedure
+|Name einer auswählbaren gespeicherten Prozedur
+
+|args
+|Wählbare gespeicherte Prozedur-Eingangsparameter
+
+|derived-table
+|Referenz, namentlich, auf eine abgeleitete Tabelle
+
+|common-table-expression
+|Verweis auf einen gemeinsamen Tabellenausdruck (CTE)
+
+|alias
+|Ein Alias für eine Datenquelle (Tabelle, View, Prozedur, CTE, abgeleitete Tabelle)
+
+|condition
+|Join-Bedingung (Kriterium)
+
+|column-list
+|Die Liste der Spalten, die für einen Equi-Join verwendet werden
+|===
+
+[[fblangref25-dml-select-joins-types-de]]
+==== Inner vs. Outer Joins
+
+Ein Join kombiniert immer Datenzeilen aus zwei Mengen (normalerweise als die linke Menge und die rechte Menge bezeichnet).
+Standardmäßig werden nur Zeilen in die Ergebnismenge aufgenommen, die die Join-Bedingung erfüllen (d.h. wenn bei der Join-Bedingung mindestens eine Zeile in der anderen Gruppe übereinstimmt).
+Dieser Standardtyp von Join wird als [term]_Inner Join_ bezeichnet.
+Angenommen, wir haben die folgenden zwei Tabellen:
+
+.Tabelle A
+[%autowidth,cols="1,1", options="header", caption=""]
+|===
+| ID
+| S
+
+|87
+|Just some text
+
+|235
+|Silence
+|===
+
+.Tabelle B
+[%autowidth,cols="1,1", options="header", caption=""]
+|===
+| CODE
+| X
+
+|-23
+|56.7735
+
+|87
+|416.0
+|===
+
+Wenn wir diese Tabellen wie folgt verbinden:
+
+[source]
+----
+select *
+  from A
+  join B on A.id = B.code;
+----
+
+dann ist die Ergebnismenge:
+
+[%autowidth,cols="1,1,1,1", options="header"]
+|===
+| ID
+| S
+| CODE
+| X
+
+|87
+|Just some text
+|87
+|416.0
+|===
+
+Die erste Zeile von `A` wurde mit der zweiten Zeile von `B` verbunden, weil sie zusammen die Bedingung "```A.id = B.code```" erfüllten.
+Die anderen Zeilen aus den Quellentabellen haben keine Übereinstimmung in der entgegengesetzten Menge und sind daher  nicht in der Verknüpfung enthalten.
+Denken Sie daran, dies ist ein `INNER` Join.
+Wir können diese Tatsache explizit machen, indem wir schreiben:
+
+[source]
+----
+select *
+  from A
+  inner join B on A.id = B.code;
+----
+
+Da jedoch `INNER` die Standardeinstellung ist, wird dies selten durchgeführt.
+
+Es ist durchaus möglich, dass eine Zeile im linken Satz mit mehreren Zeilen vom rechten Satz übereinstimmt oder umgekehrt.
+In diesem Fall sind alle diese Kombinationen enthalten und wir können Ergebnisse erhalten wie:
+
+[%autowidth,cols="1,1,1,1", options="header"]
+|===
+| ID
+| S
+| CODE
+| X
+
+|87
+|Just some text
+|87
+|416.0
+
+|87
+|Just some text
+|87
+|-1.0
+
+|-23
+|Don't know
+|-23
+|56.7735
+
+|-23
+|Still don't know
+|-23
+|56.7735
+
+|-23
+|I give up
+|-23
+|56.7735
+|===
+
+Manchmal möchten (oder brauchen) _alle_ die Zeilen einer oder beider Quellen in der verbundenen Menge erscheinen, unabhängig davon, ob sie mit einem Datensatz in der anderen Quelle übereinstimmen.
+An dieser Stelle kommen Outer Joins ins Spiel.
+Ein Outer Join `LEFT` enthält alle Datensätze aus dem linken Satz, aber nur übereinstimmende Datensätze aus dem richtigen Satz.
+In einem `RIGHT` Outer Join ist es umgekehrt.
+`FULL` Outer Joins umfassen alle Datensätze aus beiden Sets.
+In allen äußeren Joins sind die "`Löcher`" (die Stellen, an denen ein eingeschlossener Quelldatensatz keine Übereinstimmung in der anderen Menge hat) mit `NULL` gefüllt.
+
+Um einen Outer Join zu erstellen, müssen Sie `LEFT`, `RIGHT` oder `FULL` angeben, optional vom Schlüsselwort `OUTER` gefolgt.
+
+Im Folgenden sind die Ergebnisse der verschiedenen äußeren Joins aufgeführt, wenn sie auf unsere ursprünglichen Tabellen `A` und `B` angewendet werden:
+
+[source]
+----
+select *
+  from A
+  left [outer] join B on A.id = B.code;
+----
+
+[%autowidth,cols="1,1,1,1", options="header"]
+|===
+| ID
+| S
+| CODE
+| X
+
+|87
+|Just some text
+|87
+|416.0
+
+|235
+|Silence
+|__<null>__
+|__<null>__
+|===
+
+[source]
+----
+select *
+  from A
+  right [outer] join B on A.id = B.code
+----
+
+[%autowidth,cols="1,1,1,1", options="header"]
+|===
+| ID
+| S
+| CODE
+| X
+
+|__<null>__
+|__<null>__
+|-23
+|56.7735
+
+|87
+|Just some text
+|87
+|416.0
+|===
+
+[source]
+----
+select *
+  from A
+  full [outer] join B on A.id = B.code
+----
+
+[%autowidth,cols="1,1,1,1", options="header"]
+|===
+| ID
+| S
+| CODE
+| X
+
+|__<null>__
+|__<null>__
+|-23
+|56.7735
+
+|87
+|Just some text
+|87
+|416.0
+
+|235
+|Silence
+|__<null>__
+|__<null>__
+|===
+
+[[fblangref25-dml-select-joins-qualified-de]]
+==== Qualifizierte Joins
+
+Qualifizierte Joins geben Bedingungen für das Kombinieren von Zeilen an.
+Dies geschieht entweder explizit in einer ``ON``-Klausel oder implizit in einer ``USING``-Klausel.
+
+.Syntax
+[listing]
+----
+<qualified-join> ::= [<join-type>] JOIN <source> <join-condition>
+
+<join-type> ::= INNER | {LEFT | RIGHT | FULL} [OUTER]
+
+<join-condition> ::= ON <condition> | USING (<column-list>)
+----
+
+===== Joins mit expliziter Bedingung
+
+Die meisten qualifizierten Joins haben eine Klausel `ON` mit einer expliziten Bedingung, bei der es sich um einen beliebigen gültigen booleschen Ausdruck handeln kann, der jedoch normalerweise einen Vergleich zwischen den beiden beteiligten Quellen beinhaltet.
+
+Häufig ist die Bedingung ein Gleichheitstest (oder eine Anzahl von ``AND``-verknüpften Gleichheitstests) unter Verwendung des Operators "```=```".
+Joins wie diese heißen [term]_Equi-Joins _.
+(Die Beispiele im Abschnitt über innere und äußere Verknüpfung waren Equi-Joins.)
+
+Beispiele für Joins mit expliziter Bedingung:
+
+[source]
+----
+/* Wählen Sie alle Detroit-Kunden aus, die 2013 einen 
+                Kauf getätigt haben, zusammen mit den Kaufdetails: */
+select * from customers c
+  join sales s on s.cust_id = c.id
+  where c.city = 'Detroit' and s.year = 2013;
+----
+
+[source]
+----
+/* Dasselbe wie oben, aber auch nicht kaufende Kunden: */
+select * from customers c
+  left join sales s on s.cust_id = c.id
+  where c.city = 'Detroit' and s.year = 2013;
+----
+
+[source]
+----
+/* Wähle für jeden Mann die Frauen aus, die größer sind als er. 
+   Männer, für die keine solche Frau existiert, sind nicht enthalten. */
+select m.fullname as man, f.fullname as woman
+  from males m
+  join females f on f.height > m.height;
+----
+
+[source]
+----
+/* Wähle alle Schüler mit ihrer Klasse und ihrem Mentor aus. 
+   Schüler ohne Mentor sind ebenfalls enthalten. Schüler ohne
+   Klasse sind nicht enthalten. */
+select p.firstname, p.middlename, p.lastname,
+       c.name, m.name
+  from pupils p
+  join classes c on c.id = p.class
+  left join mentors m on m.id = p.mentor;
+----
+
+[[fblangref25-dml-select-joins-named-columns-de]]
+===== Joins für benannte Spalten
+
+Equi-Joins vergleichen häufig Spalten, die in beiden Tabellen denselben Namen haben.
+Wenn dies der Fall ist, können wir auch den zweiten Typ von qualifiziertem Join verwenden: die [term]_Joins für benannte Spalten_.
+
+[NOTE]
+====
+Joins für benannte Spalten werden in Dialekt 1 nicht unterstützt.
+====
+
+Joins für benannte Spalten besitzen eine ``USING``-Klausel, welche nur die Spaltennamen enthält.
+Anstelle dieser Variante:
+
+[source]
+----
+select * from flotsam f
+  join jetsam j
+  on f.sea = j.sea
+  and f.ship = j.ship;
+----
+
+können wir auch diese schreiben:
+
+[source]
+----
+select * from flotsam
+  join jetsam using (sea, ship)
+----
+
+welche deutlich kürzer ist.
+Der Ergebnissatz ist etwas anders -- zumindest bei der Verwendung von "```SELECT {asterisk}```":
+
+* Der Join mit expliziter Bedingung -- mit der ``ON``-Klausel -- wird jede der Spalten `SEA` und `SHIP` zweimal enthalten: einmal für Tabelle `FLOTSAM` und einmal für Tabelle `JETSAM`.
+Offensichtlich werden sie die gleichen Werte haben.
+* Der Join für benannte Spalten -- mit der ``USING``-Klausel -- enthält diese Spalten nur einmal.
+
+Wenn Sie alle Spalten in der Ergebnismenge der benannten Spalten verknüpfen möchten, richten Sie Ihre Abfrage wie folgt ein:
+
+[source]
+----
+select f.*, j.*
+  from flotsam f
+  join jetsam j using (sea, ship);
+----
+
+Dadurch erhalten Sie genau das gleiche Ergebnis wie beim Join der expliziten Bedingung.
+
+Für einen Join mit benannten Spalte vom Typ `OUTER` gibt es eine zusätzliche Wendung, wenn "```SELECT`` {asterisk}`" oder ein nicht qualifizierter Spaltenname aus der ``USING``-Liste verwendet wird:
+
+Wenn eine Zeile aus einer Quellgruppe keine Übereinstimmung in der anderen enthält, muss sie dennoch aufgrund der ``LEFT``-, ``RIGHT``-  oder ``FULL``-Direktive enthalten sein.
+Die zusammengeführte Spalte im zusammengeführten Satz erhält den Wert nicht-``NULL``.
+Das ist soweit gut, aber jetzt können Sie nicht sagen, ob dieser Wert aus der linken, rechten oder beiden Mengen stammt.
+Dies kann besonders trügerisch sein, wenn der Wert von der rechten Seite stammt, weil "```{asterisk}```" immer kombinierte Spalten im linken Teil zeigt -- selbst im Falle eines `RIGHT` Join.
+
+Ob dies ein Problem ist oder nicht, hängt von der Situation ab.
+Wenn ja, benutzen Sie die "```a.{asterisk}, b.{asterisk}```"-Ansatz wie oben gezeigt, mit `a` und `b` als Namen oder Alias der beiden Quellen.
+Oder noch besser, vermeiden Sie "```{asterisk}```" insgesamt in Ihren seriösen Abfragen und qualifizieren Sie alle Spaltennamen in verbundenen Mengen.
+Dies hat den zusätzlichen Vorteil, dass Sie gezwungen sind, darüber nachzudenken, welche Daten Sie abrufen möchten und woher.
+
+Es liegt in Ihrer Verantwortung sicherzustellen, dass die Spaltennamen in der ``USING``-Liste kompatible Typen zwischen den beiden Quellen sind.
+Wenn die Typen kompatibel aber nicht gleich sind, konvertiert die Engine sie in den Typ mit dem breitesten Wertebereich, bevor sie die Werte vergleicht.
+Dies ist auch der Datentyp der zusammengeführten Spalte, die in der Ergebnismenge angezeigt wird, wenn "```SELECT {asterisk}```" oder der nicht qualifizierte Spaltenname verwendet wird.
+Qualifizierte Spalten behalten ihren ursprünglichen Datentyp immer bei.
+
+[[fblangref25-dml-select-joins-natural-de]]
+==== Natürliche Joins
+
+Greift man die Idee der benannten Spalten auf und geht noch einen Schritt weiter, führt ein [term]_natürlicher Join_  einen automatischen Equi-Join für alle Spalten durch, die in der linken und rechten Tabelle den gleichen Namen haben.
+Die Datentypen dieser Spalten müssen kompatibel sein.
+
+[NOTE]
+====
+Natürliche Joins werden in Dialekt 1-Datenbanken nicht unterstützt.
+====
+
+.Syntax
+[listing]
+----
+<natural-join> ::= NATURAL [<join-type>] JOIN <source>
+
+<join-type> ::= INNER | {LEFT | RIGHT | FULL} [OUTER]
+----
+
+Gegeben sind diese beiden Tabellen
+
+[source]
+----
+create table TA (
+  a bigint,
+  s varchar(12),
+  ins_date date
+);
+----
+
+[source]
+----
+create table TB (
+  a bigint,
+  descr varchar(12),
+  x float,
+  ins_date date
+);
+----
+
+Ein natürlicher Join auf `TA` und `TB` würde die Spalten `a` und `ins_date` einbeziehen, und die folgenden zwei Anweisungen würden die gleiche Wirkung haben:
+
+[source]
+----
+select * from TA
+  natural join TB;
+----
+
+[source]
+----
+select * from TA
+  join TB using (a, ins_date);
+----
+
+Wie alle Joins sind natürliche Joins standardmäßig innere Joins, die Sie jedoch durch Angabe von `LEFT`, `RIGHT` oder `FULL` vor dem Schlüsselwort `JOIN` in äußere Joins umwandeln können.
+
+Vorsicht: Wenn in den beiden Quellbeziehungen keine Spalten mit demselben Namen vorhanden sind, wird ein `CROSS JOIN` ausgeführt.
+Wir kommen in einer Minute zu dieser Art von Join.
+
+[[fblangref25-dml-select-joins-equality-de]]
+==== Eine Anmerkung zur Gleichheit
+
+[IMPORTANT]
+====
+Diese Notiz über Gleichheits- und Ungleichheitsoperatoren gilt überall in der Firebird SQL-Sprache, nicht nur unter ``JOIN``-Bedingungen.
+====
+
+Der Operator "```=```", welcher explizit für diverse bedingte Joins und implizit in Joins mit benannten Spalten und natürlichen Joins verwendet wird, vergleicht nur Werte mit Werten.
+Nach dem SQL-Standard gilt, dass `NULL` kein Wert ist und somit zwei ``NULL``en wedet identisch noch unidentisch  zueinander sind.
+Wenn Sie `NULL` benötigen, um in einem Join übereinzustimmen, verwenden Sie den Operator `IS NOT DISTINCT FROM`.
+Dieser Operator gibt "true" zurück, wenn die Operanden denselben Wert haben _oder_ wenn sie beide `NULL` sind.
+
+[source]
+----
+select *
+  from A join B
+  on A.id is not distinct from B.code;
+----
+
+In den -- extrem seltenen -- Fällen, in denen Sie im Join auf die __in__-Gleichheit prüfen möchsten, verwenden Sie `IS DISTINCT FROM`, nicht "```<>```", falls Sie `NULL` von anderen Werten unterscheiden müssen und zwei ``NULL``en als gleich betrachtet werden sollen:
+
+[source]
+----
+select *
+  from A join B
+  on A.id is distinct from B.code;
+----
+
+[[fblangref25-dml-select-joins-cross-de]]
+==== Cross Joins
+
+Ein Cross Join erzeugt das vollständige Set-Produkt der beiden Datenquellen.
+Dies bedeutet, dass jede Zeile in der linken Quelle mit jeder Zeile in der rechten Quelle übereinstimmt.
+
+.Syntax
+[listing]
+----
+<cross-join> ::= {CROSS JOIN | ,} <source>
+----
+
+Bitte beachten Sie, dass die Kommasyntax veraltet ist!
+Es wird nur unterstützt, um Legacy-Code zu erhalten, und wird möglicherweise in einer zukünftigen Version verschwinden.
+
+Das Zusammenführen von zwei Sätzen ist gleichbedeutend damit, dass sie sich einer Tautologie anschließen (eine Bedingung, die immer wahr ist).
+Die folgenden beiden Aussagen haben den gleichen Effekt:
+
+[source]
+----
+select * from TA
+  cross join TB;
+----
+
+[source]
+----
+select * from TA
+  join TB on 1 = 1;
+----
+
+Cross Joins sind innere Joins, da sie nur übereinstimmende Datensätze enthalten -- dies ergibt sich daraus, dass __jeder__-Eintrag übereinstimmt!
+Ein äußerer Cross Join würde, falls vorhanden, dem Ergebnis nichts hinzufügen, weil die äußeren Joins keine übereinstimmenden Datensätze sind und diese nicht in Cross Joins existieren.
+
+Cross Joins sind selten nützlich, außer wenn Sie alle möglichen Kombinationen von zwei oder mehr Variablen auflisten möchten.
+Angenommen, Sie verkaufen ein Produkt in verschiedenen Größen, Farben und Materialien.
+Wenn diese Variablen jeweils in einer eigenen Tabelle aufgeführt sind, gibt diese Abfrage alle Kombinationen zurück:
+
+[source]
+----
+select m.name, s.size, c.name
+  from materials m
+  cross join sizes s
+  cross join colors c;
+----
+
+[[fblangref25-dml-select-joins-ambiguity-de]]
+==== Mehrdeutige Feldnamen in Joins
+
+Firebird weist unqualifizierte Feldnamen in einer Abfrage zurück, wenn diese Feldnamen in mehr als einem Datensatz vorhanden sind, der an einem Join beteiligt ist.
+Dies gilt sogar für innere Equi-Joins, bei denen der Feldname in der ``ON``-Klausel so aussieht:
+
+[source]
+----
+select a, b, c
+  from TA
+  join TB on TA.a = TB.a;
+----
+
+Es gibt eine Ausnahme zu dieser Regel: Bei Joins mit benannten Spalten und natürlichen Joins kann der nicht qualifizierte Feldname einer Spalte, die am Matching-Prozess teilnimmt, legal verwendet werden und verweist auf die zusammengeführte Spalte mit demselben Namen.
+Für Joins mit benannten Spalten sind dies die in der ``USING``-Klausel aufgelisteten Spalten.
+Bei natürlichen Joins sind dies die Spalten, die in beiden Relationen denselben Namen haben.
+Aber bitte beachten Sie noch einmal, dass insbesondere in Outer Joins der reine `Spaltenname` nicht immer dasselbe ist wie `links.Spaltenname` oder `rechts.`Spaltenname`.
+Die Typen können sich unterscheiden, und eine der qualifizierten Spalten kann `NULL` sein, während die andere nicht.
+In diesem Fall kann der Wert in der zusammengeführten, nicht qualifizierten Spalte die Tatsache maskieren, dass einer  der Quellwerte nicht vorhanden ist.
+
+[[fblangref25-dml-select-joins-storedprocs-de]]
+==== Joins mit gespeicherten Prozeduren
+
+Wenn eine Verknüpfung mit einer gespeicherten Prozedur durchgeführt wird, die nicht über Eingabeparameter mit anderen Datenströmen korreliert, gibt es keine Kuriositäten.
+Wenn es Korrelationen _gibt_, zeigt sich eine unangenehme Eigenart.
+Das Problem ist, dass der Optimierer sich selbst jede Möglichkeit nimmt, die Beziehungen der Eingabeparameter der Prozedur zu den Feldern in den anderen Datenströmen zu bestimmen:
+
+[source]
+----
+SELECT *
+FROM MY_TAB
+JOIN MY_PROC(MY_TAB.F) ON 1 = 1;
+----
+
+Hier wird die Prozedur ausgeführt, bevor ein einzelner Datensatz aus der Tabelle `MY_TAB` abgerufen wurde.
+Der Fehler `isc_no_cur_rec error` (_kein aktueller Datensatz für die Abrufoperation_) wird ausgelöst, wodurch die Ausführung unterbrochen wird.
+
+Die Lösung besteht darin, eine Syntax zu verwenden, die die Join-Reihenfolge _explizit_ angibt:
+
+[source]
+----
+SELECT *
+FROM MY_TAB
+LEFT JOIN MY_PROC(MY_TAB.F) ON 1 = 1;
+----
+
+Dies erzwingt, dass die Tabelle vor der Prozedur gelesen wird und alles ordnungsgemäß funktioniert.
+
+[TIP]
+====
+Diese Eigenart wurde als Fehler im Optimierer erkannt und wird in der nächsten Version von Firebird behoben.
+====
+
+[[fblangref25-dml-select-where-de]]
+=== Die ``WHERE``-Klausel
+
+Die ``WHERE``-Klausel dient dazu, die zurückgegebenen Zeilen auf diejenigen zu beschränken, an denen der Aufrufer interessiert ist.
+Die Bedingung nach dem Schlüsselwort `WHERE` kann so einfach sein wie "```Anzahl = 3```" oder ein mehrschichtiger,  geschachtelter Ausdruck, der Unterabfragen, Prädikate, Funktionsaufrufe, mathematische und logische Operatoren, Kontextvariablen und mehr enthält.
+
+Die Bedingung in der ``WHERE``-Klausel wird häufig als die [term]_Suchbedingung_, der [term]_Suchausdruck_ oder einfach die [term]_Suche_ bezeichnet.
+
+In DSQL und ESQL kann der Suchausdruck Parameter enthalten.
+Dies ist nützlich, wenn eine Abfrage mehrmals mit unterschiedlichen Eingabewerten wiederholt werden muss.
+In der SQL-Zeichenfolge, die an den Server übergeben wird, werden Fragezeichen als Platzhalter für die Parameter verwendet.
+Sie heißen [term]_Positionsparameter_, weil sie nur durch ihre Position in der Zeichenfolge voneinander getrennt werden können.
+Konnektivitätsbibliotheken unterstützen oft [term]_benannte Parameter_ der Form `:id`, `:amount`, `:a` usw.
+Diese sind benutzerfreundlicher;
+Die Bibliothek sorgt dafür, dass die benannten Parameter in Positionsparameter übersetzt werden, bevor die Anweisung an den Server übergeben wird.
+
+Die Suchbedingung kann auch lokale (PSQL) oder Host (ESQL)-Variablennamen enthalten, denen ein Doppelpunkt vorangestellt ist.
+
+.Syntax
+[listing,subs=+quotes]
+----
+SELECT ...
+  FROM ...
+  [...]
+  WHERE <search-condition>
+  [...]
+
+<search-condition> ::=
+  _Ein boolescher Ausdruck, der TRUE, FALSE_
+  _oder möglicherweise UNKNOWN (NULL) zurückgibt_
+----
+
+Nur die Zeilen, für die die Suchbedingung `TRUE` ergibt, sind in der Ergebnismenge enthalten.
+Seien Sie vorsichtig mit möglichen ``NULL``-Ergebnissen: Wenn Sie einen ``NULL``-Ausdruck mit `NOT` negieren, ist das Ergebnis immer `NULL` und die Zeile wird nicht berücksichtigt.
+Dies wird in einem der folgenden Beispiele demonstriert.
+
+[float]
+===== Beispiele
+
+[source]
+----
+select genus, species from mammals
+  where family = 'Felidae'
+  order by genus;
+----
+
+[source]
+----
+select * from persons
+  where birthyear in (1880, 1881)
+     or birthyear between 1891 and 1898;
+----
+
+[source]
+----
+select name, street, borough, phone
+  from schools s
+  where exists (select * from pupils p where p.school = s.id)
+  order by borough, street;
+----
+
+[source]
+----
+select * from employees
+  where salary >= 10000 and position <> 'Manager';
+----
+
+[source]
+----
+select name from wrestlers
+  where region = 'Europe'
+    and weight > all (select weight from shot_putters
+                      where region = 'Africa');
+----
+
+[source]
+----
+select id, name from players
+  where team_id = (select id from teams where name = 'Buffaloes');
+----
+
+[source]
+----
+select sum (population) from towns
+  where name like '%dam'
+  and province containing 'land';
+----
+
+[source]
+----
+select password from usertable
+  where username = current_user;
+----
+
+Das folgende Beispiel zeigt, was passieren kann, wenn die Suchbedingung auf `NULL` ausgewertet wird.
+
+Angenommen, Sie haben eine Tabelle mit den Namen einiger Kinder und der Anzahl der Murmeln, die sie besitzen.
+Zu einem bestimmten Zeitpunkt enthält die Tabelle diese Daten:
+
+[%autowidth,cols="1,1", options="header"]
+|===
+| CHILD
+| MARBLES
+
+|Anita
+|23
+
+|Bob E.
+|12
+
+|Chris
+|__<null>__
+
+|Deirdre
+|1
+
+|Eve
+|17
+
+|Fritz
+|0
+
+|Gerry
+|21
+
+|Hadassah
+|__<null>__
+
+|Isaac
+|6
+|===
+
+Zuerst beachten Sie bitte den Unterschied zwischen `NULL` und 0: Fritz ist _bekannt_ dafür überhaupt keine Murmeln zu haben, Chris' und Hadassahs Murmelanzahlen unbekannt.
+
+Nun, wenn Sie diese SQL-Anweisung ausgeben:
+
+[source]
+----
+select list(child) from marbletable where marbles > 10;
+----
+
+Sie werden die Namen Anita, Bob E., Eve und Gerry bekommen.
+Diese Kinder haben alle mehr als 10 Murmeln.
+
+Wenn Sie den Ausdruck negieren:
+
+[source]
+----
+select list(child) from marbletable where not marbles > 10
+----
+
+Deirdre, Fritz und Isaac sind an der Reihe.
+Chris und Hadassah sind nicht enthalten, weil nicht _bekannt_ ist, dass sie zehn oder weniger Murmeln besitzen.
+Sollten Sie diese letzte Abfrage ändern in:
+
+[source]
+----
+select list(child) from marbletable where marbles <= 10;
+----
+
+wird das Ergebnis immer noch dasselbe sein, weil der Ausdruck `++NULL <=10++` nun `UNKNOWN` ergibt.
+Das ist nicht dasselbe wie `TRUE`, also sind Chris und Hadassah nicht aufgelistet.
+Wenn Sie sie mit den "`armen`"-Kindern anzeigen möchten, ändern Sie die Abfrage in:
+
+[source]
+----
+select list(child) from marbletable
+where marbles <= 10 or marbles is null;
+----
+
+Jetzt wird die Suchbedingung für Chris und Hadassah wahr, weil "```marbles is null```" gibt in diesem Fall offensichtlich `TRUE` zurück.
+Tatsächlich kann die Suchbedingung jetzt für niemanden `NULL` sein.
+
+Zuletzt zwei Beispiele für ``SELECT``-Abfragen mit Parametern in der Suche.
+Es hängt von der Anwendung ab, wie Sie Abfrageparameter definieren sollten und selbst wenn es überhaupt möglich ist.
+Beachten Sie, dass Abfragen wie diese nicht sofort ausgeführt werden können: Sie müssen zuerst _vorbereitet_ (prepared) sein.
+Nachdem eine parametrisierte Abfrage vorbereitet wurde, kann der Benutzer (oder der Aufrufcode) Werte für die Parameter bereitstellen und sie mehrmals ausführen lassen, wobei vor jedem Aufruf neue Werte eingegeben werden.
+Wie die Werte eingegeben werden und die Ausführung gestartet wird, ist Sache der Anwendung.
+In einer GUI-Umgebung gibt der Benutzer die Parameterwerte in der Regel in ein oder mehrere Textfelder ein und klickt dann auf die Schaltfläche "`Ausführen`" oder "`Aktualisieren`".
+
+[source]
+----
+select name, address, phone frome stores
+  where city = ? and class = ?;
+----
+
+[source]
+----
+select * from pants
+  where model = :model and size = :size and color = :col;
+----
+
+Die letzte Abfrage kann nicht direkt an die Engine übergeben werden.
+Die Anwendung muss sie zuerst in das andere Format konvertieren und benannte Parameter den Positionsparametern zuordnen.
+
+[[fblangref25-dml-select-groupby-de]]
+=== Die ``GROUP BY``-Klausel
+
+`GROUP BY` führt Ausgangszeilen mit derselben Kombination von Werten in der Elementliste in eine einzelne Zeile zusammen.
+Aggregatfunktionen in der Auswahlliste werden für jede Gruppe einzeln und nicht für das gesamte Dataset angewendet.
+
+Wenn die Auswahlliste nur Aggregatspalten oder allgemeiner Spalten enthält, deren Werte nicht von einzelnen Zeilen in der zugrunde liegenden Menge abhängen, ist `GROUP BY` optional.
+Wenn sie weggelassen wird, besteht die endgültige Ergebnismenge aus einer einzelnen Zeile (vorausgesetzt, dass mindestens eine aggregierte Spalte vorhanden ist).
+
+Wenn die Auswahlliste sowohl Aggregatspalten als auch Spalten enthält, deren Werte je Zeile variieren können, wird die Klausel `GROUP BY` obligatorisch.
+
+.Syntax
+[listing,subs=+quotes]
+----
+SELECT ... FROM ...
+  GROUP BY <grouping-item> [, <grouping-item> ...]
+  [HAVING <grouped-row-condition>]
+  ...
+
+<grouping-item> ::=
+    <non-aggr-select-item>
+  | <non-aggr-expression>
+
+<non-aggr-select-item> ::=
+    _column-copy_
+  | _column-alias_
+  | _column-position_
+----
+
+[[fblangref25-dml-tbl-groupby-de]]
+.Argumente der `GROUP BY`-Klausel
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|non-aggr-expression
+|Jeder nicht aggregierende Ausdruck, der nicht in der ``SELECT``-Liste enthalten ist, d.h. nicht ausgewählte Spalten aus der Quellenmenge oder Ausdrücke, die überhaupt nicht von den Daten in der Menge abhängen
+
+|column-copy
+|Eine Literalkopie aus der ``SELECT``-Liste eines Ausdrucks, der keine Aggregatfunktion enthält
+
+|column-alias
+|Der Alias aus der ``SELECT``-Liste eines Ausdrucks (Spalte), der keine Aggregatfunktion enthält
+
+|column-position
+|Die Positionsnummer in der ``SELECT``-Liste eines Ausdrucks (Spalte), der keine Aggregatfunktion enthält
+|===
+
+Eine allgemeine Faustregel besagt, dass jedes nicht aggregierte Element in der ``SELECT``-Liste ebenfalls in der ``GROUP BY``-Liste enthalten sein muss.
+Sie können dies auf drei Arten tun:
+
+. Indem der Gegenstand wörtlich aus der Auswahlliste kopiert wird, z.B. "```class```" oder "```'D:' || upper(doccode)```".
+. Durch Angabe des Spaltenalias, falls vorhanden.
+. Durch Angabe der Spaltenposition als Ganzzahl _literal_ zwischen 1 und der Anzahl der Spalten.
+Ganzzahlwerte, die sich aus Ausdrücken oder Parametersubstitutionen ergeben, sind einfach unveränderlich und werden als solche in der Gruppierung verwendet.
+Sie werden jedoch keinen Effekt haben, da ihr Wert für jede Zeile gleich ist.
+
+[NOTE]
+====
+Wenn Sie nach einer Spaltenposition gruppieren, wird der Ausdruck an dieser Position intern aus der Auswahlliste kopiert.
+Wenn es sich um eine Unterabfrage handelt, wird diese Unterabfrage in der Gruppierungsphase erneut ausgeführt.
+Das bedeutet, dass die Gruppierung nach der Spaltenposition, anstatt den Unterabfrageausdruck in der Gruppierungsklausel zu duplizieren, Tastenanschläge und Bytes speichert, dies ist jedoch keine Möglichkeit, Verarbeitungszyklen zu speichern!
+====
+
+Zusätzlich zu den erforderlichen Elementen kann die Gruppierungsliste auch Folgendes enthalten:
+
+* Spalten aus der Quelltabelle, die nicht in der Auswahlliste enthalten sind, oder Nicht-Aggregat-Ausdrücke, die auf solchen Spalten basieren.
+Das Hinzufügen solcher Spalten kann die Gruppen weiter unterteilen.
+Da diese Spalten jedoch nicht in der Auswahlliste enthalten sind, können Sie nicht feststellen, welche aggregierte Zeile mit welchem Wert in der Spalte übereinstimmt.
+Wenn Sie also an diesen Informationen interessiert sind, fügen Sie auch die Spalte oder den Ausdruck in die  Auswahlliste -- ein, die Sie wieder zur Regel führt: "`Jede Nicht-Aggregat-Spalte in der Auswahlliste muss ebenfalls in der Gruppierungsliste sein`".
+* Ausdrücke, die nicht von den Daten in dem zugrunde liegenden Satz abhängen, z. Konstanten, Kontextvariablen,  einwertige nicht-korrelierte Subselects usw.
+Dies wird nur der Vollständigkeit halber erwähnt, da das Hinzufügen solcher Elemente völlig sinnlos ist: Sie beeinflussen die Gruppierung überhaupt nicht.
+"`Harmlose, aber nutzlose`" Elemente wie diese können auch in der Auswahlliste erscheinen, ohne in die Gruppierungsliste kopiert zu werden.
+
+
+[float]
+===== Beispiele
+
+Wenn die Auswahlliste nur Aggregatspalten enthält, ist `GROUP BY` nicht obligatorisch:
+
+[source]
+----
+select count(*), avg(age) from students
+  where sex = 'M';
+----
+
+Dies wird eine einzelne Zeile zurückgeben, die die Anzahl der männlichen Studenten und deren Durchschnittsalter auflistet.
+Das Hinzufügen von Ausdrücken, die nicht von Werten in einzelnen Zeilen der Tabelle `STUDENTS` abhängen, ändert das nicht:
+
+[source]
+----
+select count(*), avg(age), current_date from students
+  where sex = 'M';
+----
+
+Die Zeile wird jetzt eine zusätzliche Spalte haben, die das aktuelle Datum anzeigt, aber ansonsten hat sich nichts Grundlegendes geändert.
+Eine Klausel `GROUP BY` ist weiterhin  nicht erforderlich.
+
+In beiden obigen Beispielen ist dies jedoch  _erlaubt_.
+Dies ist absolut gültig:
+
+[source]
+----
+select count(*), avg(age) from students
+  where sex = 'M'
+  group by class;
+----
+
+und gibt eine Reihe für jede Klasse zurück, in der sich Jungen befinden, die die Anzahl der Jungen und ihr Durchschnittsalter in dieser bestimmten Klasse auflistet.
+(Wenn Sie auch das Feld `current_date` beibehalten, wird dieser Wert in jeder Zeile wiederholt, was nicht besonders aufregend ist.)
+
+Die obige Abfrage hat jedoch einen großen Nachteil: Sie gibt Ihnen Informationen über die verschiedenen Klassen, aber Sie erfahren nicht, welche Zeile für welche Klasse gilt.
+Um diese zusätzlichen Informationen zu erhalten, muss die nicht aggregierte Spalte `CLASS` zur Auswahlliste hinzugefügt  werden:
+
+[source]
+----
+select class, count(*), avg(age) from students
+  where sex = 'M'
+  group by class;
+----
+
+Jetzt haben wir eine nützliche Abfrage.
+Beachten Sie, dass durch das Hinzufügen der Spalte `CLASS` auch die Klausel `GROUP BY` obligatorisch wird.
+Wir können diese Klausel nicht mehr löschen, es sei denn, wir entfernen auch `CLASS` aus der Spaltenliste.
+
+Die Ausgabe unserer letzten Abfrage könnte etwa so aussehen:
+
+[%autowidth,cols="1,1,1", options="header"]
+|===
+| CLASS
+| COUNT
+| AVG
+
+|2A
+|12
+|13.5
+
+|2B
+|9
+|13.9
+
+|3A
+|11
+|14.6
+
+|3B
+|12
+|14.4
+
+|...
+|...
+|...
+|===
+
+Die Überschriften "`COUNT`" und "`AVG`" sind nicht sehr  informativ.
+In einem einfachen Fall wie diesem, könnten Sie damit durchkommen, aber im Allgemeinen sollten Sie aggregierten Spalten einen aussagekräftigen Namen geben, indem wir je einen Alias nutzen:
+
+[source]
+----
+select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M'
+  group by class;
+----
+
+Wie Sie aus der formalen Syntax der Spaltenliste entnehmen können, ist das Schlüsselwort `AS` optional.
+
+Wenn Sie weitere nicht aggregierte (oder besser: zeilenabhängige) Spalten hinzufügen, müssen Sie sie auch der Klausel `GROUP BY` hinzufügen.
+Zum Beispiel möchten Sie vielleicht die oben genannten Informationen auch für Mädchen sehen;
+und Sie möchten vielleicht auch zwischen Internats- und Tagesschülern unterscheiden:
+
+[source]
+----
+select class,
+       sex,
+       boarding_type,
+       count(*) as number,
+       avg(age) as avg_age
+  from students
+  group by class, sex, boarding_type;
+----
+
+Dies kann zu folgendem Ergebnis führen:
+
+[%autowidth,cols="1,1,1,1,1", options="header"]
+|===
+| CLASS
+| SEX
+| BOARDING_TYPE
+| NUMBER
+| AVG_AGE
+
+
+|2A
+|F
+|BOARDING
+|9
+|13.3
+
+|2A
+|F
+|DAY
+|6
+|13.5
+
+|2A
+|M
+|BOARDING
+|7
+|13.6
+
+|2A
+|M
+|DAY
+|5
+|13.4
+
+|2B
+|F
+|BOARDING
+|11
+|13.7
+
+|2B
+|F
+|DAY
+|5
+|13.7
+
+|2B
+|M
+|BOARDING
+|6
+|13.8
+
+|...
+|...
+|...
+|...
+|...
+|===
+
+Jede Zeile in der Ergebnismenge entspricht einer bestimmten Kombination der Variablen class, sex und boarding type.
+Die zusammengefassten Ergebnisse -- Anzahl und durchschnittliches Alter -- sind für jede dieser eher spezifischen Gruppen einzeln angegeben.
+In einer Abfrage wie dieser sehen Sie keine Gesamtzahl für Jungen als Ganzes oder Tagesschüler als Ganzes.
+Das ist der Nachteil: Je mehr Nicht-Aggregat-Spalten Sie hinzufügen, desto mehr können Sie sehr spezifische Gruppen bestimmen, aber desto mehr verlieren Sie auch das allgemeine Bild aus den Augen.
+Natürlich können Sie die "`gröberen`" Aggregate auch über separate Abfragen erhalten.
+
+[[fblangref25-dml-select-groupby-having-de]]
+==== `HAVING`
+
+Genau wie eine ``WHERE``-Klausel die Zeilen in einer Datenmenge auf solche begrenzt, die die Suchbedingung erfüllen, so beschränkt die Unterklasse `HAVING` die aggregierten Zeilen in einer gruppierten Gruppe.
+`HAVING` ist optional und kann nur in Verbindung mit `GROUP BY` verwendet werden.
+
+Die Bedingung(en) in der ``HAVING``-Klausel können sich beziehen auf:
+
+* Jede aggregierte Spalte in der Auswahlliste.
+Dies ist die am häufigsten verwendete Alternative.
+* Jeder aggregierte Ausdruck, der nicht in der Auswahlliste enthalten ist, aber im Kontext der Abfrage zulässig ist.
+Dies ist manchmal auch nützlich.
+* Eine beliebige Spalte in der Liste `GROUP BY`.
+Obwohl dies legal ist, ist es effizienter, diese nicht aggregierten Daten zu einem früheren Zeitpunkt zu filtern: in der Klausel `WHERE`.
+* Ein beliebiger Ausdruck, dessen Wert nicht vom Inhalt des Datasets abhängt (wie eine Konstante oder eine Kontextvariable).
+Das ist zwar stichhaltig, aber völlig sinnlos, weil es entweder die gesamte Menge unterdrückt oder sie unberührt lässt,  basierend auf Bedingungen, die nichts mit der Menge selbst zu tun haben.
+
+Eine ``HAVING``-Klausel kann _nicht_ enthalten:
+
+* Nicht aggregierte Spaltenausdrücke, die nicht in der ``GROUP BY``-Liste enthalten sind.
+* Spaltenpositionen.
+Eine Ganzzahl in der ``HAVING``-Klausel ist nur eine Ganzzahl.
+* Spaltenaliase -- nicht einmal wenn sie in der ``GROUP BY``-Klausel vorkommen!
+
+[float]
+===== Beispiele
+
+Aufbauend auf unseren früheren Beispielen könnte dies verwendet werden, um kleine Gruppen von Schülern zu überspringen:
+
+[source]
+----
+select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M'
+  group by class
+  having count(*) >= 5;
+----
+
+So wählen Sie nur Gruppen mit einem Mindestalter aus:
+
+[source]
+----
+select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M'
+  group by class
+  having max(age) - min(age) > 1.2;
+----
+
+Beachten Sie, dass Sie, wenn Sie wirklich an diesen Informationen interessiert sind, diese normalerweise einschließen würden mittels `min(age)` und `max(age)` –- oder dem Ausdruck "```max(age) - min(age)```" -– auch in der Select-Liste!
+
+Um nur die 3. Klassen einzuschließen:
+
+[source]
+----
+select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M'
+  group by class
+  having class starting with '3';
+----
+
+Besser wäre es, diese Bedingung in die ``WHERE``-Klausel zu verschieben:
+
+[source]
+----
+select class,
+       count(*) as num_boys,
+       avg(age) as boys_avg_age
+  from students
+  where sex = 'M' and class starting with '3'
+  group by class;
+----
+
+[[fblangref25-dml-select-plan-de]]
+=== Die ``PLAN``-Klausel
+
+Die ``PLAN``-Klausel ermöglicht es dem Benutzer, einen Datenabrufplan einzureichen, wodurch der Plan überschrieben wird, den der Optimierer automatisch erstellt hätte.
+
+.Syntax
+[listing,subs=+quotes]
+----
+PLAN <plan-expr>
+
+<plan-expr> ::=
+    (<plan-item> [, <plan-item> ...])
+  | <sorted-item>
+  | <joined-item>
+  | <merged-item>
+
+<sorted-item> ::= SORT (<plan-item>)
+
+<joined-item> ::=
+  JOIN (<plan-item>, <plan-item> [, <plan-item> ...])
+
+<merged-item> ::=
+  [SORT] MERGE (<sorted-item>, <sorted-item> [, <sorted-item> ...])
+
+<plan-item> ::= <basic-item> | <plan-expr>
+
+<basic-item> ::=
+  <relation> { NATURAL
+             | INDEX (<indexlist>)
+             | ORDER index [INDEX (<indexlist>)] }
+
+<relation> ::= _table_ | _view_ [_table_]
+
+<indexlist> ::= _index_ [, _index_ ...]
+----
+
+[[fblangref25-dml-tbl-plan-de]]
+.Argumente der ``PLAN``-Klausel
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|table
+|Tabellenname oder sein Alias
+
+|view
+|Ansichtname
+
+|index
+|Indexname
+|===
+
+Jedes Mal, wenn ein Benutzer eine Abfrage an die Firebird-Engine sendet, berechnet der Optimierer eine Datenabrufstrategie.
+Die meisten Firebird Clients können diesen Abrufplan für den Benutzer sichtbar machen.
+In Firebirds eigenem ``isql``-Dienstprogramm geschieht dies mit dem Befehl `SET PLAN ON`.
+Wenn Sie Abfragepläne analysieren und keine Abfragen ausführen, zeigt `SET PLANONLY ON` den Plan an, ohne die Abfrage  auszuführen.
+
+In den meisten Situationen können Sie darauf vertrauen, dass Firebird den optimalen Abfrageplan für Sie auswählt.
+Wenn Sie jedoch komplizierte Abfragen haben, die nicht leistungsfähig sind, lohnt es sich möglicherweise, den Plan zu prüfen und zu prüfen, ob Sie ihn verbessern können.
+
+[[fblangref25-dml-select-plan-simple-de]]
+==== Einfache Pläne
+
+Die einfachsten Pläne bestehen nur aus einem Beziehungsnamen gefolgt von einer Abrufmethode.
+Z.B. für eine unsortierte Ein-Tabellen-Auswahl ohne eine ``WHERE``-Klausel:
+
+[source]
+----
+select * from students
+  plan (students natural);
+----
+
+Wenn eine ``WHERE``- oder eine ``HAVING``-Klausel vorhanden ist, können Sie den Index angeben, der zum Auffinden von Übereinstimmungen verwendet werden soll:
+
+[source]
+----
+select * from students
+  where class = '3C'
+  plan (students index (ix_stud_class));
+----
+
+Die Anweisung `INDEX` wird auch für Join-Bedingungen verwendet (etwas später diskutiert). Es kann eine Liste von Indizes enthalten, die durch Kommata getrennt sind.
+
+`ORDER` gibt den Index zum Sortieren des Satzes an, wenn eine Klausel `ORDER BY` oder `GROUP BY` vorhanden ist:
+
+[source]
+----
+select * from students
+  plan (students order pk_students)
+  order by id;
+----
+
+`ORDER` und `INDEX` können kombiniert werden:
+
+[source]
+----
+select * from students
+  where class >= '3'
+  plan (students order pk_students index (ix_stud_class))
+  order by id;
+----
+
+Es ist völlig in Ordnung, wenn `ORDER` und `INDEX` denselben Index angeben:
+
+[source]
+----
+select * from students
+  where class >= '3'
+  plan (students order ix_stud_class index (ix_stud_class))
+  order by class;
+----
+
+Wenn Sie einen Sortiersatz verwenden möchten, wenn kein verwendbarer Index verfügbar ist (oder wenn Sie die Verwendung des Index unterdrücken möchten), lassen Sie `ORDER` aus und stellen Sie dem Planausdruck `SORT` voran:
+
+[source]
+----
+select * from students
+  plan sort (students natural)
+  order by name;
+----
+
+Oder wenn ein Index für die Suche verwendet wird:
+
+[source]
+----
+select * from students
+  where class >= '3'
+  plan sort (students index (ix_stud_class))
+  order by name;
+----
+
+Beachten Sie, dass sich `SORT` im Gegensatz zu `ORDER` außerhalb der Klammern befindet.
+Dies spiegelt die Tatsache wider, dass die Datenzeilen ungeordnet abgerufen und anschließend von der Engine sortiert werden.
+
+Geben Sie bei der Auswahl aus einer Ansicht die Ansicht und die betreffende Tabelle an.
+Zum Beispiel, wenn Sie eine Ansicht `FRESHMEN` haben, die nur die Erstsemester auswählt:
+
+[source]
+----
+select * from freshmen
+  plan (freshmen students natural);
+----
+
+Oder zum Beispiel:
+
+[source]
+----
+select * from freshmen
+  where id > 10
+  plan sort (freshmen students index (pk_students))
+  order by name desc;
+----
+
+[IMPORTANT]
+====
+Wenn eine Tabelle oder Sicht mit einem Alias versehen wurde, muss der Alias und nicht der ursprüngliche Name in der Klausel `PLAN` verwendet werden.
+====
+
+[[fblangref25-dml-select-plan-composite-de]]
+==== Zusammengesetzte Pläne
+
+Wenn ein Join erstellt wird, können Sie den Index angeben, der für den Abgleich verwendet werden soll.
+Sie müssen auch die Anweisung `JOIN` für die beiden Streams im Plan verwenden:
+
+[source]
+----
+select s.id, s.name, s.class, c.mentor
+  from students s
+  join classes c on c.name = s.class
+  plan join (s natural, c index (pk_classes));
+----
+
+Derselbe Join, sortiert nach einer indizierten Spalte:
+
+[source]
+----
+select s.id, s.name, s.class, c.mentor
+  from students s
+  join classes c on c.name = s.class
+  plan join (s order pk_students, c index (pk_classes))
+  order by s.id;
+----
+
+Und auf einer nicht indizierten Spalte:
+
+[source]
+----
+select s.id, s.name, s.class, c.mentor
+  from students s
+  join classes c on c.name = s.class
+  plan sort (join (s natural, c index (pk_classes)))
+  order by s.name;
+----
+
+Mit einer Suche hinzugefügt:
+
+[source]
+----
+select s.id, s.name, s.class, c.mentor
+  from students s
+  join classes c on c.name = s.class
+  where s.class <= '2'
+  plan sort (join (s index (fk_student_class), c index (pk_classes)))
+  order by s.name;
+----
+
+Als linker Outer Join:
+
+[source]
+----
+select s.id, s.name, s.class, c.mentor
+  from classes c
+  left join students s on c.name = s.class
+  where s.class <= '2'
+  plan sort (join (c natural, s index (fk_student_class)))
+  order by s.name;
+----
+
+Wenn für die Join-Kriterien kein Index verfügbar ist (oder wenn Sie ihn nicht verwenden möchten), muss der Plan zuerst beide Streams in ihren Join-Spalten sortieren und dann zusammenführen.
+Dies wird mit der Anweisung `SORT` (die wir bereits erreicht haben) und `MERGE` anstelle von `JOIN` erreicht:
+
+[source]
+----
+select * from students s
+  join classes c on c.cookie = s.cookie
+  plan merge (sort (c natural), sort (s natural));
+----
+
+Durch das Hinzufügen einer ``ORDER BY``-Klausel muss das Ergebnis der Zusammenführung ebenfalls sortiert werden:
+
+[source]
+----
+select * from students s
+  join classes c on c.cookie = s.cookie
+  plan sort (merge (sort (c natural), sort (s natural)))
+  order by c.name, s.id;
+----
+
+Schließlich fügen wir eine Suchbedingung für zwei indexierbare Spalten der Tabelle `STUDENTS` hinzu:
+
+[source]
+----
+select * from students s
+  join classes c on c.cookie = s.cookie
+  where s.id < 10 and s.class <= '2'
+  plan sort (merge (sort (c natural),
+                    sort (s index (pk_students, fk_student_class))))
+  order by c.name, s.id;
+----
+
+Wie aus der formalen Syntaxdefinition hervorgeht, können ``JOIN``s und ``MERGE``s im Plan mehr als zwei Datenströme kombinieren.
+Außerdem kann jeder Planausdruck als Planposten in einem umfassenden Plan verwendet werden.
+Dies bedeutet, dass Pläne bestimmter komplizierter Abfragen verschiedene Verschachtelungsebenen haben können.
+
+Schließlich können Sie anstelle von `MERGE` auch `SORT MERGE` schreiben.
+Da dies absolut keinen Unterschied macht und zu Verwechslungen mit "`real`" ``SORT``-Direktiven führen kann (diejenigen, die etwas _tun_ machen einen Unterschied), ist es wahrscheinlich am besten zu bleiben zu einfach `MERGE`.
+
+[WARNING]
+====
+Gelegentlich akzeptiert der Optimierer einen Plan und folgt ihm dann nicht, obwohl er ihn nicht als ungültig zurückweist.
+Ein solches Beispiel war
+
+[source]
+----
+MERGE (unsorted stream, unsorted stream)
+----
+
+Es ist ratsam, einen solchen Plan als "`veraltet`" zu behandeln.
+====
+
+[[fblangref25-dml-select-union-de]]
+=== `UNION`
+
+Ein `UNION` verkettet zwei oder mehr Datasets und erhöht so die Anzahl der Zeilen, nicht aber die Anzahl der Spalten.
+Datasets, die an einer `UNION` teilnehmen, müssen die gleiche Anzahl von Spalten haben, und Spalten an entsprechenden  Positionen müssen vom selben Typ sein.
+Abgesehen davon können sie völlig unabhängig sein.
+
+Standardmäßig unterdrückt eine Union doppelte Zeilen.
+`UNION ALL` zeigt alle Zeilen einschließlich aller Duplikate an.
+Das optionale Schlüsselwort `DISTINCT` macht das Standardverhalten explizit.
+
+.Syntax
+[listing,subs=+quotes]
+----
+<union> ::=
+  <individual-select>
+  UNION [DISTINCT | ALL]
+  <individual-select>
+  [
+    [UNION [DISTINCT | ALL]
+    <individual-select>
+    ...
+  ]
+  [<union-wide-clauses>]
+
+<individual-select> ::=
+  SELECT
+  [TRANSACTION _name_]
+  [FIRST _m_] [SKIP _n_]
+  [DISTINCT | ALL] <columns>
+  [INTO <host-varlist>]
+  FROM <source> [[AS] _alias_]
+  [<joins>]
+  [WHERE <condition>]
+  [GROUP BY <grouping-list>
+  [HAVING <aggregate-condition>]]
+  [PLAN <plan-expr>]
+
+<union-wide-clauses> ::=
+  [ORDER BY <ordering-list>]
+  [ROWS _m_ [TO _n_]]
+  [FOR UPDATE [OF <columns>]]
+  [WITH LOCK]
+  [INTO <PSQL-varlist>]
+----
+
+Unions ermitteln ihre Spaltennamen aus der _ersten_ Abfrage.
+Wenn Sie einen Alias für Vereinigungsspalten verwenden möchten, tun Sie dies in der Spaltenliste des obersten `SELECT`.
+Aliasnamen in anderen teilnehmenden Selects sind zulässig und können sogar nützlich sein, werden jedoch nicht auf Unionsebene weitergegeben.
+
+Wenn eine Union eine ``ORDER BY``-Klausel hat, sind die einzigen zulässigen Sortierelemente Integerliterale, die 1-basierte Spaltenpositionen angeben, optional gefolgt von einem `ASC`/`DESC` und/oder einer ``NULLS {FIRST | LAST}``-Direktive.
+Dies bedeutet auch, dass Sie eine Union nicht nach etwas sortieren können, die keine Spalte in der Union ist.
+(Sie können jedoch eine abgeleitete Tabelle einfügen, die Ihnen alle üblichen Sortieroptionen zurückgibt.)
+
+Unions sind in Unterabfragen jeglicher Art erlaubt und können selbst Unterabfragen enthalten.
+Sie können auch Joins enthalten und an einem Join teilnehmen, wenn sie in eine abgeleitete Tabelle eingebunden werden.
+
+[float]
+===== Beispiele
+
+Diese Abfrage präsentiert Informationen aus verschiedenen Musiksammlungen in  einem Datensatz mithilfe von Unionen:
+
+[source]
+----
+select id, title, artist, length, 'CD' as medium
+  from cds
+union
+select id, title, artist, length, 'LP'
+  from records
+union
+select id, title, artist, length, 'MC'
+  from cassettes
+order by 3, 2  -- artist, title;
+----
+
+Wenn `id`, `title`, `artist` und `length` die einzigen Felder in den involvierten Tabellen sind, kann die Abfrage auch so geschrieben werden:
+
+[source]
+----
+select c.*, 'CD' as medium
+  from cds c
+union
+select r.*, 'LP'
+  from records r
+union
+select c.*, 'MC'
+  from cassettes c
+order by 3, 2  -- artist, title;
+----
+
+Das Qualifizieren der "`Sternchen`" ist hier notwendig, da sie nicht das einzige Element in der Spaltenliste sind.
+Beachten Sie, dass die Aliase von "`c`" in der ersten und dritten Auswahl nicht miteinander in Konflikt stehen: ihre Gültigkeitsbereiche sind nicht unionsweit, sondern gelten nur für ihre jeweiligen Auswahlabfragen.
+
+Die nächste Abfrage ruft Namen und Telefonnummern von Übersetzern und Korrektoren ab.
+Übersetzer, die auch als Korrekturleser arbeiten, werden nur einmal im Ergebnis angezeigt, sofern ihre Telefonnummer in beiden Tabellen identisch ist.
+Das gleiche Ergebnis kann ohne `DISTINCT` erzielt werden.
+Mit `ALL` würden diese Personen zweimal angezeigt.
+
+[source]
+----
+select name, phone from translators
+  union distinct
+select name, telephone from proofreaders;
+----
+
+Ein `UNION` innerhalb einer Unterabfrage:
+
+[source]
+----
+select name, phone, hourly_rate from clowns
+where hourly_rate < all
+  (select hourly_rate from jugglers
+     union
+   select hourly_rate from acrobats)
+order by hourly_rate;
+----
+
+[[fblangref25-dml-select-orderby-de]]
+=== `ORDER BY`
+
+Wenn eine ``SELECT``-Anweisung ausgeführt wird, ist die Ergebnismenge in keiner Weise sortiert.
+Es kommt häufig vor, dass Zeilen chronologisch sortiert angezeigt werden, weil sie in derselben Reihenfolge zurückgegeben werden, in der sie von ``INSERT``-Anweisungen zur Tabelle hinzugefügt wurden.
+Um eine Sortierreihenfolge für die Mengenspezifikation anzugeben, wird eine ``ORDER BY``-Klausel verwendet.
+
+.Syntax
+[listing,subs=+quotes]
+----
+SELECT ... FROM ...
+...
+ORDER BY <ordering-item> [, <ordering-item> …]
+
+<ordering-item> ::=
+  {_col-name_ | _col-alias_ | _col-position_ | <expression>}
+  [COLLATE _collation-name_]
+  [ASC[ENDING] | DESC[ENDING]]
+  [NULLS {FIRST|LAST}]
+----
+
+[[fblangref25-dml-tbl-orderby-de]]
+.Argumente für die ``ORDER BY``-Klausel
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|col-name
+|Vollständiger Spaltenname
+
+|col-alias
+|Spaltenalias
+
+|col-position
+|Spaltenposition in der ``SELECT``-Liste
+
+|expression
+|Jeder Ausdruck
+
+|collation-name
+|Collations-Name (Sortierreihenfolge für String-Typen)
+|===
+
+[float]
+===== Beschreibung
+
+Die ``ORDER BY``-Klausel besteht aus einer durch Komma getrennten Liste der Spalten, auf denen der Ergebnisdatensatz sortiert werden soll.
+Die Sortierreihenfolge kann durch den Namen der Spalte angegeben werden -- jedoch nur, wenn die Spalte zuvor in der Spaltenliste `SELECT` nicht mit einem Alias versehen war.
+Der Alias muss verwendet werden, wenn er dort verwendet wurde.
+Die Ordnungsnummer der Spalte, des Alias, der der Spalte in der ``SELECT``-Liste mit Hilfe des Schlüsselworts `AS` zugewiesen wurde, oder die Nummer der Spalte in der Liste `SELECT` können uneingeschränkt verwendet werden.
+
+Die drei Arten, die Spalten für die Sortierreihenfolge auszudrücken, können in der gleichen ``ORDER BY``-Klausel gemischt werden.
+Zum Beispiel kann eine Spalte in der Liste durch ihren Namen spezifiziert werden und eine andere Spalte kann durch ihre Nummer spezifiziert werden.
+
+[NOTE]
+====
+Wenn Sie die Spaltenposition verwenden, um die Sortierreihenfolge für eine Abfrage des ``SELECT {asterisk}``-Stils anzugeben, erweitert der Server das Sternchen auf die vollständige Spaltenliste, um die Spalten für die Sortierung zu bestimmen.
+Es wird jedoch als "`schlampige Praxis`" angesehen, um auf diese Weise geordnete Mengen zu entwerfen.
+====
+
+[[fblangref25-dml-select-orderby-direction-de]]
+==== Sortierrichtung
+
+Das Schlüsselwort `ASCENDING`, normalerweise abgekürzt als `ASC`, gibt eine Sortierrichtung vom niedrigsten zum höchsten an.
+`ASCENDING` ist die Standardsortierrichtung.
+
+Das Schlüsselwort `DESCENDING`, normalerweise abgekürzt als `DESC`, gibt eine Sortierrichtung vom höchsten zum niedrigsten an.
+
+Angeben der aufsteigenden Reihenfolge für eine Spalte und der absteigenden Reihenfolge für eine andere Spalte ist zulässig.
+
+[[fblangref25-dml-select-orderby-collation-de]]
+==== Collations-Reihenfolge
+
+Das Schlüsselwort `COLLATE` gibt die Sortierreihenfolge für eine Zeichenfolgespalte an, wenn Sie eine Sortierung benötigen, die sich von der normalen Sortierung für diese Spalte unterscheidet.
+Die normale Sortierreihenfolge ist entweder die Standardreihenfolge für den Datenbankzeichensatz oder eine, die explizit in der Definition der Spalte festgelegt wurde.
+
+[[fblangref25-dml-select-orderby-nullsposition-de]]
+==== NULLen positionieren
+
+Das Schlüsselwort `NULLS` gibt an, wo NULL in der betroffenen Spalte in der Sortierung stehen wird: `NULLS FIRST` platziert die Zeilen mit der ``NULL``-Spalte _oberhalb_ der Zeilen mit den Spaltenwerten;
+`NULLS LAST` platziert diese Zeilen _hinter_ den Spaltenwerten.
+
+`NULLS FIRST` ist der Standard.
+
+[[fblangref25-dml-select-orderby-unions-de]]
+==== Sortieren von ``UNION``-Sätzen
+
+Die einzelnen Abfragen, die zu einer `UNION` beitragen, können keine ``ORDER BY``-Klausel verwenden.
+Die einzige Option besteht darin, die gesamte Ausgabe mit einer ``ORDER BY``-Klausel am Ende der gesamten Abfrage zu sortieren.
+
+Das einfachste -- und in einigen Fällen die einzige -- Methode zum Angeben der Sortierreihenfolge ist die Ordinalspaltenposition.
+Es ist jedoch auch zulässig, die Spaltennamen oder Aliase _nur_ aus der ersten beitragenden Abfrage zu verwenden.
+
+Die Anweisungen `ASC`/`DESC` und / oder `NULLS` sind für diese globale Gruppe verfügbar.
+
+Wenn eine diskrete Reihenfolge innerhalb der beitragenden Menge erforderlich ist, kann die Verwendung von abgeleiteten Tabellen oder allgemeinen Tabellenausdrücken für diese Mengen eine Lösung sein.
+
+==== Beispiele
+
+Sortierung der Ergebnismenge in aufsteigender Reihenfolge, Sortierung nach den Spalten `RDB$CHARACTER_SET_ID, RDB$COLLATION_ID` der Tabelle `RDB$COLLATIONS`:
+
+[source]
+----
+SELECT
+  RDB$CHARACTER_SET_ID AS CHARSET_ID,
+  RDB$COLLATION_ID AS COLL_ID,
+  RDB$COLLATION_NAME AS NAME
+FROM RDB$COLLATIONS
+ORDER BY RDB$CHARACTER_SET_ID, RDB$COLLATION_ID;
+----
+
+Das Gleiche, aber Sortieren nach den Spaltenaliasnamen:
+
+[source]
+----
+SELECT
+  RDB$CHARACTER_SET_ID AS CHARSET_ID,
+  RDB$COLLATION_ID AS COLL_ID,
+  RDB$COLLATION_NAME AS NAME
+FROM RDB$COLLATIONS
+ORDER BY CHARSET_ID, COLL_ID;
+----
+
+Sortieren der Ausgabedaten nach den Spaltenpositionsnummern:
+
+[source]
+----
+SELECT
+  RDB$CHARACTER_SET_ID AS CHARSET_ID,
+  RDB$COLLATION_ID AS COLL_ID,
+  RDB$COLLATION_NAME AS NAME
+FROM RDB$COLLATIONS
+ORDER BY 1, 2;
+----
+
+Sortierung einer ``SELECT {asterisk}``-Abfrage nach Positionsnummern möglich, aber _hässlich_ und nicht empfohlen:
+
+[source]
+----
+SELECT *
+FROM RDB$COLLATIONS
+ORDER BY 3, 2;
+----
+
+Sortierung nach der zweiten Spalte in der ``BOOKS``-Tabelle:
+
+[source]
+----
+SELECT
+    BOOKS.*,
+    FILMS.DIRECTOR
+FROM BOOKS, FILMS
+ORDER BY 2;
+----
+
+Sortierung in absteigender Reihenfolge nach den Werten der Spalte `PROCESS_TIME`, wobei `NULL` am Anfang der Menge steht:
+
+[source]
+----
+SELECT *
+FROM MSG
+ORDER BY PROCESS_TIME DESC NULLS FIRST;
+----
+
+Sortieren der Menge, die von einer `UNION` von zwei Abfragen erhalten wurde.
+Die Ergebnisse werden in absteigender Reihenfolge für die Werte in der zweiten Spalte sortiert, wobei ``NULL``en am Ende der Menge stehen;
+und in aufsteigender Reihenfolge für die Werte der ersten Spalte mit ``NULL``en am Anfang.
+
+[source]
+----
+SELECT
+  DOC_NUMBER, DOC_DATE
+FROM PAYORDER
+UNION ALL
+SELECT
+  DOC_NUMBER, DOC_DATE
+FROM BUDGORDER
+ORDER BY 2 DESC NULLS LAST, 1 ASC NULLS FIRST;
+----
+
+[[fblangref25-dml-select-rows-de]]
+=== `ROWS`
+
+.Verwendet für
+Abrufen eines Stücks von Zeilen aus einer geordneten Menge
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SELECT <columns> FROM ...
+  [WHERE ...]
+  [ORDER BY ...]
+  ROWS _m_ [TO _n_]
+----
+
+[[fblangref25-dml-tbl-rows-de]]
+.Argumente für die ``ROWS``-Klausel
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|m, n
+|Beliebiger Integer-Ausdrücke
+|===
+
+.Beschreibung
+Begrenzt die Anzahl der Zeilen, die von der Anweisung `SELECT` an eine angegebene Zahl oder einen angegebenen Bereich zurückgegeben werden.
+
+Die Klauseln `FIRST` und `SKIP` haben die gleiche Aufgabe wie `ROWS`, but neither are SQL-compliant.
+Im Gegensatz zu `FIRST` und `SKIP` akzeptieren die Klauseln `ROWS` und `TO` beliebige Integerausdrücke als Argumente ohne Klammern.
+Natürlich können Klammern für verschachtelte Auswertungen innerhalb des Ausdrucks noch immer benötigt werden und eine  Unterabfrage muss immer in Klammern eingeschlossen sein.
+
+[IMPORTANT]
+====
+* Nummerierung der Zeilen in der Zwischenmenge -- die Gesamtmenge, die auf der Festplatte zwischengespeichert wird, bevor die "`Scheibe`" extrahiert wird -- beginnt bei 1.
+* Sowohl `FIRST`/`SKIP` als auch `ROWS` können ohne ``ORDER BY``-Klausel verwendet werden, obwohl dies selten sinnvoll ist, es sei denn Sie möchten nur einen kurzen Blick auf die Tabellendaten werfen und es ist nicht wichtig, dass Zeilen in zufälliger Reihenfolge stehen.
+Zu diesem Zweck würde eine Abfrage wie  "```SELECT {asterisk} FROM TABLE1 ROWS 20```" die ersten 20 Zeilen anstelle einer ganzen Tabelle, die ziemlich groß sein könnte, zurückgeben.
+====
+
+Der Aufruf von `ROWS __m__` gibt die ersten _m_ Zeilen des angegebenen Satzes zurück.
+
+[float]
+===== Merkmale der Verwendung von`ROWS __m__` ohne eine ``TO``-Klausel:
+
+* Wenn _m_ größer als die Gesamtzahl der Datensätze im Zwischendatensatz ist, wird die gesamte Menge zurückgegeben
+* Wenn _m_ = 0, wird ein leerer Satz zurückgegeben
+* Wenn _m_ < 0, wird der ``SELECT``-Aufruf in einem Fehler enden
+
+Der Aufruf von `ROWS __m__ TO __n__` gibt die Zeilen aus dem Satz zurück, beginnend mit Zeile _m_ und endend nach Zeile _n_ -- inklusive Satz.
+
+[float]
+===== Merkmale der Verwendung von `ROWS __m__` mit einer ``TO``-Klausel:
+
+* Wenn _m_ größer ist als die Gesamtzahl der Zeilen in der Zwischengruppe und _n_ >= _m_, wird eine leere Menge zurückgegeben
+* Ist _m_ nicht größer als _n_ und _n_ größer als die Gesamtzahl der Zeilen in der Zwischengruppe, ist die Ergebnismenge beschränkt auf Zeilen beginnend mit _m_ bis zum Ende des Satzes
+* Wenn _m_ < 1 und _n_ < 1, schlägt der ``SELECT``-Anweisungsaufruf mit einem Fehler fehl
+* Wenn _n_ = _m_ - 1 ist, wird eine leere Menge zurückgegeben
+* Wenn _n_ < _m_ - 1, schlägt der Aufruf der Anweisung `SELECT` mit einem Fehler fehl
+
+[float]
+===== Verwenden einer ``TO``-Klausel ohne eine ``ROWS``-Klausel:
+
+Während `ROWS` die Syntax `FIRST` und `SKIP` ersetzt, gibt es eine Situation, in der die ``ROWS``-Syntax nicht das gleiche Verhalten bietet: Mit Angabe von `SKIP __n__` wird der gesamte Zwischensatz ohne die ersten __n__-Reihen zurückgegeben.
+Die ``ROWS ... TO``-Syntax benötigt ein wenig Hilfe, um dies zu erreichen.
+
+Bei der Syntax `ROWS` benötigen Sie eine ``ROWS``-Klausel _in Verbindung mit_ der ``TO``-Klausel.
+Anschließend machen Sie das zweite Argument (_n_) größer als die Größe des Zwischendatensatzes.
+Dies wird erreicht, indem ein Ausdruck für _n_ erstellt wird, der eine Unterabfrage verwendet, um die Anzahl der Zeilen in der Zwischengruppe abzurufen, und 1 dazu addiert.
+
+[[fblangref25-dml-select-rows-mixing-de]]
+==== Das Mischen von `ROWS` und `FIRST`/`SKIP`
+
+Die Syntax `ROWS` kann nicht mit der Syntax `FIRST`/`SKIP` im selben ``SELECT``-Ausdruck gemischt werden.
+Die Verwendung der verschiedenen Syntaxen in verschiedenen Unterabfragen in derselben Anweisung ist jedoch zulässig.
+
+[[fblangref25-dml-select-rows-union-de]]
+==== ``ROWS``-Syntax in ``UNION``-Abfragen
+
+Wenn `ROWS` in einer ``UNION``-Abfrage verwendet wird, wird die ``ROWS``-Direktive auf UNION-Satzes angewendet und muss hinter dem letzten ``SELECT``-Statement stehen.
+
+Wenn es erforderlich ist, die Teilmengen zu begrenzen, die von einer oder mehreren ``SELECT``-Anweisungen innerhalb von `UNION` zurückgegeben werden, gibt es eine Reihe von Optionen:
+
+. Verwenden Sie die `FIRST`/``SKIP``-Syntax in diesen ``SELECT``-Anweisungen -- bedenken Sie, dass eine ordering-Klausel  (`ORDER BY`) nicht lokal auf die einzelnen Abfragen angewendet werden kann, aber nur für den kombinierten Ausgang.
+. Konvertieren Sie die Abfragen in abgeleitete Tabellen mit ihren eigenen ``ROWS``-Klauseln.
+
+==== Beispiele
+
+Die folgenden Beispiele schreiben die <<firstskipexamples-de,Beispiele>> des Abschnitts über `FIRST` und ``SKIP``,  <<fblangref25-dml-select-first-skip-de,weiter oben in diesem Kapitel>>, neu.
+
+Gib die ersten zehn Namen aus der Ausgabe einer sortierten Abfrage in der Tabelle `PEOPLE` aus:
+
+[source]
+----
+SELECT id, name
+FROM People
+ORDER BY name ASC
+ROWS 1 TO 10;
+----
+
+oder äquivalent dazu:
+
+[source]
+----
+SELECT id, name
+FROM People
+ORDER BY name ASC
+ROWS 10;
+----
+
+Gib alle Datensätze aus der ``PEOPLE``-Tabelle mit Ausnahme der ersten 10 Namen zurück:
+
+[source]
+----
+SELECT id, name
+FROM People
+ORDER BY name ASC
+ROWS 11 TO (SELECT COUNT(*) FROM People);
+----
+
+Und diese Abfrage gibt die letzten 10 Datensätze zurück (achten Sie auf die Klammern):
+
+[source]
+----
+SELECT id, name
+FROM People
+ORDER BY name ASC
+ROWS (SELECT COUNT(*) - 9 FROM People)
+TO (SELECT COUNT(*) FROM People);
+----
+
+Diese gibt die Zeilen 81-100 aus der Tabelle `PEOPLE` zurück:
+
+[source]
+----
+SELECT id, name
+FROM People
+ORDER BY name ASC
+ROWS 81 TO 100;
+----
+
+[NOTE]
+====
+`ROWS` kann außerdem in Kombination mit den Anweisungen <<fblangref25-dml-update-de,`UPDATE`>> und <<fblangref25-dml-delete-de,`DELETE`>> verwendet werden.
+====
+
+[[fblangref-dml-for-update-de]]
+=== `FOR UPDATE [OF]`
+
+.Syntax
+[listing,subs=+quotes]
+----
+SELECT ... FROM _single_table_
+  [WHERE ...]
+  [FOR UPDATE [OF ...]]
+----
+
+`FOR UPDATE` tut nicht, was es vorgibt.
+Der einzige Effekt ist derzeit, den Pre-Fetch-Puffer zu deaktivieren.
+
+[TIP]
+====
+Dies wird sich wahrscheinlich in Zukunft ändern: Es ist geplant, mit `FOR UPDATE` markierte Cursor zu validieren, wenn sie wirklich aktualisierbar sind und positionierte Aktualisierungen und Löschungen für Cursor ablehnen, die als nicht aktualisierbar eingestuft werden.
+====
+
+Die ``OF``-Unterklausel tut rein gar nichts.
+
+[[fblangref25-dml-with-lock-de]]
+=== `WITH LOCK`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Verwendet für
+Begrenzte pessimistische Sperrung
+
+.Beschreibung:
+`WITH LOCK` bietet eine begrenzte explizite pessimistische Sperrfunktion für die vorsichtige Verwendung unter Bedingungen, bei denen für den betroffenen Zeilensatz Folgendes gilt:
+
+[loweralpha]
+. extrem klein (idealerweise ein Singleton), _und_
+. genau gesteuert durch den Anwendungscode.
+
+.Dies ist nur für Experten!
+[CAUTION]
+====
+Die Notwendigkeit einer pessimistischen Sperre in Firebird ist in der Tat sehr selten und sollte gut verstanden werden, bevor die Verwendung dieser Erweiterung in Betracht gezogen wird.
+
+Es ist wichtig, die Auswirkungen der Transaktionsisolation und anderer Transaktionsattribute zu verstehen, bevor Sie das explizite Sperren in Ihrer Anwendung implementieren.
+====
+
+.Syntax
+[listing,subs=+quotes]
+----
+SELECT ... FROM _single_table_
+  [WHERE ...]
+  [FOR UPDATE [OF ...]]
+  WITH LOCK
+----
+
+Wenn die ``WITH LOCK``-Klausel erfolgreich ist, sichert sie eine Sperre für die ausgewählten Zeilen und verhindert, dass eine andere Transaktion Schreibzugriff auf eine dieser Zeilen oder deren abhängige Elemente erhält, bis die Transaktion endet.
+
+`WITH LOCK` kann nur mit einer ``SELECT``-Anweisung der obersten Ebene verwendet werden.
+Es steht _nicht_ zur Verfügung:
+
+* in einer Unterabfrage-Spezifikation
+* für Join-Sätze
+* mit dem ``DISTINCT``-Operator, einer ``GROUP BY``-Klausel oder einer anderen Aggregat-Operation
+* mit einer Ansicht
+* mit der Ausgabe einer abfragbaren gespeicherten Prozedur
+* mit einem externen Tabelle
+* mit einer ``UNION``-Abfrage
+
+Da die Engine wiederum berücksichtigt, dass jeder Datensatz unter eine explizite Sperranweisung fällt, gibt sie entweder die derzeit festgeschriebene Datensatzversion (zum Zeitpunkt als die Anweisung gesendet wurde) zurück, unabhängig vom Datenbankstatus, oder eine Ausnahme.
+
+Das Warteverhalten und die Konfliktmeldung hängen von den im TPB-Block angegebenen Transaktionsparametern ab:
+
+[[fblangref25-tbl-tpb-effects-de]]
+.Wie TPB-Einstellungen das explizite Sperren beeinflussen
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| TPB-Modus
+^| Verhalten
+
+|isc_tpb_consistency
+|Explizite Sperren werden von impliziten oder expliziten Sperren auf Tabellenebene außer Kraft gesetzt und ignoriert.
+
+|isc_tpb_concurrency + isc_tpb_nowait
+|Wenn ein Datensatz von einer Transaktion geändert wird, die festgeschrieben wurde, seit die Transaktion versucht hat, die explizite Sperre zu starten, oder eine aktive Transaktion eine Änderung dieses Datensatzes durchgeführt hat, wird sofort eine Aktualisierungskonfliktausnahme ausgelöst.
+
+|isc_tpb_concurrency + isc_tpb_wait
+|Wenn der Datensatz von einer Transaktion geändert wird, die seit dem Versuch der Ausführung der expliziten Sperre festgeschrieben wurde, wird sofort eine Ausnahme für den Aktualisierungskonflikt ausgelöst.
+
+Wenn eine aktive Transaktion den Besitz dieses Datensatzes innehat (durch explizites Sperren oder durch eine normale optimistische Schreibsperre), wartet die Transaktion, die die explizite Sperre verursacht, auf das Ergebnis der blockierenden Transaktion und, wenn sie beendet ist, versucht sie, die Sperre zu wieder aufzuheben.
+Wenn die blockierende Transaktion eine geänderte Version dieses Datensatzes erstellt hat, wird eine Ausnahme für den Aktualisierungskonflikt ausgelöst.
+
+|isc_tpb_read_committed + isc_tpb_nowait
+|Wenn es eine aktive Transaktion gibt, die den Besitz für diesen Datensatz innehat (durch explizites Sperren oder normale Aktualisierung), wird sofort eine Aktualisierungskonfliktausnahme ausgelöst.
+
+|isc_tpb_read_committed + isc_tpb_wait
+| Wenn es eine aktive Transaktion gibt, die den Besitz dieses Datensatzes innehat (durch explizites Sperren oder durch eine normale optimistische Schreibsperre), wartet die Transaktion, die die explizite Sperre verursacht, auf das Ergebnis der Blockierungstransaktion und wenn sie beendet ist, versucht sie die Sperre zu wieder aufzuheben.
+
+Aktualisierungskonfliktausnahmen können niemals durch eine explizite Sperranweisung in diesem TPB-Modus ausgelöst werden.
+|===
+
+[[fblangref25-dml-withlock-forupdate-de]]
+==== Verwendung einer ``FOR UPDATE``-Klausel
+
+Wenn die Unterklausel `FOR UPDATE` der Unterklausel `WITH LOCK` vorangestellt ist, werden gepufferte Abrufe unterdrückt.
+Somit wird die Sperre zum Zeitpunkt des Abrufens auf jede Zeile einzeln angewendet.
+Es wird dann möglich, dass eine Sperre, die bei Anforderung erfolgreich zu sein scheint, trotzdem _anschließend fehlschlägt_, wenn versucht wird, eine Zeile abzurufen, die in der Zwischenzeit durch eine andere Transaktion gesperrt wurde.
+
+[TIP]
+====
+Als eine Alternative kann es in Ihren Zugriffskomponenten möglich sein, die Größe des Abrufpuffers auf 1 zu setzen.
+Dies würde es Ihnen ermöglichen, die aktuell gesperrte Zeile zu verarbeiten, bevor die nächste geholt und gesperrt wird, oder Fehler zu behandeln, ohne ihre Transaktion zurückzurollen.
+====
+
+.`OF <Spaltennamen>`
+[NOTE]
+====
+Diese optionale Unterklausel macht überhaupt nichts.
+====
+
+.Siehe auch
+<<fblangref-dml-for-update-de,`FOR UPDATE [OF]`>>
+
+[[fblangref25-dml-withlock-engine-de]]
+==== Wie die Engine mit `WITH LOCK` umgeht
+
+Wenn eine ``UPDATE``-Anweisung versucht, auf einen Datensatz zuzugreifen, der durch eine andere Transaktion gesperrt ist, löst sie abhängig vom TPB-Modus entweder eine Aktualisierungskonfliktausnahme aus oder wartet auf den Abschluss  der Sperrtransaktion.
+Das Verhalten der Engine ist hier so, als wäre dieser Datensatz bereits durch die Sperrtransaktion modifiziert worden.
+
+Bei Konflikten mit pessimistischen Sperren werden keine speziellen gdscodes zurückgegeben.
+
+Die Engine garantiert, dass alle von einer expliziten Lock-Anweisung zurückgegebenen Datensätze tatsächlich gesperrt sind und die in der ``WHERE``-Klausel angegebenen Suchbedingungen _erfüllen_, solange die Suchbedingungen nicht von anderen Tabellen, Joins, Unterabfragen usw. abhängen.
+Außerdem wird garantiert, dass Zeilen, die die Suchbedingungen nicht erfüllen, nicht von der Anweisung gesperrt werden.
+Sie kann _nicht_ garantieren, dass es keine Zeilen gibt, die zwar die Suchbedingungen erfüllen, aber nicht gesperrt sind.
+
+[NOTE]
+====
+Diese Situation kann auftreten, wenn andere parallele Transaktionen ihre Änderungen im Verlauf der Ausführung der Sperranweisung festschreiben.
+====
+
+Die Engine sperrt Zeilen zum Abrufzeitpunkt.
+Dies hat wichtige Konsequenzen, wenn Sie mehrere Zeilen gleichzeitig sperren.
+Bei vielen Zugriffsmethoden für Firebird-Datenbanken wird die Ausgabe standardmäßig in Paketen mit einigen hundert Zeilen abgerufen ("`gepufferte Abrufe`").
+Die meisten Datenzugriffskomponenten können die Zeilen, die im zuletzt abgerufenen Paket enthalten sind, nicht anzeigen, wenn ein Fehler aufgetreten ist.
+
+[[fblangref-dml-withlock-caveats-de]]
+==== Fallstricke mit `WITH LOCK`
+
+* Durch das Zurücksetzen eines impliziten oder expliziten Sicherungspunkts werden Datensatzsperren freigegeben, die unter diesem Sicherungspunkt ausgeführt wurden, jedoch keine wartenden Transaktionen.
+Anwendungen sollten nicht von diesem Verhalten abhängig sein, da sie sich in Zukunft ändern können.
+* Während explizite Sperren zum Verhindern und / oder Behandeln ungewöhnlicher Fehler beim Updatekonflikt verwendet werden können, steigt die Anzahl der Deadlockfehler, wenn Sie Ihre Sperrstrategie nicht sorgfältig planen und streng steuern.
+* Die meisten Anwendungen benötigen keine expliziten Sperren.
+Die Hauptzwecke expliziter Sperren sind (1) die teure Behandlung von Fehlern bei der Aktualisierung von Konflikten in stark ausgelasteten Anwendungen zu verhindern und (2) die Integrität von Objekten zu erhalten, die einer relationalen  Datenbank in einer Clusterumgebung zugeordnet sind.
+Wenn Ihre explizite Sperrung nicht in eine dieser beiden Kategorien fällt, ist dies die falsche Vorgehensweise in Firebird.
+* Explizites Sperren ist eine erweiterte Funktion.
+Missbrauchen Sie sie nicht!
+Während Lösungen für diese Art von Problemen sehr wichtig für Websites sein können, die Tausende von gleichzeitigen  Schreibzugriffen behandeln, oder für ERP / CRM-Systeme, die in großen Unternehmen arbeiten, müssen die meisten Anwendungsprogramme unter solchen Bedingungen nicht arbeiten.
+
+[[fblangref25-dml-withlock-examples-de]]
+==== Beispiele, die explizites Sperren verwenden
+
+[lowerroman]
+. Einfach:
++
+[source]
+----
+SELECT * FROM DOCUMENT WHERE ID=? WITH LOCK;
+----
+. Mehrere Zeilen, eins-zu-eins-Verarbeitung mit SQL-Cursor:
++
+[source]
+----
+SELECT * FROM DOCUMENT WHERE PARENT_ID=?
+  FOR UPDATE WITH LOCK;
+----
+
+[[fblangref25-dml-select-into-de]]
+=== `INTO`
+
+.Verwendet für
+Übergabe von ``SELECT``-Ausgaben an Variablen
+
+.Verfügbar in
+PSQL
+
+Im PSQL-Code (Trigger, gespeicherte Prozeduren und ausführbare Blöcke) können die Ergebnisse einer ``SELECT``-Anweisung Zeile für Zeile in lokale Variablen geladen werden.
+Es ist oft die einzige Möglichkeit, etwas mit den zurückgegebenen Werten zu tun.
+Die Anzahl, Reihenfolge und Typen der Variablen müssen mit den Spalten in der Ausgabezeile übereinstimmen.
+
+Eine "`reine`" ``SELECT``-Anweisung kann nur in PSQL verwendet werden, wenn sie höchstens eine Zeile zurückgibt, d.h. wenn es ein _Singleton_ ist.
+Bei mehrzeiligen Auswahlmöglichkeiten bietet PSQL das <<fblangref25-psql-forselect-de,`FOR SELECT`>>-Schleifenkonstrukt, das später im PSQL-Kapitel erläutert wird.
+PSQL unterstützt auch die Anweisung `DECLARE CURSOR`, die einen benannten Cursor an eine Anweisung `SELECT` bindet.
+Der Cursor kann dann verwendet werden, um die Ergebnismenge zu durchlaufen.
+
+.Syntax
+In PSQL wird die ``INTO``-Klausel am Ende des ``SELECT``-Statements platziert.
+
+[listing,subs="+quotes,attributes"]
+----
+SELECT [...] <column-list>
+FROM ...
+[...]
+[INTO <variable-list>]
+
+<variable-list> ::= [:{endsb}__psqlvar__ [, [:{endsb}__psqlvar__ ...]
+----
+
+[NOTE]
+====
+Das Doppelpunkt-Präfix vor lokalen Variablennamen in PSQL ist optional.
+====
+
+[float]
+===== Beispiele
+
+Einige aggregierte Werte auswählen und an zuvor deklarierte Variablen `min_amt`, `avg_amt` und `max_amt` übergeben:
+
+[source]
+----
+select min(amount), avg(cast(amount as float)), max(amount)
+  from orders
+  where artno = 372218
+  into min_amt, avg_amt, max_amt;
+----
+
+[NOTE]
+====
+Die `CAST` dient dazu, den Durchschnitt zu einer reellen Zahl zu machen;
+Sonst würde `amount` vermutlich ein Integer-Feld sein, SQL-Regeln würden es auf die nächste niedrigere Ganzzahl abschneiden.
+====
+
+Ein PSQL-Trigger der zwei Werte als `BLOB` zurückliefert (Verwendung der ``LIST()``-Funktion) und diese mittels `INTO`  einem dritten Feld zuweist:
+
+[source]
+----
+select list(name, ', ')
+  from persons p
+  where p.id in (new.father, new.mother)
+  into new.parentnames;
+----
+
+[[fblangref25-dml-select-cte-de]]
+=== Common Table Expressions ("```WITH ... AS ... SELECT```")
+
+.Verfügbar in
+DSQL, PSQL
+
+Ein allgemeiner Tabellenausdruck oder _CTE_ kann als virtuelle Tabelle oder Ansicht beschrieben werden, die in einer Präambel einer Hauptabfrage definiert ist und nach der Ausführung der Hauptabfrage den Gültigkeitsbereich verlässt.
+Die Hauptabfrage kann auf alle __CTE__s verweisen, die in der Präambel definiert sind, als wären sie reguläre Tabellen oder Sichten.
+__CTE__s kann rekursiv sein, d.h. sich selbst referenzieren, aber sie können nicht verschachtelt sein.
+
+.Syntax
+[listing,subs=+quotes]
+----
+<cte-construct> ::=
+  <cte-defs>
+  <main-query>
+
+<cte-defs> ::= WITH [RECURSIVE] <cte> [, <cte> ...]
+
+<cte> ::= _name_ [(<column-list>)] AS (<cte-stmt>)
+
+<column-list> ::= _column-alias_ [, _column-alias_ ...]
+----
+
+[[fblangref25-dml-tbl-cte-de]]
+.Argumente für Common Table Expressions
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|cte-stmt
+|Jede ``SELECT``-Anweisung, einschließlich `UNION`
+
+|main-query
+|Die Hauptanweisung `SELECT`, die sich auf die in der Präambel definierten CTEs beziehen kann
+
+|name
+|Alias für einen Tabellenausdruck
+
+|column-alias
+|Alias für eine Spalte in einem Tabellenausdruck
+|===
+
+.Beispiel
+[source]
+----
+with dept_year_budget as (
+  select fiscal_year,
+         dept_no,
+         sum(projected_budget) as budget
+  from proj_dept_budget
+  group by fiscal_year, dept_no
+)
+select d.dept_no,
+       d.department,
+       dyb_2008.budget as budget_08,
+       dyb_2009.budget as budget_09
+from department d
+     left join dept_year_budget dyb_2008
+       on d.dept_no = dyb_2008.dept_no
+       and dyb_2008.fiscal_year = 2008
+     left join dept_year_budget dyb_2009
+       on d.dept_no = dyb_2009.dept_no
+       and dyb_2009.fiscal_year = 2009
+where exists (
+  select * from proj_dept_budget b
+  where d.dept_no = b.dept_no
+);
+----
+
+[float]
+===== CTE-Hinweise
+
+* Eine __CTE__-Definition kann ein beliebiges ``SELECT``-Statement sein, sofern es keine "```WITH...```"-Präampel besitzt (keine Verschachtelung).
+* __CTE__s für die gleiche Hauptabfrage definiert sind, können sich gegenseitig referenzieren, es sollte jedoch darauf geachtet werden, Schleifen zu vermeiden.
+* __CTE__s kann von überall in der Hauptabfrage referenziert werden.
+* Jede _CTE_ kann in der Hauptabfrage mehrmals referenziert werden, wobei bei Bedarf verschiedene Aliase verwendet werden.
+* Ein in Klammern eingeschlossenes __CTE__-Konstrukt kann als Unterabfrage in ``SELECT``-Statements verwendet werden, aber auch in ``UPDATE``s, ``MERGE``s etc.
+* In PSQL, werden __CTE__s auch in ``FOR``-Schleifen verwendet:
++
+[source]
+----
+for
+  with my_rivers as (select * from rivers where owner = 'me')
+    select name, length from my_rivers into :rname, :rlen
+do
+begin
+  ..
+end
+----
+
+[IMPORTANT]
+====
+Wenn eine _CTE_ deklariert ist, muss sie später verwendet werden: Andernfalls erhalten Sie einen Fehler wie diesen: '`CTE "AAA" is not used in query`'.
+====
+
+[[fblangref25-dml-select-cte-recursive-de]]
+==== Rekursive CTEs
+
+Eine rekursive (selbstverweisende) _CTE_ ist eine `UNION`, die mindestens ein nicht-rekursives Member haben muss, das als [term]_Anker_ bezeichnet wird.
+Die nicht rekursiven Member müssen vor den rekursiven Membern platziert werden.
+Rekursive Member sind untereinander und mit ihrem nicht rekursiven Nachbarn durch ``UNION ALL``-Operatoren verknüpft.
+Die Verbindungen zwischen nicht-rekursiven Mitgliedern können beliebiger Art sein.
+
+Für rekursive __CTE__s muss das Schlüsselwort `RECURSIVE` unmittelbar nach `WITH` vorhanden sein.
+Jedes rekursive Union-Member darf sich nur einmal selbst referenzieren, und zwar in einer ``FROM``-Klausel.
+
+Ein großer Vorteil von rekursiven __CTE__s ist, dass sie viel weniger Speicher und CPU-Zyklen als eine äquivalente rekursive gespeicherte Prozedur verwenden.
+
+[float]
+===== Ausführungsmuster
+
+Das Ausführungsmuster einer rekursiven _CTE_ lautet wie folgt:
+
+* Die Engine beginnt mit der Ausführung von einem nicht rekursiven Element.
+* Für jede ausgewertete Zeile beginnt die Ausführung jedes rekursiven Elements nacheinander, wobei die aktuellen Werte aus der äußeren Reihe als Parameter verwendet werden.
+* Wenn die aktuell ausgeführte Instanz eines rekursiven Members keine Zeilen erzeugt, führt die Ausführung eine Schleife zurück und ruft die nächste Zeile aus der äußeren Ergebnismenge ab.
+
+.Beispiele für __CTE__s
+
+[source]
+----
+WITH RECURSIVE DEPT_YEAR_BUDGET AS (
+  SELECT
+      FISCAL_YEAR,
+      DEPT_NO,
+      SUM(PROJECTED_BUDGET) BUDGET
+  FROM PROJ_DEPT_BUDGET
+  GROUP BY FISCAL_YEAR, DEPT_NO
+),
+DEPT_TREE AS (
+  SELECT
+      DEPT_NO,
+      HEAD_DEPT,
+      DEPARTMENT,
+      CAST('' AS VARCHAR(255)) AS INDENT
+  FROM DEPARTMENT
+  WHERE HEAD_DEPT IS NULL
+  UNION ALL
+  SELECT
+      D.DEPT_NO,
+      D.HEAD_DEPT,
+      D.DEPARTMENT,
+      H.INDENT || ' '
+  FROM DEPARTMENT D
+    JOIN DEPT_TREE H ON H.HEAD_DEPT = D.DEPT_NO
+)
+SELECT
+    D.DEPT_NO,
+    D.INDENT || D.DEPARTMENT DEPARTMENT,
+    DYB_2008.BUDGET AS BUDGET_08,
+    DYB_2009.BUDGET AS BUDGET_09
+FROM DEPT_TREE D
+    LEFT JOIN DEPT_YEAR_BUDGET DYB_2008 ON
+      (D.DEPT_NO = DYB_2008.DEPT_NO) AND
+      (DYB_2008.FISCAL_YEAR = 2008)
+    LEFT JOIN DEPT_YEAR_BUDGET DYB_2009 ON
+      (D.DEPT_NO = DYB_2009.DEPT_NO) AND
+      (DYB_2009.FISCAL_YEAR = 2009);
+----
+
+Das nächste Beispiel gibt den Stammbaum eines Pferdes zurück.
+Der Hauptunterschied besteht darin, dass Rekursion gleichzeitig in zwei Zweigen des Stammbaums auftritt.
+
+[source]
+----
+WITH RECURSIVE PEDIGREE (
+  CODE_HORSE,
+  CODE_FATHER,
+  CODE_MOTHER,
+  NAME,
+  MARK,
+  DEPTH)
+AS (SELECT
+      HORSE.CODE_HORSE,
+      HORSE.CODE_FATHER,
+      HORSE.CODE_MOTHER,
+      HORSE.NAME,
+      CAST('' AS VARCHAR(80)),
+      0
+    FROM
+      HORSE
+    WHERE
+      HORSE.CODE_HORSE = :CODE_HORSE
+    UNION ALL
+    SELECT
+      HORSE.CODE_HORSE,
+      HORSE.CODE_FATHER,
+      HORSE.CODE_MOTHER,
+      HORSE.NAME,
+      'F' || PEDIGREE.MARK,
+      PEDIGREE.DEPTH + 1
+    FROM
+      HORSE
+      JOIN PEDIGREE
+        ON HORSE.CODE_HORSE = PEDIGREE.CODE_FATHER
+    WHERE
+      PEDIGREE.DEPTH < :MAX_DEPTH
+    UNION ALL
+    SELECT
+      HORSE.CODE_HORSE,
+      HORSE.CODE_FATHER,
+      HORSE.CODE_MOTHER,
+      HORSE.NAME,
+      'M' || PEDIGREE.MARK,
+      PEDIGREE.DEPTH + 1
+    FROM
+      HORSE
+      JOIN PEDIGREE
+        ON HORSE.CODE_HORSE = PEDIGREE.CODE_MOTHER
+    WHERE
+      PEDIGREE.DEPTH < :MAX_DEPTH
+)
+SELECT
+  CODE_HORSE,
+  NAME,
+  MARK,
+  DEPTH
+FROM
+  PEDIGREE
+----
+
+.Hinweise zu rekursiven __CTE__s
+* Aggregate (`DISTINCT`, `GROUP BY`, `HAVING`) und Aggregatfunktionen (`SUM`, `COUNT`, `MAX` etc) sind in rekursiven Union-Membern nicht erlaubt.
+* Eine rekursive Referenz kann nicht an einem Outer Join teilnehmen.
+* Die maximale Rekursionstiefe beträgt 1024.
+
+[[fblangref25-dml-insert-de]]
+== `INSERT`
+
+.Verwendet für
+Einfügen von Datenzeilen in eine Tabelle
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+INSERT INTO _target_
+  {DEFAULT VALUES | [(<column_list>)] <value_source>}
+  [RETURNING <returning_list> [INTO <variables>]]
+
+<column_list> ::= _colname_ [, _colname_ ...]
+
+<value_source> ::= VALUES (<value_list>) | <select_stmt>
+
+<value_list> ::= <value> [, <value> ...]
+
+<returning_list> ::= <ret_value> [, <ret_value> ...]
+
+<ret_value> ::= _colname_ | <value>
+
+<variables> ::= [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
+----
+
+[[fblangref25-dml-tbl-insert-de]]
+.Argumente für die Parameter des ``INSERT``-Statements
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|target
+|Der Name der Tabelle oder Sicht, zu der eine neue Zeile oder ein Stapel von Zeilen hinzugefügt werden soll
+
+|colname
+|Spalte in der Tabelle oder in der Ansicht
+
+|value
+|Ein Ausdruck, dessen Wert zum Einfügen in die Tabelle verwendet wird
+
+|ret_value
+|Der Ausdruck, der in der ``RETURNING``-Klausel zurückgegeben werden soll
+
+|varname
+|Name einer lokalen PSQL-Variablen
+|===
+
+.Beschreibung
+Das ``INSERT``-Statement wird verwendet um Zeilen zu einer Tabelle hinzuzufügen.
+Alternativ können Zeilen auch in eine oder mehrere Tabellen eingefügt werden, die als Basis für eine View dienen:
+
+* Wenn die Spaltenwerte in einer ``VALUES``-Klausel angegeben werden, wird genau eine Zeile eingefügt
+* Die Werte können stattdessen durch einen Ausdruck `SELECT` bereitgestellt werden, in welchem Fall null bis viele Zeilen eingefügt werden können
+* Mit der Klausel `DEFAULT VALUES` werden überhaupt keine Werte bereitgestellt und genau eine Zeile eingefügt.
+
+.Beschränkungen
+[NOTE]
+====
+* Für Spalten, die an die ``NEW.__column_list__``-Kontextvariablen in Triggern zurückgegeben werden, darf kein Doppelpunkt ("```:```") vorangestellt sein
+* Keine Spalte darf mehr als einmal in der Spaltenliste vorkommen.
+====
+
+.ACHTUNG : 'BEFORE INSERT'-Trigger
+[IMPORTANT]
+====
+Berücksichtigen Sie unabhängig von der zum Einfügen von Zeilen verwendeten Methode alle Spalten in der Zieltabelle oder -sicht, die von ``BEFORE INSERT``-Triggern gefüllt werden, z.B. Primärschlüssel und Suchfelder ohne Beachtung der Groß- / Kleinschreibung.
+Diese Spalten sollten sowohl von der _column_list_ als auch von der ``VALUES``-Liste ausgeschlossen werden, wenn die Trigger die `NEW.__column_name__` auf `NULL` prüfen.
+====
+
+[[fblangref25-dml-insert-values-de]]
+=== `INSERT ... VALUES`
+
+Die ``VALUES``-Liste muss für jede Spalte in der Spaltenliste einen Wert in derselben Reihenfolge und mit dem richtigen Typ angeben.
+Die Spaltenliste muss nicht jede Spalte im Ziel angeben, aber wenn die Spaltenliste nicht vorhanden ist, benötigt die Engine für jede Spalte in der Tabelle oder Ansicht einen Wert (berechnete Spalten ausgeschlossen).
+
+[NOTE]
+====
+<<fblangref25-commons-introducer-syntax-de,Introducer-Syntax>> bietet eine Möglichkeit, den Zeichensatz eines Werts zu identifizieren, der eine Zeichenfolgenkonstante (Literal) ist.
+Die Introducer-Syntax funktioniert nur mit Literalstrings: Sie kann nicht auf Stringvariablen, Parameter, Spaltenreferenzen oder Werte, die Ausdrücke sind, angewendet werden.
+====
+
+.Beispiele
+[source]
+----
+INSERT INTO cars (make, model, year)
+VALUES ('Ford', 'T', 1908);
+
+INSERT INTO cars
+VALUES ('Ford', 'T', 1908, 'USA', 850);
+
+-- notice the '_' prefix (introducer syntax)
+INSERT INTO People
+VALUES (_ISO8859_1 'Hans-Jörg Schäfer');
+----
+
+[[fblangref25-dml-insert-select-de]]
+=== `INSERT ... SELECT`
+
+Für diese Einfügemethode müssen die Ausgabespalten der Anweisung `SELECT`  für jede Zielspalte in der Spaltenliste einen Wert in derselben Reihenfolge und vom richtigen Typ bereitstellen.
+
+Literale Werte, Kontextvariablen oder Ausdrücke des kompatiblen Typs können für jede Spalte in der Quellzeile verwendet werden.
+In diesem Fall sind eine Quellenspaltenliste und eine entsprechende ``VALUES``-Liste erforderlich.
+
+Wenn die Spaltenliste abwesend ist -- wie es ist, wenn `SELECT *` für den Quellausdruck -- verwendet wird, muss die  _column_list_ die Namen jeder Spalte in der Zieltabelle oder Sicht enthalten (berechnete Spalten ausgeschlossen).
+
+.Beispiele
+[source]
+----
+INSERT INTO cars (make, model, year)
+  SELECT make, model, year
+  FROM new_cars;
+
+INSERT INTO cars
+  SELECT * FROM new_cars;
+
+INSERT INTO Members (number, name)
+  SELECT number, name FROM NewMembers
+    WHERE Accepted = 1
+UNION ALL
+  SELECT number, name FROM SuspendedMembers
+    WHERE Vindicated = 1
+
+INSERT INTO numbers(num)
+  WITH RECURSIVE r(n) as (
+    SELECT 1 FROM rdb$database
+    UNION ALL
+    SELECT n+1 FROM r WHERE n < 100
+  )
+SELECT n FROM r
+----
+
+Natürlich müssen die Spaltennamen in der Quelltabelle nicht mit denen in der Zieltabelle übereinstimmen.
+Jede Art von ``SELECT``-Anweisung ist zulässig, solange ihre Ausgabespalten exakt mit den Einfügespalten in Anzahl,  Reihenfolge und Typ übereinstimmen.
+Typen müssen nicht exakt gleich sein, aber sie müssen zuweisungskompatibel sein.
+
+[[fblangref25-dml-insert-select-unstable-de]]
+==== Das Problem mit dem "`instabilen Cursor`"
+
+In Firebird muss bis zu dieser Version ein Implementierungsfehler geachtet werden, der diese Art von Einfügungen betrifft, wenn das Ziel darin besteht, Zeilen in derselben Tabelle zu duplizieren.
+Beispielsweise
+
+[source]
+----
+INSERT INTO T
+  SELECT * FROM T;
+----
+
+liebevoll als die "`unendliche Einfügeschleife`" bezeichnet, wählt fortlaufend Zeilen aus und fügt sie immer wieder ein, bis das System keinen Speicherplatz mehr hat.
+
+Dies ist eine Eigenart, die alle datenverändernden DML-Operationen mit einer Vielzahl von Effekten beeinflusst.
+Dies geschieht, weil DML-Anweisungen in den Ausführungsebenen implizite Cursor zum Ausführen der Operationen verwenden.
+Mit unserem einfachen Beispiel funktioniert die Ausführung folgendermaßen:
+
+[source]
+----
+FOR SELECT <values> FROM T INTO <tmp_vars>
+  DO
+    INSERT INTO T VALUES (<tmp_vars>);
+----
+
+Die Implementierung führt zu einem Verhalten, das nicht mit den SQL-Standards übereinstimmt.
+Zukünftige Versionen von Firebird werden dem Standard entsprechen.
+
+[[fblangref25-dml-insert-defaults-de]]
+=== `INSERT ... DEFAULT VALUES`
+
+Die ``DEFAULT VALUES``-Klausel erlaubt das Einfügen eines Datensatzes ohne die Angabe von Werten, weder direkt oder durch ein ``SELECT``-Statement.
+Dies ist nur möglich, wenn jede ``NOT NULL``- oder ``CHECK``-basierte Spalte in der Tabelle entweder einen gültigen Standardwert deklariert hat oder die Werte über einen ``BEFORE INSERT``-Trigger erhält.
+Darüber hinaus dürfen Trigger, die erforderliche Feldwerte bereitstellen, nicht von dem Vorhandensein von Eingabewerten abhängen.
+
+.Beispiel
+[source]
+----
+INSERT INTO journal
+  DEFAULT VALUES
+RETURNING entry_id;
+----
+
+[[fblangref25-dml-insert-returning-de]]
+=== Die ``RETURNING``-Klausel
+
+Eine ``INSERT``-Anweisung, die _höchstens eine Zeile_ hinzufügt, kann optional eine Klausel `RETURNING` enthalten, um Werte aus der eingefügten Zeile zurückzugeben.
+Die Klausel, falls vorhanden, muss nicht alle Einfügungsspalten enthalten und kann auch andere Spalten oder Ausdrücke enthalten.
+Die zurückgegebenen Werte spiegeln alle Änderungen wider, die möglicherweise in den ``BEFORE INSERT``-Triggern  vorgenommen wurden.
+
+.ACHTUNG : Mehrfache INSERTs
+[IMPORTANT]
+====
+In DSQL gibt eine Anweisung mit `RETURNING` immer nur eine Zeile zurück.
+Wenn die ``RETURNING``-Klausel angegeben ist und mehr als eine Zeile von der ``INSERT``-Anweisung eingefügt wird, schlägt die Anweisung fehl und eine Fehlermeldung wird zurückgegeben.
+Dieses Verhalten kann sich in zukünftigen Firebird-Versionen ändern.
+====
+
+.Beispiele
+[source]
+----
+INSERT INTO Scholars (
+  firstname,
+  lastname,
+  address,
+  phone,
+  email)
+VALUES (
+  'Henry',
+  'Higgins',
+  '27A Wimpole Street',
+  '3231212',
+  NULL)
+RETURNING lastname, fullname, id;
+
+INSERT INTO Dumbbells (firstname, lastname, iq)
+  SELECT fname, lname, iq
+FROM Friends
+  ORDER BY iq ROWS 1
+  RETURNING id, firstname, iq
+INTO :id, :fname, :iq;
+----
+
+.Hinweise
+* `RETURNING` wird nur unterstützt für ``VALUES``-Inserts und Singleton- ``SELECT``-Inserts.
+* In DSQL gibt eine Anweisung mit einer ``RETURNING``-Klausel _immer_ genau eine Zeile zurück.
+Wenn tatsächlich kein Datensatz eingefügt wurde, sind die Felder in dieser Zeile alle `NULL`.
+Dieses Verhalten kann sich in einer späteren Version von Firebird ändern.
+Wenn in PSQL keine Zeile eingefügt wurde, wird nichts zurückgegeben und die Zielvariablen behalten ihre vorhandenen Werte bei.
+
+[[fblangref25-dml-insert-blobs-de]]
+=== Einfügen in ``BLOB``-Spalten
+
+Das Einfügen in ``BLOB``-Spalten ist nur unter folgenden Umständen möglich:
+
+. Die Client-Anwendung hat mit der Firebird-API spezielle Vorkehrungen für solche Einsätze getroffen.
+In diesem Fall ist der [term]_modus operandi_ anwendungsspezifisch und außerhalb des Geltungsbereichs dieses Handbuchs.
+. Der eingegebene Wert ist eine Textzeichenfolge von nicht mehr als 32767 Byte. 
++
+[CAUTION]
+====
+Wenn der Wert kein String-Literal ist, achten Sie auf Verkettungen, da die Ausgabe des Ausdrucks die maximale Länge überschreiten kann.
+====
+. Sie nutzen die Form "```INSERT ... SELECT```" und eine oder mehr Spalten im Rückgabesatz sind ``BLOB``s.
+
+[[fblangref25-dml-update-de]]
+== `UPDATE`
+
+.Verwendet für
+Ändern von Zeilen in Tabellen und Sichten
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+UPDATE _target_ [[AS] _alias_]
+  SET _col_ = <value> [, _col_ = <value> ...]
+  [WHERE {<search-conditions> | CURRENT OF _cursorname_}]
+  [PLAN <plan_items>]
+  [ORDER BY <sort_items>]
+  [ROWS _m_ [TO _n_]]
+  [RETURNING <returning_list> [INTO <variables>]]
+
+<returning_list> ::= <ret_value> [, <ret_value> ...]
+
+<ret_value> ::=
+    _colname_
+  | NEW.__colname__
+  | OLD.__colname__
+  | <value>
+
+<variables> ::= [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
+----
+
+[[fblangref25-dml-tbl-update-de]]
+.Arguments for the `UPDATE` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|target
+|Der Name der Tabelle oder Sicht, in der die Datensätze aktualisiert werden
+
+|alias
+|Alias für den Tisch oder die Ansicht
+
+|col
+|Name oder Alias einer Spalte in der Tabelle oder Sicht
+
+|newval
+|Neuer Wert für eine Spalte, die von der Anweisung in der Tabelle oder Sicht aktualisiert werden soll
+
+|search-conditions
+|Eine Suchbedingung, die den Satz der zu aktualisierenden Zeilen begrenzt
+
+|cursorname
+|Der Name des Cursors, über den die zu aktualisierende Zeile(n) positioniert wird
+
+|plan_items
+|Klauseln im Abfrageplan
+
+|sort_items
+|Spalten, die in einer ``ORDER BY``-Klausel aufgeführt sind
+
+|m, n
+|Integer-Ausdrücke zur Begrenzung der Anzahl der zu aktualisierenden Zeilen
+
+|ret_value
+|Ein Wert, der in der ``RETURNING``-Klausel zurückgegeben werden soll
+
+|varname
+|Name einer lokalen PSQL-Variablen
+|===
+
+.Beschreibung
+Die Anweisung `UPDATE` ändert Werte in einer Tabelle oder in einer oder mehreren Tabellen, die einer Sicht zugrunde liegen.
+Die betroffenen Spalten sind in der Klausel `SET` angegeben.
+Die betroffenen Zeilen können durch die Klauseln `WHERE` und `ROWS` eingeschränkt sein.
+Wenn weder `WHERE` noch `ROWS` vorhanden ist, werden alle Datensätze in der Tabelle aktualisiert.
+
+[[fblangref25-dml-update-alias-use-de]]
+=== Verwendung eines Alias
+
+Wenn Sie einer Tabelle oder einer Ansicht einen Alias zuweisen, _muss_ der Alias verwendet werden, wenn Spalten angegeben werden, und auch in Spaltenreferenzen, die in anderen Klauseln enthalten sind.
+
+.Beispiele
+Korrekte Verwendung:
+
+[source]
+----
+update Fruit set soort = 'pisang' where ...
+
+update Fruit set Fruit.soort = 'pisang' where ...
+
+update Fruit F set soort = 'pisang' where ...
+
+update Fruit F set F.soort = 'pisang' where ...
+----
+
+Nicht möglich:
+
+[source]
+----
+update Fruit F set Fruit.soort = 'pisang' where ...
+----
+
+[[fblangref25-dml-update-setclause-de]]
+=== Die ``SET``-Klausel
+
+In der Klausel `SET` werden die Zuweisungsausdrücke, die die Spalten mit den festzulegenden Werten enthalten, durch Kommata getrennt.
+In einer Zuweisungsphrase befinden sich Spaltennamen auf der linken Seite und die Werte oder Ausdrücke, die die Zuweisungswerte enthalten, befinden sich auf der rechten Seite.
+Eine Spalte darf nur einmal in der Klausel `SET` enthalten sein.
+
+Ein Spaltenname kann in Ausdrücken auf der rechten Seite verwendet werden.
+Der alte Wert der Spalte wird immer in diesen Werten auf der rechten Seite verwendet, auch wenn der Spalte bereits in der ``SET``-Klausel ein neuer Wert zugewiesen  wurde.
+
+.Hier ist ein Beispiel
+Daten in der ``TSET``-Tabelle:
+
+[source]
+----
+A B
+---
+1 0
+2 0
+----
+
+Die Anweisung
+
+[source]
+----
+UPDATE tset SET a = 5, b = a;
+----
+
+ändert die Werte zu
+
+[source]
+----
+A B
+---
+5 1
+5 2
+----
+
+Beachten Sie, dass die alten Werte (1 und 2) verwendet werden, um die Spalte b zu aktualisieren, auch nachdem der Spalte ein neuer Wert zugewiesen wurde (5).
+
+[NOTE]
+====
+Dies war nicht immer so.
+Vor der Version 2.5 erhielten Spalten ihre neuen Werte sofort nach der Zuweisung.
+Das war jedoch kein standardmäßiges Verhalten, und wurde in Version 2.5 behoben.
+
+Um die Kompatibilität mit Legacy-Code zu erhalten, enthält die Konfigurationsdatei `firebird.conf` den Parameter `OldSetClauseSemantics`, der auf True (1) gesetzt werden kann, um das alte, fehlerhafte Verhalten wiederherzustellen.
+Es ist eine vorübergehende Maßnahme, der Parameter wird in Zukunft entfernt.
+====
+
+[[fblangref25-dml-update-whereclause-de]]
+=== Die ``WHERE``-Klausel
+
+Die ``WHERE``-Klausel legt die Bedingungen fest, die die Datensatzgruppe für ein [term]_searched update_ begrenzen.
+
+Wenn in PSQL ein benannter Cursor zum Aktualisieren eines Satzes verwendet wird und die Klausel `WHERE CURRENT OF` verwendet wird, ist die Aktion auf die Zeile beschränkt, in der sich der Cursor gerade befindet.
+Dies ist ein [term]_positioniertes Update_.
+
+// TODO WHERE CURRENT OF also works in DSQL if a cursor name has been set using the API and FOR UPDATE is used
+[NOTE]
+====
+Die Klausel `WHERE CURRENT OF` ist nur in PSQL verfügbar, da es keine Anweisung zum Erstellen und Bearbeiten eines expliziten Cursors in DSQL gibt.
+Gesuchte Updates sind natürlich auch in PSQL verfügbar.
+====
+
+.Beispiele
+[source]
+----
+UPDATE People
+  SET firstname = 'Boris'
+  WHERE lastname = 'Johnson';
+
+UPDATE employee e
+  SET salary = salary * 1.05
+  WHERE EXISTS(
+         SELECT *
+           FROM employee_project ep
+           WHERE e.emp_no = ep.emp_no);
+
+UPDATE addresses
+  SET city = 'Saint Petersburg', citycode = 'PET'
+  WHERE city = 'Leningrad'
+
+UPDATE employees
+  SET salary = 2.5 * salary
+  WHERE title = 'CEO'
+----
+
+Bei String-Literalen, mit denen der Parser Hilfe beim Interpretieren des Zeichensatzes der Daten benötigt, kann die  <<fblangref25-commons-introducer-syntax-de,Einführersyntax>> verwendet werden.
+Dem Zeichenfolgenliteral ist der Zeichensatzname vorangestellt, dem ein Unterstrich vorangestellt ist:
+
+[source]
+----
+-- notice the '_' prefix
+
+UPDATE People
+SET name = _ISO8859_1 'Hans-Jörg Schäfer'
+WHERE id = 53662;
+----
+
+[[fblangref25-dml-update-unstable-de]]
+==== Das Problem mit dem "`instabilen Cursor`"
+
+In Firebird muss bis zu dieser Version ein Implementierungsfehler geachtet werden, der diese Art von Aktualisierungen betrifft, wenn die ``WHERE``-Bedingungen das `IN (<select-expr>)` und die _select-expr_ in der Form `SELECT FIRST __n__` oder `SELECT ... ROWS` vorliegt.
+Zum Beispiel
+
+[source]
+----
+UPDATE T
+  SET ...
+  WHERE ID IN (SELECT FIRST 1 ID FROM T);
+----
+
+liebevoll als die "`unendliche Update-Schleife`" bekannt, wird fortlaufend Zeilen aktualisieren, immer und immer wieder, bis der Server hängen bleibt.
+
+Quarks wie dieses können sich auf datenverändernde DML-Operationen auswirken, meistens wenn die Auswahlbedingungen eine Unterabfrage betreffen.
+Fälle wurden gemeldet, bei denen die Sortierreihenfolge die Erwartungen beeinträchtigt, ohne dass eine Unterabfrage erforderlich ist.
+Dies geschieht, weil DML-Anweisungen in den Ausführungsebenen anstelle eines stabilen "`Zielsatzes`" und anschließendem Ausführen der Datenänderungen für jedes gesetzte Element implizite Cursor zum Ausführen der Operationen für die Zeile verwenden, die derzeit die Bedingungen erfüllt, ohne zu wissen, ob diese Zeile zuvor die Bedingung nicht erfüllt hat oder bereits aktualisiert wurde.
+Also, mit einem einfachen Beispielmuster:
+
+[listing,subs=+quotes]
+----
+UPDATE T SET <fields> = <values>
+  WHERE <conditions>
+----
+
+the execution works as:
+
+[listing,subs=+quotes]
+----
+FOR SELECT <values> FROM T
+  WHERE <conditions>
+  INTO <tmp_vars> AS CURSOR <cursor>
+  DO
+    UPDATE T SET <fields> = <tmp_vars>
+    WHERE CURRENT OF <cursor>
+----
+
+Die Implementierung von Firebird stimmt nicht mit den SQL-Standards überein, nach denen ein stabiles Set eingerichtet werden muss, bevor Daten geändert werden.
+Versionen von Firebird ab V.3 werden dem Standard entsprechen.
+
+[[fblangref25-dml-update-orderbyclause-de]]
+=== Die ``ORDER BY``- und ``ROWS``-Klauseln
+
+Die Klauseln `ORDER BY` und `ROWS` sind nur sinnvoll, wenn sie zusammen verwendet werden.
+Sie können jedoch auch getrennt verwendet werden.
+
+Wenn `ROWS` ein Argument, _m_, hat, sind die zu aktualisierenden Zeilen auf die ersten _m_ Zeilen beschränkt.
+
+.Wichtige Punkte
+* Wenn _m_ > der Anzahl der Zeilen, die verarbeitet werden, wird der gesamte Zeilensatz aktualisiert
+* Wenn _m_ = 0, wird keine Zeile aktualisiert
+* Wenn _m_ < 0, tritt ein Fehler auf und die Aktualisierung schlägt fehl
+
+Wenn zwei Argumente verwendet werden, _m_ und _n_,  begrenzt `ROWS` die Zeilen, die aktualisiert werden, auf Zeilen von _m_ bis _n_ einschließlich.
+Beide Argumente sind Ganzzahlen und beginnen bei 1.
+
+.Wichtige Punkte
+* Wenn _m_ > der Anzahl der zu verarbeitenden Zeilen, werden keine Zeilen aktualisiert
+* Wenn _n_ > der Anzahl der Zeilen, werden Zeilen von _m_ bis zum Ende des Satzes werden aktualisiert
+* Wenn _m_ < 1 oder _n_ < 1, tritt ein Fehler auf und das Update schlägt fehl
+* Wenn _n_ = _m_ - 1, werden keine Zeilen aktualisiert.
+* Wenn _n_ < _m_ -1, ein Fehler tritt auf und die Aktualisierung schlägt fehl
+
+.ROWS-Beispiel
+[source]
+----
+UPDATE employees
+SET salary = salary + 50
+ORDER BY salary ASC
+ROWS 20;
+----
+
+[[fblangref25-dml-update-returningclause-de]]
+=== Die ``RETURNING``-Klausel
+
+Eine Anweisung `UPDATE` mit _höchstens einer Zeile_ kann `RETURNING` enthalten, um einige Werte aus der aktualisierten Zeile zurückzugeben.
+`RETURNING` kann Daten aus einer beliebigen Spalte der Zeile enthalten, nicht unbedingt aus den Spalten, die gerade aktualisiert werden.
+Es kann Literale enthalten, die nicht mit Spalten verknüpft sind, wenn dies erforderlich ist.
+
+Wenn der ``RETURNING``-Satz Daten aus der aktuellen Zeile enthält, melden die zurückgegebenen Werte Änderungen, die in den `BEFORE UPDATE` Triggern vorgenommen wurden, nicht jedoch in ``AFTER UPDATE``-Triggern.
+
+Die Kontextvariablen `OLD.__fieldname__` und `NEW.__fieldname__` können als Spaltennamen verwendet werden.
+Wenn `OLD.` oder `NEW.` nicht angegeben ist, sind die zurückgegebenen Spaltenwerte die in `NEW.`.
+
+In DSQL gibt eine Anweisung mit `RETURNING` immer eine einzelne Zeile zurück.
+Wenn die Anweisung keine Datensätze aktualisiert, enthalten die zurückgegebenen Werte `NULL`.
+Dieses Verhalten kann sich in zukünftigen Firebird-Versionen ändern.
+
+[[fblangref25-dml-update-returning-into-de]]
+==== Die ``INTO``-Unterklausel
+
+In PSQL kann die Klausel `INTO` verwendet werden, um die zurückgegebenen Werte an lokale Variablen zu übergeben.
+Es ist nicht in DSQL verfügbar.
+Wenn keine Datensätze aktualisiert werden, wird nichts zurückgegeben, und die in `RETURNING` angegebenen Variablen behalten ihre vorherigen Werte bei.
+
+[NOTE]
+====
+Wenn ein Wert zurückgegeben und einer ``NEW``-Kontextvariablen zugewiesen wird, ist die Verwendung eines Doppelpunktpräfixes nicht zulässig.
+Dies ist beispielsweise ungültig:
+
+[source]
+----
+...
+into :var1, :var2, :new.id
+----
+
+und dies gültig:
+
+[source]
+----
+...
+into :var1, :var2, new.id
+----
+====
+
+==== RETURNING-Beispiel (DSQL)
+
+[source]
+----
+UPDATE Scholars
+SET firstname = 'Hugh', lastname = 'Pickering'
+WHERE firstname = 'Henry' and lastname = 'Higgins'
+RETURNING id, old.lastname, new.lastname;
+----
+
+[[fblangref25-dml-update-blob-de]]
+=== Aktualisieren von ``BLOB``-Spalten
+
+Das Aktualisieren einer ``BLOB``-Spalte ersetzt immer den gesamten Inhalt.
+Sogar die ``BLOB``-ID, das "`Handle`" welches direkt in der Spalte gespeichert wird, ändert sich.
+``BLOB``s können aktualisiert werden wenn:
+
+. Die Client-Anwendung mit der Firebird-API spezielle Vorkehrungen für diese Operation getroffen hat.
+In diesem Fall ist der [term]_modus operandi_ anwendungsspezifisch und außerhalb des Geltungsbereichs dieses Handbuchs.
+. Der neue Wert eine Textzeichenfolge von höchstens 32767 Byte ist.
+Bitte beachten Sie: Wenn der Wert kein String-Literal ist, achten Sie auf Verkettungen, da diese die maximale Länge überschreiten können.
+. Die Quelle selbst eine ``BLOB``-Spalte oder allgemeiner ein Ausdruck ist, der ein `BLOB` zurückgibt.
+. Sie die Anweisung `INSERT CURSOR` verwenden (nur ESQL).
+
+[[fblangref25-dml-update-or-insert-de]]
+== `UPDATE OR INSERT`
+
+.Verwendet für
+Updating an existing record in a table or, if it does not exist, inserting it
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+UPDATE OR INSERT INTO
+  _target_ [(<column_list>)]
+  VALUES (<value_list>)
+  [MATCHING (<column_list>)]
+  [RETURNING <values> [INTO <variables>]]
+
+<column_list> ::= _colname_  [, _colname_ ...]
+
+<value_list> ::= <value> [, <value> ...]
+
+<returning_list> ::= <ret_value> [, <ret_value> ...]
+
+<ret_value> ::=
+    _colname_
+  | NEW.__colname__
+  | OLD.__colname__
+  | <value>
+
+<variables> ::= [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
+----
+
+[[fblangref25-dml-tbl-updorins-de]]
+.Arguments for the `UPDATE OR INSERT` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|target
+|The name of the table or view where the record[s] is to be updated or a new record inserted
+
+|colname
+|Name of a column in the table or view
+
+|value
+|An expression whose value is to be used for inserting or updating the table
+
+|ret_value
+|An expression returned in the RETURNING clause
+
+|varname
+|Variable name -- PSQL only
+|===
+
+.Beschreibung
+`UPDATE OR INSERT` inserts a new record or updates one or more existing records.
+The action taken depends on the values provided for the columns in the `MATCHING` clause (or, if the latter is absent, in the primary key).
+If there are records found matching those values, they are updated.
+If not, a new record is inserted.
+A match only counts if all the values in the `MATCHING` or `PK` columns are equal.
+Matching is done with the <<fblangref25-commons-isnotdistinct-de,`IS NOT DISTINCT`>> operator, so one `NULL` matches another.
+
+.Beschränkungen
+[NOTE]
+====
+* If the table has no Primärschlüssel, the `MATCHING` clause becomes mandatory.
+* In the `MATCHING` list as well as in the update/insert column list, each column name may occur only once.
+* The "```INTO <variables>```" subclause is only available in PSQL.
+* When values are returned into the context variable `NEW`, this name must not be preceded by a colon ("```:```").
+====
+
+[[fblangref25-dml-update-or-insert-returning-de]]
+=== The `RETURNING` clause
+
+The optional `RETURNING` clause, if present, need not contain all the columns mentioned in the statement and may also contain other columns or expressions.
+The returned values reflect any changes that may have been made in `BEFORE` triggers, but not those in `AFTER` triggers. `OLD.__fieldname__` and `NEW.__fieldname__` may both be used in the list of columns to return;
+for field names not preceded by either of these, the new value is returned.
+
+In DSQL, a statement with a `RETURNING` clause _always_ returns exactly one row.
+If a `RETURNING` clause is present and more than one matching record is found, an error is raised.
+This behaviour may change in a later version of Firebird.
+
+=== Beispiel
+
+Modifying data in a table, using `UPDATE OR INSERT` in a PSQL module.
+The return value is passed to a local variable, whose colon prefix is optional.
+
+[source]
+----
+UPDATE OR INSERT INTO Cows (Name, Number, Location)
+  VALUES ('Suzy Creamcheese', 3278823, 'Green Pastures')
+  MATCHING (Number)
+  RETURNING rec_id into :id;
+----
+
+.The "`Unstable Cursor`" Problem
+[IMPORTANT]
+====
+Because of the way the execution of data-changing DML is implemented in Firebird, up to and including this version, the sets targeted for updating sometimes produce unexpected results.
+For more information, refer to <<fblangref25-dml-update-unstable-de,[ref]_The Unstable Cursor Problem_>> in the `UPDATE` section.
+====
+
+[[fblangref25-dml-delete-de]]
+== `DELETE`
+
+.Verwendet für
+Löschen von Zeilen aus einer Tabelle oder Ansicht
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+DELETE
+  FROM _target_ [[AS] _alias_]
+  [WHERE {<search-conditions> | CURRENT OF _cursorname_}]
+  [PLAN <plan_items>]
+  [ORDER BY <sort_items>]
+  [ROWS _m_ [TO _n_]]
+  [RETURNING <returning_list> [INTO <variables>]]
+
+<returning_list> ::= <ret_value> [, <ret_value> ...]
+
+<ret_value> ::= _colname_ | <value>
+
+<variables> ::= [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
+----
+
+[[fblangref25-dml-tbl-delete-de]]
+.Argumente der ``DELETE``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|target
+|Der Name der Tabelle oder Sicht, aus der die Datensätze gelöscht werden sollen
+
+|alias
+|Alias für die Zieltabelle oder -ansicht
+
+|search-conditions
+|Suchbedingung, die den Satz von Zeilen begrenzt, die zum Löschen vorgesehen sind
+
+|cursorname
+|Der Name des Cursors, in dem der aktuelle Datensatz zum Löschen positioniert ist
+
+|plan_items
+|Abfrageplanklausel
+
+|sort_items
+|``ORDER BY``-Klausel
+
+|m, n
+|Integer-Ausdrücke zum Begrenzen der Anzahl der gelöschten Zeilen
+
+|ret_value
+|Ein Ausdruck, der in der ``RETURNING``-Klausel zurückgegeben werden soll
+
+|varname
+|Name einer PSQL-Variablen
+|===
+
+.Beschreibung
+`DELETE` entfernt Zeilen aus einer Datenbanktabelle oder aus einer oder mehreren Tabellen, die einer Sicht zugrunde liegen.
+``WHERE``- und ``ROWS``-Klauseln können die Anzahl der gelöschten Zeilen begrenzen.
+Wenn weder `WHERE` noch `ROWS` vorhanden ist, löscht `DELETE` alle Zeilen in der Beziehung.
+
+[[fblangref25-dml-delete-alias-use-de]]
+=== Aliases
+
+Wenn für die Zieltabelle oder -sicht ein Alias angegeben ist, muss dieser verwendet werden, um alle Feldnamenreferenzen in der Anweisung `DELETE` zu qualifizieren.
+
+.Beispiele
+Unterstützte Verwendung:
+
+[source]
+----
+delete from Cities where name starting 'Alex';
+
+delete from Cities where Cities.name starting 'Alex';
+
+delete from Cities C where name starting 'Alex';
+
+delete from Cities C where C.name starting 'Alex';
+----
+
+Nicht möglich:
+
+[source]
+----
+delete from Cities C where Cities.name starting 'Alex';
+----
+
+[[fblangref25-dml-delete-where-de]]
+=== `WHERE`
+
+Die ``WHERE``-Klausel legt die Bedingungen fest, die den Satz von Datensätzen für ein [term]_searched delete_ begrenzen.
+
+Wenn in PSQL ein benannter Cursor zum Löschen eines Satzes verwendet wird und die Klausel `WHERE CURRENT OF` verwendet wird, ist die Aktion auf die Zeile beschränkt, in der sich der Cursor gerade befindet.
+Dies ist ein [term]_positioniertes Update_.
+
+// TODO WHERE CURRENT OF also works in DSQL if a cursor name has been set using the API and FOR UPDATE is used
+[NOTE]
+====
+Die Klausel `WHERE CURRENT OF` ist nur in PSQL und ESQL verfügbar, da es keine Anweisung zum Erstellen und Bearbeiten eines expliziten Cursors in DSQL gibt.
+Gesuchte Löschungen sind natürlich auch in PSQL verfügbar.
+====
+
+.Beispiele
+[source]
+----
+DELETE FROM People
+  WHERE firstname <> 'Boris' AND lastname <> 'Johnson';
+
+DELETE FROM employee e
+  WHERE NOT EXISTS(
+    SELECT *
+    FROM employee_project ep
+     WHERE e.emp_no = ep.emp_no);
+
+DELETE FROM Cities
+  WHERE CURRENT OF Cur_Cities;  -- ESQL and PSQL only
+----
+
+[[fblangref25-dml-delete-plan-de]]
+=== `PLAN`
+
+Eine ``PLAN``-Klausel erlaubt dem Benutzer die Operation manuell zu optimieren.
+
+.Beispiel
+[source]
+----
+DELETE FROM Submissions
+  WHERE date_entered < '1-Jan-2002'
+  PLAN (Submissions INDEX ix_subm_date);
+----
+
+[[fblangref25-dml-delete-orderby-de]]
+=== `ORDER BY` und `ROWS`
+
+Die Klausel `ORDER BY` sortiert die Menge vor dem eigentlichen Löschen.
+Es ist nur in Kombination mit `ROWS` sinnvoll, aber auch ohne gültig.
+
+Die Klausel `ROWS` begrenzt die Anzahl der gelöschten Zeilen.
+Integer-Literale oder beliebige Integer-Ausdrücke können für die Argumente _m_  und _n_ verwendet werden.
+
+Wenn `ROWS` ein Argument, _m_, hat, sind die zu löschenden Zeilen auf die ersten _m_ Zeilen beschränkt.
+
+.Wichtige Punkte
+* Wenn _m_ > der Anzahl zu verarbeitender Zeilen, wird der gesamte Zeilensatz gelöscht
+* Wenn _m_ = 0, werden keine Zeilen gelöscht
+* Wenn _m_ < 0, tritt ein Fehler auf und die Löschung schlägt fehl
+
+Werden die zwei Argumente, _m_ und _n_ verwendet, begrenzt `ROWS` die Anzahl der zu löschenden Zeilen, inklusive _m_ bis _n_.
+Beide Argumente sind Ganzzahlen und beginnen bei 1.
+
+.Wichtige Punkte
+* Wenn _m_ > der Anzahl der zu verarbeitenden Zeilen, wird keine Zeile gelöscht
+* Wenn _m_ > 0 und +<=+ der Anzahl der Zeilen im Satz und _n_ außerhalb dieser Werte liegt, werden die Zeilen von _m_ bis zum Ende des Satzes gelöscht
+* Wenn _m_ < 1 oder n < 1, wird ein Fehler ausgegeben und das Löschen schlägt fehl
+* Wenn _n_ = _m_ - 1, werden keine Zeilen gelöscht
+* Wenn _n_ < _m_ - 1, wird ein Fehler ausgegeben und das Löschen schlägt fehl
+
+.Beispiele
+Löschen des ältesten Kaufs:
+
+[source]
+----
+DELETE FROM Purchases
+  ORDER BY date ROWS 1;
+----
+
+Löschen der höchsten Kundennummer(n):
+
+[source]
+----
+DELETE FROM Sales
+  ORDER BY custno DESC ROWS 1 to 10;
+----
+
+Löschen aller Verkäufe, ``ORDER BY``-Klausel ist sinnlos:
+
+[source]
+----
+DELETE FROM Sales
+  ORDER BY custno DESC;
+----
+
+Löschen eines Datensatzes beginnend vom Ende, z.B. von Z...:
+
+[source]
+----
+DELETE FROM popgroups
+  ORDER BY name DESC ROWS 1;
+----
+
+Löschen der fünf ältesten Gruppen:
+
+[source]
+----
+DELETE FROM popgroups
+  ORDER BY formed ROWS 5;
+----
+
+Es wird keine Sortierung (`ORDER BY`) angegeben, so dass 8 gefundene Datensätze, beginnend mit dem fünften, gelöscht werden:
+
+[source]
+----
+DELETE FROM popgroups
+  ROWS 5 TO 12;
+----
+
+[[fblangref25-dml-delete-returning-de]]
+=== `RETURNING`
+
+Eine Anweisung `DELETE`, die _in höchstens einer Zeile_ löscht, kann optional eine Klausel `RETURNING` enthalten, um Werte aus der gelöschten Zeile zurückzugeben.
+Die Klausel muss, falls vorhanden, nicht alle Spalten der Beziehung enthalten und kann auch andere Spalten oder Ausdrücke enthalten.
+
+.Hinweise
+[NOTE]
+====
+* In DSQL gibt eine Anweisung mit `RETURNING` immer einen Singleton zurück, niemals einen Satz mit mehreren Zeilen.
+Wenn keine Datensätze gelöscht werden, enthalten die zurückgegebenen Spalten `NULL`.
+Dieses Verhalten kann sich in zukünftigen Firebird-Versionen ändern
+* Die ``INTO``-Klausel ist nur in PSQL verfügbar
+** Wenn die Zeile nicht gelöscht wird, wird nichts zurückgegeben und die Zielvariablen behalten ihre Werte bei
+====
+
+.Beispiele
+----
+DELETE FROM Scholars
+  WHERE firstname = 'Henry' and lastname = 'Higgins'
+  RETURNING lastname, fullname, id;
+
+DELETE FROM Dumbbells
+  ORDER BY iq DESC
+  ROWS 1
+  RETURNING lastname, iq into :lname, :iq;
+----
+
+.Das Problem mit dem "`instabilen Cursor`"
+[IMPORTANT]
+====
+Aufgrund der Art und Weise, in der die Ausführung der datenverändernden DML in Firebird bis einschließlich dieser Version implementiert wird, führen die zum Löschen bestimmten Sätze manchmal zu unerwarteten Ergebnissen.
+Weitere Informationen finden Sie unter <<fblangref25-dml-update-unstable-de,[ref]_Das Problem mit dem instabilen Cursor Problem_>> im Abschnitt ``UPDATE``.
+====
+
+[[fblangref25-dml-merge-de]]
+== `MERGE`
+
+.Verwendet für
+Daten aus einer Quellenmenge in eine Zielbeziehung zusammenführen
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+MERGE INTO _target_ [[AS] _target-alias_]
+   USING <source> [[AS] _source-alias_]
+   ON <join-condition>
+   [ WHEN MATCHED
+       THEN UPDATE SET _colname_ = <value> [, <colname> = <value> ...]]
+   [ WHEN NOT MATCHED
+       THEN INSERT [(<columns>)] VALUES (<values>)]
+
+<source> ::= _tablename_ | (<select-stmt>)
+<columns> ::= _colname_ [, _colname_ ...]
+<values> ::= <value> [, <value> ...]
+----
+
+[[fblangref25-dml-tbl-merge-de]]
+.Argumente der ``MERGE``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|target
+|Name der Zielbeziehung (Tabelle oder änderbare Sicht)
+
+|source
+|Datenquelle.
+Es kann eine Tabelle, eine Ansicht, eine gespeicherte Prozedur oder eine abgeleitete Tabelle sein
+
+|target-alias
+|Alias für die Zielbeziehung (Tabelle oder änderbare Sicht)
+
+|source-alias
+|Alias für die Quellbeziehung oder den Quellsatz
+
+|join-conditions
+|Die (`ON`) Bedingung(en) zum Abgleich der Quelldatensätze mit denen im Ziel
+
+|colname
+|Name einer Spalte in der Zielbeziehung
+
+|value
+|Der Wert, der einer Spalte in der Zieltabelle zugewiesen ist.
+Es ist ein Ausdruck, der ein Literalwert, eine PSQL-Variable, eine Spalte aus der Quelle oder eine kompatible Kontextvariable sein kann
+|===
+
+[float]
+===== Beschreibung
+
+Das ``MERGE``-Statement führt Daten in einer Tabelle oder aktualisierbaren Sicht zusammen.
+Die Quelle kann eine Tabelle, eine Sicht oder ein allgemeines "```SELECT FROM```" sein.
+Jeder Quelldatensatz wird verwendet, um einen oder mehrere Zieldatensätze zu aktualisieren,  einen neuen Datensatz in die Zieltabelle einzufügen oder keinen.
+
+Die durchgeführte Aktion hängt von der angegebenen Join-Bedingung und den ``WHEN``-Klauseln ab.
+Die Bedingung enthält normalerweise einen Vergleich der Felder in den Quell- und Zielbeziehungen.
+
+.Hinweise
+[NOTE]
+====
+Mindestens eine der ``WHEN``-Klauseln muss bereitgestellt werden.
+Nur eine von jeder ``WHEN``-Klausel kann angegeben werden.
+Dies wird sich in der nächsten Hauptversion von Firebird ändern, wenn Compound-Matching-Bedingungen unterstützt werden.
+
+`WHEN NOT MATCHED` wird aus der Quellensicht ausgewertet, d.h. der Tabelle oder dem Satz, der in `USING` angegeben ist.
+Die ist zwangsläufig so, da `INSERT` ausgeführt wird, wenn der Quelldatensatz keinem Zieldatensatz entspricht.
+Wenn es einen Zieldatensatz gibt, der keinem Quelldatensatz entspricht, wird natürlich nichts unternommen.
+
+Derzeit gibt die Variable `ROW_COUNT` den Wert 1 zurück, auch wenn mehr als ein Datensatz geändert oder eingefügt wird.
+Einzelheiten und Fortschritt finden Sie unter http://tracker.firebirdsql.org/browse/CORE-4400[Tracker ticket CORE-4400].
+====
+
+.ACHTUNG : Eine weitere Unregelmäßigkeit!
+[WARNING]
+====
+Wenn die Klausel `WHEN MATCHED` vorhanden ist und mehrere Datensätze einem einzelnen Datensatz in der Zieltabelle entsprechen, wird ein `UPDATE` für diesen Zieldatensatz je übereinstimmender Quelle ausgeführt, wobei jedes nachfolgende Update das vorherige überschreibt.
+Dieses Verhalten entspricht nicht dem SQL:2003-Standard, der erfordert, dass diese Situation eine Ausnahme (einen Fehler) auslöst.
+====
+
+.Beispiele
+[source]
+----
+MERGE INTO books b
+  USING purchases p
+  ON p.title = b.title and p.type = 'bk'
+  WHEN MATCHED THEN
+    UPDATE SET b.desc = b.desc || '; ' || p.desc
+  WHEN NOT MATCHED THEN
+    INSERT (title, desc, bought) values (p.title, p.desc, p.bought);
+----
+[source]
+----
+MERGE INTO customers c
+  USING (SELECT * from customers_delta WHERE id > 10) cd
+  ON (c.id = cd.id)
+  WHEN MATCHED THEN
+    UPDATE SET name = cd.name
+  WHEN NOT MATCHED THEN
+    INSERT (id, name) values (cd.id, cd.name);
+----
+[source]
+----
+MERGE INTO numbers
+  USING (
+    WITH RECURSIVE r(n) AS (
+      SELECT 1 FROM rdb$database
+      UNION ALL
+      SELECT n+1 FROM r WHERE n < 200
+    )
+    SELECT n FROM r
+  ) t
+  ON numbers.num = t.n
+  WHEN NOT MATCHED THEN
+    INSERT(num) VALUES(t.n);
+----
+
+.Das Problem mit dem "`instabilen Cursor`"
+[IMPORTANT]
+====
+Aufgrund der Art und Weise, in der die Ausführung der datenverändernden DML in Firebird bis einschließlich dieser Version implementiert wird, führen die für das Zusammenführen ausgewählten Sets manchmal zu unerwarteten Ergebnissen.
+Für weitere Informationen vergleichen Sie auch <<fblangref25-dml-update-unstable-de,[ref]_Das Problem mit dem instabilen Cursor_>> im Abschnitt ``UPDATE``.
+====
+
+[[fblangref25-dml-execproc-de]]
+== `EXECUTE PROCEDURE`
+
+.Verwendet für
+Ausführen einer gespeicherten Prozedur
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+EXECUTE PROCEDURE _procname_
+   [<inparam> [, <inparam> ...]] | [(<inparam> [, <inparam> ...])]
+   [RETURNING_VALUES <outvar> [, <outvar> ...] | (<outvar> [, <outvar> ...])]
+
+<outvar> ::= [:{endsb}__varname__
+----
+
+[[fblangref25-dml-tbl-execproc-de]]
+.Argument der ``EXECUTE PROCEDURE``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|procname
+|Name der gespeicherten Prozedur
+
+|inparam
+|Ein Ausdruck, der den deklarierten Datentyp eines Eingabeparameters auswertet
+
+|varname
+|Eine PSQL-Variable zum Empfangen des Rückgabewerts
+|===
+
+.Beschreibung
+Führt eine [term]_ausführbare gespeicherte Prozedur_ aus, die eine Liste aus einem oder mehreren Eingabeparametern verwendet, wenn sie für die Prozedur definiert sind, und eine einreihige Menge von Ausgabewerten zurückgibt, wenn sie für die Prozedur definiert sind.
+
+[[fblangref25-dml-execproc-which-de]]
+=== "`Ausführbare`" gespeicherte Prozedur
+
+Das Statement `EXECUTE PROCEDURE` wird am häufigsten verwendet, um die Art gespeicherte Prozedur aufzurufen, die geschrieben wird, um eine datenmodifizierende Aufgabe auf der Serverseite auszuführen -- das sind die Prozeduren, die kein ``SUSPEND``-Statement im Code enthalten.
+Sie können so entworfen werden, dass sie eine Ergebnismenge zurückgeben, die nur aus einer Zeile besteht, die normalerweise über eine Gruppe von ``RETURNING_VALUES()``-Variablen an eine andere gespeicherte Prozedur übergeben wird, die sie aufruft.
+Clientschnittstellen verfügen normalerweise über einen API-Wrapper, der beim Aufruf von `EXECUTE PROCEDURE` in DSQL die Ausgabewerte in einen einzeiligen Puffer abrufen kann.
+
+Das Aufrufen der anderen Prozedurart -- eine "`auswählbare`" -- ist möglich mit `EXECUTE PROCEDURE`, aber es gibt nur die erste Zeile eines Ausgabesatzes zurück, der fast sicher als mehrzeilig ausgelegt ist.
+Auswählbare gespeicherte Prozeduren werden von einer Anweisung `SELECT` aufgerufen, die eine Ausgabe erzeugt, die sich wie eine virtuelle Tabelle verhält.
+
+.Hinweise
+[NOTE]
+====
+* In PSQL und DSQL können Eingabeparameter beliebige Ausdrücke sein, die in den erwarteten Typ aufgelöst werden.
+* Obwohl nach dem Namen der gespeicherten Prozedur keine Klammern erforderlich sind, um die Eingabeparameter zu umschließen, wird ihre Verwendung aus Gründen einer guten Verwaltung empfohlen.
+* Wenn Ausgabeparameter in einer Prozedur definiert wurden, kann die Klausel `RETURNING_VALUES` in PSQL verwendet werden, um sie über eine Liste zuvor deklarierter Variablen abzurufen, die mit den definierten Ausgabeparametern in Reihenfolge, Datentyp und Nummer übereinstimmen.
+* Die Liste der `RETURNING_VALUES` kann optional in runde Klammern gesetzt werden und ihre Verwendung wird empfohlen.
+* Wenn DSQL-Anwendungen `EXECUTE PROCEDURE` mithilfe der Firebird-API oder eines Wrappers aufrufen, wird ein Puffer für den Empfang der Ausgabezeile vorbereitet, und die Klausel `RETURNING_VALUES` wird nicht verwendet.
+====
+
+=== Beispiele
+
+In PSQL mit optionalen Doppelpunkten und ohne optionale Klammern:
+
+[source]
+----
+EXECUTE PROCEDURE MakeFullName
+  :FirstName, :MiddleName, :LastName
+  RETURNING_VALUES :FullName;
+----
+
+In Firebirds Befehlszeilenprogramm  _isql_ mit Literalparametern  und optionalen Klammern:
+
+[source]
+----
+EXECUTE PROCEDURE MakeFullName ('J', 'Edgar', 'Hoover');
+----
+
+[NOTE]
+====
+In __isql__, wird `RETURNING_VALUES` nicht verwendet.
+Alle Ausgabewerte werden  von der Anwendung erfasst und automatisch angezeigt.
+====
+
+Ein PSQL-Beispiel mit Ausdrucksparametern und optionalen Klammern:
+
+[source]
+----
+EXECUTE PROCEDURE MakeFullName
+  ('Mr./Mrs. ' || FirstName, MiddleName, upper(LastName))
+  RETURNING_VALUES (FullName);
+----
+
+[[fblangref25-dml-execblock-de]]
+== `EXECUTE BLOCK`
+
+.Verwendet für
+Erstellen eines "`anonymen`" Blocks von PSQL-Code in DSQL zur sofortigen Ausführung
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+EXECUTE BLOCK [(<inparams>)]
+  [RETURNS (<outparams>)]
+AS
+  [<declarations>]
+BEGIN
+  [<PSQL statements>]
+END
+
+<inparams> ::=  <param_decl> = ? [, <inparams> ]
+<outparams> ::=  <param_decl> [, <outparams>]
+<param_decl> ::=  _paramname_ <type> [NOT NULL] [COLLATE _collation_]
+<type> ::=  <datatype> | [TYPE OF] _domain_ | TYPE OF COLUMN _rel_._col_
+
+<datatype> ::=
+    {SMALLINT | INTEGER | BIGINT}
+  | {FLOAT | DOUBLE PRECISION}
+  | {DATE | TIME | TIMESTAMP}
+  | {DECIMAL | NUMERIC} [(_precision_ [, _scale_])]
+  | {CHAR | CHARACTER} [VARYING] | VARCHAR} [(_size_)]
+    [CHARACTER SET _charset_]
+  | {NCHAR | NATIONAL {CHARACTER | CHAR}} [VARYING] [(_size_)]
+  | BLOB [SUB_TYPE {_subtype_num_ | _subtype_name_}]
+    [SEGMENT SIZE _seglen_] [CHARACTER SET _charset_]
+  | BLOB [(_seglen_ [, _subtype_num_])]
+
+<declarations> ::= <declare_item> [<declare_item> ...]
+<declare_item> ::= <declare_var>; | <declare_cursor>;
+----
+
+[[fblangref25-dml-tbl-execblock-de]]
+.Argument der EXECUTE BLOCK-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|param_decl
+|Name und Beschreibung eines Eingabe- oder Ausgabeparameters
+
+|declarations
+|Ein Abschnitt zum Deklarieren von lokalen Variablen und benannten Cursorn
+
+|declare_var
+|Lokale Variablendeklaration
+
+|declare_cursor
+|Deklaration eines benannten Cursors
+
+|paramname
+|Der Name eines Eingabe- oder Ausgabeparameters des prozeduralen Blocks mit bis zu 31 Zeichen.
+Der Name muss unter Ein- und Ausgabeparametern und lokalen Variablen im Block eindeutig sein
+
+|datatype
+|SQL-Datentyp
+
+|collation
+|Sortierreihenfolge
+
+|domain
+|Domain
+
+|rel
+|Name einer Tabelle oder Ansicht
+
+|col
+|Name einer Spalte in einer Tabelle oder Sicht
+
+|precision
+|Präzision.
+Von 1 bis 18
+
+|scale
+|Rahmen.
+Von 0 bis 18.
+Es muss kleiner oder gleich _precision_ sein
+
+|size
+|Die maximale Größe einer Zeichenfolge in Zeichen
+
+|charset
+|Zeichensatz
+
+|subtype_num
+|``BLOB``-Subtypennummer
+
+|subtype_name
+|mnemotechnischer Name des ``BLOB``-Subtyps
+
+|seglen
+|Segmentgröße, kann nicht größer als 65.535 sein
+|===
+
+.Beschreibung
+Führt einen PSQL-Block aus, als wäre es eine gespeicherte Prozedur, optional mit Eingabe- und Ausgabeparametern und Variablendeklarationen.
+Dies ermöglicht dem Benutzer "`on-the-fly`" PSQL innerhalb eines DSQL-Kontexts auszuführen.
+
+.Beispiele
+In diesem Beispiel werden die Zahlen 0 bis 127 und die entsprechenden ASCII-Zeichen in die Tabelle `ASCIITABLE` eingefügt:
+
+[source]
+----
+EXECUTE BLOCK
+AS
+declare i INT = 0;
+BEGIN
+  WHILE (i < 128) DO
+  BEGIN
+    INSERT INTO AsciiTable VALUES (:i, ascii_char(:i));
+    i = i + 1;
+  END
+END
+----
+
+Das nächste Beispiel berechnet das geometrische Mittel  zweier Zahlen und gibt es an den Benutzer zurück:
+
+[source]
+----
+EXECUTE BLOCK (x DOUBLE PRECISION = ?, y DOUBLE PRECISION = ?)
+RETURNS (gmean DOUBLE PRECISION)
+AS
+BEGIN
+  gmean = SQRT(x*y);
+  SUSPEND;
+END
+----
+
+Da dieser Block Eingabeparameter hat, muss er zuerst vorbereitet werden.
+Dann können die Parameter eingestellt und der Block ausgeführt werden.
+Es hängt von der Client-Software ab, wie dies durchgeführt werden muss.
+Auch wenn dies möglich ist -- beachten Sie die folgenden Hinweise.
+Unser letztes Beispiel nimmt zwei ganzzahlige Werte, `smallest` und `largest`.
+Für alle Zahlen im Bereich ``smallest``...``largest`` gibt der Block die Zahl selbst, sein Quadrat, seine dritte und seine vierte Potenz aus.
+
+[source]
+----
+EXECUTE BLOCK (smallest INT = ?, largest INT = ?)
+RETURNS (number INT, square BIGINT, cube BIGINT, fourth BIGINT)
+AS
+BEGIN
+  number = smallest;
+  WHILE (number <= largest) DO
+  BEGIN
+    square = number * number;
+    cube   = number * square;
+    fourth = number * cube;
+    SUSPEND;
+    number = number + 1;
+  END
+END
+----
+
+Auch hier hängt es von der Client-Software ab, ob und wie Sie die Parameterwerte einstellen können.
+
+[[fblangref25-dml-execblock-params-de]]
+=== Eingabe- und Ausgabeparameter
+
+Das Ausführen eines Blocks ohne Eingabeparameter sollte mit jedem Firebird-Client möglich sein, der es dem Benutzer erlaubt, seine eigenen DSQL-Anweisungen einzugeben.
+Wenn es Eingabeparameter gibt, werden die Dinge komplizierter: Diese Parameter müssen ihre Werte erhalten, nachdem die Anweisung vorbereitet wurde, aber bevor sie ausgeführt wird.
+Dies erfordert spezielle Voraussetzungen, die nicht jede Client-Anwendung bietet.
+(Firebirds eigenes `isql`, zum Beispiel, nicht.)
+
+Der Server akzeptiert nur Fragezeichen ("```?```") als Platzhalter für die Eingabewerte, also nicht "```:a```", "```:MyParam```" etc., oder Literalwerte.
+Client-Software unterstützt möglicherweise die Form "```:xxx```" und wandelt es vor dem Senden an den Server um.
+
+Wenn der Block Ausgabeparameter hat, _müssen_ Sie `SUSPEND` verwenden, sonst wird nichts zurückgegeben.
+
+Die Ausgabe erfolgt immer in Form einer Ergebnismenge, genau wie bei einer Anweisung mit `SELECT`.
+Sie können weder `RETURNING_VALUES` verwenden noch einen Block mit `INTO` in Variablen anwenden, auch wenn es nur eine Ergebniszeile gibt.
+
+.PSQL Links
+****
+Weitere Informationen zu Parameter- und Variablendeklarationen und `<PSQL-Statements>` liefert Ihnen Kapitel 7, <<fblangref25-psql-de,[ref]_Prozedurale SQL-Anweisungen (PSQL)_>>.
+
+Für `<Deklarationen>` im Speziellen, vgl. <<fblangref25-psql-declare-variable-de,`DECLARE [VARIABLE]`>> und <<fblangref25-psql-declare-cursor-de,`DECLARE CURSOR`>> für die exakte Syntax.
+****
+
+[[fblangref25-dml-terminators-de]]
+=== Statement-Terminatoren
+
+Einige SQL-Statement-Editoren -- insbesondere das __isql__-Dienstprogramm, das mit Firebird geliefert wird, und möglicherweise einige Editoren von Drittanbietern -- verwenden eine interne Konvention, die erfordert, dass alle Anweisungen mit einem Semikolon abgeschlossen werden.
+Dies erzeugt einen Konflikt mit der PSQL-Syntax beim Codieren in diesen Umgebungen.
+Wenn Sie mit diesem Problem und seiner Lösung nicht vertraut sind, lesen Sie die Details im Kapitel PSQL im Abschnitt  <<fblangref25-sidebar01-de,Umschalten des Terminators in _isql_>>.

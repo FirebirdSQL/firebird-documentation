@@ -1,0 +1,616 @@
+[[fblangref25-transacs-de]]
+= Transaktionskontrolle
+
+Alles in Firebird passiert in Transaktionen.
+Arbeitseinheiten sind zwischen einem Start- und einem Endpunkt isoliert.
+Änderungen an Daten bleiben bis zu dem Moment reversibel, zu dem die Clientanwendung den Server anweist, sie zu übertragen.
+
+[[fblangref25-transacs-statements-de]]
+== Transaktions-Statements
+
+Firebird verfügt über ein kleines Lexikon von SQL-Anweisungen, die von Client-Anwendungen zum Starten, Verwalten, Festschreiben und Zurücksetzen (Rollback) der Transaktionen verwendet werden, die die Grenzen aller Datenbankaufgaben bilden:
+
+<<fblangref25-transacs-settransac-de,SET TRANSACTION>>::
+zum Konfigurieren und Starten einer Transaktion
+
+<<fblangref25-transacs-commit-de,COMMIT>>::
+das Ende einer Arbeitseinheit signalisieren und Änderungen dauerhaft in die Datenbank schreiben
+
+<<fblangref25-transacs-rollback-de,ROLLBACK>>::
+die in der Transaktion durchgeführten Änderungen rückgängig machen
+
+<<fblangref25-transacs-savepoint-de,SAVEPOINT>>::
+um eine Position im Protokoll der geleisteten Arbeit zu markieren, falls ein partieller Rollback benötigt wird
+
+<<fblangref25-transacs-releasesp-de,RELEASE SAVEPOINT>>::
+einen Sicherungspunkt löschen
+
+[[fblangref25-transacs-settransac-de]]
+=== `SET TRANSACTION`
+
+.Benutzt für
+Konfiguration und Start einer Transaktion
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET TRANSACTION
+   [NAME _tr_name_]
+   [READ WRITE | READ ONLY]
+   [[ISOLATION LEVEL]
+     { SNAPSHOT [TABLE STABILITY]
+     | READ COMMITTED [[NO] RECORD_VERSION] }]
+   [WAIT | NO WAIT]
+   [LOCK TIMEOUT seconds]
+   [NO AUTO UNDO]
+   [IGNORE LIMBO]
+   [RESERVING <tables> | USING <dbhandles>]
+
+<tables> ::= <table_spec> [, <table_spec> ...]
+
+<table_spec> ::= _tablename_ [, _tablename_ ...]
+      [FOR [SHARED | PROTECTED] {READ | WRITE}]
+
+<dbhandles> ::= _dbhandle_ [, _dbhandle_ ...]
+----
+
+[[fblangref25-transacs-tbl-settransac-de]]
+.``SET TRANSACTION``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|tr_name
+|Name der Transaktion.
+Nur in ESQL verfügbar
+
+|seconds
+|Die Zeit in Sekunden, die die Anweisung im Falle eines Konflikts warten muss
+
+|tables
+|Die Liste der zu reservierenden Tabellen
+
+|dbhandles
+|Die Liste der Datenbanken, auf die die Datenbank zugreifen kann.
+Nur in ESQL verfügbar
+
+|table_spec
+|Reservierungsspezifiktationen für Tabellen
+
+|tablename
+|Der Name der Tabelle, die reserviert werden soll
+
+|dbhandle
+|Der Handle der Datenbank, auf die die Datenbank zugreifen kann.
+Nur in ESQL verfügbar
+|===
+
+Die Anweisung `SET TRANSACTION` konfiguriert die Transaktion und startet sie.
+In der Regel starten nur Client-Anwendungen Transaktionen.
+Die Ausnahmen sind die Fälle, in denen der Server eine autonome Transaktion oder Transaktionen für bestimmte  Hintergrundsystem-Threads / -Prozesse startet, z.B. das Sweeping.
+
+Eine Clientanwendung kann beliebig viele gleichzeitig ausgeführte Transaktionen starten.
+Es gibt eine Beschränkung für die Gesamtzahl der ausgeführten Transaktionen in allen Clientanwendungen, die mit einer bestimmten Datenbank ab dem Zeitpunkt arbeiten, zu dem die Datenbank aus ihrer Sicherungskopie wiederhergestellt wurde oder ab dem Moment, als die Datenbank ursprünglich erstellt wurde.
+Die Grenze ist 2^31^ -1 oder 2.147.483.647.
+
+Alle Klauseln in der Anweisung `SET TRANSACTION` sind optional.
+Wenn in der Anweisung, die eine Transaktion startet, keine Klauseln angegeben sind, wird die Transaktion mit Standardwerten für den Zugriffsmodus, den Sperrauflösungsmodus und die Isolationsstufe gestartet.
+Dies sind:
+
+[source]
+----
+SET TRANSACTION
+  READ WRITE
+  WAIT
+  ISOLATION LEVEL SNAPSHOT;
+----
+
+Der Server weist Transaktionen sequenziell Ganzzahlen zu.
+Wenn ein Client eine Transaktion startet, entweder explizit definiert oder standardmäßig, sendet der Server die Transaktions-ID an den Client.
+Diese Nummer kann in SQL über die Kontextvariable `CURRENT_TRANSACTION` abgerufen werden.
+
+[[fblangref25-transacs-settransac-params-de]]
+==== Transaktionsparameter
+
+Die wichtigsten Parameter einer Transaktion sind: 
+
+* Datenzugriffsmodus (`READ WRITE`, `READ ONLY`)
+* Modus zur Sperrauflösung (`WAIT`, `NO WAIT`) mit optionaler Spezifikation des `LOCK TIMEOUT`
+* Isolationslevel (`READ COMMITTED`, `SNAPSHOT`, `TABLE STABILITY`)
+* ein Mechanismus zum Reservieren oder Freigeben von Tabellen (die ``RESERVING``-Klausel)
+
+[[fblangref25-transacs-settransac-params01-de]]
+===== Transaktionsname
+
+Das optionale NAME-Attribut definiert den Namen einer Transaktion.
+Die Verwendung dieses Attributs ist nur in Embedded SQL verfügbar.
+In ESQL-Anwendungen ermöglichen benannte Transaktionen die gleichzeitige Aktivierung mehrerer Transaktionen in einer Anwendung.
+Wenn benannte Transaktionen verwendet werden, muss eine hostspezifische Variable mit demselben Namen für jede benannte Transaktion deklariert und initialisiert werden.
+Dies ist eine Einschränkung, die die dynamische Angabe von Transaktionsnamen verhindert und daher die Transaktionsbenennung in DSQL ausschließt.
+
+[[fblangref25-transacs-settransac-params02-de]]
+===== Zugriffsmodus
+
+Die zwei verfügbaren Zugriffsvarianten für Transaktionen sind `READ WRITE` und `READ ONLY`.
+
+* Wenn der Zugriffsmodus `READ WRITE` lautet, können Operationen im Kontext dieser Transaktion sowohl Leseoperationen als auch Datenaktualisierungsoperationen sein.
+Dies ist der Standardmodus.
+* Wenn der Zugriffsmodus `READ ONLY` ist, können im Kontext dieser Transaktion nur ``SELECT``-Operationen ausgeführt werden.
+Jeder Versuch, Daten im Kontext einer solchen Transaktion zu ändern, führt zu Datenbankausnahmen.
+Es gilt jedoch nicht für globale temporäre Tabellen (GTT), die in ``READ ONLY``-Transaktionen geändert werden dürfen.
+
+[[fblangref25-transacs-settransac-params03-de]]
+===== Modus zur Sperrauflösung
+
+Wenn mehrere Clientprozesse mit derselben Datenbank arbeiten, können Sperren auftreten, wenn ein Prozess nicht festgeschriebene Änderungen in einer Tabellenzeile vornimmt oder eine Zeile löscht und ein anderer Prozess versucht, dieselbe Zeile zu aktualisieren oder zu löschen.
+Solche Sperren heißen _Aktualisierungskonflikte (update conflicts)_.
+
+Sperren können in anderen Situationen auftreten, wenn mehrere Transaktionsisolationsstufen verwendet werden.
+
+Die zwei Lock-Auflösungsmodi sind `WAIT` und `NO WAIT`.
+
+[[fblangref25-transacs-settransac-params03-wait-de]]
+====== `WAIT` Modus
+
+Wenn im ``WAIT``-Modus (Standardmodus) ein Konflikt zwischen zwei parallelen Prozessen auftritt, die gleichzeitige Datenaktualisierungen in derselben Datenbank ausführen, wartet eine ``WAIT``-Transaktion, bis die andere Transaktion abgeschlossen ist -- durch Commit (`COMMIT`) oder Rollback (`ROLLBACK`).
+Die Clientanwendung mit der ``WAIT``-Transaktion wird gehalten, bis der Konflikt behoben ist.
+
+Wenn für die ``WAIT``-Transaktion ein `LOCK TIMEOUT` angegeben ist, wird das Warten nur für die in dieser Klausel angegebene Anzahl von Sekunden fortgesetzt.
+Wenn die Sperre am Ende des angegebenen Intervalls nicht aufgelöst wird, wird die Fehlermeldung "`Lock time-out on wait transaction`" an den Client zurückgegeben.
+
+Das Verhalten der Sperrenauflösung kann abhängig von der Transaktionsisolationsstufe etwas variieren.
+
+[[fblangref25-transacs-settransac-params03-nowait-de]]
+====== `NO WAIT` Modus
+
+Im ``NO WAIT``-Modus löst eine Transaktion sofort eine Datenbankausnahme aus, wenn ein Konflikt auftritt.
+
+[[fblangref25-transacs-settransac-params04-de]]
+===== Isolationslevel
+
+Die Arbeit einer Datenbankaufgabe von anderen getrennt zu halten, ist die Frage nach der Isolation.
+Änderungen, die von einer Anweisung vorgenommen werden, werden für alle übrigen Anweisungen sichtbar, die innerhalb der gleichen Transaktion ausgeführt werden, unabhängig von ihrer Isolationsstufe.
+Änderungen, die in anderen Transaktionen ausgeführt werden, bleiben für die aktuelle Transaktion unsichtbar, solange sie nicht festgeschrieben sind.
+Die Isolationsstufe und manchmal auch andere Attribute bestimmen, wie Transaktionen miteinander interagieren, wenn eine andere Transaktion ihre Arbeit verrichten will.
+
+Das ``ISOLATION LEVEL``-Attribut definiert die Isolationsstufe für die zu startende Transaktion.
+Es ist der wichtigste Transaktionsparameter, um sein Verhalten gegenüber anderen gleichzeitig ausgeführten Transaktionen zu bestimmen.
+
+Die drei in Firebird unterstützten Isolationsstufen sind: 
+
+* `SNAPSHOT`
+* `SNAPSHOT TABLE STABILITY`
+* `READ COMMITTED` mit zwei Spezifikationen (`NO RECORD_VERSION` und `RECORD_VERSION`)
+
+[[fblangref25-transacs-settransac-params04a-de]]
+====== ``SNAPSHOT``-Isolationslevel
+
+``SNAPSHOT``-Isolationsstufe -- die Standardebene -- ermöglicht es der Transaktion, nur die Änderungen zu sehen, die bereits vor dem Start festgeschrieben wurden.
+Alle durch gleichzeitige Transaktionen vorgenommenen festgeschriebenen Änderungen werden in einer ``SNAPSHOT``-Transaktion nicht angezeigt, solange sie aktiv ist.
+Die Änderungen werden für eine neue Transaktion sichtbar, sobald die aktuelle Transaktion festgeschrieben oder vollständig zurückgesetzt wurde, jedoch nicht, wenn sie nur auf einen Sicherungspunkt zurückgesetzt wird.
+
+.Autonome Transaktionen
+[NOTE]
+====
+Änderungen, die durch autonome (autonomous) Transaktionen vorgenommen werden, werden nicht im Kontext der  ``SNAPSHOT``-Transaktion gesehen, die sie gestartet hat.
+====
+
+[[fblangref25-transacs-settransac-params04b-de]]
+====== ``SNAPSHOT TABLE STABILITY``-Isolationslevel
+
+Die Isolationsstufe `SNAPSHOT TABLE STABILITY` ist am restriktivsten.
+Wie in `SNAPSHOT` sieht eine Transaktion in der ``SNAPSHOT TABLE STABILITY``-Isolation nur die Änderungen, die vor dem Start der aktuellen Transaktion festgeschrieben wurden.
+Nachdem eine `SNAPSHOT TABLE STABILITY` gestartet wurde, können keine anderen Transaktionen Änderungen an einer Tabelle in der Datenbank vornehmen, für die Änderungen anstehen.
+Andere Transaktionen können andere Daten lesen, aber jeder Versuch, durch einen parallelen Prozess einzufügen, zu aktualisieren oder zu löschen, führt zu Konfliktausnahmen.
+
+Die ``RESERVING``-Klausel kann verwendet werden, um anderen Transaktionen zu ermöglichen, Daten in einigen Tabellen zu ändern.
+
+Wenn eine andere Transaktion eine nicht festgeschriebene Änderung von Daten in einer Datenbanktabelle aussteht, bevor eine Transaktion mit der Isolationsstufe `SNAPSHOT TABLE STABILITY` gestartet wird, führt der Versuch, eine Transaktion `SNAPSHOT TABLE STABILITY` zu starten, zu einer Ausnahme.
+
+[[fblangref25-transacs-settransac-params04c-de]]
+====== `READ COMMITTED` Isolationslevel
+
+Die ``READ COMMITTED``-Isolationsstufe ermöglicht alle Datenänderungen, die andere Transaktionen festgeschrieben  haben, seit sie durch die nicht festgeschriebene aktuelle Transaktion unmittelbar erkannt wurden.
+Nicht festgeschriebene Änderungen sind für eine ``READ COMMITTED``-Transaktion nicht sichtbar.
+
+Um die aktualisierte Liste von Zeilen in der Tabelle, die Sie interessieren, abzurufen, muss die ``SELECT``-Anweisung nur -- "`erneut`" -- angefordert werden, während sie sich noch in der nicht übergebenen ``READ COMMITTED``-Transaktion befindet.
+
+[float]
+[[fblangref25-transacs-settransac-params04c1-de]]
+====== `RECORD_VERSION`
+
+Einer von zwei modifizierenden Parametern kann für ``READ COMMITTED``-Transaktionen spezifiziert werden, abhängig von der Art der gewünschten Konfliktlösung: `RECORD_VERSION` und `NO RECORD_VERSION`.
+Wie die Namen andeuten, schließen sie sich gegenseitig aus.
+
+* `NO RECORD_VERSION` (der Standardwert) ist eine Art zweiphasiger Sperrmechanismus: Dadurch kann die Transaktion nicht in eine Zeile schreiben, für die ein Update aus einer anderen Transaktion ansteht.
+** Wenn `NO WAIT` die angegebene Sperrauflösungsstrategie ist, wird sofort ein Sperrkonfliktfehler ausgegeben.
+** Wenn `WAIT` angegeben ist, wartet es, bis die andere Transaktion festgeschrieben oder zurückgesetzt wird.
+Wenn die andere Transaktion zurückgesetzt wird oder wenn sie festgeschrieben ist und ihre Transaktions-ID älter als die ID der aktuellen Transaktion ist, ist die Änderung der aktuellen Transaktion zulässig.
+Ein Sperrkonfliktfehler wird zurückgegeben, wenn die andere Transaktion festgeschrieben wurde und ihre ID neuer als die der aktuellen Transaktion war.
+* Wenn `RECORD_VERSION` angegeben ist, liest die Transaktion die letzte festgeschriebene Version der Zeile, unabhängig von anderen ausstehenden Versionen der Zeile.
+Die Sperrauflösungsstrategie (`WAIT` oder `NO WAIT`) hat keinen Einfluss auf das Verhalten der Transaktion beim Start.
+
+[[fblangref25-transacs-settransac-params05-de]]
+===== `NO AUTO UNDO`
+
+Die Option `NO AUTO UNDO` wirkt sich auf die Behandlung nicht verwendeter Datensatzversionen (Garbage) im Falle eines Rollbacks aus.
+Wenn `NO AUTO UNDO` markiert ist, markiert die ``ROLLBACK``-Anweisung die Transaktion nur als Rollback, ohne die in der Transaktion erstellten unbenutzten Datensatzversionen zu löschen.
+Sie müssen später von der Garbage Collection aufgeräumt werden.
+
+`NO AUTO UNDO` kann nützlich sein, wenn viele separate Anweisungen ausgeführt werden, die Daten in Bedingungen  ändern, in denen die Transaktion üblicherweise erfolgreich abgeschlossen wird.
+
+Die Option `NO AUTO UNDO` wird für Transaktionen ignoriert, bei denen keine Änderungen vorgenommen werden.
+
+[[fblangref25-transacs-settransac-params06-de]]
+===== `IGNORE LIMBO`
+
+Dieses Kennzeichen wird verwendet, um zu signalisieren, dass von Limbo-Transaktionen erzeugte Datensätze ignoriert werden sollen.
+Transaktionen werden "`in der Schwebe gehalten`", wenn die zweite Phase eines zweiphasigen Commits fehlschlägt.
+
+.Historische Anmerkung
+[NOTE]
+====
+`IGNORE LIMBO` enthält den TPB-Parameter `isc_tpb_ignore_limbo`, der seit InterBase in der API verfügbar ist und hauptsächlich von _gfix_ verwendet wird.
+====
+
+[[fblangref25-transacs-settransac-params07-de]]
+===== `RESERVING`
+
+Die ``RESERVING``-Klausel in der ``SET TRANSACTION``-Anweisung reserviert Tabellen, die in der Tabellenliste  angegeben sind.
+Das Reservieren einer Tabelle verhindert, dass andere Transaktionen Änderungen an ihnen vornehmen oder sogar unter Einbeziehung bestimmter Parameter Daten von ihnen lesen, während diese Transaktion ausgeführt wird.
+
+Eine ``RESERVING``-Klausel kann auch verwendet werden, um eine Liste von Tabellen anzugeben, die von anderen  Transaktionen geändert werden können, auch wenn die Transaktion mit der Isolationsstufe `SNAPSHOT TABLE STABILITY` gestartet wird.
+
+Eine ``RESERVING``-Klausel wird verwendet, um so viele reservierte Tabellen wie erforderlich anzugeben.
+
+[[fblangref25-transacs-settransac-params07a-de]]
+====== Optionen für die ``RESERVING``-Klausel
+
+Wenn eines der Schlüsselwörter `SHARED` oder `PROTECTED` weggelassen wird, wird `SHARED` angenommen.
+Wenn die gesamte ``FOR``-Klausel weggelassen wird, wird `FOR SHARED READ` angenommen.
+Die Namen und die Kompatibilität der vier Zugriffsoptionen zum Reservieren von Tabellen sind nicht offensichtlich.
+
+[[fblangref25-transacs-tbl-accesscompat-de]]
+.Kompatibilität der Zugriffsoptionen für `RESERVING`
+[cols="<1,^1,^1,^1,^1",stripes="none"]
+|===
+|{nbsp}
+|SHARED READ
+|SHARED WRITE
+|PROTECTED READ
+|PROTECTED WRITE
+
+|SHARED READ
+|Ja
+|Ja
+|Ja
+|Ja
+
+|SHARED WRITE
+|Ja
+|Ja
+|Nein
+|Nein
+
+|PROTECTED READ
+|Ja
+|Nein
+|Ja
+|Nein
+
+|PROTECTED WRITE
+|Ja
+|Nein
+|Nein
+|Nein
+|===
+
+Die Kombinationen dieser ``RESERVING``-Klauselflags für den gleichzeitigen Zugriff hängen von den Isolationsstufen der gleichzeitigen Transaktionen ab:
+
+* ``SNAPSHOT``-Isolation
+** Gleichzeitige ``SNAPSHOT``-Transaktionen mit `SHARED READ` wirken sich nicht auf den Zugriff eines anderen aus
+** Eine gleichzeitige Mischung aus ``SNAPSHOT``- und ``READ COMMITTED``-Transaktionen mit `SHARED WRITE` wirkt sich nicht auf den Zugriff des anderen aus, blockiert jedoch Transaktionen mit der ``SNAPSHOT TABLE STABILITY``-Isolation beim Lesen oder Schreiben in die angegebene Tabelle[n].
+** Gleichzeitige Transaktionen mit einer beliebigen Isolationsstufe und `PROTECTED READ` können nur Daten aus den reservierten Tabellen lesen.
+Jeder Versuch, an sie zu schreiben, führt zu einer Ausnahme
+** Mit `PROTECTED WRITE` können gleichzeitige Transaktionen mit der Isolation `SNAPSHOT` und `READ COMMITTED` nicht in die angegebenen Tabellen schreiben.
+Transaktionen mit der ``SNAPSHOT TABLE STABILITY``-Isolation können überhaupt nicht aus den reservierten Tabellen  lesen oder in diese schreiben.
+* ``SNAPSHOT TABLE STABILITY``-Isolation
+** Alle gleichzeitigen Transaktionen mit `SHARED READ`, unabhängig von ihrer Isolationsstufe, können aus den reservierten Tabellen lesen oder in den schreibgeschützten Tabellen schreiben (falls im ``READ WRITE``-Modus)
+** Gleichzeitige Transaktionen mit den Isolationsstufen `SNAPSHOT` und `READ COMMITTED` und `SHARED WRITE` können Daten aus den Tabellen lesen und schreiben (falls im Modus `READ WRITE`), aber der gleichzeitige Zugriff auf diese Tabellen aus Transaktionen mit `SNAPSHOT TABLE STABILITY` wird vollständig blockiert, solange diese Transaktionen aktiv sind.
+** Gleichzeitige Transaktionen mit einer beliebigen Isolationsstufe und `PROTECTED READ` können nur aus den reservierten Tabellen lesen
+** Mit `PROTECTED WRITE` können gleichzeitige ``SNAPSHOT``- und ``READ COMMITTED``-Transaktionen die reservierten Tabellen lesen, aber nicht in diese schreiben.
+Der Zugriff durch Transaktionen mit der Isolationsstufe `SNAPSHOT TABLE STABILITY` ist vollständig blockiert.
+* ``READ COMMITTED``-Isolation
+** Mit `SHARED READ` können alle gleichzeitigen Transaktionen mit einer beliebigen Isolationsstufe von den reservierten Tabellen gelesen und geschrieben werden (wenn im ``READ WRITE``-Modus).
+** `SHARED WRITE` ermöglicht allen Transaktionen in der ``SNAPSHOT``- und ``READ COMMITTED``-Isolation das Lesen und Schreiben (falls im Modus `READ WRITE`) in die angegebenen Tabellen und das vollständige Sperren des Zugriffs von Transaktionen mit der Isolation `SNAPSHOT TABLE STABILITY`
+** Mit `PROTECTED READ` können gleichzeitige Transaktionen mit einer beliebigen Isolationsstufe nur aus den reservierten Tabellen gelesen werden
+** Mit `PROTECTED WRITE` können gleichzeitige Transaktionen in der ``SNAPSHOT``- und ``READ COMMITTED``-Isolation die angegebenen Tabellen lesen, aber nicht in diese schreiben.
+Der Zugriff von Transaktionen in der ``SNAPSHOT TABLE STABILITY``-Isolation ist vollständig blockiert.
+
+[TIP]
+====
+In Embedded SQL kann die ``USING``-Klausel verwendet werden, um Systemressourcen einzusparen, indem die Datenbanken  beschränkt werden, auf die die Transaktion auf eine Aufzählungsliste (von Datenbanken) zugreifen kann.
+`USING` ist nicht kompatibel mit `RESERVING`.
+Eine ``USING``-Klausel in der ``SET TRANSACTION``-Syntax wird in DSQL nicht unterstützt.
+====
+
+.Siehe auch
+<<fblangref25-transacs-commit-de>>, <<fblangref25-transacs-rollback-de>>
+
+[[fblangref25-transacs-commit-de]]
+=== `COMMIT`
+
+.Benutzt für
+Transaktion festschreiben
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+COMMIT [WORK] [TRANSACTION _tr_name_]
+  [RELEASE] [RETAIN [SNAPSHOT]];
+----
+
+[[fblangref25-transacs-tbl-commit-de]]
+.`COMMIT` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|tr_name
+|Name der Transaktion.
+Nur in ESQL verfügbar
+|===
+
+Die ``COMMIT``-Anweisung schreibt alle Arbeiten fest, die im Zusammenhang mit dieser Transaktion ausgeführt werden (Einfügen, Aktualisieren, Löschen, Auswählen, Ausführen von Prozeduren).
+Neue Datensatzversionen werden für andere Transaktionen verfügbar, und wenn die ``RETAIN``-Klausel nicht verwendet wird, werden alle Serverressourcen freigegeben, die ihrer Arbeit zugewiesen wurden.
+
+Wenn Konflikte oder andere Fehler in der Datenbank während des Festschreibens der Transaktion auftreten, wird die Transaktion nicht festgeschrieben, und die Gründe werden an die Benutzeranwendung zur Bearbeitung und der Möglichkeit, einen weiteren Commit zu versuchen oder die Transaktion rückgängig zu machen, zurückgegeben.
+
+[[fblangref25-transacs-commit-options-de]]
+==== `COMMIT` Options
+
+* Die optionale Klausel `TRANSACTION __tr_name__`, die nur in Embedded SQL verfügbar ist, gibt den Namen der Transaktion an, die festgeschrieben werden soll.
+Ohne die Klausel `TRANSACTION` wird `COMMIT` auf die Standardtransaktion angewendet.
++
+[NOTE]
+====
+In ESQL-Anwendungen ermöglichen benannte Transaktionen die gleichzeitige Aktivierung mehrerer Transaktionen in einer Anwendung.
+Wenn benannte Transaktionen verwendet werden, muss eine hostspezifische Variable mit demselben Namen für jede benannte Transaktion deklariert und initialisiert werden.
+Dies ist eine Einschränkung, die die dynamische Angabe von Transaktionsnamen verhindert und daher die Transaktionsbenennung in DSQL ausschließt.
+====
+* Das optionale Schlüsselwort `WORK` wird nur aus Kompatibilitätsgründen mit anderen relationalen Datenbankverwaltungssystemen unterstützt, für die dies erforderlich ist.
+* Das Schlüsselwort `RELEASE` ist nur in Embedded SQL verfügbar und ermöglicht die Trennung von allen Datenbanken, nachdem die Transaktion festgeschrieben wurde.
+`RELEASE` wird in Firebird nur zur Kompatibilität mit älteren Versionen von InterBase verwendet.
+Es wurde in ESQL durch die Anweisung `DISCONNECT` ersetzt.
+* Die Klausel `RETAIN [SNAPSHOT]` wird für das "`weiche`" Festschreiben, verschiedentlich unter den Host-Sprachen und ihren Anwendern auch als `COMMIT WITH RETAIN`, CommitRetaining, "`warm commit`", etc. bezeichnet.
+Die Transaktion ist festgeschrieben, aber einige Serverressourcen bleiben erhalten, und die Transaktion wird transparent mit derselben Transaktions-ID erneut gestartet.
+Der Status von Zeilencaches und Cursorn wird beibehalten wie vor dem Soft Commit.
++ 
+Für Soft-Committed-Transaktionen, deren Isolationsstufe `SNAPSHOT` oder `SNAPSHOT TABLE STABILITY` ist, wird die Ansicht des Datenbankstatus nicht aktualisiert, um Änderungen durch andere Transaktionen widerzuspiegeln, und der Benutzer der Anwendungsinstanz hat weiterhin dieselbe Ansicht wie beim ursprünglichen Start der Transaktion.
+Änderungen, die während der Laufzeit der zurückbehaltenen Transaktion vorgenommen wurden, sind natürlich für diese Transaktion sichtbar.
+
+.Empfehlung
+[NOTE]
+====
+Die Verwendung der Anweisung `COMMIT` anstelle von `ROLLBACK` wird zum Beenden von Transaktionen empfohlen, die nur Daten aus der Datenbank lesen, da `COMMIT` weniger Serverressourcen verbraucht und hilft damit bei der Optimierung der Performance nachfolgender Transaktionen.
+====
+
+.Siehe auch
+<<fblangref25-transacs-settransac-de>>, <<fblangref25-transacs-rollback-de>>
+
+[[fblangref25-transacs-rollback-de]]
+=== `ROLLBACK`
+
+.Benutzt für
+Rollback einer Transaktion
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ROLLBACK [WORK] [TRANSACTION _tr_name_]
+[RETAIN [SNAPSHOT] | TO [SAVEPOINT] _sp_name_ | RELEASE]
+----
+
+[[fblangref25-transacs-tbl-rollback-de]]
+.`ROLLBACK` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|tr_name
+|Name der Transaktion.
+Nur in ESQL verfügbar
+
+|sp_name
+|Name des Sicherungspunkts.
+Nur in DSQL verfügbar
+|===
+
+Die ``ROLLBACK``-Anweisung setzt alle im Zusammenhang mit dieser Transaktion ausgeführten Arbeiten zurück (Einfügen, Aktualisieren, Löschen, Auswählen, Ausführen von Prozeduren).
+`ROLLBACK` schlägt niemals fehl und verursacht daher niemals Ausnahmen.
+Wenn die ``RETAIN``-Klausel nicht verwendet wird, werden alle Serverressourcen freigegeben, die der Arbeit der Transaktion zugeordnet sind.
+
+[[fblangref25-transacs-rollback-options-de]]
+==== `ROLLBACK` Options
+
+* Die optionale Klausel `TRANSACTION __tr_name__`, die nur in Embedded SQL verfügbar ist, gibt den Namen der Transaktion an, die festgeschrieben werden soll.
+Ohne die Klausel `TRANSACTION` wird `ROLLBACK` auf die Standardtransaktion angewendet.
++
+[NOTE]
+====
+In ESQL-Anwendungen ermöglichen benannte Transaktionen die gleichzeitige Aktivierung mehrerer Transaktionen in einer Anwendung.
+Wenn benannte Transaktionen verwendet werden, muss eine hostspezifische Variable mit demselben Namen für jede benannte Transaktion deklariert und initialisiert werden.
+Dies ist eine Einschränkung, die die dynamische Angabe von Transaktionsnamen verhindert und daher die Transaktionsbenennung in DSQL ausschließt.
+====
+* Das optionale Schlüsselwort `WORK` wird nur aus Kompatibilitätsgründen mit anderen relationalen Datenbankverwaltungssystemen unterstützt, für die dies erforderlich ist.
+* Das Schlüsselwort `RETAIN` gibt an, dass der Transaktionskontext beibehalten werden soll, obwohl die gesamte Arbeit der Transaktion rückgängig gemacht werden soll.
+Einige Serverressourcen bleiben erhalten und die Transaktion wird transparent mit derselben Transaktions-ID neu gestartet.
+Der Status von Zeilencaches und Cursorn wird beibehalten, wie er vor dem "`weichen`" Rollback war.
++ 
+Für Transaktionen, deren Isolationsstufe `SNAPSHOT` oder `SNAPSHOT TABLE STABILITY` ist, wird die Ansicht des Datenbankstatus nicht durch das Soft-Rollback aktualisiert, um Änderungen durch andere Transaktionen widerzuspiegeln.
+Der Benutzer der Anwendungsinstanz hat weiterhin dieselbe Ansicht wie beim ursprünglichen Start der Transaktion.
+Änderungen, die während der Laufzeit der zurückbehaltenen Transaktion vorgenommen und während dieser abgeschlossen wurden, sind natürlich für diese Transaktion sichtbar.
+
+.Siehe auch
+<<fblangref25-transacs-settransac-de>>, <<fblangref25-transacs-commit-de>>
+
+[[fblangref25-transacs-rollback-tosavepoint-de]]
+===== `ROLLBACK TO SAVEPOINT`
+
+Die optionale Klausel `TO SAVEPOINT` in der Anweisung `ROLLBACK` gibt den Namen eines Sicherungspunkts an, auf den die Änderungen zurückgesetzt werden sollen.
+Der Effekt besteht darin, alle in der Transaktion vorgenommenen Änderungen rückgängig zu machen, und zwar vom erstellten Sicherungspunkt bis zu dem Zeitpunkt, an dem `ROLLBACK TO SAVEPOINT` angefordert wird.
+
+`ROLLBACK TO SAVEPOINT` führt die folgenden Operationen aus: 
+
+* Alle Datenbankmutationen, die seit der Erstellung des Sicherungspunkts ausgeführt wurden, werden rückgängig gemacht. Benutzervariablen, die mit `RDB$SET_CONTEXT()` gesetzt wurden, bleiben unverändert.
+* Alle Sicherungspunkte, die nach dem Namen erstellt wurden, werden zerstört.
+Savepoints, die älter als der angegebene sind, werden zusammen mit dem benannten Savepoint selbst beibehalten. Wiederholte Rollbacks zum selben Savepoint sind somit erlaubt.
+* Alle impliziten und expliziten Datensatzsperren, die seit dem Speichern des Punkts erfasst wurden, werden freigegeben.
+Andere Transaktionen, die Zugriff auf nach dem Sicherungspunkt gesperrte Zeilen angefordert haben, müssen warten, bis die Transaktion festgeschrieben oder zurückgesetzt wurde.
+Andere Transaktionen, die die Zeilen noch nicht angefordert haben, können die entsperrten Zeilen sofort anfordern und darauf zugreifen.
+
+.Siehe auch
+<<fblangref25-transacs-savepoint-de>>
+
+[[fblangref25-transacs-savepoint-de]]
+=== `SAVEPOINT`
+
+.Benutzt für
+Creating a savepoint
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SAVEPOINT _sp_name_
+----
+
+[[fblangref25-transacs-tbl-savepoint-de]]
+.`SAVEPOINT` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|sp_name
+|Name des Sicherungspunkts.
+Nur in DSQL verfügbar
+|===
+
+Die Anweisung `SAVEPOINT` erstellt einen SQL:99-konformen Sicherungspunkt, der als Marker im "`stack`" der Datenaktivitäten innerhalb einer Transaktion fungiert.
+Anschließend können die im "`stack`" ausgeführten Tasks an diesen Savepoint rückgängig gemacht werden, wobei die frühere Arbeit und ältere Savepoints unberührt bleiben.
+Savepoint-Mechanismen werden manchmal als "`verschachtelte Transaktionen`" bezeichnet.
+
+Wenn bereits ein Sicherungspunkt mit demselben Namen wie der für den neuen bereitgestellte Name vorhanden ist, wird der vorhandene Sicherungspunkt gelöscht und ein neuer unter Verwendung des angegebenen Namens erstellt.
+
+Um Änderungen auf den Sicherungspunkt zurückzuspielen, wird die Anweisung `ROLLBACK TO SAVEPOINT` verwendet.
+
+.Überlegungen zum Speicher
+[NOTE]
+====
+Der interne Mechanismus unterhalb der Sicherungspunkte kann große Speichermengen verbrauchen, insbesondere wenn die gleichen Zeilen mehrere Aktualisierungen in einer Transaktion erhalten.
+Wenn ein Sicherungspunkt nicht mehr benötigt wird, aber die Transaktion noch Arbeit verrichtet, wird die Anweisung <<fblangref25-transacs-releasesp-de>> diesen löschen und somit die belegten Ressourcen freigeben.
+====
+
+.Beispiel einer DSQL-Sitzung mit Savepoints
+[source]
+----
+CREATE TABLE TEST (ID INTEGER);
+COMMIT;
+INSERT INTO TEST VALUES (1);
+COMMIT;
+INSERT INTO TEST VALUES (2);
+SAVEPOINT Y;
+DELETE FROM TEST;
+SELECT * FROM TEST; -- returns no rows
+ROLLBACK TO Y;
+SELECT * FROM TEST; -- returns two rows
+ROLLBACK;
+SELECT * FROM TEST; -- returns one row
+----
+
+.Siehe auch
+<<fblangref25-transacs-rollback-tosavepoint-de>>, <<fblangref25-transacs-releasesp-de>>
+
+[[fblangref25-transacs-releasesp-de]]
+=== `RELEASE SAVEPOINT`
+
+.Benutzt für
+Einen Sicherungspunkt löschen
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+RELEASE SAVEPOINT _sp_name_ [ONLY]
+----
+
+[[fblangref25-transacs-tbl-rlssavepoint-de]]
+.``RELEASE SAVEPOINT``-Statement-Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|sp_name
+|Name des Sicherungspunkts.
+Nur in DSQL verfügbar
+|===
+
+Die Anweisung `RELEASE SAVEPOINT` löscht einen benannten Savepoint und gibt damit alle Ressourcen frei.
+Standardmäßig werden alle Sicherungspunkte, die nach dem benannten Sicherungspunkt erstellt wurden, ebenfalls freigegeben.
+Der Qualifier `ONLY` weist die Engine an, nur den benannten Savepoint freizugeben.
+
+.Siehe auch
+<<fblangref25-transacs-savepoint-de>>
+
+[[fblangref25-transacs-internalsp-de]]
+=== Interne Sicherungspunkte
+
+Standardmäßig verwendet die Engine einen automatischen Sicherungspunkt auf Transaktionsebene, um Transaktionsrollbacks durchzuführen.
+Wenn eine Anweisung `ROLLBACK` ausgeführt wird, werden alle in dieser Transaktion ausgeführten Änderungen über einen Sicherungspunkt auf Transaktionsebene zurückgesetzt, und die Transaktion wird dann festgeschrieben.
+Diese Logik reduziert die Menge an aufzuräumenden Müll (Garbage Collection), der durch zurückgerollte Transaktionen  verursacht wird.
+
+Wenn der Umfang der unter einem Sicherungspunkt auf Transaktionsebene durchgeführten Änderungen groß wird (ca.
+50000 betroffene Datensätze), gibt die Engine den Sicherungspunkt auf Transaktionsebene frei und verwendet die Transaktionsinventarseite (TIP) als Mechanismus, um die Transaktion bei Bedarf zurückzusetzen.
+
+[TIP]
+====
+Wenn Sie erwarten, dass der Umfang der Änderungen in Ihrer Transaktion groß ist, können Sie die Option `NO AUTO UNDO` in Ihrer ``SET TRANSACTION``-Anweisung angeben, um die Erstellung des Sicherungspunkts auf Transaktionsebene zu blockieren.
+Mit der API würden Sie stattdessen das TPB-Flag `isc_tpb_no_auto_undo` setzen.
+====
+
+[[fblangref25-transacs-psqlandsp-de]]
+=== Sicherungspunkte und PSQL
+
+Transaktionssteueranweisungen sind in PSQL nicht zulässig, da dies die Atomität der Anweisung, die die Prozedur aufruft, aufheben würde.
+Firebird unterstützt jedoch das Auslösen und Behandeln von Ausnahmen in PSQL, sodass Aktionen, die in gespeicherten Prozeduren und Triggern ausgeführt werden, selektiv rückgängig gemacht werden können, ohne dass die gesamte Prozedur fehlschlägt.
+
+Intern werden automatische Sicherungspunkte verwendet, um: 
+
+* alle Aktionen im Block `BEGIN ... END` rückgängig zu machen, bei dem eine Exception auftritt
+* alle Aktionen rückgängig machen, die von der Prozedur oder dem Trigger ausgeführt wurden, oder für eine auswählbare Prozedur alle Aktionen, die seit dem letzten `SUSPEND` ausgeführt wurden, wenn die Ausführung aufgrund eines nicht erfassten Fehlers oder einer Ausnahme vorzeitig beendet wird
+
+Jeder PSQL-Exception-Behandlungsblock ist auch durch automatische System-Savepoints begrenzt.
+
+[NOTE]
+====
+Ein ``BEGIN ... END``-Block erstellt keinen automatischen Sicherungspunkt.
+Ein Sicherungspunkt wird nur in Blöcken erstellt, die die ``WHEN``-Anweisung zur Behandlung von Ausnahmen enthalten.
+====

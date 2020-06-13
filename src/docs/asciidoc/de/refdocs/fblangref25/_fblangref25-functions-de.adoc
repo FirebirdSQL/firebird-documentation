@@ -1,0 +1,3805 @@
+[[fblangref25-functions-de]]
+= Eingebaute Funktionen[[fblangref25-functions-scalarfuncs-de]]
+
+[[fblangref25-functions-nameclashes-de]]
+.Upgrader: BITTE LESEN!
+****
+Eine große Anzahl von Funktionen, die in früheren Versionen von Firebird als externe Funktionen (UDFs) implementiert wurden, wurden schrittweise als interne (eingebaute) Funktionen neu implementiert.
+Wenn eine externe Funktion mit dem gleichen Namen wie eine integrierte Funktion in Ihrer Datenbank deklariert ist,  bleibt sie dort und überschreibt alle internen Funktionen desselben Namens.
+
+Um die internen Funktionen verfügbar sind, müssen Sie entweder ein <<fblangref25-ddl-extfunc-drop-de,`DROP`>> der UDF durchführen oder mittels <<fblangref25-ddl-extfunc-alter-de,`ALTER EXTERNAL FUNCTION`>> den Namen der UDF ändern.
+****
+
+[[fblangref25-functions-workcontext-de]]
+== Kontextfunktionen
+
+[[fblangref25-functions-scalarfuncs-get-context-de]]
+=== `RDB$GET_CONTEXT()`[[fblangref25-functions-scalarfuncs-get_context-de]]
+
+[NOTE]
+====
+`RDB$GET_CONTEXT` und sein Gegenpart `RDB$SET_CONTEXT` sind vordefinierte UDFs.
+Sie werden hier als interne Funktionen geführt, da sie immer präsent sind -- der Benutzer muss nichts tun, damit diese verfügbar sind.
+====
+
+.Verfügbar in
+DSQL, PSQL{nbsp}* Als deklariertes UDF sollte es in ESQL verfügbar sein
+
+.Syntax
+[listing,subs=+quotes]
+----
+RDB$GET_CONTEXT ('<namespace>', <varname>)
+
+<namespace> ::= SYSTEM | USER_SESSION | USER_TRANSACTION
+<varname>   ::=
+  _Eine Zeichenfolge, bei der die Groß- und Kleinschreibung_
+  _beachtet werden muss. Maximal 80 Zeichen_
+----
+
+[[fblangref25-funcs-tbl-rdbgetcontext-de]]
+.``RDB$GET_CONTEXT``-Funktionsparameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|namespace
+|Namespace
+
+|varname
+|Variablennamen.
+Groß- und Kleinschreibung.
+Die maximale Länge beträgt 80 Zeichen
+|===
+
+.Rückgabetyp
+`VARCHAR(255)`
+
+.Beschreibung
+Ruft den Wert einer Kontextvariablen aus einem der Namespaces `SYSTEM`, `USER_SESSION` und `USER_TRANSACTION` auf.
+
+.Die Namespaces
+Die Namespaces `USER_SESSION` und `USER_TRANSACTION` sind initial leer.
+Der Benutzer kann hierin Variablen erstellen und mittels `RDB$SET_CONTEXT()` festlegen und diese mit `RDB$GET_CONTEXT()` zurückgeben lassen.
+Der Zugriff auf den Namespace `SYSTEM` erfolgt nur lesend.
+Dieser enthält eine Menge vordefinierter Variablen, die unten aufgeführt sind.
+
+`DB_NAME`::
+Entweder der vollständige Pfad der Datenbank oder -- falls das Verbinden mittels des Pfades deaktiviert ist -- dessen Alias.
+
+`NETWORK_PROTOCOL`::
+Das Verbindungsprotokoll: `'TCPv4'`, `'WNET'`, `'XNET'` oder `NULL`.
+
+`CLIENT_ADDRESS`::
+Für TCPv4 ist dies die IP-Adresse.
+Für XNET die lokale Prozess-ID.
+Für alle anderen Protokolle ist diese Variable `NULL`.
+
+`CURRENT_USER`::
+Identisch zur globalen Variable <<fblangref25-contextvars-current-user-de,`CURRENT_USER`>>.
+
+`CURRENT_ROLE`::
+Identisch zur globalen Variable <<fblangref25-contextvars-current-role-de,`CURRENT_ROLE`>>.
+
+`SESSION_ID`::
+Identisch zur globalen Variable <<fblangref25-contextvars-current-connection-de,`CURRENT_CONNECTION`>>.
+
+`TRANSACTION_ID`::
+Identisch zur globalen Variable <<fblangref25-contextvars-current-transaction-de,`CURRENT_TRANSACTION`>>.
+
+`ISOLATION_LEVEL`::
+Die Isolationsstufe der aktuellen Transaktion: `'READ COMMITTED'`, `'SNAPSHOT'` oder `'CONSISTENCY'`.
+
+`ENGINE_VERSION`::
+Die (Server-) Version der Firebird-Engine.
+Hinzugefügt in 2.1.
+
+.Rückgabewerte und Fehlerverhalten
+Wenn die abgefragte Variable im angegebenen Namespace vorhanden ist, wird ihr Wert als eine Zeichenfolge mit max.
+255 Zeichen.
+Wenn der Namespace nicht vorhanden ist oder wenn Sie versuchen, auf eine nicht vorhandene Variable im Namespace `SYSTEM` zuzugreifen, wird ein Fehler ausgegeben.
+Wenn Sie eine nicht vorhandene Variable in einem der anderen Namespaces abfragen, wird `NULL` zurückgegeben.
+Sowohl Namespaces als auch Variablennamen müssen als single-quoted, case-sensitive, nicht ``NULL``-Strings angegeben werden.
+
+.Beispiele
+[source]
+----
+select rdb$get_context('SYSTEM', 'DB_NAME') from rdb$database
+
+New.UserAddr = rdb$get_context('SYSTEM', 'CLIENT_ADDRESS');
+
+insert into MyTable (TestField)
+  values (rdb$get_context('USER_SESSION', 'MyVar'))
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-set-context-de>>
+
+[[fblangref25-functions-scalarfuncs-set-context-de]]
+=== `RDB$SET_CONTEXT()`[[fblangref25-functions-scalarfuncs-set_context-de]]
+
+[NOTE]
+====
+`RDB$SET_CONTEXT` und dessen Gegenpart `RDB$GET_CONTEXT` sind vordefinierte UDFs.
+Sie werden hier als interne Funktionen geführt, da sie immer präsent sind -- der Benutzer muss nichts tun, damit diese verfügbar sind.
+====
+
+.Verfügbar in
+DSQL, PSQL{nbsp}* Als deklariertes UDF sollte es in ESQL verfügbar sein
+
+[listing,subs=+quotes]
+----
+RDB$SET_CONTEXT ('<namespace>', <varname>, <value> | NULL)
+
+<namespace> ::= USER_SESSION | USER_TRANSACTION
+<varname>   ::= _A case-sensitive quoted string of max. 80 characters_
+<value>     ::= _A value of any type, as long as it's castable_
+                _to a VARCHAR(255)_
+----
+
+[[fblangref25-funcs-tbl-rdbsetcontext-de]]
+.``RDB$SET_CONTEXT``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|namespace
+|Namespace
+
+|varname
+|Variablennamen.
+Groß- und Kleinschreibung.
+Die maximale Länge beträgt 80 Zeichen
+
+|value
+|Daten eines beliebigen Typs, sofern sie in `VARCHAR(255)` umgewandelt werden können
+|===
+
+.Rückgabetyp
+`INTEGER`
+
+.Beschreibung
+Erstellt, setzt oder löscht eine Variable in einem der vom Benutzer beschreibbaren Namespaces `USER_SESSION` und `USER_TRANSACTION`.
+
+.Die Namespaces
+Die Namespaces `USER_SESSION` und `USER_TRANSACTION` sind initial leer.
+Der Benutzer kann hierin Variablen erstellen und mittels `RDB$SET_CONTEXT()` festlegen und diese mit `RDB$GET_CONTEXT()` zurückgeben lassen.
+Der Kontext `USER_SESSION` ist an die derzeitige Verbindung gebunden Variablen in `USER_TRANSACTION` existieren nur in der Transaktion, in der sie erstellt wurden.
+Wenn die Transaktion endet, werden der Kontext und alle hierin definierten Variablen zerstört.
+
+.Rückgabewerte und Fehlerverhalten
+Die Funktion gibt 1 zurück, wenn die Variable bereits vor dem Aufruf vorhanden, und 0, falls dies nicht der Fall war.
+Um eine Variable aus einem Kontext zu entfernen, setzen Sie sie auf `NULL`.
+Wenn der angegebene Namespace nicht existiert, wird ein Fehler ausgelöst.
+Sowohl Namespaces als auch Variablennamen müssen als nicht-``NULL``-Zeichenketten ind einzelne Anführungszeichen eingegeben werden.
+Beachten Sie dabei Groß- und Kleinschreibung.
+
+.Beispiele
+[source]
+----
+select rdb$set_context('USER_SESSION', 'MyVar', 493) from rdb$database
+
+rdb$set_context('USER_SESSION', 'RecordsFound', RecCounter);
+
+select rdb$set_context('USER_TRANSACTION', 'Savepoints', 'Yes')
+  from rdb$database
+----
+
+.Hinweise
+* Die maximale Anzahl der Variablen in einem einzelnen Kontext beträgt 1000.
+* Alle ``USER_TRANSACTION``-Variablen überleben das <<fblangref25-transacs-rollback-options-de,`ROLLBACK RETAIN`>>  (siehe ``ROLLBACK``-Optionen) oder <<fblangref25-transacs-rollback-tosavepoint-de,`ROLLBACK TO SAVEPOINT`>> unverändert, unabhängig zu welchen Zeitpunkt der Transaktion diese gesetzt wurden.
+* Aufgrund seiner UDF-ähnlichen Eigenschaft kann `RDB$SET_CONTEXT` -- nur in PSQL -- wie eine void-Funktion aufgerufen werden, ohne das Ergebnis wie im zweiten Beispiel oben zuzuweisen.
+Reguläre interne Funktionen erlauben diese Art der Verwendung nicht.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-get-context-de>>
+
+[[fblangref25-functions-math-de]]
+== Mathematische Funktionen
+
+[[fblangref25-functions-scalarfuncs-abs-de]]
+=== `ABS()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+ABS (_number_)
+----
+
+[[fblangref25-funcs-tbl-abs-de]]
+.``ABS`` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+Numerisch
+
+.Beschreibung
+Gibt den absoluten Wert des Arguments zurck.
+
+[[fblangref25-functions-scalarfuncs-acos-de]]
+=== `ACOS()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+ACOS (_number_)
+----
+
+[[fblangref25-funcs-tbl-acos-de]]
+.``ACOS`` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs im Bereich [-1; 1]
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Arkuskosinus des Arguments zurück.
+
+* Das Ergebnis ist ein Winkel im Bereich [0, pi].
+* Ist das Argument außerhalb der Bereichs [-1, 1], wird `NaN` zurückgegeben.
+
+[[fblangref25-functions-scalarfuncs-asin-de]]
+=== `ASIN()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+ASIN (_number_)
+----
+
+[[fblangref25-funcs-tbl-asin-de]]
+.``ASIN`` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs im Bereich [-1; 1]
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Arkussinus des Arguments zurück.
+
+* Das Ergebnis ist ein Winkel im Bereich [-pi/2, pi/2].
+* Liegt das Argument außerhalb des Bereichs [-1, 1], wird `NaN` zurückgegeben.
+
+[[fblangref25-functions-scalarfuncs-atan-de]]
+=== `ATAN()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+ATAN (_number_)
+----
+
+[[fblangref25-funcs-tbl-atan-de]]
+.``ATAN`` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Die Funktion `ATAN` gibt den Arcustangens des Arguments zurück.
+Das Ergebnis ist ein Winkel im Bereich <-pi/2, pi/2>.
+
+[[fblangref25-functions-scalarfuncs-atan2-de]]
+=== `ATAN2()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+//Note for maintainers/editors: the argument names y and x (in that order!) are chosen on purpose, for geometrical reasons.
+.Syntax
+[listing,subs=+quotes]
+----
+ATAN2 (_y_, _x_)
+----
+
+[[fblangref25-funcs-tbl-atan2-de]]
+.``ATAN2``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|x
+|Ausdruck eines numerischen Typs
+
+|y
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Winkel zurück, dessen Sinus-Kosinus-__Verhältnis__ durch die beiden Argumente gegeben ist und dessen Sinus- und Kosinus-__Zeichen__ den Vorzeichen der Argumente entsprechen.
+Dies ermöglicht Ergebnisse über den gesamten Kreis einschließlich der Winkel -pi/2 und pi/2.
+
+* Das Ergebnis ist ein Winkel im Bereich [-pi, pi].
+* Ist _x_ negativ, ist das Ergebnis Pi, falls _y_ gleich 0 ist, und -Pi falls _y_ gleich -0 ist.
+* Wenn sowohl _y_ als auch _x_ 0 sind, ist das Ergebnis bedeutungslos.
+Beginnend mit Firebird 3 wird ein Fehler ausgelöst, wenn beide Argumente 0 sind.
+Bei Version 2.5.4 ist es in niedrigeren Versionen immer noch nicht behoben.
+Für weitere Details, besuchen Sie  http://tracker.firebirdsql.org/browse/CORE-3201[Tracker-Ticket CORE-3201].
+
+.Hinweise
+* Eine vollständig äquivalente Beschreibung dieser Funktion ist die folgende: `ATAN2(__y__, __x__)` ist ein Winkel zwischen der positiven X-Achse und der Linie vom Ursprung zum Punkt _(x, y)_.
+Damit wird offensichtlich, dass `ATAN2(0, 0)` nicht definiert ist.
+* Ist _x_ größer als 0, ist `ATAN2(__y__, __x__)` das gleiche wie `ATAN(__y__/__x__)`.
+* Wenn Sinus und Kosinus des Winkels bereits bekannt sind, gibt `ATAN2(__sin__, __cos__)` den Winkel zurück.
+
+[[fblangref25-functions-scalarfuncs-ceil-de]]
+=== ``CEIL()``, `CEILING()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>> (Betrifft nur `CEILING`)
+
+.Syntax
+[listing,subs=+quotes]
+----
+CEIL[ING] (_number_)
+----
+
+[[fblangref25-funcs-tbl-ceil-de]]
+.``CEIL[ING]``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`BIGINT` für exakte numerische _number_ oder `DOUBLE PRECISION` für Fließkomma _number_
+
+.Beschreibung
+Gibt die kleinste ganze Zahl zurück, die größer oder gleich dem Argument ist.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-floor-de>>
+
+[[fblangref25-functions-scalarfuncs-cos-de]]
+=== `COS()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+COS (_angle_)
+----
+
+[[fblangref25-funcs-tbl-cos-de]]
+.`COS` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|angle
+|Ein Winkel in Bogenmaß
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Kosinus eines Winkels zurück.
+Das Argument muss im Bogenmaß angegeben werden.
+
+* Jedes nicht-``NULL``-Ergebnis ist -- offensichtlich -- im Bereich [-1, 1].
+
+[[fblangref25-functions-scalarfuncs-cosh-de]]
+=== `COSH()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+COSH (_number_)
+----
+
+[[fblangref25-funcs-tbl-cosh-de]]
+.`COSH` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Eine Zahl eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Hyperbelkosinus des Arguments zurück.
+
+* Beliebiges non-``NULL``-Ergebnis liegt im Bereich [1, INF].
+
+[[fblangref25-functions-scalarfuncs-cot-de]]
+=== `COT()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+COT (_angle_)
+----
+
+[[fblangref25-funcs-tbl-cot-de]]
+.`COT` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|angle
+|Ein Winkel in Bogenmaß
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Kotangens eines Winkels zurück.
+Das Argument muss im Bogenmaß angegeben werden.
+
+[[fblangref25-functions-scalarfuncs-exp-de]]
+=== `EXP()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+EXP (_number_)
+----
+
+[[fblangref25-funcs-tbl-exp-de]]
+.`EXP` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Eine Zahl eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt das natürliche Exponential zurück, _e_^`number`^
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-ln-de>>
+
+[[fblangref25-functions-scalarfuncs-floor-de]]
+=== `FLOOR()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+FLOOR (_number_)
+----
+
+[[fblangref25-funcs-tbl-floor-de]]
+.`FLOOR` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`BIGINT` for exact numeric _number_, or `DOUBLE PRECISION` for floating point _number_
+
+.Beschreibung
+Gibt die größte ganze Zahl zurück, die kleiner oder gleich dem Argument ist.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-ceil-de>>
+
+[[fblangref25-functions-scalarfuncs-ln-de]]
+=== `LN()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+LN (_number_)
+----
+
+[[fblangref25-funcs-tbl-ln-de]]
+.`LN` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den natürlichen Logarithmus des Arguments zurück.
+
+* Ein Fehler wird ausgelöst, wenn das Argument negativ oder 0 ist.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-exp-de>>
+
+[[fblangref25-functions-scalarfuncs-log-de]]
+=== `LOG()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+LOG (_x_, _y_)
+----
+
+[[fblangref25-funcs-tbl-log-de]]
+.``LOG``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|x
+|Base.
+Ein Ausdruck eines numerischen Typs
+
+|y
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den __x__-basierten Logarithmus von _y_ zurück.
+
+* Wenn eines der Argumente 0 oder niedriger ist, wird ein Fehler ausgelöst.
+(Vor 2.5 würde dies `NaN`, `±INF` oder 0 ergeben, abhängig von den genauen Argumentwerten)
+* Wenn beide Argumente 1 sind, wird `NaN` zurückgegebenreturned.
+* Wenn _x_ = 1 und _y_ < 1, `-INF` wird zurückgegeben.
+* Wenn _x_ = 1 und _y_ > 1, `INF` wird zurückgegeben.
+
+[[fblangref25-functions-scalarfuncs-log10-de]]
+=== `LOG10()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Geändert in
+2.5
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+LOG10 (_number_)
+----
+
+[[fblangref25-funcs-tbl-log10-de]]
+.`LOG10` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den 10-basierten Logarithmus des Arguments zurück.
+
+* Ein Fehler wird ausgelöst, wenn das Argument negativ oder 0 ist.
+(In Versionen vor 2.5 würden solche Werte zu `NaN` und `INF` resultieren.)
+
+[[fblangref25-functions-scalarfuncs-mod-de]]
+=== `MOD()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+MOD (_a_, _b_)
+----
+
+[[fblangref25-funcs-tbl-mod-de]]
+.``MOD``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|a
+|Ausdruck eines numerischen Typs
+
+|b
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`SMALLINT`, `INTEGER` oder `BIGINT` je nach Art von _a_.
+Wenn _a_ ein Fließkommatyp ist, ist das Ergebnis ein `BIGINT`.
+
+.Beschreibung
+Gibt den Rest einer Ganzzahldivision zurück.
+
+* Nicht ganzzahlige Argumente werden vor der Division gerundet.
+Demnach ergibt "```mod(7.5, 2.5)```" 2 ("```mod(8, 3)```"), nicht 0.
+
+[[fblangref25-functions-scalarfuncs-pi-de]]
+=== `PI()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing]
+----
+PI ()
+----
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt eine Annäherung an den Wert von `Pi`.
+
+[[fblangref25-functions-scalarfuncs-power-de]]
+=== `POWER()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+POWER (_x_, _y_)
+----
+
+[[fblangref25-funcs-tbl-power-de]]
+.``POWER``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|x
+|Ausdruck eines numerischen Typs
+
+|y
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt _x_ hoch _y_ (_x^y^_) zurück.
+
+[[fblangref25-functions-scalarfuncs-rand-de]]
+=== `RAND()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing]
+----
+RAND ()
+----
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt eine Zufallszahl zwischen 0 und 1 zurück.
+
+[[fblangref25-functions-scalarfuncs-round-de]]
+=== `ROUND()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+ROUND (_number_ [, _scale_])
+----
+
+[[fblangref25-funcs-tbl-round-de]]
+.``ROUND``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+
+|scale
+a|Eine ganze Zahl, die die Anzahl der Dezimalstellen angibt, auf die gerundet werden soll, z.B.:
+
+* {nbsp}2 zum Runden auf das nächste Vielfache von 0,01
+* {nbsp}1 zum Runden auf das nächste Vielfache von 0,1
+* {nbsp}0 zum Runden auf die nächste ganze Zahl
+* -1 zum Runden auf das nächste Vielfache von 10
+* -2 zum Runden auf das nächste Vielfache von 100
+|===
+
+.Rückgabetyp
+``INTEGER``, (scaled) `BIGINT` or `DOUBLE PRECISION`
+
+.Beschreibung
+Rundet eine Zahl auf die nächste ganze Zahl.
+Wenn der Bruchteil genau `0,5`  ist, ist das Runden für positive Zahlen aufwärts und für negative Zahlen abwärts.
+Mit dem optionalen Argument _scale_ kann die Zahl anstelle von ganzen Zahlen auf Zehnerpotenzen (Zehner, Hunderter, Zehntel, Hundertstel usw.) gerundet werden.
+
+[IMPORTANT]
+====
+* Wenn Sie das Verhalten der externen Funktion `ROUND` gewohnt sind, beachten Sie bitte, dass die _interne_ Funktion immer die Hälfte von Null weg, d.h. abwärts für negative Zahlen, abrundet.
+====
+
+.Beispiele
+Ist das Argument _scale_ vorhanden, hat das Ergebnis üblicherweise die gleiche Genauigkeit wie das erste Argument:
+
+[source]
+----
+ROUND(123.654, 1) -- ergibt 123.700 (nicht 123.7)
+ROUND(8341.7, -3) -- ergibt 8000.0 (nicht 8000)
+ROUND(45.1212, 0) -- ergibt 45.0000 (nicht 45)
+----
+
+Andernfalls ist die Ergebnisgenauigkeit 0:
+
+[source]
+----
+ROUND(45.1212) -- ergibt 45
+----
+
+[[fblangref25-functions-scalarfuncs-sign-de]]
+=== `SIGN()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+SIGN (_number_)
+----
+
+[[fblangref25-funcs-tbl-sign-de]]
+.`SIGN` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`SMALLINT`
+
+.Beschreibung
+Returns the sign of the argument: -1, 0 or 1.
+
+[[fblangref25-functions-scalarfuncs-sin-de]]
+=== `SIN()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+SIN (_angle_)
+----
+
+[[fblangref25-funcs-tbl-sin-de]]
+.`SIN` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|angle
+|Ein Winkel im Bogenmaß
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Sinus eines Winkels zurück.
+Das Argument muss im Bogenmaß angegeben werden.
+
+* Beliebiges nicht-``NULL``-Ergebnis liegt -- offensichtlich -- im Bereich [-1, 1].
+
+[[fblangref25-functions-scalarfuncs-sinh-de]]
+=== `SINH()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+SINH (_number_)
+----
+
+[[fblangref25-funcs-tbl-sinh-de]]
+.`SINH` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Hyperbelsinus des Arguments zurück.
+
+[[fblangref25-functions-scalarfuncs-sqrt-de]]
+=== `SQRT()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+SQRT (_number_)
+----
+
+[[fblangref25-funcs-tbl-sqrt-de]]
+.`SQRT` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt die Quadratwurzel des Arguments zurück.
+
+* Ist _number_ negativ, wird ein Fehler ausgegeben.
+
+[[fblangref25-functions-scalarfuncs-tan-de]]
+=== `TAN()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+TAN (_angle_)
+----
+
+[[fblangref25-funcs-tbl-tan-de]]
+.`TAN` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|angle
+|Ein Winkel im Bogenmaß
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt die Tangente eines Winkels zurück.
+Das Argument muss im Bogenmaß angegeben werden.
+
+[[fblangref25-functions-scalarfuncs-tanh-de]]
+=== `TANH()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+{nbsp}
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+TANH (_number_)
+----
+
+[[fblangref25-funcs-tbl-tanh-de]]
+.``TANH``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+|===
+
+.Rückgabetyp
+`DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den Hyperbeltangens des Arguments zurück.
+
+* Aufgrund von Rundungen liegt ein nicht-``NULL``-Ergebnis im Bereich [-1, 1] (mathematisch ist es <-1, 1>).
+
+[[fblangref25-functions-scalarfuncs-trunc-de]]
+=== `TRUNC()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+TRUNC (_number_ [, _scale_])
+----
+
+[[fblangref25-funcs-tbl-trunc-de]]
+.``TRUNC``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Ausdruck eines numerischen Typs
+
+|
+|Eine Ganzzahl, die die Anzahl der Dezimalstellen angibt, auf die die Abschneidung angewendet werden soll, z.B.
+
+* {nbsp}2 zum Abschneiden auf das nächste Vielfache von 0,01
+* {nbsp}1 zum Abschneiden auf das nächste Vielfache von 0,1
+* {nbsp}0 zum Abschneiden auf die nächste ganze Zahl
+* -1 zum Abschneiden auf das nächste Vielfache von 10
+* -2 zum Abschneiden auf das nächste Vielfache von 100
+|===
+
+.Rückgabetyp
+``INTEGER``, (scaled) `BIGINT` or `DOUBLE PRECISION`
+
+.Beschreibung
+Gibt den ganzzahligen Teil einer Zahl zurück.
+Mit dem optionalen Argument _scale_ kann die Zahl anstelle von ganzen Zahlen auf Zehnerpotenzen (Zehner, Hunderter, Zehntel, Hundertstel usw.) abgeschnitten werden.
+
+.Hinweise
+* IWenn das Argument _scale_ vorhanden ist, hat das Ergebnis normalerweise die gleiche Genauigkeit wie das erste Argument, z.B.
+** `TRUNC(789.2225, 2)` ergibt 789.2200 (nicht 789.22)
+** `TRUNC(345.4, -2)` ergibt 300.0 (nicht 300)
+** `TRUNC(-163.41, 0)` ergibt -163.00 (nicht -163)
+* Andernfalls ist die Genauigkeit 0:
+** `TRUNC(-163.41)` ergibt -163
+
+[IMPORTANT]
+====
+Wenn Sie das Verhalten der http://www.firebirdsql.org/file/documentation/reference_manuals/reference_material/html/langrefupd25-udf-truncate.html[externen
+  Funktion TRUNCATE] untersuchen, beachten Sie bitte, dass die _interne_ Funktion `TRUNC` immer gegen Null abschneidet, d.h. aufwärts für negative Zahlen.
+====
+
+[[fblangref25-functions-string-de]]
+== String-Funktionen
+
+[[fblangref25-functions-scalarfuncs-ascii-char-de]]
+=== `ASCII_CHAR()`[[fblangref25-functions-scalarfuncs-ascii_char-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+ASCII_CHAR (_code_)
+----
+
+[[fblangref25-funcs-tbl-asciichar-de]]
+.`ASCII_CHAR` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|code
+|Eine Ganzzahl im Bereich von 0 bis 255
+|===
+
+.Rückgabetyp
+`CHAR(1) CHARACTER SET NONE`
+
+.Beschreibung
+Gibt das ASCII-Zeichen zurück, das der im Argument übergebenen Zahl entspricht.
+
+[IMPORTANT]
+====
+* Wenn Sie das Verhalten der UDF `ASCII_CHAR` gewohnt sind, die eine leere Zeichenfolge zurückgibt, wenn das Argument 0 ist, beachten Sie bitte, dass die interne Funktion hier korrekt ein Zeichen mit dem ASCII-Code 0 zurückgibt.
+====
+
+[[fblangref25-functions-scalarfuncs-ascii-val-de]]
+=== `ASCII_VAL()`[[fblangref25-functions-scalarfuncs-ascii_val-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+ASCII_VAL (_ch_)
+----
+
+[[fblangref25-funcs-tbl-asciival-de]]
+.`ASCII_VAL` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|ch
+|Eine Zeichenfolge des Datentyps [VAR]CHAR oder ein Text-BLOB mit der maximalen Größe von 32.767 Byte
+|===
+
+.Rückgabetyp
+`SMALLINT`
+
+.Beschreibung
+Gibt den ASCII-Code des übergebenen Zeichens zurück.
+
+* Wenn das Argument eine Zeichenfolge mit mehr als einem Zeichen ist, wird der ASCII-Code des ersten Zeichens zurückgegeben.
+* Wenn das Argument eine leere Zeichenfolge ist, wird 0 zurückgegeben.
+* Wenn das Argument `NULL` ist, wird `NULL` zurückgegeben.
+* Wenn das erste Zeichen der Argument-Zeichenfolge multi-Byte ist, wird ein Fehler ausgelöst.
+(Ein Fehler in Firebird 2.1 - 2.1.3 und 2.5 führt dazu, dass ein Fehler ausgelöst wird, wenn _irgendein_ Zeichen in der Zeichenfolge Multibyte ist.
+Dies ist in den Versionen 2.1.4 und 2.5.1 behoben.)
+
+[[fblangref25-functions-scalarfuncs-bit-length-de]]
+=== `BIT_LENGTH()`[[fblangref25-functions-scalarfuncs-bit_length-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+BIT_LENGTH (_string_)
+----
+
+[[fblangref25-funcs-tbl-bitlength-de]]
+.`BIT_LENGTH` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Ein Ausdruck eines Zeichenfolgetyps
+|===
+
+.Rückgabetyp
+`INTEGER`
+
+.Beschreibung
+Gibt die Länge in Bits der Eingabezeichenfolge an.
+Bei Multi-Byte-Zeichensätzen ist dies möglicherweise weniger als die Anzahl der Zeichen mal 8 mal die "`formale`" Anzahl der Bytes pro Zeichen wie in `RDB$CHARACTER_SETS`.
+
+[NOTE]
+====
+Bei Argumenten vom Typ `CHAR` berücksichtigt diese Funktion die gesamte Länge der formalen Zeichenfolge (z.B. die deklarierte Länge eines Felds oder einer Variablen).
+Wenn Sie die "`logische`" Bitlänge erhalten möchten, ohne die nachfolgenden Leerzeichen zu zählen, schneiden sie das Argument mittels <<fblangref25-functions-scalarfuncs-trim-de,`TRIM`>> rechtsseitig ab, bevor Sie es an `BIT_LENGTH` übergeben.
+====
+
+.``BLOB``-Unterstützung
+Seit Firebird 2.1 unterstützt diese Funktion vollständig Text ``BLOB``s beliebiger Länge und Zeichensatz.
+
+.Beispiele
+[source]
+----
+select bit_length('Hello!') from rdb$database
+-- ergibt 48
+
+select bit_length(_iso8859_1 'Grüß di!') from rdb$database
+-- ergibt 64: ü und ß nehmen je ein Byte in Anspruc in ISO8859_1
+
+select bit_length
+  (cast (_iso8859_1 'Grüß di!' as varchar(24) character set utf8))
+from rdb$database
+-- ergibt 80: ü und ß belegen je zwei Bytes in UTF8
+
+select bit_length
+  (cast (_iso8859_1 'Grüß di!' as char(24) character set utf8))
+from rdb$database
+-- ergibt 208: alle 24 CHAR-Positionen zählen ud zwei von ihnen haben 16 Bit.
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-octet-length-de>>, <<fblangref25-functions-scalarfuncs-char-length-de>>
+
+[[fblangref25-functions-scalarfuncs-char-length-de]]
+=== ``CHAR_LENGTH()``, `CHARACTER_LENGTH()`[[fblangref25-functions-scalarfuncs-char_length-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+  CHAR_LENGTH (_string_)
+| CHARACTER_LENGTH (_string_)
+----
+
+[[fblangref25-funcs-tbl-charlength-de]]
+.`CHAR[ACTER]_LENGTH` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Ein Ausdruck eines Zeichenfolgetyps
+|===
+
+.Rückgabetyp
+`INTEGER`
+
+.Beschreibung
+Gibt die Länge der Zeichen der Eingabezeichenfolge an.
+
+.Hinweise
+[NOTE]
+====
+* Mit Argumenten vom Typ `CHAR` gibt diese Funktion die formale Stringlänge (d.h. die deklarierte Länge eines Felds oder einer Variablen) zurück.
+Wenn Sie die "`logische`" Länge erhalten möchten, ohne die nachfolgenden Leerzeichen zu zählen, <<fblangref25-functions-scalarfuncs-trim-de,`TRIM`>> das Argument, bevor es an `CHAR[ACTER]_LENGTH` übergeben wird.
+* *``BLOB``-Untersützung*: Seit Firebird 2.1 unterstützt diese Funktion Text-``BLOB``s beliebiger Länge und beliebiger Zeichensätze.
+====
+
+.Beispiele
+[source]
+----
+select char_length('Hello!') from rdb$database
+-- ergibt 6
+
+select char_length(_iso8859_1 'Grüß di!') from rdb$database
+-- ergibt 8
+
+select char_length
+  (cast (_iso8859_1 'Grüß di!' as varchar(24) character set utf8))
+from rdb$database
+-- ergibt 8; die Tatsache, dass ü und ß jeweils zwei Bytes belegen, ist irrelevant
+
+select char_length
+  (cast (_iso8859_1 'Grüß di!' as char(24) character set utf8))
+from rdb$database
+-- ergibt 24: alle 24 CHAR-Positionen zählen
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-bit-length-de>>, <<fblangref25-functions-scalarfuncs-octet-length-de>>
+
+[[fblangref25-functions-scalarfuncs-hash-de]]
+=== `HASH()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+HASH (_string_)
+----
+
+[[fblangref25-funcs-tbl-hash-de]]
+.`HASH` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Ein Ausdruck eines Zeichenfolgetyps
+|===
+
+.Beschreibung
+Gibt einen Hash-Wert für die Eingabezeichenfolge zurück.
+Diese Funktion unterstützt vollständig Text-``BLOB``s beliebiger Länge und beliebige Zeichensätze.
+
+.Rückgabetyp
+`BIGINT`
+
+[[fblangref25-functions-scalarfuncs-left-de]]
+=== `LEFT()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+LEFT (_string_, _length_)
+----
+
+[[fblangref25-funcs-tbl-left-de]]
+.``LEFT``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Ein Ausdruck eines Zeichenfolgetyps
+
+|number
+|Ganze Zahl.
+Definiert die Anzahl der zurückzugebenden Zeichen
+|===
+
+.Rückgabetyp
+`VARCHAR` or `BLOB`
+
+.Beschreibung
+Gibt den äußersten linken Teil der Argument-Zeichenfolge zurück.
+Die Anzahl der Zeichen ist im zweiten Argument angegeben.
+
+* Diese Funktion unterstützt vollständig Text``BLOB``s beliebiger Länge, einschließlich solcher mit einem Multi-Byte-Zeichensatz.
+* Falls _string_ ein `BLOB` ist, ist das Ergebnis ein `BLOB`.
+Andernfalls ist das Ergebnis ein `VARCHAR(__n__)`, wobei _n_ die Länge der Eingabezeichenfolge ist.
+* Wenn das Argument _length_ die Länge der Zeichenfolge überschreitet, wird die Eingabezeichenfolge unverändert zurückgegeben.
+* Wenn das Argument _length_ keine Ganzzahl ist, wird kaufmännisch gerundet, z.B. wird 0.5 zu 0, 1.5 wird zu 2, 2.5 wird zu 2, 3.5 wird zu 4, etc.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-right-de>>
+
+[[fblangref25-functions-scalarfuncs-lower-de]]
+=== `LOWER()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<lowernote-de,>siehe Details unten>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+LOWER (_string_)
+----
+
+[[fblangref25-funcs-tbl-lower-de]]
+.`LOWER` FunktionsparameterS
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Ein Ausdruck eines Zeichenfolgetyps
+|===
+
+.Rückgabetyp
+`(VAR)CHAR` or `BLOB`
+
+.Beschreibung
+Gibt das Kleinbuchstabenäquivalent der Eingabezeichenfolge zurück.
+Das genaue Ergebnis hängt vom Zeichensatz ab.
+Bei `ASCII` oder `NONE` zum Beispiel sind nur ASCII-Zeichen kleiner;
+mit `OCTETS` wird die gesamte Zeichenfolge unverändert zurückgegeben.
+Seit Firebird 2.1 unterstützt diese Funktion auch vollständig Text-``BLOB``s beliebiger Länge und Zeichensatzes.
+
+[[lowernote-de]]
+.Namenskonflikt
+[NOTE]
+====
+Da `LOWER` ein reserviertes Wort ist, hat die interne Funktion Vorrang, auch wenn die externe Funktion mit diesem Namen ebenfalls deklariert wurde.
+Um die (untergeordnete!) externe Funktion aufzurufen, verwenden Sie doppelte Anführungszeichen und die genaue Großschreibung, wie in `"LOWER"(__str__)`.
+====
+
+.Beispiel
+[source]
+----
+select Sheriff from Towns
+  where lower(Name) = 'cooper''s valley'
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-upper-de>>
+
+[[fblangref25-functions-scalarfuncs-lpad-de]]
+=== `LPAD()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+LPAD (_str_, _endlen_ [, _padstr_])
+----
+
+[[fblangref25-funcs-tbl-lpad-de]]
+.``LPAD``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|str
+|Ein Ausdruck eines Zeichenfolgetyps
+
+|endlen
+|Länge der Ausgabezeichenfolge
+
+|padstr
+|Das Zeichen oder die Zeichenfolge, die zum Auffüllen der Quellzeichenfolge bis zur angegebenen Länge verwendet werden soll.
+Standard ist Leerzeichen ("```' '```")
+|===
+
+.Rückgabetyp
+`VARCHAR` oder `BLOB`
+
+.Beschreibung
+Füllt eine Zeichenfolge linksseitig mit Leerzeichen oder mit einer benutzerdefinierten Zeichenfolge, bis eine bestimmte Länge erreicht ist.
+
+* Diese Funktion unterstützt vollständig Text-``BLOB``s beliebiger Länge und Zeichensätze.
+* Wenn _str_ ein `BLOB` ist, ist das Ergebnis ebenfalls ein `BLOB`.
+Andernfalls ist das Ergebnis ein `VARCHAR(__endlen__)`.
+* Wenn _padstr_ angegeben wurde und gleich `''`  (Leeres Zeichen) ist, findet kein Auffüllen statt.
+* Ist _endlen_ kleiner als die aktuelle Länge der Zeichenkette, wird die Zeichenkette auf _endlen_ Zeichen abgeschnitten, auch wenn _padstr_ ein leeres Zeichen ist.
+
+[NOTE]
+====
+In Firebird 2.1 2.1.3 waren alle Nicht-``BLOB``-Ergebnisse vom Typ `VARCHAR(32765)`, was es ratsam machte, sie auf eine bescheidenere Größe zu übertragen.
+Dies ist nicht mehr der Fall.
+====
+
+[WARNING]
+====
+Wenn diese Funktion in einem `BLOB` verwendet wird, muss diese Funktion möglicherweise das gesamte Objekt in den Speicher laden.
+Es wird zwar versucht, den Speicherverbrauch zu begrenzen, dies kann jedoch die Leistung beeinträchtigen, wenn riesige ``BLOB``s beteiligt sind.
+====
+
+.Beispiele
+[source]
+----
+lpad ('Hello', 12)               -- ergibt '       Hello'
+lpad ('Hello', 12, '-')          -- ergibt '-------Hello'
+lpad ('Hello', 12, '')           -- ergibt 'Hello'
+lpad ('Hello', 12, 'abc')        -- ergibt 'abcabcaHello'
+lpad ('Hello', 12, 'abcdefghij') -- ergibt 'abcdefgHello'
+lpad ('Hello', 2)                -- ergibt 'He'
+lpad ('Hello', 2, '-')           -- ergibt 'He'
+lpad ('Hello', 2, '')            -- ergibt 'He'
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-rpad-de>>
+
+[[fblangref25-functions-scalarfuncs-octet-length-de]]
+=== `OCTET_LENGTH()`[[fblangref25-functions-scalarfuncs-octet_length-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+OCTET_LENGTH (_string_)
+----
+
+[[fblangref25-funcs-tbl-octetlength-de]]
+.`OCTET_LENGTH` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Ein Ausdruck eines Zeichenfolgetyps
+|===
+
+.Rückgabetyp
+`INTEGER`
+
+.Beschreibung
+Gibt die Länge in Bytes (Oktetts) der Eingabezeichenfolge an.
+Bei Multi-Byte-Zeichensätzen ist dies möglicherweise weniger als die Anzahl der Zeichen mal der "`formalen`"Anzahl der Bytes pro Zeichen, wie in `RDB$CHARACTER_SETS` gefunden.
+
+[NOTE]
+====
+Bei Argumenten vom Typ `CHAR` berücksichtigt diese Funktion die gesamte Länge der formalen Zeichenfolge (z.B. die deklarierte Länge eines Felds oder einer Variablen).
+Wenn Sie die "`logische`" Byte-Länge erhalten möchten, ohne die nachfolgenden Leerzeichen zu zählen, <<fblangref25-functions-scalarfuncs-trim-de,beschneiden Sie die Zeichenfolge mittels `TRIM`>>, bevor sie diese an `OCTET_LENGTH` übergeben wird.
+====
+
+.`BLOB` support
+Diese Funktion unterstützt vollständig Text-``BLOB``s beliebiger Länge und Zeichensätze.
+
+.Beispiele
+[source]
+----
+select octet_length('Hello!') from rdb$database
+-- ergibt 6
+
+select octet_length(_iso8859_1 'Grüß di!') from rdb$database
+-- ergibt 8: ü und ß belegen ein Byte pro Zeichen in ISO8859_1
+
+select octet_length
+  (cast (_iso8859_1 'Grüß di!' as varchar(24) character set utf8))
+from rdb$database
+-- ergibt 10: ü und ß belegen zwei Bytes je Zeichen in UTF8
+
+select octet_length
+  (cast (_iso8859_1 'Grüß di!' as char(24) character set utf8))
+from rdb$database
+-- ergibt 26: alle 24 CHAR-Positionen zählen, und zwei Zeichen belegen 2 Bytes
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-bit-length-de>>, <<fblangref25-functions-scalarfuncs-char-length-de>>
+
+[[fblangref25-functions-scalarfuncs-overlay-de]]
+=== `OVERLAY()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+OVERLAY (_string_ PLACING _replacement_ FROM _pos_ [FOR _length_])
+----
+
+[[fblangref25-funcs-tbl-overlay-de]]
+.``OVERLAY``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Die Zeichenfolge, in die der Austausch stattfindet
+
+|replacement
+|Ersatzzeichenfolge
+
+|pos
+|Die Position, von der aus der Austausch stattfindet (Startposition)
+
+|length
+|Die Anzahl der Zeichen, die überschrieben werden sollen
+|===
+
+.Rückgabetyp
+`VARCHAR` or `BLOB`
+
+.Beschreibung
+`OVERLAY()` überschreibt einen Teil einer Zeichenfolge mit einer anderen Zeichenfolge.
+Standardmäßig ist die Anzahl der Zeichen, die aus der Host-Zeichenfolge entfernt (überschrieben) werden, gleich der Länge der Ersatzzeichenfolge.
+Mit dem optionalen vierten Argument kann eine andere Anzahl von Zeichen zum Entfernen angegeben werden.
+
+* Diese Funktion unterstütz ``BLOB``s beliebiger Länge.
+* Wenn _string_ oder _replacement_ ein `BLOB` ist, ist das Ergebnis ebenfalls ein `BLOB`.
+Andernfalls ist das Ergebnisd ein `VARCHAR(__n__)` wobei _n_ die Summe der Längen von _string_ und _replacement_ bildet.
+* Wie üblich in SQL-String-Funktionen ist _pos_ 1-basierend
+* Ist _pos_ hinter dem Ende von _string_, wird _replacement_ direkt hinter _string_ platziert.
+* Ist die Anzahl der Zeichen von _pos_ bis zum Ende von _string_ kleiner als die Länge von _replacement_ (oder als Argument _length_, falls vorhanden), wird _string_ an Stelle _pos_ abgeschnitten und _replacement_ direkt dahinter platziert.
+* Der Effekt einer "```FOR 0```"-Klausel ist, dass _replacement_ einfach in _string_ eingesetzt wird.
+* Ist eines der Argumente `NULL` ist, ist das Ergebnis ebenfalls `NULL`.
+* Wenn _pos_ oder _length_ keine Ganzzahl ist, wird kaufmännisch gerundet, d.h. 0.5 wird 0, 1.5 wird 2, 2.5 wird 2, 3.5 wird 4, etc.
+
+.Beispiele
+[source]
+----
+overlay ('Goodbye' placing 'Hello' from 2)   -- ergibt 'GHelloe'
+overlay ('Goodbye' placing 'Hello' from 5)   -- ergibt 'GoodHello'
+overlay ('Goodbye' placing 'Hello' from 8)   -- ergibt 'GoodbyeHello'
+overlay ('Goodbye' placing 'Hello' from 20)  -- ergibt 'GoodbyeHello'
+
+overlay ('Goodbye' placing 'Hello' from 2 for 0) -- e. 'GHellooodbye'
+overlay ('Goodbye' placing 'Hello' from 2 for 3) -- e. 'GHellobye'
+overlay ('Goodbye' placing 'Hello' from 2 for 6) -- e. 'GHello'
+overlay ('Goodbye' placing 'Hello' from 2 for 9) -- e. 'GHello'
+
+overlay ('Goodbye' placing '' from 4)        -- ergibt 'Goodbye'
+overlay ('Goodbye' placing '' from 4 for 3)  -- ergibt 'Gooe'
+overlay ('Goodbye' placing '' from 4 for 20) -- ergibt 'Goo'
+
+overlay ('' placing 'Hello' from 4)          -- ergibt 'Hello'
+overlay ('' placing 'Hello' from 4 for 0)    -- ergibt 'Hello'
+overlay ('' placing 'Hello' from 4 for 20)   -- ergibt 'Hello'
+----
+
+[WARNING]
+====
+Wenn in einem `BLOB` verwendet, muss die Funktion das gesamte Objekt in den Speicher laden.
+Dies kann die Leistung beeinflussen, wenn große ``BLOB``s genutzt werden.
+====
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-replace-de>>
+
+[[fblangref25-functions-scalarfuncs-position-de]]
+=== `POSITION()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+  POSITION (_substr_ IN _string_)
+| POSITION (_substr_, _string_ [, _startpos_])
+----
+
+[[fblangref25-funcs-tbl-position-de]]
+.``POSITION``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|substr
+|Der Teilstring, dessen Position gesucht werden soll
+
+|string
+|Die Zeichenfolge, die durchsucht werden soll
+
+|startpos
+|Die Position in _string_, in der die Suche beginnen soll
+|===
+
+.Rückgabetyp
+`INTEGER`
+
+.Beschreibung
+Gibt die (1-basierte) Position des ersten Vorkommens einer Teilzeichenfolge in einer Hostzeichenfolge zurück.
+Mit dem optionalen dritten Argument beginnt die Suche bei einem gegebenen Offset, wobei etwaige Übereinstimmungen unberücksichtigt bleiben, die früher in der Zeichenfolge auftreten können.
+Wenn keine Übereinstimmung gefunden wird, ist das Ergebnis 0.
+
+.Hinweise
+* Das optionale Argument wird nur in der zweiten Syntax (Kommasyntax) unterstützt.
+* Die leere Zeichenfolge wird als Teilzeichenfolge jeder Zeichenfolge betrachtet.
+Wenn _substr_ gleich `''` (leerer String) ist und ist _string_ ungleich `NULL`, ergibt dies:
+** 1 wenn _startpos_ nicht übergeben wurde;
+** _startpos_ wenn _startpos_ innerhalb _string_ liegt;
+** 0 wenn _startpos_ hinter dem Ende von _string_ liegt.
+
++
+**Hinweis:** Ein Bug in Firebird 2.1 - 2.1.3 und 2.5 bewirken, dass `POSITION` _immer_ 1 zurückgibt, wenn _substr_ ein Leerstring ist.
+Dies wurde in 2.1.4 und 2.5.1 gefixt.
+* Diese Funktion unterstützt Text-``BLOBS``s beliebiger Größe und Zeichensatzes.
+
+.Beispiele
+[source]
+----
+position ('be' in 'To be or not to be')   -- ergibt 4
+position ('be', 'To be or not to be')     -- ergibt 4
+position ('be', 'To be or not to be', 4)  -- ergibt 4
+position ('be', 'To be or not to be', 8)  -- ergibt 17
+position ('be', 'To be or not to be', 18) -- ergibt 0
+position ('be' in 'Alas, poor Yorick!')   -- ergibt 0
+----
+
+[WARNING]
+====
+Wenn diese Funktion in einem `BLOB` verwendet wird, muss diese Funktion möglicherweise das gesamte Objekt in den Speicher laden.
+Dies kann sich auf die Leistung auswirken, wenn riesige `BLOB` beteiligt sind.
+====
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-substring-de>>
+
+[[fblangref25-functions-scalarfuncs-replace-de]]
+=== `REPLACE()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+REPLACE (_str_, _find_, _repl_)
+----
+
+[[fblangref25-funcs-tbl-replace-de]]
+.``REPLACE``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|str
+|Die Zeichenfolge, in der der Austausch stattfinden soll
+
+|find
+|Die Zeichenfolge, nach der gesucht werden soll
+
+|repl
+|Die Ersatzzeichenfolge
+|===
+
+.Rückgabetyp
+`VARCHAR` or `BLOB`
+
+.Beschreibung
+Ersetzt alle Vorkommen einer Teilzeichenfolge in einer Zeichenfolge.
+
+* Diese Funktion unterstützt Text-``BLOBS``s beliebiger Größe und Zeichensatzes.
+* Wenn eines der Argumente ein `BLOB` ist, ist das Ergebnis ebenfalls ein `BLOB`.
+Andernfalls ist das Ergebnis ein `VARCHAR(__n__)` mit _n_ berechnet aus den Längen von _str_, _find_ und _repl_ in der Form, dass sogar die größtmögliche Anzahl an Ersetzungen das Feld nicht überschreiten würde.`
+* Wenn _find_ ein leerer String ist, bleibt _str_ unverändert.
+* Wenn _repl_ ein Leerstring ist, werden alle Vorkommen von _find_ in _str_ entfernt.
+* Ist ein Argument `NULL`, wird das Ergebnis immer `NULL` sein, auch wenn nichts ersetzt würde.
+
+.Beispiele
+[source]
+----
+replace ('Billy Wilder',  'il', 'oog') -- ergibt 'Boogly Woogder'
+replace ('Billy Wilder',  'il',    '') -- ergibt 'Bly Wder'
+replace ('Billy Wilder',  null, 'oog') -- ergibt NULL
+replace ('Billy Wilder',  'il',  null) -- ergibt NULL
+replace ('Billy Wilder', 'xyz',  null) -- ergibt NULL (!)
+replace ('Billy Wilder', 'xyz', 'abc') -- ergibt 'Billy Wilder'
+replace ('Billy Wilder',    '', 'abc') -- ergibt 'Billy Wilder'
+----
+
+[WARNING]
+====
+Wenn diese Funktion in einem `BLOB` verwendet wird, muss diese Funktion möglicherweise das gesamte Objekt in den Speicher laden.
+Dies kann sich auf die Leistung auswirken, wenn riesige `BLOB` beteiligt sind.
+====
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-overlay-de>>, <<fblangref25-functions-scalarfuncs-substring-de>>, <<fblangref25-functions-scalarfuncs-position-de>>, <<fblangref25-functions-scalarfuncs-char-length-de>>
+
+[[fblangref25-functions-scalarfuncs-reverse-de]]
+=== `REVERSE()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+REVERSE (_string_)
+----
+
+[[fblangref25-funcs-tbl-reverse-de]]
+.`REVERSE` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Ein Ausdruck eines Zeichenfolgetyps
+|===
+
+.Rückgabetyp
+`VARCHAR`
+
+.Beschreibung
+Kehrt eine Zeichenfolge zurück.
+
+.Beispiele
+[source]
+----
+reverse ('spoonful')            -- ergibt 'lufnoops'
+reverse ('Was it a cat I saw?') -- ergibt '?was I tac a ti saW'
+----
+
+[TIP]
+====
+Diese Funktion ist sehr nützlich, wenn Sie Stringendungen, z.B. bei Domain-Namen oder E-Mail-Adressen:
+
+[source]
+----
+create index ix_people_email on people
+  computed by (reverse(email));
+
+select * from people
+  where reverse(email) starting with reverse('.br');
+----
+====
+
+[[fblangref25-functions-scalarfuncs-right-de]]
+=== `RIGHT()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listingstring]
+----
+RIGHT (_string_, _length_)
+----
+
+[[fblangref25-funcs-tbl-right-de]]
+.``RIGHT``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|string
+|Ein Ausdruck eines Zeichenfolgetyps
+
+|length
+|Ganze Zahl.
+Definiert die Anzahl der zurückzugebenden Zeichen
+|===
+
+.Rückgabetyp
+`VARCHAR` or `BLOB`
+
+.Beschreibung
+Gibt den rechten Teil der Argument-Zeichenfolge zurück.
+Die Anzahl der Zeichen ist im zweiten Argument angegeben.
+
+* Diese Funktion unterstützt Text ``BLOB``s beliebiger Länge, aber hat einen Fehler in den Versionen 2.1 - 2.1.3 und 2.5.0, der es scheitert mit Text ``BLOB``s größer als 1024 Bytes die einen Multi-Byte-Zeichensatz haben.
+Dies wurde in den Versionen 2.1.4 und 2.5.1 behoben.
+* Ist _string_ ein `BLOB`, ist das Ergebnis ebenfalls ein `BLOB`.
+Andernfalls ist das Ergebnis ein `VARCHAR(__n__)`, wobei _n_ die Länge der Eingabezeichenfolge ist.
+* Wenn das Argument _length_ die Länge der Zeichenfolge überschreitet, wird die Eingabezeichenfolge unverändert zurückgegeben.
+* Ist das Argument _length_ keine Ganzzahl, wird kaufmännisch gerundet, d.h. 0.5 wird 0, 1.5 wird 2, 2.5 wird 2, 3.5 wird 4, etc.
+
+[WARNING]
+====
+Wenn diese Funktion in einem `BLOB` verwendet wird, muss diese Funktion möglicherweise das gesamte Objekt in den Speicher laden.
+Dies kann sich auf die Leistung auswirken, wenn riesige `BLOB` beteiligt sind.
+====
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-left-de>>, <<fblangref25-functions-scalarfuncs-substring-de>>
+
+[[fblangref25-functions-scalarfuncs-rpad-de]]
+=== `RPAD()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Geändert in
+2.5 (backported to 2.1.4)
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+RPAD (_str_, _endlen_ [, _padstr_])
+----
+
+[[fblangref25-funcs-tbl-rpad-de]]
+.RPAD-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|str
+|Ein Ausdruck eines Zeichenfolgetyps
+
+|endlen
+|Länge der Ausgabezeichenfolge
+
+|padstr
+|Das Zeichen oder die Zeichenfolge, die zum Auffüllen der Quellzeichenfolge bis zur angegebenen Länge verwendet werden soll.
+Standard ist Leerzeichen ("```' '```")
+|===
+
+.Rückgabetyp
+`VARCHAR` or `BLOB`
+
+.Beschreibung
+Füllt eine Zeichenfolge rechtsseitig mit Leerzeichen oder mit einer benutzerdefinierten Zeichenfolge, bis eine bestimmte Länge erreicht ist.
+
+* Diese Funktion unterstützt vollständig Text-``BLOB``s beliebiger Länge und Zeichensätze.
+* Wenn _str_ ein `BLOB` ist, ist das Ergebnis ebenfalls ein `BLOB`.
+Andernfalls ist das Ergebnis ein `VARCHAR(_endlen_)`.
+* Wenn _padstr_ angegeben wurde und gleich `''` (Leeres Zeichen) ist, findet kein Auffüllen statt.
+* Ist _endlen_ kleiner als die aktuelle Länge der Zeichenkette, wird die Zeichenkette auf _endlen_ Zeichen abgeschnitten, auch wenn _padstr_ ein leeres Zeichen ist.
+
+[NOTE]
+====
+In Firebird 2.1 - 2.1.3 waren alle Nicht-BLOB-Ergebnisse vom Typ `VARCHAR(32765)`, was es ratsam machte, sie auf eine bescheidenere Größe zu übertragen.
+Dies ist nicht mehr der Fall.
+====
+
+.Beispiele
+[source]
+----
+rpad ('Hello', 12)               -- ergibt 'Hello       '
+rpad ('Hello', 12, '-')          -- ergibt 'Hello-------'
+rpad ('Hello', 12, '')           -- ergibt 'Hello'
+rpad ('Hello', 12, 'abc')        -- ergibt 'Helloabcabca'
+rpad ('Hello', 12, 'abcdefghij') -- ergibt 'Helloabcdefg'
+rpad ('Hello', 2)                -- ergibt 'He'
+rpad ('Hello', 2, '-')           -- ergibt 'He'
+rpad ('Hello', 2, '')            -- ergibt 'He'
+----
+
+[WARNING]
+====
+Wenn diese Funktion in einem `BLOB` verwendet wird, muss diese Funktion möglicherweise das gesamte Objekt in den Speicher laden.
+Dies kann sich auf die Leistung auswirken, wenn riesige `BLOB` beteiligt sind.
+====
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-lpad-de>>
+
+[[fblangref25-functions-scalarfuncs-substring-de]]
+=== `SUBSTRING()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Geändert in
+2.5.1
+
+.Syntax
+[listing,subs=+quotes]
+----
+SUBSTRING (_str_ FROM _startpos_ [FOR _length_])
+----
+
+[[fblangref25-funcs-tbl-substring-de]]
+.``SUBSTRING``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|str
+|Ein Ausdruck eines Zeichenfolgetyps
+
+|startpos
+|Integer-Ausdruck, die Position, von der aus der Teilstring abgerufen werden soll
+
+|length
+|Die Anzahl der Zeichen, die nach _startpos_ liegen
+|===
+
+.Rückgabetypen
+`VARCHAR` oder `BLOB`
+
+.Beschreibung
+Die Anzahl der abzurufenden Zeichen nach dem Zurückgeben der Teilzeichenfolge einer Zeichenfolge beginnend an der angegebenen Position, entweder bis zum Ende der Zeichenfolge oder mit einer bestimmten Länge.
+
+Diese Funktion gibt den Teilstring zurück, der an der Zeichenposition _startpos_ beginnt (die erste Position ist 1).
+Ohne das Argument `FOR` werden alle verbleibenden Zeichen in der Zeichenfolge zurückgegeben.
+Mit `FOR` werden _length_ Zeichen oder der Rest der Zeichenfolge zurückgegeben, je nachdem, welcher Wert kürzer ist.
+
+In Firebird 1.x müssen _startpos_ und _length_ Integer-Literale sein.
+In 2.0 und höher können sie beliebige gültige Integer-Ausdrücke sein.
+
+Ab Firebird 2.1 unterstützt diese Funktion vollständig binäre und text ``BLOB``s beliebiger Länge und Zeichensatz.
+Wenn _str_ ein `BLOB` ist, ist das Ergebnis auch ein `BLOB`.
+Für alle anderen Argumenttypen ist das Ergebnis eine `VARCHAR`.
+Zuvor war der Ergebnistyp `CHAR, wenn das Argument eine `CHAR` oder ein String-Literal.
+
+Für nicht-``BLOB``-Agumente entspricht die Breite des Ergebnisfelds immer der Länge von _str_, unabhängig von _startpos_ und _length_.
+Also, `substring ('pinhead' von 4 für 2)` gibt eine `VARCHAR (7)` zurück, die die Zeichenkette `'he'` enthält.
+
+Ist ein Argument `NULL`, ist das Ergebnis `NULL`.
+
+.Bugs
+[WARNING]
+====
+* Wenn _str_ ein `BLOB` ist und das _length_ Argument nicht vorhanden ist, ist die Ausgabe auf 32767 Zeichen begrenzt.
+Problemumgehung: Geben Sie bei langen `BLOB` immer `char_length(__str__)` -- oder eine ausreichend hohe Ganzzahl -- als drittes Argument an, es sei denn, Sie sind sicher, dass die angeforderte Teilzeichenfolge darin passt 32767 Zeichen.
++
+Dieser Fehler wurde in Version 2.5.1 behoben.
+Der Fix wurde auch nach 2.1.5 zurückportiert.
+* Ein älterer Fehler in Firebird 2.0, der dazu führte, dass die Funktion "`false emptystrings`" zurückgab, wenn _startpos_ oder _length_ `NULL` war, wurde behoben.
+====
+
+.Beispiel
+[source]
+----
+insert into AbbrNames(AbbrName)
+  select substring(LongName from 1 for 3) from LongNames
+----
+
+[WARNING]
+====
+Wenn diese Funktion in einem `BLOB` verwendet wird, muss diese Funktion möglicherweise das gesamte Objekt in den Speicher laden.
+Dies kann sich auf die Leistung auswirken, wenn riesige `BLOB` beteiligt sind.
+====
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-position-de>>, <<fblangref25-functions-scalarfuncs-left-de>>, <<fblangref25-functions-scalarfuncs-right-de>>, <<fblangref25-functions-scalarfuncs-char-length-de>>
+
+[[fblangref25-functions-scalarfuncs-trim-de]]
+=== `TRIM()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+TRIM ([<adjust>] _str_)
+
+<adjust> ::=  {[<where>] [_what_]} FROM
+
+<where> ::=  BOTH | LEADING | TRAILING
+----
+
+[[fblangref25-funcs-tbl-trim-de]]
+.``TRIM``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|str
+|Ein Ausdruck eines Zeichenfolgetyps
+
+|where
+|Die Position, von der der Teilstring entfernt werden soll -- `BOTH` {vbar} `LEADING` {vbar} TRAILING.
+`BOTH` ist der Standard
+
+|what
+|Der Teilstring, der entfernt werden soll (mehrfach, wenn mehrere Übereinstimmungen vorkommen) vom Anfang, dem Ende, oder beider Seiten des Eingabestrings _str_.
+Standard ist das Leerzeichen (`' '`)
+|===
+
+.Rückgabetyp
+`VARCHAR` or `BLOB`
+
+.Beschreibung
+Entfernt führende und / oder nachgestellte Leerzeichen (oder optional andere Zeichenfolgen) aus der Eingabezeichenfolge.
+Seit Firebird 2.1 unterstützt diese Funktion vollständig Text ``BLOB``s beliebiger Länge und Zeichensatzes.
+
+.Beispiele
+[source]
+----
+select trim ('  Waste no space   ') from rdb$database
+-- ergibt 'Waste no space'
+
+select trim (leading from '  Waste no space   ') from rdb$database
+-- ergibt 'Waste no space   '
+
+select trim (leading '.' from '  Waste no space   ') from rdb$database
+-- ergibt '  Waste no space   '
+
+select trim (trailing '!' from 'Help!!!!') from rdb$database
+-- ergibt 'Help'
+
+select trim ('la' from 'lalala I love you Ella') from rdb$database
+-- ergibt ' I love you El'
+
+select trim ('la' from 'Lalala I love you Ella') from rdb$database
+-- ergibt 'Lalala I love you El'
+----
+
+.Hinweise
+* Wenn _str_ ein `BLOB` ist, ist das Ergebnis ein `BLOB`.
+Andernfalls ist das Ergebnis ein `VARCHAR(__n__)` mit der formalen Länge _n_ des Strings _str_.
+* Die zu entfernende Teilzeichenfolge darf, falls angegeben, nicht größer als 32767 Byte sein.
+Wenn diese Teilzeichenfolge jedoch _wiederholt_ an der Kopf- oder Endstelle von _str_ ist, kann die Gesamtzahl der entfernten Byte viel größer sein.
+(Die Einschränkung der Größe des Teilstrings wird in Firebird 3 aufgehoben.)
+
+[WARNING]
+====
+Wenn diese Funktion in einem `BLOB` verwendet wird, muss diese Funktion möglicherweise das gesamte Objekt in den Speicher laden.
+Dies kann sich auf die Leistung auswirken, wenn riesige `BLOB` beteiligt sind.
+====
+
+[[fblangref25-functions-scalarfuncs-upper-de]]
+=== `UPPER()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+UPPER (_str_)
+----
+
+[[fblangref25-funcs-tbl-upper-de]]
+.`UPPER` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|str
+|Ein Ausdruck eines Zeichenfolgetyps
+|===
+
+.Rückgabetyp
+`(VAR)CHAR` or `BLOB`
+
+.Beschreibung
+Gibt das Großbuchstabenäquivalent der Eingabezeichenfolge zurück.
+Das genaue Ergebnis hängt vom Zeichensatz ab.
+Bei `ASCII` oder `NONE` zum Beispiel sind nur ASCII-Zeichen größer;
+mit `OCTETS` wird die gesamte Zeichenfolge unverändert zurückgegeben.
+Seit Firebird 2.1 unterstützt diese Funktion auch vollständig Text-``BLOB``s beliebiger Länge und Zeichensatzes.
+
+.Beispiele
+[source]
+----
+select upper(_iso8859_1 'Débâcle')
+from rdb$database
+-- ergibt 'DÉBÂCLE' (before Firebird 2.0: 'DéBâCLE')
+
+select upper(_iso8859_1 'Débâcle' collate fr_fr)
+from rdb$database
+-- ergibt 'DEBACLE', following French uppercasing rules
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-lower-de>>
+
+[[fblangref25-functions-datetime-de]]
+== Datums- und Uhrzeitfunktionen
+
+[[fblangref25-functions-scalarfuncs-dateadd-de]]
+=== `DATEADD()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Geändert in
+2.5
+
+.Syntax
+[listing,subs=+quotes]
+----
+DATEADD (<args>)
+
+<args> ::=
+    <amount> <unit> TO <datetime>
+  | <unit>, <amount>, <datetime>
+
+<amount> ::= _an integer expression (negative to subtract)_
+<unit> ::=
+    YEAR | MONTH | WEEK | DAY
+  | HOUR | MINUTE | SECOND | MILLISECOND
+<datetime> ::= _a DATE, TIME or TIMESTAMP expression_
+----
+
+[[fblangref25-funcs-tbl-dateadd-de]]
+.``DATEADD``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|amount
+|Ein ganzzahliger Ausdruck vom Typ `SMALLINT`, `INTEGER` oder `BIGINT`.
+Ein negativer Wert wird subtrahiert
+
+|unit
+|Datums-/Zeit-Einheit
+
+|datetime
+|Ein Ausdruck der Typen `DATE`, `TIME` oder `TIMESTAMP`
+|===
+
+.Rückgabetyp
+`DATE`, `TIME` oder `TIMESTAMP`
+
+.Beschreibung
+Fügt einem Datum / Uhrzeit-Wert die angegebene Anzahl von Jahren, Monaten, Wochen, Tagen, Stunden, Minuten, Sekunden  oder Millisekunden hinzu.
+(Die ``WEEK``-Einheit ist neu in 2.5.)
+
+* Der Ergebnistyp wird durch das dritte Argument bestimmt.
+* Mit ``TIMESTAMP``- und ``DATE``-Argumenten können alle Einheiten verwendet werden.
+(Vor Firebird 2.5 waren Einheiten kleiner als `DAY` nicht erlaubt für ``DATE``s.)
+* Mit ``TIME``-Argumenten können nur `HOUR`, `MINUTE`, `SECOND` und `MILLISECOND` genutzt werden.
+
+.Beispiele
+[source]
+----
+dateadd (28 day to current_date)
+dateadd (-6 hour to current_time)
+dateadd (month, 9, DateOfConception)
+dateadd (-38 week to DateOfBirth)
+dateadd (minute, 90, time 'now')
+dateadd (? year to date '11-Sep-1973')
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-datediff-de>>,  <<fblangref25-datatypes-datetimeops-de,Operationen, die Datums- und Zeitfunktionen verwenden>>
+
+[[fblangref25-functions-scalarfuncs-datediff-de]]
+=== `DATEDIFF()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Geändert in
+2.5
+
+.Syntax
+[listing,subs=+quotes]
+----
+DATEDIFF (<args>)
+
+<args> ::=
+    <unit> FROM <moment1> TO <moment2>
+  | <unit>, <moment1>, <moment2>
+
+<unit> ::=
+    YEAR | MONTH | WEEK | DAY
+  | HOUR | MINUTE | SECOND | MILLISECOND
+<momentN> ::= _a DATE, TIME or TIMESTAMP expression_
+----
+
+[[fblangref25-funcs-tbl-datediff-de]]
+.``DATEDIFF``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|unit
+|Date/time unit
+
+|moment1
+|Ein Ausdruck eines ``DATE``-, ``TIME``- oder ``TIMESTAMP``-Typs
+
+|moment2
+|Ein Ausdruck eines ``DATE``-, ```TIME``- oder ``TIMESTAMP``-Typs
+|===
+
+.Rückgabetyp
+`BIGINT`
+
+.Beschreibung
+Gibt die Anzahl der Jahre, Monate, Wochen, Tage, Stunden, Minuten, Sekunden oder Millisekunden zurück, die zwischen zwei  Datums- / Uhrzeitwerten vergangen sind.
+(Die ``WEEK``-Einheit ist neu in 2.5.)
+
+* ``DATE``- und ``TIMESTAMP``-Argumente können kombiniert werden.
+Andere Kombinationen sind nicht erlaubt.
+* Mit ``TIMESTAMP``- und ``DATE``-Argumenten können alle Einheiten verwendet werden.
+(Vor Firebird 2.5 waren Einheiten kleiner als `DAY` nicht erlaubt für ``DATE``s.)
+* Mit ``TIME``-Argumenten können nur `HOUR`, `MINUTE`, `SECOND` und `MILLISECOND` genutzt werden.
+
+.Berechnung
+* `DATEDIFF` betrachtet keine kleineren Einheiten als die, die im ersten Argument angegeben wurden.
+Als Ergebnis,
+** `datediff (year, date '1-Jan-2009', date '31-Dec-2009')` ergibt 0, jedoch
+** `datediff (year, date '31-Dec-2009', date '1-Jan-2010')` ergibt 1
+* Es sieht jedoch alle _größeren_ Einheiten.
+Somit gilt:
+** `datediff (day, date '26-Jun-1908', date '11-Sep-1973')` ergibt 23818
+* Ein negatives Ergebnis gibt an, dass _moment2_ vor _moment1_ liegt.
+
+.Beispiele
+[source]
+----
+datediff (hour from current_timestamp to timestamp '12-Jun-2059 06:00')
+datediff (minute from time '0:00' to current_time)
+datediff (month, current_date, date '1-1-1900')
+datediff (day from current_date to cast(? as date))
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-dateadd-de>>, <<fblangref25-datatypes-datetimeops-de,Operations Using Date and Time Values>>
+
+[[fblangref25-functions-scalarfuncs-extract-de]]
+=== `EXTRACT()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+EXTRACT (<part> FROM <datetime>)
+
+<part> ::=
+    YEAR | MONTH | WEEK
+  | DAY | WEEKDAY | YEARDAY
+  | HOUR | MINUTE | SECOND | MILLISECOND
+<datetime> ::= _a DATE, TIME or TIMESTAMP expression_
+----
+
+[[fblangref25-funcs-tbl-extract-de]]
+.``EXTRACT``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|part
+|Datums- / Zeit-Einheit
+
+|datetime
+|Ein Ausdruck des DATE-, TIME- oder TIMESTAMP-Typs
+|===
+
+.Rückgabetyp
+`SMALLINT` oder `NUMERIC`
+
+.Beschreibung
+Extrahiert und gibt ein Element aus einem Ausdruck `DATE`,  `TIME` oder `TIMESTAMP` zurück.
+Diese Funktion wurde bereits in InterBase 6 hinzugefügt, aber zu diesem Zeitpunkt nicht in der [ref]_Sprachreferenz_ dokumentiert.
+
+[[fblangref25-functions-scalarfuncs-extract-types-de]]
+==== Zurückgegebene Datentypen und Bereiche
+
+Die zurückgegebenen Datentypen und möglichen Bereiche sind in der folgenden Tabelle aufgeführt.
+Wenn Sie versuchen, einen Teil zu extrahieren, der nicht im Argument Datum / Uhrzeit enthalten ist (z.B. `SECOND` aus einem ``DATE``- oder `YEAR` aus einem ``TIME``-Feld), tritt ein Fehler auf.
+
+[[fblangref25-tbl-extractranges-de]]
+.Typen und Bereiche der ``EXTRACT``-Ergebnisse
+[cols="<1m,<1m,<1,<2", options="header"]
+|===
+| Part
+| Type
+| Bereich
+| Beschreibung
+
+|YEAR
+|SMALLINT
+|1-9999
+|{nbsp}
+
+|MONTH
+|SMALLINT
+|1-12
+|{nbsp}
+
+|WEEK
+|SMALLINT
+|1-53
+|{nbsp}
+
+|DAY
+|SMALLINT
+|1-31
+|{nbsp}
+
+|WEEKDAY
+|SMALLINT
+|0-6
+|0 = Sonntag
+
+|YEARDAY
+|SMALLINT
+|0-365
+|0 = 1. Januar
+
+|HOUR
+|SMALLINT
+|0-23
+|{nbsp}
+
+|MINUTE
+|SMALLINT
+|0-59
+|{nbsp}
+
+|SECOND
+|NUMERIC(9,4)
+|0.0000-59.9999
+|enthält Millisekunde als Bruchteil
+
+|MILLISECOND
+|NUMERIC(9,1)
+|0.0-999.9
+|defekt in 2.1, 2.1.1
+|===
+
+[[fblangref25-functions-scalarfuncs-extract-millisecond-de]]
+==== `MILLISECOND`
+
+.Beschreibung
+Firebird 2.1 und höher unterstützen die Extraktion der Millisekunde aus `TIME` oder `TIMESTAMP`.
+Der zurückgegebene Datentyp ist `NUMERIC(9,1)`.
+
+[NOTE]
+====
+Wenn Sie Millisekunden aus <<fblangref25-contextvars-current-time-de>> extrahieren, beachten Sie, dass diese Variable starndardmäßig auf volle Sekunden auflöst, womit das Ergebnis immer 0 ist.
+Nutzen Sie `CURRENT_TIME(3)` oder <<fblangref25-contextvars-current-timestamp-de>> um Millisekundengenauigkeit zu erhalten.
+====
+
+[[fblangref25-functions-scalarfuncs-extract-week-de]]
+==== `WEEK`
+
+.Beschreibung
+Firebird 2.1 und höher unterstützen die Extraktion der ISO-8601-Wochennummer aus `DATUM` oder `TIMESTAMP`.
+ISO-8601 Wochen beginnen an einem Montag und haben immer die vollen sieben Tage.
+Woche 1 ist die erste Woche, die eine Mehrheit (mindestens 4) ihrer Tage im neuen Jahr hat.
+Die ersten 1-3 Tage des Jahres können zur letzten Woche (52 oder 53) des vorhergehenden Jahres gehören.
+Ebenso kann ein Jahr, das letzte 1-3 Tage, zur Woche 1 des folgenden Jahres gehören.
+
+[CAUTION]
+====
+Seien Sie vorsichtig, wenn Sie die Ergebnisse `WEEK` und `YEAR` kombinieren.
+Zum Beispiel liegt der 30. Dezember 2008 in Woche 1 von 2009, also `extract (Woche vom Datum '30 Dec 2008 ')` gibt 1 zurück.
+Extrahiert jedoch `YEAR` gibt immer das Kalenderjahr an, welches 2008 ist.
+In diesem Fall stehen `WEEK` und `YEAR` im Widerspruch zueinander.
+Das Gleiche passiert, wenn die ersten Januartage zur letzten Woche des Vorjahres gehören.
+
+Beachten Sie außerdem, dass `WEEKDAY` _nicht_  ISO-8601-kompatibel ist: Es gibt 0 für Sonntag zurück, während ISO-8601 7 angibt.
+====
+
+.Siehe auch
+<<fblangref25-datatypes-datetime-de,Datentypen für Datum und Zeit>>
+
+[[fblangref25-functions-casting-de]]
+== Funktionen zur Typumwandlung
+
+[[fblangref25-functions-scalarfuncs-cast-de]]
+=== `CAST()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Geändert in
+2.5
+
+.Syntax
+[listing,subs=+quotes]
+----
+CAST (<expression> AS <target_type>)
+
+<target_type>  ::=
+      <sql_datatype>
+    | [TYPE OF] _domain_
+    | TYPE OF COLUMN _relname_._colname_
+----
+
+[[fblangref25-funcs-tbl-cast-de]]
+.``CAST``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expression
+|SQL-Ausdruck
+
+|sql_datatype
+|SQL-Datentyp
+
+|domain
+|{nbsp}
+
+|relname
+|Name der Tabelle oder View
+
+|colname
+|Spaltenname eine Tabelle oder View
+|===
+
+.Rückgabetyp
+Benutzerdefiiert.
+
+.Beschreibung
+`CAST` konvertiert einen Ausdruck in den gewünschten Datentyp oder die gewünschte Domain.
+Wenn die Konvertierung nicht möglich ist, wird ein Fehler ausgelöst.
+
+[[fblangref25-functions-scalarfuncs-shortcast-de]]
+==== Syntax der "`Kurzschreibweise`"
+
+Alternative Syntax, die nur unterstützt wird, wenn ein Zeichenfolgenliteral an `DATE`, `TIME` oder `TIMESTAMP` übergeben wird:
+
+[source]
+----
+datatype 'date/timestring'
+----
+
+Diese Syntax war bereits in InterBase verfügbar, wurde aber nie richtig dokumentiert.
+Im SQL-Standard wird diese Funktion als "Datum / Uhrzeit-Literale" bezeichnet.
+
+[NOTE]
+====
+Die Kurzsyntax wird sofort zur Analysezeit ausgewertet, wodurch der Wert gleich bleibt, bis die Anweisung  unvorbereitet ist.
+Für Datetime-Literale wie `'12-Oktober-2012'` macht dies keinen Unterschied.
+Für die  Pseudovariablen `'NOW'`, `'YESTERDAY'`, `'TODAY'` und `'TOMORROW'` mag dies nich das gewünschte Verhalten sein.
+Wenn Sie bei jedem Aufruf den Wert benötigen, der ausgewertet werden soll, verwenden Sie die vollständige ``CAST()``-Syntax.
+====
+
+==== Beispiele
+
+Ein Voll-Syntax-Cast:
+
+[source]
+----
+select cast ('12' || '-June-' || '1959' as date) from rdb$database
+----
+
+Ein String-zu-Datum-Cast in Kurzschreibweise:
+
+[source]
+----
+update People set AgeCat = 'Old'
+  where BirthDate < date '1-Jan-1943'
+----
+
+Beachten Sie, dass Sie auch die Kurzschrift aus dem obigen Beispiel löschen können, da die Engine aus dem Kontext  (Vergleich mit einem Feld `DATE`) versteht, wie die Zeichenfolge zu interpretieren ist:
+
+[source]
+----
+update People set AgeCat = 'Old'
+  where BirthDate < '1-Jan-1943'
+----
+
+Aber das ist nicht immer möglich.
+Die folgende Darstellungsart kann nicht aufgelöst werden, da die Engine sonst eine Ganzzahl findet, die von einer Zeichenfolge abgezogen wird:
+
+[source]
+----
+select date 'today' - 7 from rdb$database
+----
+
+Die folgende Tabelle zeigt die möglichen Typkonvertierungen mit `CAST`.
+
+[[fblangref25-tbl-cast-de]]
+.Mögliche Typkonvertierungen mit `CAST`
+[%autowidth,cols="2*", options="header", stripes="none"]
+|===
+| Von
+| Zu
+
+|Numerische Typen
+|Numerische Typen +
+`[VAR]CHAR` +
+`BLOB`
+
+|`[VAR]CHAR` +
+`BLOB`
+|`[VAR]CHAR` +
+`BLOB` +
+Numerische Typen +
+`DATE` +
+`TIME` +
+`TIMESTAMP` +
+
+|`DATE` +
+`TIME`
+|`[VAR]CHAR` +
+`BLOB` +
+`TIMESTAMP`
+
+|`TIMESTAMP`
+|`[VAR]CHAR` +
+`BLOB` +
+`DATE` +
+`TIME`
+|===
+
+Beachten Sie, dass Informationen unter Umständen verloren gehen, z.B. wenn Sie eine Typkonvertierung von `TIMESTAMP` zu `DATE` durchführen.
+Die Tatsache, dass die Typen ``CAST``-kompatibel sind, ist keine Garantie, dass die Umwandlung erfolgreich sein wird.
+"```CAST(123456789 as SMALLINT)```" wird in jedem Falle in einem Fehler enden, genauso wie "```CAST('Judgement Day' as DATE)```".
+
+.Umwandlung von Eingabefeldern
+Seit Firebird 2.0 können Sie Anweisungsparameter in einen Datentyp umwandeln:
+
+[source]
+----
+cast (? as integer)
+----
+
+Dies gibt Ihnen die Kontrolle über den Typ des von der Engine eingerichteten Eingabefeldes.
+Bitte beachten Sie, dass Sie bei Anweisungsparametern immer einen Vollsyntax Cast benötigen -- Kurzformen werden nicht unterstützt.
+
+.Umwandlung zu einer Domain oder dessen Typ
+Firebird 2.1 und später unterstützen die Umwandlung zu einer Domain oder dessen Basistypen.
+Bei der Umwandlung zur Domain müssen Constraints (`NOT NULL` und / oder `CHECK`), die auf dieser basieren weiterhin die Bedingungen erfüllen, da die Umwandlung sonst fehlschlägt.
+`CHECK` ist erfüllt, wenn es zu `TRUE` _oder_ `NULL` ausgewertet wird!
+Folgene Statements seien gegeben:
+
+[source]
+----
+create domain quint as int check (value >= 5000);
+select cast (2000 as quint) from rdb$database;     -- <1>
+select cast (8000 as quint) from rdb$database;     -- <2>
+select cast (null as quint) from rdb$database;     -- <3>
+----
+
+Nur die erste Umwandlung (1) schlägt fehl.
+
+Wenn der Modifikator `TYPE OF` verwendet wird, wird der Ausdruck in den Basistyp der Domäne umgewandelt, wobei alle Einschränkungen ignoriert werden.
+Mit der wie oben definierten Domäne `quint` sind die folgenden beiden Umwandlungen äquivalent und beide werden erfolgreich sein:
+
+[source]
+----
+select cast (2000 as type of quint) from rdb$database;
+select cast (2000 as int) from rdb$database;
+----
+
+Wenn `TYPE OF` mit einem `(VAR)CHAR` verwendet wird, werden der Zeichensatz und die Collation beibehalten:
+
+[source]
+----
+create domain iso20 varchar(20) character set iso8859_1;
+create domain dunl20 varchar(20) character set iso8859_1 collate du_nl;
+create table zinnen (zin varchar(20));
+commit;
+insert into zinnen values ('Deze');
+insert into zinnen values ('Die');
+insert into zinnen values ('die');
+insert into zinnen values ('deze');
+
+select cast(zin as type of iso20) from zinnen order by 1;
+-- ergibt Deze -> Die -> deze -> die
+
+select cast(zin as type of dunl20) from zinnen order by 1;
+-- ergibt deze -> Deze -> die -> Die
+----
+
+[WARNING]
+====
+Wird die Definition einer Domain geändert, werden existierende ``CAST``s auf diese Domain oder dessen Typ ungültig.
+Treten diese ``CAST``s in PSQL-Modulen auf, kann ihre Ungültigkeit entdeckt werden.
+Siehe auch <<fblangref25-appx01-supp-rdb-validblr-de,[ref]_Das RDB$VALID_BLR-Feld _>> in Anhang A.
+====
+
+.Umwandlung zu einem Spaltentyp
+In Firebird 2.5 und höher ist es möglich, Ausdrücke in den Typ einer vorhandenen Tabellen- oder Ansichtsspalte umzuwandeln.
+Nur der Typ selbst wird verwendet;
+Bei String-Typen umfasst dies den Zeichensatz, nicht aber die Sortierung.
+Constraints und Standardwerte der Quellspalte werden nicht angewendet.
+
+[source]
+----
+create table ttt (
+  s varchar(40) character set utf8 collate unicode_ci_ai
+);
+commit;
+
+select cast ('Jag har många vänner' as type of column ttt.s)
+from rdb$database;
+----
+
+.Warnungen
+[WARNING]
+====
+* Bei Texttypen werden Zeichensatz und Sortierung durch den Cast beibehalten -- genau wie beim Casting einer Domain.
+Aufgrund eines Fehlers wird die Collation jedoch nicht immer berücksichtigt, wenn Vergleiche (z. B. Gleichheitsprüfungen) durchgeführt werden.
+In Fällen, in denen die Sortierung von Bedeutung ist, sollten Sie Ihren Code vor der Bereitstellung gründlich testen.
+Dieser Fehler wurde für Firebird 3 behoben.
+* Wenn die Definition einer Spalte geändert wird, werden existierende ``CAST``s zu diesem Spaltentyp ungültig.
+Treten diese ``CAST``s PSQL-Modulen auf, können diese Ungültigkeiten erkannt werden. Siehe auch <<fblangref25-appx01-supp-rdb-validblr-de,[ref]_Das RDB$VALID_BLR-Feld_>> in Anhang A.
+====
+
+.Umwandlung von `BLOB` s
+Erfolgreiche Umwandlungen von und zu ``BLOB``s werden seit Firebird 2.1 unterstützt.
+
+[[fblangref25-functions-bitwise-de]]
+== Bitweise Funktionen  
+
+[[fblangref25-functions-scalarfuncs-bin-and-de]]
+=== `BIN_AND()`[[fblangref25-functions-scalarfuncs-bin_and-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+BIN_AND (_number_, _number_ [, _number_ ...])
+----
+
+[[fblangref25-funcs-tbl-binand-de]]
+.``BIN_AND``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Beliebiger Ganzzahlwert (Literal, smallint/integer/bigint, numeric/decimal mit Skalierung von 0)
+|===
+
+.Rückgabetyp
+`SMALLINT`, `INTEGER` or `BIGINT`
+
+[NOTE]
+====
+Das ``SMALLINT``-Ergebnis wird nur zurückgegeben, wenn alle Argumente explizit ``SMALLINT``s oder `NUMERIC(__n__, 0)`  mit _n_ +<=+ 4;
+ansonsten geben kleine Ganzzahlen ein `INTEGER`-Ergebnis zurück.
+====
+
+.Beschreibung
+Gibt das Ergebnis der bitweisen __UND__-Operation für das Argument (die Argumente) zurück.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-bin-or-de>>, <<fblangref25-functions-scalarfuncs-bin-xor-de>>
+
+[[fblangref25-functions-scalarfuncs-bin-not-de]]
+=== `BIN_NOT()`[[fblangref25-functions-scalarfuncs-bin_not-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+NEIN
+
+.Syntax
+[listing,subs=+quotes]
+----
+BIN_NOT (_number_)
+----
+
+[[fblangref25-funcs-tbl-binnot-de]]
+.``BIN_NOT`` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Beliebige Ganzzahl (Literal, smallint/integer/bigint, numeric/decimal mit der Skalierung von 0)
+|===
+
+.Rückgabetyp
+`SMALLINT`, `INTEGER` or `BIGINT`
+
+[NOTE]
+====
+Das ``SMALLINT``-Ergebnis wird nur zurückgegeben, wenn alle Argumente explizit ``SMALLINT``s oder `NUMERIC(__n__, 0)`  mit _n_ +<=+ 4;
+ansonsten geben kleine Ganzzahlen ein `INTEGER`-Ergebnis zurück.
+====
+
+.Beschreibung
+Returns the result of the bitwise _NOT_ operation on the argument, i.e. [term]_ones complement_.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-bin-or-de>>, <<fblangref25-functions-scalarfuncs-bin-xor-de>> and others in this set.
+
+[[fblangref25-functions-scalarfuncs-bin-or-de]]
+=== `BIN_OR()`[[fblangref25-functions-scalarfuncs-bin_or-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+BIN_OR (_number_, _number_ [, _number_ ...])
+----
+
+[[fblangref25-funcs-tbl-binor-de]]
+.``BIN_OR``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Beliebige Ganzzahl (Literal, smallint/integer/bigint, numeric/decimal mit der Skalierung von 0)
+|===
+
+.Rückgabetyp
+`SMALLINT`, `INTEGER` or `BIGINT`
+
+[NOTE]
+====
+Das ``SMALLINT``-Ergebnis wird nur zurückgegeben, wenn alle Argumente explizit ``SMALLINT``s oder `NUMERIC(__n__, 0)`  mit _n_ +<=+ 4;
+ansonsten geben kleine Ganzzahlen ein `INTEGER`-Ergebnis zurück.
+====
+
+.Beschreibung
+Gibt das Ergebnis der bitweisen __ODER__-Operation für das Argument (die Argumente) zurück.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-bin-and-de>>, <<fblangref25-functions-scalarfuncs-bin-xor-de>>
+
+[[fblangref25-functions-scalarfuncs-bin-shl-de]]
+=== `BIN_SHL()`[[fblangref25-functions-scalarfuncs-bin_shl-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+BIN_SHL (_number_, _shift_)
+----
+
+[[fblangref25-funcs-tbl-binshl-de]]
+.``BIN_SHL``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Die Zahl eines Integer-Typs
+
+|shift
+|Die Anzahl der Bits, um die der Zahlenwert verschoben wird
+|===
+
+.Rückgabetyp
+`BIGINT`
+
+.Beschreibung
+Returns the first argument bitwise left-shifted by the second argument, i.e. `a << b` or `a·2^b^`.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-bin-shr-de>>
+
+[[fblangref25-functions-scalarfuncs-bin-shr-de]]
+=== `BIN_SHR()`[[fblangref25-functions-scalarfuncs-bin_shr-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+BIN_SHR (_number_, _shift_)
+----
+
+[[fblangref25-funcs-tbl-binshr-de]]
+.``BIN_SHR``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Die Zahl eines Integer-Typs
+
+|shift
+|Die Anzahl der Bits, um die der Zahlenwert verschoben wird
+|===
+
+.Beschreibung
+Gibt das erste Argument bitweise nach rechts verschoben durch das zweite Argument zurück, d.h. `a >> b` oder `a/2^b^`.
+
+* Die durchgeführte Operation ist eine arithmetische Rechtsverschiebung (SAR), was bedeutet, dass das Vorzeichen des ersten Operanden immer erhalten bleibt.
+
+.Rückgabetyp
+`BIGINT`
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-bin-shl-de>>
+
+[[fblangref25-functions-scalarfuncs-bin-xor-de]]
+=== `BIN_XOR()`[[fblangref25-functions-scalarfuncs-bin_xor-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Möglicher Namenskonflikt
+JA -> <<fblangref25-functions-nameclashes-de,siehe Details>>
+
+.Syntax
+[listing,subs=+quotes]
+----
+BIN_XOR (_number_, _number_ [, _number_ ...])
+----
+
+[[fblangref25-funcs-tbl-binxor-de]]
+.``BIN_XOR``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|number
+|Beliebige Ganzzahl (Literal, smallint/integer/bigint, numeric/decimal mit der Skalierung von 0)
+|===
+
+.Beschreibung
+Gibt das Ergebnis der bitweisen __XOR__-Operation für das Argument (die Argumente) zurück.
+
+.Rückgabetyp
+`SMALLINT`, `INTEGER` oder `BIGINT`
+
+[NOTE]
+====
+Das ``SMALLINT``-Ergebnis wird nur zurückgegeben, wenn alle Argumente explizit ``SMALLINT``s oder `NUMERIC(__n__, 0)`  mit _n_ +<=+ 4;
+ansonsten geben kleine Ganzzahlen ein `INTEGER`-Ergebnis zurück.
+====
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-bin-and-de>>, <<fblangref25-functions-scalarfuncs-bin-or-de>>
+
+[[fblangref25-functions-uuid-de]]
+== UUID-Funktionen
+
+[[fblangref25-functions-scalarfuncs-char-to-uuid-de]]
+=== `CHAR_TO_UUID()`[[fblangref25-functions-scalarfuncs-char_to_uuid-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Aufgenommen in
+2.5
+
+.Syntax
+[listing,subs=+quotes]
+----
+CHAR_TO_UUID (_ascii_uuid_)
+----
+
+[[fblangref25-funcs-tbl-char-to-uuid-de]]
+.`CHAR_TO_UUID` Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|ascii_uuid
+|Eine 36-stellige Darstellung der UUID.
+'```-```' (Bindestrich) in den Positionen 9, 14, 19 und 24;
+gültige hexadezimale Ziffern in anderen Positionen, z.B. "A0bF4E45-3029-2a44-D493-4998c9b439A3"
+|===
+
+.Rückgabetyp
+`CHAR(16) CHARACTER SET OCTETS`
+
+.Beschreibung
+Konvertiert eine für Menschen lesbare UUID-Zeichenfolge mit 36 Zeichen in die entsprechende 16-Byte-UUID.
+
+.Beispiele
+[source]
+----
+select char_to_uuid('A0bF4E45-3029-2a44-D493-4998c9b439A3') from rdb$database
+-- ergibt A0BF4E4530292A44D4934998C9B439A3 (16-byte string)
+
+select char_to_uuid('A0bF4E45-3029-2A44-X493-4998c9b439A3') from rdb$database
+-- error: -Das für den Benutzer lesbare UUID-Argument für CHAR_TO_UUID muss eine
+--         Hexadezimalstelle an Position 20 anstelle von "X (ASCII 88)" haben.
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-uuid-to-char-de>>, <<fblangref25-functions-scalarfuncs-gen-uuid-de>>
+
+[[fblangref25-functions-scalarfuncs-gen-uuid-de]]
+=== `GEN_UUID()`[[fblangref25-functions-scalarfuncs-gen_uuid-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+GEN_UUID ()
+----
+
+.Rückgabetyp
+`CHAR(16) CHARACTER SET OCTETS`
+
+.Beschreibung
+Gibt eine universell eindeutige ID als 16-Byte-Zeichenfolge zurück.
+
+.Beispiel
+[source]
+----
+select gen_uuid() from rdb$database
+-- ergibt z.B. 017347BFE212B2479C00FA4323B36320 (16-byte string)
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-uuid-to-char-de>>, <<fblangref25-functions-scalarfuncs-char-to-uuid-de>>
+
+[[fblangref25-functions-scalarfuncs-uuid-to-char-de]]
+=== `UUID_TO_CHAR()`[[fblangref25-functions-scalarfuncs-uuid_to_char-de]]
+
+.Verfügbar in
+DSQL, PSQL
+
+.Aufgenommen in
+2.5
+
+.Syntax
+[listing,subs=+quotes]
+----
+UUID_TO_CHAR (_uuid_)
+----
+
+[[fblangref25-funcs-tbl-uuid-to-char-de]]
+.``UUID_TO_CHAR``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|uuid
+|16-byte UUID
+|===
+
+.Rückgabetyp
+`CHAR(36)`
+
+.Beschreibung
+Konvertiert eine 16-Byte-UUID in ihre aus 36 Zeichen bestehende, für Menschen lesbare ASCII-Darstellung.
+
+.Beispiele
+[source]
+----
+select uuid_to_char(x'876C45F4569B320DBCB4735AC3509E5F') from rdb$database
+-- ergibt '876C45F4-569B-320D-BCB4-735AC3509E5F'
+
+select uuid_to_char(gen_uuid()) from rdb$database
+-- ergibt z.B. '680D946B-45FF-DB4E-B103-BB5711529B86'
+
+select uuid_to_char('Firebird swings!') from rdb$database
+-- ergibt '46697265-6269-7264-2073-77696E677321'
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-char-to-uuid-de>>, <<fblangref25-functions-scalarfuncs-gen-uuid-de>>
+
+[[fblangref25-functions-generators-de]]
+== Funktionen für Sequenzen (Generatoren)
+
+[[fblangref25-functions-scalarfuncs-gen-id-de]]
+=== `GEN_ID()`[[fblangref25-functions-scalarfuncs-gen_id-de]]
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+GEN_ID (_generator-name_, _step_)
+----
+
+[[fblangref25-funcs-tbl-gen-id-de]]
+.GEN_ID-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|generator-name
+|Name eines Generators (Sequenz), der existiert. Wenn es in doppelten Anführungszeichen mit einer Kennung, bei der die Groß- und Kleinschreibung beachtet wird, definiert wurde, muss es in derselben Form verwendet werden, es sei denn, der Name ist ausschließlich in Großbuchstaben angegeben.
+
+|step
+|Ein Integer-Ausdruck
+|===
+
+.Rückgabetyp
+`BIGINT`
+
+.Beschreibung
+Inkrementiert einen Generator oder eine Sequenz und gibt den neuen Wert zurück.
+Wenn die Schrittweite gleich 0 ist, behält die Funktion den Wert des Generators unverändert bei und gibt den aktuellen Wert zurück.
+
+* Ab Firebird 2.0 wird die SQL-kompatible Syntax `NEXT VALUE FOR` bevorzugt, außer wenn ein anderes Inkrement als 1 benötigt wird.
+
+.Beispiel
+[source]
+----
+new.rec_id = gen_id(gen_recnum, 1);
+----
+
+[WARNING]
+====
+Wenn der Wert des Schrittparameters kleiner als Null ist, wird der Wert des Generators verringert.
+Aber Achtung! Sie sollten mit solchen Manipulationen in der Datenbank äußerst vorsichtig sein, da sie die Datenintegrität beeinträchtigen könnten.
+====
+
+.Siehe auch
+<<fblangref25-commons-conditional-nxtvlufor-de,`NEXT VALUE FOR`>>, <<fblangref25-ddl-sequence-create-de,`CREATE SEQUENCE (GENERATOR)`>>
+
+[[fblangref25-functions-conditional-de]]
+== Bedingte Funktionen
+
+[[fblangref25-functions-scalarfuncs-coalesce-de]]
+=== `COALESCE()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+COALESCE (<exp1>, <exp2> [, <expN> ... ])
+----
+
+[[fblangref25-funcs-tbl-coalesce-de]]
+.``COALESCE``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|exp1, exp2 ... expN
+|Eine Liste von Ausdrücken aller kompatiblen Typen
+|===
+
+.Beschreibung
+Die Funktion `COALESCE` übernimmt zwei oder mehr Argumente und gibt den ersten Wert zurück, den nicht `NULL` ist.
+Werden alle Argumente zu `NULL` aufgelöst, ist das Ergebnis ebenfalls `NULL`.
+
+.Rückgabetyp
+Abhängig von der Eingabe.
+
+.Beispiel
+In diesem Beispiel wird der `Nickname` aus der Tabelle `Persons` ausgewählt.
+Wenn dieser `NULL` ist, geht es weiter zu FirstName.
+Wenn dieser auch `NULL` ist, wird "```Mr./Mrs.```" verwendet.
+Schließlich fügt es den Familiennamen hinzu.
+Alles in allem versucht es, die verfügbaren Daten zu verwenden, um einen vollständigen Namen zu formulieren, der so informell wie möglich ist.
+Beachten Sie, dass dieses Schema nur funktioniert, wenn fehlende Spitznamen und Vornamen wirklich `NULL` sind: Wenn eine davon eine leere Zeichenfolge ist, gibt `COALESCE` diese an den Aufrufer zurück.
+
+[source]
+----
+select
+  coalesce (Nickname, FirstName, 'Mr./Mrs.') || ' ' || LastName
+    as FullName
+from Persons
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-iif-de>>, <<fblangref25-functions-scalarfuncs-nullif-de>>, <<fblangref25-commons-conditional-case-de,`CASE`>>
+
+[[fblangref25-functions-scalarfuncs-decode-de]]
+=== `DECODE()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+DECODE(<testexpr>,
+  <expr1>, <result1>
+  [<expr2>, <result2> …]
+  [, <defaultresult>])
+----
+
+The equivalent CASE construct:
+
+[listing]
+----
+CASE <testexpr>
+  WHEN <expr1> THEN <result1>
+  [WHEN <expr2> THEN <result2> …]
+  [ELSE <defaultresult>]
+END
+----
+
+[[fblangref25-funcs-tbl-decode-de]]
+.``DECODE``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|testexpr
+|Ein Ausdruck eines kompatiblen Typs, der mit den Ausdrücken expr1, expr2 ... exprN verglichen wird
+
+|expr1, expr2, ... exprN
+|Ausdrücke beliebiger kompatibler Typen, auf die der _testexpr_ Ausdruck wird verglichen
+
+|result1, result2, ... resultN
+|Zurückgegebene Werte eines beliebigen Typs
+
+|defaultresult
+|Der Ausdruck, der zurückgegeben werden soll, wenn keine der Bedingungen erfüllt ist
+|===
+
+.Rückgabetyp
+Verschieden
+
+.Beschreibung
+`DECODE` ist eine Kurzform des sogenannten <<fblangref25-commons-conditional-case-simple-de,"`einfachen ``CASE```"-Konstruktes>>, in welchem ein Ausdruck mit einer Anzahl weiterer Ausdrücke verglichen wird, bis eine Übereinstimmung gefunden wird.
+Das Ergebnis wird durch den Wert bestimmt, der nach dem übereinstimmenden Ausdruck aufgeführt wird.
+Wenn keine Übereinstimmung gefunden wird, wird das Standardergebnis zurückgegeben, sofern vorhanden.
+Andernfalls wird `NULL` zurückgegeben.
+
+[CAUTION]
+====
+Die Prüfung auf Übereinstimmung wird mit dem Operator '```=```' durchgeführt, was bedeutet, dass wenn _testexpr_ `NULL` ist, keine der Ausdrücke (__expr__s) übereinstimmt, auch wenn diese `NULL` sind.
+====
+
+.Beispiel
+[source]
+----
+select name,
+  age,
+  decode(upper(sex),
+         'M', 'Male',
+         'F', 'Female',
+         'Unknown'),
+  religion
+from people
+----
+
+.Siehe auch
+<<fblangref25-commons-conditional-case-de,`CASE`>>, <<fblangref25-commons-conditional-case-simple-de,Simple `CASE`>>
+
+[[fblangref25-functions-scalarfuncs-iif-de]]
+=== `IIF()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+IIF (<condition>, _ResultT_, _ResultF_)
+----
+
+[[fblangref25-funcs-tbl-iif-de]]
+.``IIF``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|condition
+|Ein wahr-{vbar}falsch-Ausdruck
+
+|resultT
+|Der Wert wird zurückgegeben, wenn die Bedingung wahr ist
+
+|resultF
+|Der Wert wird zurückgegeben, wenn die Bedingung falsch ist
+|===
+
+.Rückgabetyp
+Abhängig von der Eingabe.
+
+.Beschreibung
+`IIF` benötigt drei Argumente.
+Wenn der erste Wert zu `true` lautet, wird das zweite Argument zurückgegeben.
+Andernfalls wird die dritte zurückgegeben.
+
+* `IIF` könnte mit dem ternären Operator "```?:```" in C-ähnlichen Sprachen verglichen werden.
+
+.Beispiel
+[source]
+----
+select iif( sex = 'M', 'Sir', 'Madam' ) from Customers
+----
+
+[NOTE]
+====
+`IIF(<Cond>, __Result1__, __Result2__)` ist eine Kurzform für "```CASE WHEN <Cond> THEN __Result1__ ELSE __Result2__ END```".
+====
+
+.Siehe auch
+<<fblangref25-commons-conditional-case-de,`CASE`>>, <<fblangref25-functions-scalarfuncs-decode-de>>
+
+[[fblangref25-functions-scalarfuncs-maxvalue-de]]
+=== `MAXVALUE()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+MAXVALUE (<expr1> [, ... , <exprN> ])
+----
+
+[[fblangref25-funcs-tbl-maxvalue-de]]
+.``MAXVALUE``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr1 ... exprN
+|Liste der Ausdrücke kompatibler Typen
+|===
+
+.Rückgabetyp
+Variiert entsprechend der Eingabe -- Ergebnis wird vom selben Datentyp wie der erste Ausdruck in der Liste (_expr1_) sein.
+
+.Beschreibung
+Gibt den Maximalwert aus einer Liste von Zahlen-, Zeichenfolgen- oder Datums- / Uhrzeitausdrücken zurück.
+Diese Funktion unterstützt Text-``BLOBS``s beliebiger Größe und Zeichenfolge
+
+* Löst ein Ausdruck auf `NULL` aus, gibt `MAXVALUE` ebenfalls `NULL` zurück.
+Dieses Verhalten unterscheided sich zur Aggregatfunktion `MAX`.
+
+.Beispiel
+[source]
+----
+SELECT MAXVALUE(PRICE_1, PRICE_2) AS PRICE
+  FROM PRICELIST
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-minvalue-de>>
+
+[[fblangref25-functions-scalarfuncs-minvalue-de]]
+=== `MINVALUE()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+MINVALUE (<expr1> [, ... , <exprN> ])
+----
+
+[[fblangref25-funcs-tbl-minvalue-de]]
+.``MINVALUE``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr1 ... exprN
+|Liste der Ausdrücke kompatibler Typen
+|===
+
+.Rückgabetyp
+Variiert entsprechend der Eingabe -- Ergebnis wird vom selben Datentyp wie der erste Ausdruck in der Liste (_expr1_) sein.
+
+.Beschreibung
+Gibt den Mindestwert aus einer Liste von Zahlen-, Zeichenfolgen- oder Datums- / Uhrzeitausdrücken zurück.
+Diese Funktion unterstützt Text-``BLOBS``s beliebiger Größe und Zeichenfolge
+
+* Löst ein Ausdruck auf `NULL` aus, gibt `MINVALUE` ebenfalls `NULL` zurück.
+Dieses Verhalten unterscheided sich zur Aggregatfunktion `MIN`.
+
+.Beispiel
+[source]
+----
+SELECT MINVALUE(PRICE_1, PRICE_2) AS PRICE
+  FROM PRICELIST
+----
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-maxvalue-de>>
+
+[[fblangref25-functions-scalarfuncs-nullif-de]]
+=== `NULLIF()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+NULLIF (<exp1>, <exp2>)
+----
+
+[[fblangref25-funcs-tbl-nullif-de]]
+.``NULLIF``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|exp1
+|Ein Ausdruck
+
+|exp2
+|Ein anderer Ausdruck eines Datentyps, der mit _exp1_ kompatibel ist
+|===
+
+.Beschreibung
+`NULLIF` gibt den Wert des ersten Argumentes zurück, es sei denn es ist identisch zum zweiten.
+In diesem Fall wird `NULL` zurückgegeben.
+
+.Rückgabetyp
+Abhängig von der Eingabe.
+
+.Beispiel
+[source]
+----
+select avg( nullif(Weight, -1) ) from FatPeople
+----
+
+Dies ergibt das Durchschnittsgewicht der in FatPeople aufgeführten Personen, mit Ausnahme eines Gewichts von -1, da `AVG` ``NULL``-Daten überspringt.
+Augescheinlich bedeutet -1 soviel wie "`Gewicht unbekannt`" in dieser Tabelle.
+Ein normales `AVG(Weight)` würde die Gewichte von -1 inkludieren und das Ergebnis verfälschen.
+
+.Siehe auch
+<<fblangref25-functions-scalarfuncs-coalesce-de>>,  <<fblangref25-functions-scalarfuncs-decode-de>>, <<fblangref25-functions-scalarfuncs-iif-de>>, <<fblangref25-commons-conditional-case-de,`CASE`>>
+
+[[fblangref25-functions-aggfuncs-de]]
+== Aggregatfunktionen
+
+Aggregatfunktionen arbeiten mit Gruppen von Datensätzen und nicht mit einzelnen Datensätzen oder Variablen.
+Sie werden oft in Kombination mit einer Klausel `GROUP BY` verwendet.
+
+[[fblangref25-functions-aggfuncs-avg-de]]
+=== `AVG()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing]
+----
+AVG ([ALL | DISTINCT] <expr>)
+----
+
+[[fblangref25-funcs-tbl-avg-de]]
+.``AVG``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Es kann eine Tabellenspalte, eine Konstante, eine Variable, einen Ausdruck, eine nicht aggregierte Funktion oder eine benutzerdefinierte Funktion enthalten, die einen numerischen Datentyp zurückgibt.
+Aggregatfunktionen sind als Ausdrücke nicht zulässig
+|===
+
+.Rückgabetyp
+Ein numerischer Datentyp, der dem Datentyp des Arguments entspricht.
+
+.Beschreibung
+`AVG` gibt den durchschnittlichen Argumentwert in der Gruppe zurück.
+`NULL` wird ignoriert.
+
+* Der Parameter `ALL` (der Standardwert) wendet die Aggregatfunktion auf alle Werte an.
+* Der Parameter `DISTINCT` weist die ``AVG``-Funktion an, nur eine Instanz jedes eindeutigen Werts zu berücksichtigen, unabhängig davon, wie oft dieser Wert auftritt.
+* Wenn die Menge der abgerufenen Datensätze leer ist oder nur `NULL` enthält, ist das Ergebnis ebenfalls `NULL`.
+
+.Beispiel
+[source]
+----
+SELECT
+  dept_no,
+  AVG(salary)
+FROM employee
+GROUP BY dept_no
+----
+
+.Siehe auch
+<<fblangref25-dml-select-de,`SELECT`>>
+
+[[fblangref25-functions-aggfuncs-count-de]]
+=== `COUNT()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing]
+----
+COUNT ([ALL | DISTINCT] <expr> | *)
+----
+
+[[fblangref25-funcs-tbl-count-de]]
+.``COUNT``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Es kann eine Tabellenspalte, eine Konstante, eine Variable, einen Ausdruck, eine nicht aggregierte Funktion oder eine benutzerdefinierte Funktion enthalten, die einen numerischen Datentyp zurückgibt.
+Aggregatfunktionen sind als Ausdrücke nicht zulässig
+|===
+
+.Rückgabetyp
+Integer
+
+.Beschreibung
+`COUNT` gibt die Anzahl der nicht-null-Werte einer Menge zurück.
+
+* `ALL` ist der Standard: es werden alle Werte gezählt, die nicht `NULL` sind.
+* Wenn `DISTINCT` angegeben wurde, werden Duplikate aus der Zählung entfernt.
+* Wurde `COUNT ({asterisk})` anstelle eines Ausdrucks _expr_ angegeben, werden alle Zeilen gezählt.
+`COUNT ({asterisk})` --
+** akzeptiert keine Parameter
+** kann nicht mit dem Schlüsselwort `DISTINCT` verwendet werden
+** übernimmt kein __expr__-Argument, da sein Kontext während der Definition spaltenunspezifisch ist
+** zählt jede Zeile einzeln und gibt die Anzahl der Zeilen in der angegebenen Tabelle oder Gruppe zurück, ohne doppelte Zeilen zu entfernen
+** zähle Zeilen, die `NULL` enthalten
+* Wenn die Ergebnismenge leer ist oder nur `NULL` in der(den) angegebenen Spalte(n) enthält, ist die zurückgegebene Anzahl Null.
+
+.Beispiel
+[source]
+----
+SELECT
+  dept_no,
+  COUNT(*) AS cnt,
+  COUNT(DISTINCT name) AS cnt_name
+FROM employee
+GROUP BY dept_no
+----
+
+.Siehe auch
+<<fblangref25-dml-select-de,`SELECT`>>.
+
+[[fblangref25-functions-aggfuncs-list-de]]
+=== `LIST()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Geändert in
+2.5
+
+.Syntax
+[listing,subs=+quotes]
+----
+LIST ([ALL | DISTINCT] <expr> [, _separator_ ])
+----
+
+[[fblangref25-funcs-tbl-list-de]]
+.``LIST``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Es kann eine Tabellenspalte, eine Konstante, eine Variable, einen Ausdruck, eine Nicht-Aggregatfunktion oder eine UDF enthalten, die den String-Datentyp oder ein BLOB zurückgibt.
+Felder von numerischen und Datum / Uhrzeit-Typen werden in Zeichenfolgen konvertiert.
+Aggregatfunktionen sind als Ausdrücke nicht zulässig
+
+|separator
+|Optionales alternatives Trennzeichen, ein Zeichenfolgenausdruck.
+Komma ist das Standardtrennzeichen
+|===
+
+.Rückgabetyp
+`BLOB`
+
+.Beschreibung
+`LIST` gibt eine Zeichenfolge zurück, die aus den Nicht-Konstantenwerten `NULL` und Konstanten in der Gruppe besteht, die entweder durch ein Komma oder durch ein benutzerdefiniertes Trennzeichen getrennt sind.
+Wenn es keine nicht-``NULL``-Werte gibt (dies schließt den Fall ein, dass die Gruppe leer ist), wird `NULL` zurückgegeben.
+
+* `ALL` (der Standard) ergibt, dass alle nicht-``NULL``-Werte aufgelistet werden.
+Mit `DISTINCT` werden Duplikate entfernt, es sei denn _expr_ ist ein ``BLOB``.
+* In Firebird 2.5 und später, kann das optionale Trennzeichen ein beliebiger String-Ausdruck sein.
+Damit ist es beispielsweise möglich `ascii_char(13)` als Trenner zu definieren.
+(Diese Verbesserung wurde auch auf 2.1.4 zurückversetzt.)
+* Die Argumente _expr_ und _separator_ unterstützen ``BLOB``s beliebiger Größe und beliebigen Zeichensatzes.
+* Datum / Uhrzeit und numerische Argumente werden implizit vor der Verkettung in Zeichenfolgen konvertiert.
+* Das Ergebnis ist ein Text-``BLOB``, außer _expr_ ist ein `BLOB` eines anderen Untertyps.
+* Die Reihenfolge der Listenwerte ist undefiniert.
+Die Reihenfolge, in der die Strings verkettet werden, wird durch die Lesereihenfolge aus der Quellenmenge bestimmt, die in Tabellen nicht allgemein definiert ist.
+Wenn die Reihenfolge wichtig ist, können die Quelldaten mit einer abgeleiteten Tabelle oder ähnlichem vorsortiert werden.
+
+.Beispiele
+. Abrufen der Liste, Reihenfolge undefiniert:
++
+[source]
+----
+SELECT LIST (display_name, '; ') FROM GR_WORK;
+----
+. Abrufen der Liste in alphabetischer Reihenfolge mit einer abgeleiteten Tabelle:
++
+[source]
+----
+SELECT LIST (display_name, '; ')
+FROM (SELECT display_name
+      FROM GR_WORK
+      ORDER BY display_name);
+----
+
+.Siehe auch
+<<fblangref25-dml-select-de,`SELECT`>>
+
+[[fblangref25-functions-aggfuncs-max-de]]
+=== `MAX()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing]
+----
+MAX ([ALL | DISTINCT] <expr>)
+----
+
+[[fblangref25-funcs-tbl-max-de]]
+.``MAX``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Es kann eine Tabellenspalte, eine Konstante, eine Variable, einen Ausdruck, eine Nicht-Aggregatfunktion oder eine UDF enthalten.
+Aggregatfunktionen sind als Ausdrücke nicht zulässig.
+|===
+
+.Rückgabetyp
+Gibt ein Ergebnis desselben Datentyps als Eingabeausdruck zurück.
+
+.Beschreibung
+`MAX` gibt das größte nicht-``NULL``-Element der Ergebnismenge zurück.
+
+* Ist die Menge leer oder enthält nur `NULL`, ist das Ergebnis `NULL`.
+* Wenn das Eingabeargument eine Zeichenfolge ist, gibt die Funktion den Wert zurück, der zuletzt sortiert wird, wenn `COLLATE` verwendet wird.
+* Diese Funktion unterstützt vollständig Text ``BLOB``s beliebiger Größe und Zeichensatz.
+
+[NOTE]
+====
+Der Parameter `DISTINCT` hat keinen Sinn, wenn er mit `MAX()` verwendet wird und nur für die Einhaltung des Standards implementiert ist.
+====
+
+.Beispiel
+[source]
+----
+SELECT
+  dept_no,
+  MAX(salary)
+FROM employee
+GROUP BY dept_no
+----
+
+.Siehe auch
+<<fblangref25-functions-aggfuncs-min-de>>, <<fblangref25-dml-select-de,`SELECT`>>
+
+[[fblangref25-functions-aggfuncs-min-de]]
+=== `MIN()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing]
+----
+MIN ([ALL | DISTINCT] <expr>)
+----
+
+[[fblangref25-funcs-tbl-min-de]]
+.``MIN``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Es kann eine Tabellenspalte, eine Konstante, eine Variable, einen Ausdruck, eine Nicht-Aggregatfunktion oder eine UDF enthalten.
+Aggregatfunktionen sind als Ausdrücke nicht zulässig.
+|===
+
+.Rückgabetyp
+Gibt ein Ergebnis desselben Datentyps als Eingabeausdruck zurück.
+
+.Beschreibung
+`MIN` gibt das größte nicht-``NULL``-Element der Ergebnismenge zurück.
+
+* Ist die Menge leer oder enthält nur `NULL`, ist das Ergebnis `NULL`.
+* Wenn das Eingabeargument eine Zeichenfolge ist, gibt die Funktion den Wert zurück, der zuletzt sortiert wird, wenn `COLLATE` verwendet wird.
+* Diese Funktion unterstützt vollständig Text ``BLOB``s beliebiger Größe und Zeichensatz.
+
+[NOTE]
+====
+Der Parameter `DISTINCT` hat keinen Sinn, wenn er mit `MIN()` verwendet wird und nur für die Einhaltung des Standards implementiert ist.
+====
+
+.Beispiel
+[source]
+----
+SELECT
+  dept_no,
+  MIN(salary)
+FROM employee
+GROUP BY dept_no
+----
+
+.Siehe auch
+<<fblangref25-functions-aggfuncs-max-de>>, <<fblangref25-dml-select-de,`SELECT`>>
+
+[[fblangref25-functions-aggfuncs-sum-de]]
+=== `SUM()`
+
+.Verfügbar in
+DSQL, ESQL, PSQL
+
+.Syntax
+[listing]
+----
+SUM ([ALL | DISTINCT] <expr>)
+----
+
+[[fblangref25-funcs-tbl-sum-de]]
+.``SUM``-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr
+|Numerischer Ausdruck.
+Es kann eine Tabellenspalte, eine Konstante, eine Variable, einen Ausdruck, eine Nicht-Aggregatfunktion oder eine UDF enthalten.
+Aggregatfunktionen sind als Ausdrücke nicht zulässig.
+|===
+
+.Rückgabetyp
+Gibt ein Ergebnis des gleichen numerischen Datentyps wie der Eingabeausdruck zurück.
+
+.Beschreibung
+`SUM` berechnet und gibt die Summe der nicht-``NULL``-Werte in der Gruppe zurück.
+
+* Wenn die Gruppe leer ist oder nur `NULL` enthält, ist das Ergebnis ebenfalls `NULL`.
+* `ALL` ist die Standardoption -- alle Werte in der Gruppe, die nicht `NULL` sind, werden verarbeitet.
+Wenn `DISTINCT` angegeben ist, werden Duplikate aus der Datenmenge entfernt, und die Auswertung `SUM` erfolgt anschließend.
+
+.Beispiel
+[source]
+----
+SELECT
+  dept_no,
+  SUM (salary),
+FROM employee
+GROUP BY dept_no
+----
+
+.Siehe auch
+<<fblangref25-dml-select-de,`SELECT`>>

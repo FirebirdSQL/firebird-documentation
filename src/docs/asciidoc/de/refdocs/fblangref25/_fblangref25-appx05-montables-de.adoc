@@ -1,0 +1,675 @@
+:sectnums!:
+
+[appendix]
+[[fblangref25-appx05-montables-de]]
+= Monitoring Tables
+
+Firebird überwacht Aktivitäten innerhalb der Datenbank und macht diese für Benutzerabfragen über die Monitoringtabellen verfügbar.
+Die Definitionen dieser Tabellen sind immer in der Datenbank verfügbar, alle mit dem Präfix `MON$`.
+Die Tabelle sind virtuell: die Daten werden erst bei der Abfrage durch den Benutzer bereitgestellt.
+Dies ist auch der Grund, weshalb es keinen Sinn macht, Trigger hierfür zu erstellen!
+
+Der Schlüssel zum Verstehen des Überwachungsmechanismus ist ein _activity snapshot_.
+Dieser Snapshot gibt den derzeitigen Status der Datenbank zu Beginn der Transaktion wieder, in welcher die Abfrage der Monitoringtabellen ausgeführt wird.
+Es werden einige Informationen über die Datenbank selbst, aktive Verbindungen, Benutzer, vorbereitete Transaktionen, laufende Abfragen und mehr zurückgegeben.
+
+Der Snapshot wird erstellt, sobald die Monitoringtabelle das erste Mal abgefragt wird.
+Er wird bis zum Ende der aktuellen Transaktion vorgehalten.
+Damit wird eine stabile, konsistente Ansicht zum Abfragen über mehrere Tabelle gewährleistet.
+Das heißt, Monitoringtabellen verhalten sich immer als seien sie in ``SNAPSHOT TABLE STABILITY``-Isolation ("`Konsistenz`"), auch wenn die derzeitige Transaktion in einem niedrigeren Isolationslevel gestartet wird.
+
+Um den Snapshot zu aktualisieren, muss die aktuelle Transaktion abgeschlossen werden und die Monitoringtabellen müssen in einem neuen Transaktionskontext erneut ausgeführt werden.
+
+.Zugriffssicherheit
+* SYSDBA und der Datenbankbesitzer habe Vollzugriff auf alle Informationen, die über die Monitoringtabellen verfügbar sind
+* Reguläre Benutzer können nur Informationen zu ihren eigenen Verbindungen einsehen; andere Verbindungen sind nicht sichtbar
+
+[WARNING]
+====
+In stark belasteten Umgebungen kann das Sammeln von Informationen über die Monitoringtabellen einen negativen Einfluss auf die Systemleistung haben.
+====
+
+[[fblangref25-appx05-tbl-montables-de]]
+.Liste der Monitoringtabellen
+`MON$ATTACHMENTS`::
+Informationen über aktive Datenbankattachments
+
+`MON$CALL_STACK`::
+Stackaufrufe von aktiven Abfragen durch Stored Procedures und Trigger
+
+`MON$CONTEXT_VARIABLES`::
+Informationen zu benutzerdefinierten Kontextvariablen
+
+`MON$DATABASE`::
+Informationen über die Datenbank, welche durch die `CURRENT_CONNECTION` verbunden ist
+
+`MON$IO_STATS`::
+Input/Output-Statistiken
+
+`MON$MEMORY_USAGE`::
+Statistiken über den Speicherverbrauch
+
+`MON$RECORD_STATS`::
+Record-Level-Statistiken
+
+`MON$STATEMENTS`::
+Zur Ausführung vorbereitete Statements
+
+`MON$TRANSACTIONS`::
+Gestartete Transaktionen
+
+[[fblangref-appx05-monattach-de]]
+== `MON$ATTACHMENTS`
+
+`MON$ATTACHMENTS` zeigt Informationen über aktive Attachments der Datenbank an.
+
+[[fblangref25-appx05-tbl-monattach-de]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$ATTACHMENT_ID
+|INTEGER
+|Verbindungs-Kennung
+
+|MON$SERVER_PID
+|INTEGER
+|Serverprozess-Kennung
+
+|MON$STATE
+|SMALLINT
+|Verbindungsstatus:
+
+`0` - Leerlauf (idle) +
+`1` - Aktiv (active)
+
+|MON$ATTACHMENT_NAME
+|VARCHAR(255)
+|Connection String -- der Dateiname und volle Pfad zur primären Datenbankdatei
+
+|MON$USER
+|CHAR(31)
+|Der Name des Benutzers, der mit diese Verbindung nutzt
+
+|MON$ROLE
+|CHAR(31)
+|Der angegebene Rollenname zum Zeitpunkt des Verbindungsaufbaus.
+Wurde beim Aufbau der Verbindung keine Rolle angegeben, enthält das Feld den Text `NONE`
+
+|MON$REMOTE_PROTOCOL
+|VARCHAR(10)
+|Name des Remote-Protokolls
+
+|MON$REMOTE_ADDRESS
+|VARCHAR(255)
+|Remote-Adresse (Adresse und Servername)
+
+|MON$REMOTE_PID
+|INTEGER
+|Kennung des Client-Prozesses
+
+|MON$CHARACTER_SET_ID
+|SMALLINT
+|Kennung des Zeichensatzes (vgl. `RDB$CHARACTER_SET` in der Systemtabelle `RDB$TYPES`)
+
+|MON$TIMESTAMP
+|TIMESTAMP
+|Datum und Zeit zum Zeitpunkt des Verbindungsaufbaus.
+
+|MON$GARBAGE_COLLECTION
+|SMALLINT
+|Kennzeichen für Garbage Collection (wie in der Attachment DPB definiert): 1=erlaubt (allowed), 0=nicht erlaubt (not allowed)
+
+|MON$REMOTE_PROCESS
+|VARCHAR(255)
+|Der volle Dateiname und Pfad zu der ausführbaren Datei, die diese Verbindung aufgebaut hat
+
+|MON$STAT_ID
+|INTEGER
+|Statistik-Kennung
+|===
+
+[[fblangref-appx05-monattach-kill-de]]
+=== Verwendung von `MON$ATTACHMENTS` um eine Verbindung zu beenden
+
+Monitoringtabellen sind nur-lesend.
+Jedoch hat der Server einen eingebauten Mechanismus, um Datensätze zu löschen (und nur zum Löschen) in der Tabelle MON$ATTACHMENTS, wodurch es möglich wird, Datenbankverbindungen zu beenden. 
+
+.Hinweis
+[NOTE]
+====
+* Sämtliche Aktivitäten der beendeten Verbindung werden augenblicklich gestoppt und alle aktiven Transaktionen werden zurückgerollt
+* Die beendete Verbindung gibt einen Fehler mit dem Code `isc_att_shutdown` zurück
+* Versuche diese Verbindung weiterzuverwenden, wird ebenfalls Fehler zurückgeben.
+====
+
+.Beispiel
+Alle Verbindungen außer der eigenen (current) beenden:
+
+[source]
+----
+DELETE FROM MON$ATTACHMENTS
+  WHERE MON$ATTACHMENT_ID <> CURRENT_CONNECTION
+----
+
+[[fblangref-appx05-moncallstk-de]]
+== `MON$CALL_STACK`
+
+`MON$CALL_STACK` zeigt Aufrufe des Stacks durch Abfragen von Stored Procedures und Trigger an.
+
+[[fblangref25-appx05-tbl-moncallstk-de]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$CALL_ID
+|INTEGER
+|Aufruf-Kennzeichen
+
+|MON$STATEMENT_ID
+|INTEGER
+|Das Kennzeichen des Top-Level-SQL-Statements.
+Dies ist das Statement, das die Kette der Aufrufe initialisiert hat.
+Nutzen Sie diese Kennung um die aktiven Statments in der ``MON$STATEMENTS``-Tabelle zu finden.
+
+|MON$CALLER_ID
+|INTEGER
+|Die Kennung der aufrufenden Stored Procedure oder des aufrufenden Triggers
+
+|MON$OBJECT_NAME
+|CHAR(31)
+|PSQL-Objekt-Name (Module)
+
+|MON$OBJECT_TYPE
+|SMALLINT
+|PSQL-Objekt-Typ (Trigger oder Stored Procedure):
+
+`2` - Trigger +
+`5` - Stored Procedure
+
+|MON$TIMESTAMP
+|TIMESTAMP
+|Datum und Zeitpunkt des Aufrufs
+
+|MON$SOURCE_LINE
+|INTEGER
+|Die Zeilennummer im SQL-Statement, welches zum Zeitpunkt des Snapshots gestartet wurde
+
+|MON$SOURCE_COLUMN
+|INTEGER
+|Die Spaltennummer im SQL-Statement, welches zum Zeitpunkt des Snapshots gestartet wurde
+
+|MON$STAT_ID
+|INTEGER
+|Statistik-Kennung
+|===
+
+.``EXECUTE STATEMENT``-Aufrufe
+Informationen über Aufrufe, die mittels `EXECUTE STATEMENT` ausgeführt wurden, erscheinen nicht im Aufruf-Stack.
+
+.Beispiel zur Verwendung von `MON$CALL_STACK`
+Ermitteln des Aufruf-Stack für alle Verbindungen außer der eigenen:
+
+[source]
+----
+WITH RECURSIVE
+  HEAD AS (
+    SELECT
+      CALL.MON$STATEMENT_ID, CALL.MON$CALL_ID,
+      CALL.MON$OBJECT_NAME, CALL.MON$OBJECT_TYPE
+    FROM MON$CALL_STACK CALL
+    WHERE CALL.MON$CALLER_ID IS NULL
+    UNION ALL
+    SELECT
+      CALL.MON$STATEMENT_ID, CALL.MON$CALL_ID,
+      CALL.MON$OBJECT_NAME, CALL.MON$OBJECT_TYPE
+    FROM MON$CALL_STACK CALL
+      JOIN HEAD ON CALL.MON$CALLER_ID = HEAD.MON$CALL_ID
+  )
+SELECT MON$ATTACHMENT_ID, MON$OBJECT_NAME, MON$OBJECT_TYPE
+FROM HEAD
+  JOIN MON$STATEMENTS STMT ON STMT.MON$STATEMENT_ID = HEAD.MON$STATEMENT_ID
+WHERE STMT.MON$ATTACHMENT_ID <> CURRENT_CONNECTION
+----
+
+[[fblangref-appx05-contxtvars-de]]
+== `MON$CONTEXT_VARIABLES`
+
+`MON$CONTEXT_VARIABLES` zeigt Infos über benutzerdefinierte Kontextvariablen an.
+
+[[fblangref25-appx05-tbl-contxtvars]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$ATTACHMENT_ID
+|INTEGER
+|Verbindungskennung.
+Gültiger Wert nur für Variablen auf Verbindungsebene.
+Für Transaktionsebenen ist der Variablenwert `NULL`.
+
+|MON$TRANSACTION_ID
+|INTEGER
+|Transaktionskennung.
+Gültiger Wert nur auf Transaktionsebene.
+Für Verbindungsebenen ist der Variablenwert `NULL`.
+
+|MON$VARIABLE_NAME
+|VARCHAR(80)
+|Name der Kontextvariable
+
+|MON$VARIABLE_VALUE
+|VARCHAR(255)
+|Wert der Kontextvariable
+|===
+
+[[fblangref-appx05-mondb-de]]
+== `MON$DATABASE`
+
+`MON$DATABASE` zeigt Header-Daten der Datenbank an, mit der der aktuelle Benutzer verbunden ist.
+
+[[fblangref25-appx05-tbl-mondb-de]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$DATABASE_NAME
+|VARCHAR(255)
+|Name und voller Pfad der primären Datenbankdatei oder der Datenbank-Alias.
+
+|MON$PAGE_SIZE
+|SMALLINT
+|Datenbank Seitengröße in Bytes.
+
+|MON$ODS_MAJOR
+|SMALLINT
+|Haupt-ODS-Version, z.B. 11
+
+|MON$ODS_MINOR
+|SMALLINT
+|Unter-ODS-Version, z.B. 11
+
+|MON$OLDEST_TRANSACTION
+|INTEGER
+|Nummer der ältesten (relevanten) Transaktion (oldest [interesting] transaction (OIT))
+
+|MON$OLDEST_ACTIVE
+|INTEGER
+|Nummer der ältesten aktiven Transaktion (oldest active transaction (OAT))
+
+|MON$OLDEST_SNAPSHOT
+|INTEGER
+|Nummer der Transaktion, die zum Zeitpunkt der OAT aktiv war - älteste Snapshot Transaktion (oldest snapshot transaction (OST))
+
+|MON$NEXT_TRANSACTION
+|INTEGER
+|Nummer der nächsten Transaktion zum Zeitpunkt als der Monitoring-Snapshot erstellt wurde
+
+|MON$PAGE_BUFFERS
+|INTEGER
+|Die Anzahl der Seiten, die im Speicher für den Datenbank Seiten-Cache (page cache) zugewiesen wurden
+
+|MON$SQL_DIALECT
+|SMALLINT
+|SQL-Dialekt der Datenbank: 1 oder 3
+
+|MON$SHUTDOWN_MODE
+|SMALLINT
+|Der derzeitige Shutdown-Status der Datenbank:
+
+`0` - Die Datenbank ist online +
+`1` - Multi-User Shutdown +
+`2` - Single-User Shutdown +
+`3` - Kompletter Shutdown
+
+|MON$SWEEP_INTERVAL
+|INTEGER
+|Sweep-Intervall
+
+|MON$READ_ONLY
+|SMALLINT
+|Dieses Kennzeichen gibt an, ob die Datenbank im Modus read-only (Wert 1) oder read-write (Wert 0) arbeitet.
+
+|MON$FORCED_WRITES
+|SMALLINT
+|Gibt an, ob der Schreibmodus der Datenbank auf synchrones Schreiben (forced writes ON, Wert ist 1) oder asynchrones Schreiben (forced writes OFF, Wert ist 0) gestellt ist
+
+|MON$RESERVE_SPACE
+|SMALLINT
+|Gibt an, ob reserve_space (Wert 1) oder use_all_space (Wert 0) zum Füllen der Datenbankseiten verwendet wird.
+
+|MON$CREATION_DATE
+|TIMESTAMP
+|Datum und Zeit zu der die Datenbank erstellt oder wiederhergestellt wurde.
+
+|MON$PAGES
+|BIGINT
+|Anzahl der zugewiesenen Seiten der Datenbank auf einem externen Gerät
+
+|MON$STAT_ID
+|INTEGER
+|Statistik-Kennung
+
+|MON$BACKUP_STATE
+|SMALLINT
+|Derzeitiger physikalischer Backup-Status (nBackup):
+
+`0` - normal +
+`1` - stalled +
+`2` - merge
+|===
+
+[[fblangref-appx05-iostats-de]]
+== `MON$IO_STATS`
+
+`MON$IO_STATS` zeigt Input/Output-Statistiken an.
+Die Zähler arbeiten kumulativ, gruppiert für jede Statistikgruppe.
+
+[[fblangref25-appx05-tbl-iostats-de]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$STAT_ID
+|INTEGER
+|Statistik-Kennung
+
+|MON$STAT_GROUP
+|SMALLINT
+|Statistik-Gruppe:
+
+`0` - Datenbank +
+`1` - Verbindung +
+`2` - Transaktion +
+`3` - Statement +
+`4` - Aufruf (Call)
+
+|MON$PAGE_READS
+|BIGINT
+|Anzahl der gelesenen Datenbankseiten
+
+|MON$PAGE_WRITES
+|BIGINT
+|Anzahl der geschriebenen Datenbankseiten
+
+|MON$PAGE_FETCHES
+|BIGINT
+|Anzahl der geholten (fetched) Datenbankseiten
+
+|MON$PAGE_MARKS
+|BIGINT
+|Anzahl der markierten Datenbankseiten
+|===
+
+[[fblangref-appx05-memusage-de]]
+== `MON$MEMORY_USAGE`
+
+`MON$MEMORY_USAGE` zeigt Statistiken zu Speichernutzung an.
+
+[[fblangref25-appx05-tbl-memusage-de]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$STAT_ID
+|INTEGER
+|Statistik-Kennung
+
+|MON$STAT_GROUP
+|SMALLINT
+|Statistik-Gruppen:
+
+`0` - Datenbank +
+`1` - Verbindung +
+`2` - Transaktion +
+`3` - Statement +
+`4` - Aufruf (Call)
+
+|MON$MEMORY_USED
+|BIGINT
+|Die Größe des genutzten Speichers in Bytes.
+Diese Daten beziehen sich auf die höchste Speicherzuteilung, die vom Server abgerufen wird.
+Dies ist nützlich, um Speicherlecks und exzessiven Speicherverbrauch in Verbindungen, Prozeduren, etc. zu ermitteln.
+
+|MON$MEMORY_ALLOCATED
+|BIGINT
+|Die Größe des Speichers, der durch das Betriebssystem zugeteilt wurde.
+Angabe in Bytes.
+Diese Daten beziehen sich auf die Low-Level-Zuweisung von Speicher, die durch den Firebird Speicher-Manager abgerufen wird -- die Größe des Speichers zugewiesen durch das Betriebssystem -- womit Sie die physikalischen Speicherbedarf steuern können.
+
+|MON$MAX_MEMORY_USED
+|BIGINT
+|Der größte Speicherverbrauch für dieses Objekt in Bytes.
+
+|MON$MAX_MEMORY_ALLOCATED
+|BIGINT
+|Die größte Speicherreservierung für dieses Objekt durch das Betriebssystem in Bytes.
+|===
+
+[NOTE]
+====
+Nicht alle Datensätze dieser Tabelle haben nicht-null-Werte.
+`MON$DATABASE` und Objekte in Beziehung auf Speicherzuweisungen haben nicht-null-Werte.
+Kleinere Speicherzuordnungen werden hier nicht angeführt, sondern dem Datenbankspeicherpool zugewiesen.
+====
+
+[[fblangref-appx05-recstats-de]]
+== `MON$RECORD_STATS`
+
+`MON$RECORD_STATS` zeigt Datensatz-Level-Statistiken an.
+Die Zähler arbeiten kumulativ, gruppiert für jede Statistikgruppe.
+
+[[fblangref25-appx05-tbl-recstats-de]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$STAT_ID
+|INTEGER
+|Statistik-Kennung
+
+|MON$STAT_GROUP
+|SMALLINT
+|Statistik-Gruppen:
+
+`0` - Datenbank +
+`1` - Verbindung +
+`2` - Transaktion +
+`3` - Statement +
+`4` - Aufruf (Call)
+
+|MON$RECORD_SEQ_READS
+|BIGINT
+|Anzahl der sequenziell gelesenen Datensätze
+
+|MON$RECORD_IDX_READS
+|BIGINT
+|Anzahl der mittels Index gelesenen Datensätze
+
+|MON$RECORD_INSERTS
+|BIGINT
+|Anzahl der eingefügten Datensätze
+
+|MON$RECORD_UPDATES
+|BIGINT
+|Anzahl der aktualisierten Datensätze
+
+|MON$RECORD_DELETES
+|BIGINT
+|Anzahl der gelöschten Datensätze
+
+|MON$RECORD_BACKOUTS
+|BIGINT
+|Anzahl der Datensätze für die eine neue primäre Datensatzversion während eines Rollbacks oder Savepoint-Undo erstellt wurde.
+
+|MON$RECORD_PURGES
+|BIGINT
+|Anzahl der Datensätze für die die Versionskette nicht länger von der OAT (oldest active transaction) oder jüngeren Transaktionen benötigt wird.
+
+|MON$RECORD_EXPUNGES
+|BIGINT
+|Anzahl der Datensätze, in denen die Versionskette aufgrund von Löschungen innerhalb von Transaktionen gelöscht wird, die älter als die OAT (oldest active transaction) sind
+|===
+
+[[fblangref-appx05-statements-de]]
+== `MON$STATEMENTS`
+
+`MON$STATEMENTS` zeigt Statments an, die für die Ausführung vorbereitet wurden.
+
+[[fblangref25-appx05-tbl-statements-de]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$STATEMENT_ID
+|INTEGER
+|Statement-Kennung
+
+|MON$ATTACHMENT_ID
+|INTEGER
+|Verbindungs-Kennung
+
+|MON$TRANSACTION_ID
+|INTEGER
+|Transaktions-Kennung
+
+|MON$STATE
+|SMALLINT
+|Statement-Status:
+
+`0` - Leerlauf (idle) +
+`1` - Aktiv +
+`2` - verzögert (stalled)
+
+|MON$TIMESTAMP
+|TIMESTAMP
+|Der Zeitpunkt an dem das Statement vorbereitet wurde.
+
+|MON$SQL_TEXT
+|BLOB TEXT
+|Statement-Text in SQL
+
+|MON$STAT_ID
+|INTEGER
+|Statistik-Kennung
+|===
+
+Der Status STALLED gibt an, dass das Statement zum Zeitpunkt des Snapshots einen offenen Cursor besaß und auf den Client wartet, der weitere Datensätze abruft.
+
+[[fblangref-appx05-statements01]]
+=== `MON$STATEMENTS` zum Stoppen einer Abfrage nutzen
+
+Monitoringtabellen können nur gelesen werden.
+Jedoch hat der Server einen eingebauten Mechanismus um Datensätze in der Tabelle `MON$STATEMENTS` zu löschen (und nur zum Löschen), womit es möglich ist, laufende Abfragen zu stoppen.
+
+.Hinweis
+[NOTE]
+====
+* Werden derzeit keine Abfragen in der Verbindung ausgeführt, so wird jeder Versuch eine Abfrage zu stoppen, nicht funktionieren.
+* Nachdem eine Abfrage gestoppt wurde, werden Execute- und Fetch-Aufrufe der API den Fehlercode `isc_cancelled` zurückgeben.
+* Nachfolgende Abfragen laufen normal weiter.
+====
+
+.Beispiel
+Stoppen aller aktiven Abfragen der angegebenen Verbindung
+
+[source]
+----
+DELETE FROM MON$STATEMENTS
+  WHERE MON$ATTACHMENT_ID = 32
+----
+
+[[fblangref-appx05-transacs-de]]
+== `MON$TRANSACTIONS`
+
+`MON$TRANSACTIONS` gibt Auskunft über gestartete Transaktionen.
+
+[[fblangref25-appx05-tbl-transacs-de]]
+[cols="<4m,<3m,<5", frame="all", options="header",stripes="none"]
+|===
+^| Spaltenname
+^| Datentyp
+^| Beschreibung
+
+|MON$TRANSACTION_ID
+|INTEGER
+|Transaktions-Kennung
+
+|MON$ATTACHMENT_ID
+|INTEGER
+|Verbindungs-Kennung
+
+|MON$STATE
+|SMALLINT
+|Transaktionsstatus:
+
+`0` - Leerlauf (idle) +
+`1` - Aktiv
+
+|MON$TIMESTAMP
+|TIMESTAMP
+|Zeitpunkt an dem die Transaktion gestartet wurde
+
+|MON$TOP_TRANSACTION
+|INTEGER
+|Top-Level-Transaktionsnummer (Kennung)
+
+|MON$OLDEST_TRANSACTION
+|INTEGER
+|Kennung der ältesten relevanten Transaktion (oldest [interesting] transaction (OIT))
+
+|MON$OLDEST_ACTIVE
+|INTEGER
+|Kennung der ältesten aktiven Transaktion (oldest active transaction (OAT))
+
+|MON$ISOLATION_MODE
+|SMALLINT
+|Isolationsmoduls (Level):
+
+`0` - Konsistenz (Snapshot für Tabellenstabilität) +
+`1` - Konkurrierend (Snapshot) +
+`2` - Read Committed mit Datensatzversion +
+`3` - Read Committed ohne Datensatzversion
+
+|MON$LOCK_TIMEOUT
+|SMALLINT
+|Lock-Timeout:
+
+`-1` - warten (ewig) +
+`0` - nicht warten +
+`1` oder größer - Lock-Timeout in Sekunden
+
+|MON$READ_ONLY
+|SMALLINT
+|Gibt an, ob die Transaktion nur-lesend (Wert 1) oder lesend-schreibend (Wert 0) läuft
+
+|MON$AUTO_COMMIT
+|SMALLINT
+|Gibt an, ob automatisches Commit für die Transaktion verwendet wird (Wert 1) oder nicht (Wert 0)
+
+|MON$AUTO_UNDO
+|SMALLINT
+|Gibt an, ob der Logging-Mechanismus _automatiches Undo_ für die Transaktion verwendet wird (Wert 1) oder nicht (Wert 0)
+
+|MON$STAT_ID
+|INTEGER
+|Statistik-Kennung
+|===
+
+:sectnums:
