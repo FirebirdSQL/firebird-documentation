@@ -1,0 +1,503 @@
+[[ufb-cs]]
+= About Clients and Servers
+:imagesdir: ../../images
+
+In this chapter we take a look at the essential pieces of client/server systems as they are implemented in Firebird and examine how applications interact with the client and server.
+
+[[ufb-cs-clients]]
+== What is a Firebird client?
+
+A Firebird client is a program, usually written in a high-level language such as C, C{plus}{plus}, Delphi, Java, PHP or Perl, that provides end-user access to the features and tools of the Firebird database management system and to data stored in databases.
+The `isql` interactive SQL utility is an example of a client application.
+
+In the client/server model, applications never touch the database physically.
+Any application process converses with the server through the Firebird client library which resides on the client workstation.
+It surfaces a programming interface of function call structures known as the Firebird API.
+This client library must be installed on every user's workstation.
+Generally, other layers are also involved in the interface between the application program and the Firebird client, providing generic or application-language-specific mechanisms for populating and calling the API functions.
+
+Firebird clients typically reside on remote workstations and connect to a Firebird server running on a host node in a network.
+Firebird also supports local connection, that is, a client application, the Firebird client library and the Firebird server all executing on the same physical box.
+
+Firebird clients need not run on the same type of hardware and/or operating system as the server they connect to.
+It is quite common to have a number of Windows 98 or XP workstations talking to a server that runs under Windows NT, 2000 or 2003, or any of several flavours of UNIX or Linux.
+
+[[ufb-cs-fig-csmodel]]
+.The Firebird client/server model
+image::firebirddocs/ufb/ClientServer.png[]
+
+[[ufb-cs-clientlib]]
+== The Firebird client library
+
+The Firebird client library provides an Application Programming Interface (API) with functions for connecting to servers and working with databases.
+The library functions communicate with the server(s) using a dedicated Firebird client/server protocol that sits on top of the general network protocol provided by the OS.
+
+All client applications and middleware must use the API in some way to access Firebird databases.
+The Firebird API is backwardly compatible with the InterBase API.
+The [ref]_InterBase API Guide_ (available at https://www.ibphoenix.com/downloads/60ApiGuide.zip) contains extensive documentation on the use the API in applications.
+Additional features available in the Firebird API are documented in the Firebird release notes.
+
+[[ufb-cs-clientlib-filenames]]
+=== Client filenames
+
+The Firebird client library files are `fbclient.dll` (Windows), `libfbclient.so` (Linux network client) and `libfbembed.so` (Linux local client with embedded engine, Classic only). In order not to break certain existing applications, a copy of `fbclient.dll` with the old name `gds32.dll` can be installed on Windows machines.
+On Linux, legacy `libgds*` symlinks are installed automatically.
+
+[[ufb-cs-server]]
+== The server
+
+The Firebird server is a program that runs on a machine with which client workstations can communicate by way of a network.
+Clients connect to databases physically located on this server host machine.
+The same machine that hosts the executing Firebird server process must host the Firebird databases in its own storage space.
+Only the server process has direct, filesystem-level access to the database files.
+The server is fully network-enabled, serving multiple connections simultaneously, in response to requests from other nodes in the network.
+If the network runs under TCP/IP protocol, the scope of the network is virtually limitless.
+
+In the Superserver architecture, the server process is multi-threaded.
+In Classic, a new process is started for each connection.
+
+[[ufb-cs-server-tasks]]
+=== Server tasks
+
+The server's job is to
+
+* regulate access by transactions to individual sets of data;
+* ensure that each transaction gets and keeps a consistent view of the permanently stored data which it has requested through the client;
+* receive requests to modify or delete a row and either:
+** grant a transaction exclusive write access to the row, or
+** deny access if another transaction already has a write pending;
+* maintain the statistics for each database;
+* maintain and refer to the metadata for each database, in order to manage transactions, data and "`house-cleaning`".
+
+Clients' requests result in the server performing tasks such as
+
+* creating new databases;
+* creating new data structures inside databases;
+* validating and compiling source code for procedures;
+* searching tables for data matching provided criteria;
+* collating, sorting and tabulating sets of data;
+* passing sets of data back to the requesting client;
+* modifying the values of data;
+* inserting new data into tables;
+* removing (deleting) data;
+* executing compiled procedures;
+* routing messages to clients.
+
+[[ufb-cs-server-multiple]]
+=== Multiple servers
+
+Starting at version 1.5, you can have multiple Firebird servers running on the same machine.
+Firebird 1.5 servers can also coexist with a Firebird 1.0 or InterBase server.
+Some extra configuration steps are required though.
+
+One thing to be aware of is that Firebird 1.5 under Windows needs the `CreateInternalWindow` configuration parameter to be set to 0 in order to run multiple servers.
+As a side effect, the local connection protocol is disabled (you can still connect to local databases via `localhost` though).
+This limitation no longer exists in Firebird 2, and the `CreateInternalWindow` parameter has been removed in that version.
+
+[[ufb-cs-server-filenames]]
+=== Server filenames
+
+Server binaries on Windows are called `fbserver.exe` (Superserver) and `fb_inet_server.exe` (Classic).
+On Linux, the same names are used, but without the `.exe` extension.
+
+[[ufb-cs-embedded]]
+== Client and server combined: Firebird Embedded Server
+
+[[ufb-cs-embedded-windows]]
+=== Embedded server on Windows
+
+The Windows [term]_Embedded Server_ is a Superserver engine plus client rolled into one library, called `fbembed.dll`.
+It is available as a separate download package.
+The embedded server (introduced with Firebird 1.5) was specifically designed to facilitate deployment of applications that ship with a Firebird server included.
+Installation is just a matter of unpacking the DLL and a few other files to the desired location.
+The security database is not used at all: anyone can connect to any database, as long as the user running the application has filesystem-level access rights to the database(s) in question.
+
+You can have multiple embedded servers running at the same time, and you can have multiple apps connecting to the same embedded server.
+Having a regular server already running isn't a problem either.
+However, an embedded server locks a database file for its own exclusive use after successful connection.
+This means that you cannot access the same database from multiple embedded server processes simultaneously (or from any other servers, once an embedded server has locked the file).
+
+The embedded server has no facility to accept any network connections.
+Only true local access is possible, with a connect string that doesn't contain a host name (not even `localhost`).
+
+Needless to say, this is not for your regular client-server database usage, as it bypasses a lot of security features.
+It's using Firebird as a desktop database system.
+
+[NOTE]
+====
+A Firebird embedded server DLL can also be used as a network client.
+That is, if a regular Firebird server is listening for connections on the target computer, you can connect to databases on that system using a network-style connect string like `inca:C:\School\Databases\Pupils.fdb`.
+
+This also implies that if a regular server is active on your local computer, you can connect to local databases through that regular server with your embedded server as a client using the "```localhost:```" syntax.
+This may seem contradictory to what has been said before about the absence of network support, but bear in mind that if you connect to `localhost` (or any other host), you are not using the embedded _server_;
+you're only using the _client_ part of `fbembed.dll` to connect to another server.
+You'll have to provide a valid user name and password for this to work.
+====
+
+[[ufb-cs-embedded-deploy]]
+=== Embedded server deployment
+
+First, download the Embedded server kit from SourceForge.
+It's typically named `Firebird-n.n.n.xxxx_embed_win32.zip`, with `n.n.n.xxxx` the Firebird version and build number.
+
+After unzipping, you'll find the embedded server `fbembed.dll` in the root directory of the package, along with some other files.
+Additionally, there are three subdirectories `doc`, `intl` and `udf`.
+
+To make your application work with the embedded server:
+
+. Copy `fbembed.dll` into your application directory.
+Rename it to `fbclient.dll` or `gds32.dll`, depending on what your application expects as a Firebird client filename.
+Many applications still look for `gds32.dll`.
+Firebird command-line tools like `isql` and `gbak` -- which you can also run against the embedded server -- want `fbclient.dll`.
+You can also make copies with both names.
+. Also copy `firebird.msg` and `ib_util.dll` to your application directory.
+Copy `aliases.conf` if your application uses aliases to connect.
+The configuration file `firebird.conf` is only needed if you want to change the Firebird root directory;
+this will be discussed later.
+. For Firebird 2 or higher, copy the `icu*.dll` libraries too.
+. From the `intl` and `udf` directories, copy whatever your application or databases may need to same-named folders under your application directory.
+. Now if you run your application it will use the embedded server DLL to connect to any local database you desire, _provided that the Windows user who runs the application has sufficient access rights to the database file(s) in question!_
+Any combination of user name and password is accepted, as long as neither is an empty string (a space is OK though).
+
+The most important benefit of all this is that you can easily pack the Firebird Embedded files with your application and have them installed or unzipped at your users' computers without having to perform a separate Firebird install there (with all the additional worries of sufficient privileges, possible interference with already present Firebird or InterBase servers, etc. etc.).
+You can also have several embedded server versions (say 1.5.3 and 2.0) running on the same computer without the need for special configuration steps to keep them out of each other's way.
+
+[NOTE]
+====
+Please note that, even though the security database is bypassed, SQL privileges -- specified in the database itself -- still apply: if you connect as Firebird user `ZIGGY` and `ZIGGY` doesn't have access to table `STARDUST`, you won't get into that table.
+This is not as worrying as it seems, because you can connect as any user you like, including `SYSDBA`, with a dummy password.
+====
+
+==== Placing the Firebird files elsewhere
+
+By default, Firebird Embedded Server considers the folder that `fbembed.dll` lives in (under whatever name) as the Firebird root directory.
+In the setup described above, this is your application directory.
+You may want to place the Firebird files somewhere else, so as not to clutter your application directory.
+To do this, you must tell the server where to look for them.
+
+Let's say you want the Firebird files to reside in a folder called `D:\FbEmbedded`:
+
+. Copy `firebird.conf` to your application directory and edit the `RootDirectory` parameter like this:
++
+[source]
+----
+RootDirectory = D:\FbEmbedded
+----
++
+Alternatively, you may set the `FIREBIRD` environment variable to achieve the same.
+If both the configuration file parameter and the `FIREBIRD` envar are present, the latter takes precedence.
++
+[WARNING]
+====
+The `FIREBIRD` environment variable will be picked up by every Firebird server on the system (embedded or not) at startup, and override their registry settings and configuration file parameters.
+So use it with care, if at all.
+====
+. Copy/move the following items to `D:\FbEmbedded`:
+** `firebird.msg`
+** `aliases.conf` (if used)
+** the `intl` and `udf` subdirs plus contents (in so far as needed)
+. The following files however _must_ be left in your application's directory:
+** Any and all copies/renames of `fbembed.dll`
+** `firebird.conf`
+** `ib_util.dll`
+** for Firebird 2 and up: the `icu*.dll` libraries
+
+[[ufb-cs-embedded-linux]]
+=== Embedded server on Linux?
+
+The Linux Classic server comes with a client library called `libfbembed.so` which is used for local connections.
+This library contains a full Firebird engine, which explains why it's so much bigger than the Superserver client library.
+Local connections through this library are part of the user application process, not of a separate server process.
+Therefore, the user of the library must have filesystem-level access rights to the database -- just as with Windows Embedded.
+So yes, this is a true embedded server.
+
+There are also some differences.
+First, Linux Classic doesn't require an exclusive lock on the databases it opens.
+The database remains accessible from other clients.
+A further -- very important -- difference is that Linux Classic validates every login against the security database: no connections with phony user names or passwords here!
+Finally, you can't just ship `libfbembed.so` with your application and use it to connect to local databases.
+Under Linux, you always need a properly installed server, be it Classic or Super.
+
+[[ufb-cs-appdev]]
+== Application development
+
+Once a database has been created and populated, its information can be accessed through a client application.
+Some applications -- such as the Firebird _isql_ tool, _EMS SQL Manager_, _IB_SQL_, _IBAccess_, _Database Workbench_, _FlameRobin_ and _IBOConsole) -- provide the capability to query data interactively and to create new metadata.
+
+Any application developed as a user interface to one or more Firebird databases will use the SQL query language, both to define the sets of data that can be stored and to pass requests to the server about rows it wants to update, insert into or delete from.
+SQL statements also convey the values which the application wants to be applied to those rows.
+
+Firebird implements a set of SQL syntaxes which have a high degree of compliance with the recognised SQL-92 and SQL-99 standards.
+The Firebird API provides complete structures for packaging SQL statements and the associated parameters, as well as for receiving the results.
+
+[[ufb-cs-appdev-embed]]
+=== Embedded SQL in Firebird applications
+
+Firebird provides the capability to embed SQL statements in applications written in C/C{plus}{plus} and some other programming languages.
+The code is then passed through _gpre_, the pre-processor, which substitutes the embedded SQL statements with equivalent host language code that calls functions in Firebird's client API library.
+The _gpre_ pre-processor generates a file that the host language compiler can compile.
+
+A special, extra subset of SQL-like source commands is available for this style of application, which are pre-processed into internal macro calls to the API.
+Known as Embedded SQL (ESQL), it provides a simpler, high-level language syntax for the programmer, that _gpre_ can interpret and re-code according to the more complex structure of the equivalent API calls.
+
+[NOTE]
+====
+The [ref]_InterBase Embedded SQL Guide_ (https://www.ibphoenix.com/downloads/60EmbedSQL.zip) provides extensive documentation on this subject.
+====
+
+[[ufb-cs-appdev-stat-dyn]]
+=== Predefined vs. dynamic queries
+
+Some queries have to be run in exactly the same form every time they are needed.
+Queries like this are good candidates for embedding in the host language and pre-processing by _gpre_.
+The pre-processor turns them into API function calls, giving a somewhat better performance than SQL that has to be interpreted at runtime.
+
+But many applications need to build queries that are at least partially dependent on information provided by the user -- freely entered in a text box, or selected from a list of options.
+This is called [term]_Dynamic SQL_ or [term]_DSQL_;
+that is, SQL code whose form is not (or not exactly) known at design time.
+DSQL can be embedded and preprocessed too, but some additional requirements and restrictions apply.
+More on this -- again -- in the [ref]_InterBase Embedded SQL Guide_.
+
+Delphi and C{plus}{plus} data access components provide properties and methods to analyse and parse DSQL request statements and manage the results passed back.
+Applications that use ODBC or other generic interfaces always work with DSQL statements, even if the user doesn't always see them.
+Query-by-example and other visual query tools for instance provide the user with a convenient, easy to use, and often "`SQL-free`" interface to extract, modify or delete data from the database.
+Yet the underlying code translates the user's input into DSQL statements, which are subsequently passed to the ODBC (or other) layer.
+
+Component interfaces provide methods and properties for building and preparing SQL template statements, allowing you to use placeholders for value criteria.
+At run-time, the application supplies input parameters of the appropriate data type to complete the statement.
+Provision is made also for retrieving output parameters from statements that return results after they are executed.
+
+[NOTE]
+====
+Of course the use of data access components isn't limited to dynamic SQL.
+You can also store static SQL strings -- known at design time -- in them.
+====
+
+[[ufb-cs-appdev-rad]]
+=== RAD environments and component suites
+
+With the rise of rapid application development (RAD) tools in the past decade, the encapsulation of the API functions in suites of components presents a variety of attractive application development options for Firebird developers.
+
+==== The Borland Database Engine (BDE)
+
+Borland markets "`enterprise versions`" of a number of integrated development tools -- Delphi, Kylix, C{plus}{plus}Builder, JBuilder and some older products -- which can use the proprietary Borland Database Engine and native SQL Links InterBase drivers as a "`black box`" middleware layer to make InterBase and, latterly, Firebird databases behave like desktop databases.
+BDE version 5.2 and its associated InterBase driver, which first shipped with Delphi 6E, supports both Firebird and InterBase version 6, although it has known bugs affecting the Dialect 3 date and time data types.
+
+Because the BDE's purpose is to surface a generic, database-vendor-independent, client-centered data access layer to the IDE tools, it flattens out the differences between a wide range of different database systems.
+Hence, it limits the capability of applications to exploit the best features of Firebird, particularly multiple transactions per connection, control of transaction aging and concurrency control.
+
+The BDE can be useful where you need to develop an application that might be used with a choice of back-ends, of which Firebird is only one.
+Be warned however that people have reported problems with Firebird database access via the BDE, and these are likely to increase in number and severity as Firebird continues to move further away from InterBase.
+
+==== SQLDirect
+
+SQLDirect is a shareware, lightweight replacement for the BDE.
+It supports Firebird at least up to and including version 1.5.
+Visit http://www.sqldirect-soft.com for more information and free trial versions.
+
+==== DBExpress and Datasnap
+
+DBExpress and Datasnap were introduced in later versions of the Borland tools to provide alternative generic interfaces to databases.
+They replace the BDE by moving its functionality into expanded native drivers for supported databases.
+Like the BDE, they do not support multiple concurrent transactions.
+They are of especial use where a data interface is required that is independent of the idiosyncrasies of different database management systems.
+The InterBase native drivers should provide adequate support for Firebird databases where optimising client/server performance is not high among the objectives.
+
+==== Direct-to-API Components
+
+In response to the shortcomings of the BDE, a number of component suites have become available for Delphi and Borland C{plus}{plus}Builder that bypass the BDE layer completely and encapsulate the Firebird API directly:
+
+IBObjects::
+IB Objects is a rich set of visual and non-visual database components that has been stable since 1997.
+It offers two BDE-free suites for data access; one compatible with the native Delphi and C{plus}{plus} Builder TDatasource and visual controls, the other completely independent of the Delphi data access architecture and supplied with its own visual controls.
++
+http://www.ibobjects.com
+
+FIBPlus::
+FIBPlus is another well-known and stable suite for Delphi and BCB.
+Developed from Gregory Deatz's FreeIBComponents suite, it offers a connectivity based on TDataset.
+It doesn't include any visual components, but it can work perfectly together with the Borland visual database classes, as well as with third-party visual data-aware components.
++
+http://www.devrace.com/en/fibplus/
+
+ZeosLib::
+ZeosLib is a set of free, open-source database connectivity components for Delphi, FreePascal/Lazarus, Kylix and C{plus}{plus} Builder.
+It supports a number of database systems, including Firebird.
+Because the ZeosLib components are based on TDataset, you can use them together with the Borland visual database controls.
++
+http://www.zeoslib.net/
+
+IBX (InterBase Express)::
+IBX was also developed from the FreeIBComponents.
+Its TDataset-based data access components were purchased for developing as a proprietary product by Borland.
+Components encapsulating the new Services API were added.
+It was left unfinished in 1999.
+The IBX source code was opened under the InterBase Public License in 2000 and it continues to be developed as an open source project.
+Borland distributes versions of IBX with some Delphi, Kylix and C{plus}{plus} Builder versions.
++
+CAUTION: Since InterBase and Firebird are diverging more and more, and Borland has (quite understandably) no intention to keep IBX Firebird-compatible, you should probably _not_ use it with Firebird versions 1.5 and higher (although most features will still be supported).
+
+UIB (Unified InterBase)::
+This is a set of non-visual components for Delphi, BCB, Kylix, Lazarus and FPC, supporting Firebird, InterBase and Yaffil.
+A ready-to-use SQL monitor (Windows only) is also available:
++
+http://www.progdigy.com/modules.php?name=UIB
++
+The UIB components are also contained in the JEDI Visual Component Library (JVCL):
++
+http://homepages.borland.com/jedi/jvcl/
++
+Both UIB and the JVCL are freely available open-source products.
+
+[[ufb-cs-appdev-other]]
+=== Other connectivity components and drivers
+
+==== Microsoft "`open connectivity`"
+
+Third-party ODBC and OLE-DB drivers are available for Windows programmers using Microsoft and other vendors' programming tools.
+The Firebird ODBC driver development page is at https://firebirdsql.org/en/odbc-driver/.
+
+==== Java
+
+A pure Java Type 4 JDBC driver called Jaybird is developed within the Firebird project.
+Jaybird is compliant with both the new JCA standard for application server connections to enterprise information systems and the established JDBC standard.
+
+[NOTE]
+====
+Firebird has abandoned re-implementation of the Borland InterClient and Interserver platform-independent client layers.
+====
+
+Official documentation and download links for Jaybird are at https://firebirdsql.org/en/jdbc-driver/.
+
+==== .NET
+
+The Firebird ADO.NET Data Provider, developed as a Firebird subproject, re-implements the client API functions in C#.
+Consequently, .NET developers only need the data provider to talk to a Firebird server; there's no need to install a regular Firebird client.
+Home page: https://firebirdsql.org/en/net-provider/.
+
+[[ufb-cs-appdev-api]]
+=== API applications
+
+The Firebird client program supports two discrete application programming interface (API) modules.
+The most important is the core API, through which all database work is performed.
+A much smaller API module, the Services API, provides functions for accessing various command-line and other utilities from application programs.
+Developers can write high-level programming or script language applications that populate the data structures and call the API functions directly.
+
+[[ufb-cs-appdev-coreapi]]
+==== The Firebird core API
+
+Programmers who want to use the core API have to write code for allocating and populating the data structures that provide the communication layer between the client library and the server.
+Interactive SQL clients, component interfaces and embedded SQL "`hide`" these structures from the programmer by encapsulating them in their own higher level interfaces.
+Writing code that calls the API functions directly can be more powerful and flexible, with the following benefits:
+
+* Memory allocation control
+* No precompiling necessary
+* Access to transaction handles and options
+* Full access to error messages
+
+[[ufb-cs-appdev-coreapi-funcs]]
+==== Core API function categories
+
+Based on their operation targets, we can divide the API functions into the following categories:
+
+* Database connection control
+* Transaction control
+* Statement execution
+* Blob functions
+* Array functions
+* Security functions
+* Informational functions
+* Type conversions
+
+[[ufb-cs-appdev-servicesapi]]
+==== The Services API
+
+The opened InterBase 6.0 code from which Firebird was developed surfaced for the first time an application programming interface (API) providing a function call interface to certain server activities such as backup/restore, statistics and user management.
+Many of these calls provide programming interfaces to the code in the command-line tools.
+A few lower-level server functions are included as well, some of which overlap functions already available in the core API.
+
+[IMPORTANT]
+====
+Before Firebird 1.5, the Services API was only available with Firebird Superserver.
+Support for the entire Services API in Classic Server versions was completed in Firebird 1.5.1.
+====
+
+Borland's InterBase Express (IBX) components include a subset -- known as the Service components -- encapsulating access to services API calls from some versions of their Delphi, Kylix and C{plus}{plus}Builder development environments.
+Be aware however that IBX does not officially support Firebird.
+The higher your Firebird version, the more chance of incompatibilities and errors if you use IBX.
+
+==== IBPP
+
+IBPP is a C{plus}{plus} interface to the Firebird API.
+It is a class library written in "`pure`" C{plus}{plus} and hence not dependent on any specific programming environment, component set or even OS.
+You can use it anywhere you want Firebird connectivity in your C{plus}{plus} programs.
+
+IBPP was created and is maintained independently of the Firebird project.
+It is available for free and comes with its own very liberal license.
+The IBPP home page is at http://www.ibpp.org.
+
+[[ufb-cs-serverprog]]
+== Server-side programming
+
+Among Firebird's powerful features for dynamic client/server application programming is its capability to precompile source code on the server, storing the object code right inside the database in most cases.
+Such procedures and functions are executed completely on the server, optionally returning values or data sets to the client application.
+Firebird provides three styles of server-side programming capability: stored procedures, triggers and user-defined functions (UDFs).
+
+[[ufb-cs-serverprog-storedprocs]]
+=== Stored procedures
+
+Firebird's procedural language (PSQL) implements extensions to its SQL language, providing conditional logic, flow control structures, exception handling (both built-in and user-defined), local variables, an event mechanism and the capability to accept input arguments of almost any type supported by Firebird.
+It implements a powerful flow control structure for processing cursors which can output a dataset directly to client memory without the need to create temporary tables.
+Such procedures are called from the client with a `SELECT` statement and are known to developers as [term]_selectable stored procedures_.
+Procedures that don't return a dataset (although they may return result variables) are called [term]_executable stored procedures_;
+they are called with `EXECUTE PROCEDURE`.
+
+Stored procedures can call other stored procedures and can be recursive.
+All stored procedure execution, including selection of data sets from procedures and embedded calls to other procedures, is under the control of the single transaction that calls it.
+Accordingly, the work of a stored procedure call will be cancelled totally if the client rolls back the transaction.
+
+[[ufb-cs-serverprog-triggers]]
+=== Triggers
+
+Triggers are special procedures created for specific tables, for automatic execution during the process of committing DML work to the server.
+Any table can have any number of triggers to be executed before or after inserts, updates and deletions.
+Execution order is determined by a position parameter in the trigger's declaration.
+Triggers have some PSQL extensions not available to regular stored procedures or to dynamic SQL, most notably the context variables `OLD` and `NEW` which, when prefixed to a column identifier, provide references to the existing and requested new values of the column.
+Triggers can call stored procedures, but not other triggers.
+
+Work performed by triggers will be rolled back if the transaction that prompted them is rolled back.
+
+[[ufb-cs-serverprog-limitations]]
+=== PSQL limitations
+
+Stored procedures and triggers cannot start transactions, since they are under transaction control themselves.
+
+PSQL does not allow the execution of DDL (Data Definition Language) statements: it is strictly meant to operate on _data_, not on the structure of your database.
+Although you can circumvent this limitation with the `EXECUTE STATEMENT` syntax introduced in Firebird 1.5, it is generally considered unwise to do so.
+(Just because we give you a spade, it doesn't mean that you have to dig your own grave.)
+
+[[ufb-cs-serverprog-udf]]
+=== User-defined functions
+
+By design, in order to preserve its small footprint, Firebird comes with a very modest arsenal of internally-defined (native) data transformation functions.
+Developers can write their own very precise functions in familiar host-language code such as C/C{plus}{plus}, Pascal or Object Pascal to accept arguments and return a single result.
+Once an external function -- UDF -- is declared to a database, it becomes available as a valid SQL function to applications, stored procedures and triggers.
+
+Firebird supplies two libraries of ready-to-use UDFs: `ib_udf` and `fbudf`.
+Firebird looks for UDF libraries in its own `UDF` subdirectory or in other directories specified in the Firebird configuration file.
+In Firebird 1.5 and upward this is done with the `UDFAccess` parameter;
+in earlier versions with `external_function_directory`.
+
+[NOTE]
+====
+In versions prior to 1.5 the `fbudf` library is only available on Windows.
+====
+
+[[ufb-cs-multidb]]
+== Multi-database applications
+
+Firebird applications can work with several databases at the same time through the client library -- something that not all relational database systems allow.
+Tables from separate databases cannot be joined to return linked sets, but cursors can be used to combine information.
+
+If consistency across database boundaries is required, Firebird can manage output sets from querying multiple databases inside a single transaction.
+Firebird implements automatic two-phase commit when data changes occur, to ensure that changes cannot be committed in one database if changes in another database, within the same transaction context, are rolled back or lost through a network failure.
