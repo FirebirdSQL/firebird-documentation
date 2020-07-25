@@ -1,7 +1,7 @@
 [[gfix]]
 = Firebird Database Housekeeping Utility
 Norman Dunbar
-1.8, 19 June 2020
+1.9, 25 July 2020
 :doctype: book
 :sectnums:
 :sectanchors:
@@ -343,7 +343,9 @@ It is far quicker to read data from memory that it is to have to physically read
 
 The size of the database cache is dependent on the database page size and the number of buffers allocated, a buffer is the same size as a database page, and whether the installation is using Classic or Superserver versions of Firebird.
 
-In a Classic Server installation, each connection to the database gets its own relatively small cache of 75 pages while Superserver creates a much larger cache of 2,048 pages which is shared between all the connections.
+In a Classic and SuperClassic Server installation, by default, each connection to the database gets its own relatively small cache of 256 pages (was 75 before Firebird 3.0) while Superserver creates a much larger cache of 8196 pages (was 2048 before Firebird 3.0) which is shared between all the connections.
+
+Usually, page buffers value is set as parameter DefaultDbCachePages in firebird.conf (and, in databases.conf since Firebird 3.0), but it also can be set directly in the database header using gfix tool (and this setting will override firebird.conf and databases.conf, so be careful).
 
 The command to set the number of cache pages is:
 
@@ -355,10 +357,20 @@ gfix -b[uffers] _BUFFERS_ _database_name_
 This command allows you to change the number of buffers (pages) allocated in RAM to create the database cache.
 
 You cannot change the database page size in this manner, only the number of pages reserved in RAM.
-One parameter is required which must be numeric and between 50 (the minimum) and 131,072 (the maximum).
+
+One parameter is required which must be numeric and between 50 (the minimum) and 2147483646 (the maximum since Firebird 2.5, before it was 131072). 
+
+[NOTE]
+====
+Please don't consider page buffers value as an ultimate parameter to improve Firebird's performance, and don't set it too high without clear understanding what are you doing.  
+====
 
 The setting applies only to the database you specify.
 No other databases running on the same server are affected.
+
+The new value of page buffers will be allocated at the first connection to the database. 
+
+There is a difference in behaviour between Firebird architectures: for SuperServer, if number of page buffers was changed while database had active connection, the old value will be used until all connections disconnect; for Classic/SuperClassic, new connections will use the new value of page buffers immediately after the change.
 
 The following example shows the use of `gstat` to read the current number of buffers, the `gfix` utility being used to set the buffers to 4,000 pages and `gstat` being used to confirm the setting.
 The value of zero for page buffers indicates the default setting for the server type is in use.
@@ -771,11 +783,12 @@ Firebird will automatically sweep through the database and remove the remnants o
 
 [NOTE]
 ====
-One other method of clearing out old rolled back transactions' garbage is simply to carry out a database backup.
+Theoretically, it is possible to clear out old rolled back transactions' garbage with a database backup by gbak tool.
 `Gbak` reads every table sequentially and thus visits every row in every table.
 Applications which also visit every row in one or more tables, will also cause the garbage in those tables to be collected.
-
 Neither will affect the database's OIT (Oldest Intersting Transaction) or OST (Oldest Snapshot) settings however.
+
+In practice, better do not consider backup as an alternative for sweep, because sweep does more things than collective garbage collection.
 ====
 
 In the Super Server version of Firebird 2.0, garbage collection has been vastly improved.
@@ -1144,8 +1157,9 @@ linux>
 [[gfix-pagespace]]
 == Database Page Space Utilisation
 
-When a database page is being written to, Firebird reserves 20% of the page for future use.
-This could be used to extend `VARCHAR` columns that started off small and then were updated to a longer value, for example.
+Firebird reserves some space on the data page for the possible future updates or deletes of records on this page, to reduce possible fragmentation. 
+The amount of reserved space can be approximately considered as a number of records, multipled by the record header size.
+Therefore, for many very small records, reserve can be close to 50% of data page, and for the single huge record can be 22 bytes or so (depends on the version of On-Disk Structure of the database).
 
 If you wish to use all the available space in each database page, you may use the `-use` command to configure the database to do so.
 If you subsequently wish to return to the default behaviour, the `-use` command can be used to revert back to leaving 20% free space per page.
@@ -1315,6 +1329,65 @@ gfix -m[end] _database_name_
 This causes the corruptions in data records to be ignored.
 While this sounds like a good thing, it is not.
 Subsequent database actions (such as taking a backup) will not include the corrupted records, leading to data loss.
+
+[[gfix-db-practice]]
+==== Practical tips for databases recovery
+
+In practice, to recover database it is necessary to use gfix and gbak tools.
+
+First of all, before the recovery, it is necessary to create a file copy of the corrupted database file, to be able to repeat recovery procedure with some variations.
+
+Then, run gfix full validation command with disabled cheksums validation:
+[listing,subs=+quotes]
+----
+gfix -v[alidate] -full -ignore _database_name_
+----
+After that, run mend, also with disabled checksum validation:
+[listing,subs=+quotes]
+----
+gfix -m[end] -ignore _database_name_
+----
+
+In case of a corruption, gfix returns the summary of errors found:
+
+* Number of record level errors - number of corrupted records found during gfix work. 
+These records are not correct - essentially, lost.
+* Number of index page errors - number of index pages in bad indices. 
+When even the only key is incorrect in index, gfix marks whole index as bad, so number of pages usually is high. 
+However, since it does not affect user's data, and due to the fact that corrupted indices will be recreated during backup/restore, this can be considered as for your information only.
+* Number of transaction page errors - number of transaction pages which were fixed by gfix. 
+Usually if you see this message it means that gfix did its job and now transactions are Ok.
+* Number of BLOB errors - number of bad BLOB pages, it indicates number of bad BLOBs.
+* Number of database page errors - this is the overall number of database pages, which were visited and changed/marked as bad by gfix. 
+Again, this is mostly for your information.
+
+[NOTE]
+====
+Gfix prints the detailed information about found errors to the firebird.log
+====
+
+After that, it is necessary to do backup and restore of the corrupted database using gbak command:
+[listing,subs=+quotes]
+----
+gbak -backup -ignore _database_name_  _backup1.fbk_
+
+gbak -create  _backup1.fbk_ _new_database_name_ 
+----
+
+If backup and restore with gbak completed successfully, database is recovered.
+
+Since Firebird 3.0, gbak tools has very useful option: -SKIP_D[ATA]. 
+It allows to specify comma-separated list of tables to be skipped from the backup:
+----
+gbak -b -skip_data country,currency  localhost/3050:C:\Data\inventory.fdb C:\data\111.gbk  -user SYSDBA -pass masterkey
+----
+For recovery purposes, it allows to exclude tables with reported corruptions from the backup.
+
+If the process above did not fix the corruption, or error still persists, consider the following alternatives:
+
+* If database is readable, pump data from the corrupted database to the empty database with the same structure
+* Use https://firebirdsql.org/en/third-party-tools/#rec[third-party Firebird recovery tools]
+* Revert to the last backup
 
 [IMPORTANT]
 ====
@@ -1553,6 +1626,11 @@ Courtesy of Ann Harrison.
 |19 Jun 2020
 |MR
 |Conversion to AsciiDoc, minor copy-editing
+
+|1.9
+|25 Jul 2020
+|AK
+|Changed description for gfix -buffers, gfix -reserve, gfix recovery, and some small fixes.
 |===
 
 :sectnums:
@@ -1573,5 +1651,6 @@ The Initial Writer of the Original Documentation is: Norman Dunbar.
 Copyright (C) 2007–2019.
 All Rights Reserved.
 Initial Writer contact: NormanDunbar at users dot sourceforge dot net.
+Contributor(s): Alexey Kovyazin
 
 :sectnums:

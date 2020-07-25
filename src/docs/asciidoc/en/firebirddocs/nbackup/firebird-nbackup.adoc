@@ -1,7 +1,7 @@
 [[nbackup]]
 = Firebird's nbackup tool
-Paul Vinkenoog; Mark Rotteveel
-1.5, 27 June 2020
+Paul Vinkenoog; Mark Rotteveel; Alexey Kovyazin
+1.6, 25 July 2020
 :doctype: book
 :sectnums:
 :sectanchors:
@@ -27,14 +27,16 @@ they will likely coexist for some time to come.
 With nbackup, you can perform two different kinds of tasks:
 
 . Making and restoring of both full and [term]_incremental_ backups.
-An [term]_incremental backup_ only contains the mutations since some specific previous backup.
+An [term]_incremental backup_ only contains the mutations since some specific previous backup. 
+This task can be performed only with Firebird command-line tool nbackup.
 . Locking the main database file so you can subsequently back it up yourself with copying or backup tools of your own choice.
-In this mode, nbackup doesn't back up anything;
-it just creates the conditions under which you can safely make the backup yourself.
-There's a provision for restoring here, too.
+In this mode, nbackup doesn't back up anything; it just creates the conditions under which you can safely make the backup yourself. 
+There's a provision for restoring here, too. 
+Locking is necessary to make valid backups of Firebird databases inside virtual machines: without locking a database before backup of VM, the database file in the VM backup could be inconsistent. 
+See <<nbackup-lock-virtual-machine>>.
 
 Both modes can operate on an active database, without hindering connected users.
-The backup created will always reflect the state of the database _at the beginning of the     operation_.
+The backup created will always reflect the state of the database _at the beginning of the operation_.
 Furthermore, only `SYSDBA` and the database owner (and sometimes OS admins) can make a backup, but every user can restore a backup to a new database.
 In these respects nbackup doesn't differ from gbak.
 
@@ -50,7 +52,7 @@ This can make a huge difference with databases in the gigabyte range.
 [[nbackup-limitations]]
 === Limitations of nbackup
 
-* Nbackup will not sweep and compact your database the way gbak does.
+* Nbackup will not sweep and compact your database the way gbak does (in a case of backup with subsequent restore).
 * You can't change the database owner with an nbackup backup/restore cycle, like you can with gbak.
 * Nbackup can't make [term]_transportable backups_, that is: backups you can restore on an incompatible platform or under another server version.
 * At this moment, nbackup should not be used on multi-file databases.
@@ -171,7 +173,7 @@ Access to the backup file is -- obviously -- always on the filesystem level.
 == Making and restoring backups
 
 To begin with: `nbackup.exe` is located in the `bin` subdirectory of your Firebird folder.
-Typical locations are e.g. `C:\Program Files\Firebird\Firebird_2_0\bin` (Windows) or `/opt/firebird/bin` (Linux).
+Typical locations are e.g. `C:\Program Files\Firebird\Firebird_3_0` or `C:\Program Files\Firebird\Firebird_2_0\bin` (Windows) or `/opt/firebird/bin` (Linux).
 Just like most of the tools that come with Firebird, nbackup has no graphical interface;
 you launch it from the command prompt or call it from within a batch file or application.
 
@@ -196,10 +198,24 @@ To make a full database backup, the command syntax is:
 nbackup [-U _user_ -P _password_] -B 0 _database_ [_backupfile_]
 ----
 
-For instance:
+For instance, assuming the database is located in  `C:\Data`, and  `nbackup.exe ` is in the search of path Windows:
 
+[listing,subs=+quotes]
 ----
-C:\Data> nbackup -B 0 inventory.fdb inventory_1-Mar-2006.nbk
+C:\Data>nbackup -B 0 inventory.fdb inventory_1-Mar-2006.nbk
+----
+
+Or, if Firebird (from version 2.5) is running on non-standard port, in this example, 3051:
+[listing,subs=+quotes]
+----
+C:\Data>nbackup -B 0 localhost/3051:C:\Data\inventory.fdb C:\Data\inventory-level-0-Jul-2020.nbk -user SYSDBA -pass masterkey
+----
+
+In Firebird 3.0 and higher, in a case of successful completing the backup, the nbackup will print the short statistics:
+----
+time elapsed    0 sec
+page reads      307
+page writes     307
 ----
 
 [[nbackup-backups-comments]]
@@ -255,6 +271,7 @@ It just gives a rough (and incomplete) impression of what happens under the hood
 
 . First of all, the main database file is locked by changing an internal state flag.
 From this moment on, any and all mutations in the database are written to a temporary file -- the difference file or [term]_delta file_.
+By default, the delta file is created in the same folder as a database file, with the additional extension .delta, for example: MyDatabase.fdb.delta
 . Then the actual backup is made.
 This isn't a straight file copy;
 restoring must be done by nbackup as well.
@@ -332,6 +349,11 @@ C:\Data> nbackup -B 1 inventory.fdb inventory_3-Mar-2006.nbk
 
 This one contains the mutations of the last _two_ days, since the full backup, not only those since the previous level-1 backup.
 
+[NOTE]
+====
+The previous incremental backup of any level must be completed before the start of the next incremental backup, otherwise `nbackup` execution will not do the desired backup, and return error "Database is already in the physical backup mode". 
+====
+
 A couple of hours on we go for a level-2 backup:
 
 ----
@@ -339,6 +361,14 @@ C:\Data> nbackup -B 2 inventory.fdb inventory_3-Mar-2006_2.nbk
 ----
 
 This youngest backup only contains the mutations since the most recent level-1 backup, that is: of the last few hours.
+
+[[nbackup-performance-notice]]
+==== Important performance notice
+
+Before Firebird 3.0, all incremental backups (i.e., level 1, 2, etc) will read the whole database file to locate the changes and store them into a backup file.
+It can affect the database performance in a case of big databases (100Gb+) and slow disk subsystem (usually, slowness can be noticed on non-SSD drives). 
+Starting from Firebird 3.0, only the changed portion of the database file is read, so incremental backups level 1 and higher are much faster, and give the less impact on the database performance.
+
 
 [NOTE]
 ====
@@ -536,6 +566,7 @@ If you do have sufficient rights, then it's more practical to use nbackup itself
 * Specifying `-nbk_no_triggers` or `-nbk_direct` with `-action_nrest` leads to an error message.
 Nbackup itself is more lenient here: it simply ignores the `-T` and `-D` parameters if they are used in the wrong context.
 * Instead of a database filename you may also use an alias.
+* Database path (or alias) length is limited to 255 characters.
 
 [[nbackup-backups-pract]]
 === A practical application
@@ -704,6 +735,22 @@ To prevent having to copy the entire device just to be on the safe side -- possi
 This parameter is only valid in combination with `-L` and when it is present, nbackup writes the database size in pages to `stdout` after locking the database.
 Because the size is given in pages, it has to be multiplied by the database page size in order to get the actual number of bytes to be copied.
 Or, if you use the `dd` copy utility, you could specify the page size as `(i)bs` and the output of `nbackup -L -S` as `count`.
+
+[[nbackup-lock-virtual-machine]]
+=== Locking/Unlocking database in case of Virtual Machines Backup
+
+Using Virtual Machines backup tools without preparing database for such type of backup can lead to the corrupted (i.e., useless) backup copy.
+
+Firebird server intensively uses its own cache in RAM to speed up operations, and implements complex techniques to ensure database consistency at the every given moment.
+Virtual Machine backup tools are not aware about Firebird's cache, and usually they do not consider database files as random-access files.
+
+As a result, when the virtual machine backup is done, the database file inside it will have the state as after a hard reset of VM, and very often such copy is not consistent (i.e., corrupted). 
+The chance of such problem is higher when many active users are changing the database, or if there is active sweep process.
+
+Such inconsistent backups can occur in any virtualized environment, including public clouds.
+
+In order to create good Firebird database backup with VM backup tool, it is necessary to lock database file with nbackup before the VM backup, and unlock after it. 
+Usually VM backup tool allows executing custom pre- and post-backup scripts, where you can lock/unlock Firebird databases.
 
 [[nbackup-deltafile]]
 == Setting the delta file
@@ -977,8 +1024,13 @@ In second table: self-restore -> user restore.
 |27 Jun 2020
 |MR
 |Conversion to AsciiDoc, minor copy-editing
-|===
 
+
+|1.6
+|25 Jul 2020
+|AK
+|Paragraph about VM backups, example with non-standard port, performance notice paragraph on incremental backup
+|===
 :sectnums:
 
 :sectnums!:
@@ -998,6 +1050,6 @@ Copyright (C) 2005–2020.
 All Rights Reserved.
 Initial Writer contact: <firstname> at <lastname> dot nl.
 
-Contributor(s): Mark Rotteveel
+Contributor(s): Mark Rotteveel, Alexey Kovyazin
 
 :sectnums:
