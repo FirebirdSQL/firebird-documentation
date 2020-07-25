@@ -1,7 +1,7 @@
 [[nbackup]]
-= Firebird's nbackup tool
-Paul Vinkenoog; Mark Rotteveel; Thomas Steinmaurer; Frank Ingermann; Martin Köditz
-1.5-de, 01. Juli 2020
+= Firebirds nbackup-Werkzeug
+Paul Vinkenoog; Mark Rotteveel; Alexey Kovyazin; Thomas Steinmaurer; Frank Ingermann; Martin Köditz
+1.6-de, 25. Juli 2020
 :doctype: book
 :sectnums:
 :sectanchors:
@@ -21,18 +21,19 @@ toc::[]
 Es bietet Möglichkeiten, die in dem bekannten Firebird Backup-Tool [term]_gbak_ -- bereits in Firebird vorhandenes Backup-Tool -- nicht vorhanden sind. Es ersetzt jedoch nicht letzteres.
 Beide Programme haben ihre Stärken und Schwächen und werden sich noch für einige Zeit gegenseitig ergänzen.
 
-
 [[nbackup-overview]]
 == Nbackup Funktionalität - Ein Überblick 
 
 Mit nbackup können Sie zwei unterschiedliche Arten von Aufgaben durchführen: 
 
 . Erstellung und Wiederherstellung von vollständigen und [term]_inkrementellen_ Sicherungen. 
-Eine _inkrementelle_ Sicherung beinhaltet nur Änderungen, die nach dem Zeitpunkt einer vorangegangenen Sicherung durchgeführt worden sind. 
+Eine [term]_inkrementelle Sicherung_ beinhaltet nur Änderungen, die nach dem Zeitpunkt einer vorangegangenen Sicherung durchgeführt worden sind. 
+Dies kann nur mit dem Firebird Befehlszeilenwerkzeug nbackup durchgeführt werden.
 . Sperren der Hauptdatenbankdatei, damit Sie sie anschließend selbst mit Kopier- oder Sicherungswerkzeugen Ihrer Wahl sichern können.
-In diesem Modus sichert nbackup nichts.
-Es werden nur die Bedingungen erstellt, unter denen Sie das Backup sicher selbst erstellen können.
+In diesem Modus sichert nbackup nichts. Es werden nur die Bedingungen erstellt, unter denen Sie das Backup sicher selbst erstellen können.
 Auch hier ist eine Wiederherstellung vorgesehen.
+Das Sperren ist erforderlich, um gültige Sicherungen von Firebird-Datenbanken in virtuellen Maschinen durchzuführen: Ohne Sperren einer Datenbank vor dem Sichern der VM kann die Datenbankdatei in der VM-Sicherung inkonsistent sein.
+Siehe auch <<nbackup-lock-virtual-machine>>.
 
 Beide Modi können in einer aktiven Datenbank ausgeführt werden, ohne verbundene Benutzer zu behindern.
 Die erstellte Sicherung spiegelt immer den Status der Datenbank _zu Beginn der Operation_ wider.
@@ -51,7 +52,7 @@ Dies kann bei Datenbanken im Gigabyte-Bereich einen großen Unterschied machen.
 [[nbackup-limitations]]
 === Einschränkungen von nbackup
 
-* nbackup wird kein Sweep und auch keine Verkleinerung Ihrer Datenbank durchführen, so wie das bei gbak der Fall ist.
+* nbackup wird kein Sweep und auch keine Verkleinerung Ihrer Datenbank durchführen, so wie das bei gbak im Falle einer Sicherung mit anschließender Wiederherstellung ist.
 * Sie können mit einem nbackup-Sicherungs/Wiederherstellungszyklus nicht den Eigentümer einer Datenbank ändern, so wie das mit gbak möglich ist. 
 * Nbackup kann keine [term]_transportablen Sicherungen_ erstellen, d.h. Sicherungen, die auf einer nicht-kompatiblen Plattform oder einer unterschiedlichen Serverversion wiederhergestellt werden können.
 * Zu diesem Zeitpunkt sollte nbackup nicht auf Mehrdateiendatenbanken ausgeführt werden.
@@ -172,7 +173,7 @@ Der Zugriff auf die Sicherungsdatei erfolgt -- natürlich -- immer auf Dateisyst
 == Backups erstellen und wiederherstellen
 
 Um zu beginnen: `nbackup.exe` befindet sich im Unterverzeichnis `bin` Ihrer Firebird-Installation. 
-Typische Speicherorte, zum Beispiel, sind: `C:\Programme\Firebird\Firebird_2_0\bin` (Windows) oder `/opt/firebird/bin` (Linux). 
+Typische Speicherorte, zum Beispiel, sind: `C:\Programme\Firebird\Firebird_3_0` oder `C:\Programme\Firebird\Firebird_2_0\bin` (Windows) oder `/opt/firebird/bin` (Linux). 
 So wie bei den meisten Tools, die mit Firebird mitkommen, besitzt auch nbackup keine graphische Benutzeroberfläche. 
 Sie müssen nbackup von der Kommandozeile aus starten (oder von einer Batchdatei oder einer Anwendung). 
 
@@ -197,10 +198,25 @@ Um eine vollständige Datenbanksicherung durchzuführen, verwenden Sie das folge
 nbackup [-U _user_ -P _password_] -B 0 _database_ [_backupfile_]
 ----
 
-zum Beispiel:
+Angenommen, die Datenbank befindet sich in `C:\Data` und `nbackup.exe` befindet sich im Windows-Suchpfad:
 
+[listing,subs=+quotes]
 ----
 C:\Data> nbackup -B 0 inventory.fdb inventory_1-Mar-2006.nbk
+----
+
+Oder, wenn Firebird (ab Version 2.5) zum Beispiel unter einem anderem Port als dem Standard läuft:
+[listing,subs=+quotes]
+----
+C:\Data>nbackup -B 0 localhost/3051:C:\Data\inventory.fdb C:\Data\inventory-level-0-Jul-2020.nbk -user SYSDBA -pass masterkey
+----
+
+In Firebird 3.0 und höher druckt nbackup bei erfolgreichem Abschluss der Sicherung gekürzte Statistiken:
+----
+C:\Data> nbackup -B 0 inventory.fdb inventory_1-Mar-2006.nbk
+time elapsed    0 sec
+page reads      307
+page writes     307
 ----
 
 [[nbackup-backups-comments]]
@@ -257,6 +273,7 @@ was intern bei der Ausführung von nbackup `-B` geschieht:
 
 . Zuallererst wird die Hauptdatenbankdatei durch das Ändern eines internen Flags gesperrt. Von diesem Zeitpunkt an werden alle Änderungen in der Datenbank in eine temporäre Datei geschrieben, 
 die auch als Differenzdatei oder [term]_Deltadatei_ bezeichnet wird. 
+Standardmäßig wird die Delta-Datei im selben Ordner wie eine Datenbankdatei mit der zusätzlichen Erweiterung .delta erstellt, z. B. MyDatabase.fdb.delta
 . Danach wird die Sicherung durchgeführt. Bei der daraus resultierenden Sicherungsdatei handelt es sich nicht um eine reguläre Dateikopie, sondern eine Wiederherstellung muss 
 ebenfalls mit nbackup durchgeführt werden. 
 . Nach der Fertigstellung der Sicherung wird der Inhalt der Deltadatei mit der Hauptdatenbankdatei zusammengeführt. Im Anschluss daran wird die Sperre auf der Datenbankdatei wieder entfernt 
@@ -333,6 +350,13 @@ C:\Data> nbackup -B 1 inventory.fdb inventory_3-Mar-2006.nbk
 
 Diese enthält die Mutationen der letzten zwei Tage seit der vollständigen Sicherung, nicht nur die seit der vorherigen Sicherung der Stufe 1.
 
+[NOTE]
+====
+Die vorherige inkrementelle Sicherung einer beliebigen Ebene muss vor dem Start der nächsten inkrementellen Sicherung abgeschlossen sein. Andernfalls führt `nbackup` nicht die gewünschte Sicherung durch und gibt den Fehler "Datenbank befindet sich bereits im physischen Sicherungsmodus" (engl. "Database is already in the physical backup mode") zurück.
+====
+
+
+
 Ein paar Stunden später erstellen wir ein Level-2-Backup:
 
 ----
@@ -340,6 +364,14 @@ C:\Data> nbackup -B 2 inventory.fdb inventory_3-Mar-2006_2.nbk
 ----
 
 Dieses jüngste Backup enthält nur die Mutationen seit dem letzten Level-1-Backup, d.h. der letzten Stunden.
+
+[[nbackup-performance-notice]]
+==== Wichtiger Leistungshinweis
+
+Vor Firebird 3.0 lesen alle inkrementellen Sicherungen (d.h. Stufe 1, 2 usw.) die gesamte Datenbankdatei, um die Änderungen zu lokalisieren und in einer Sicherungsdatei zu speichern.
+Dies kann die Datenbankleistung bei großen Datenbanken (100GB+) und langsamen Festplattensubsystemen beeinträchtigen (normalerweise kann bei Nicht-SSD-Laufwerken ein Geschwindigkeitseinbruch festgestellt werden).
+Ab Firebird 3.0 wird nur der geänderte Teil der Datenbankdatei gelesen, sodass inkrementelle Sicherungen der Stufe 1 und höher viel schneller sind und die Datenbankleistung weniger beeinträchtigen.
+
 
 [NOTE]
 ====
@@ -542,6 +574,7 @@ Wenn Sie über ausreichende Rechte verfügen, ist es praktischer, nbackup selbst
 * Die Angabe von `-nbk_no_triggers` oder `-nbk_direct` mit `-action_nrest` führt zu einer Fehlermeldung.
 Nbackup selbst ist hier milder: Es ignoriert einfach die Parameter `-T` und `-D`, wenn sie im falschen Kontext verwendet werden.
 * Anstelle eines Datenbankdateinamens können Sie auch einen Alias verwenden.
+* Die Länge des Datenbankpfads (oder Alias) ist auf 255 Zeichen begrenzt.
 
 [[nbackup-backups-pract]]
 === Eine praktische Anwendung
@@ -711,6 +744,22 @@ Um zu vermeiden, dass das gesamte Gerät kopiert werden muss, um auf der sichere
 Dieser Parameter ist nur in Kombination mit `-L` gültig. Wenn dieser vorhanden ist, schreibt nbackup die Datenbankgröße in Seiten nach dem Sperren der Datenbank in `stdout`.
 Da die Größe in Seiten angegeben ist, muss sie mit der Seitengröße der Datenbank multipliziert werden, um die tatsächliche Anzahl der zu kopierenden Bytes zu erhalten.
 Wenn Sie das Kopierdienstprogramm `dd` verwenden, können Sie die Seitengröße als `(i)bs` und die Ausgabe von `nbackup -L -S` als `count` angeben.
+
+[[nbackup-lock-virtual-machine]]
+=== Sperren / Entsperren der Datenbank bei der Sicherung virtueller Maschinen
+
+Die Verwendung von Sicherungswerkzeugen für virtuelle Maschinen ohne Vorbereitung der Datenbank für einen solchen Sicherungstyp kann zu einer beschädigten (d.h. nutzlosen) Sicherungskopie führen.
+
+Der Firebird-Server verwendet intensiv seinen eigenen Cache im RAM, um den Betrieb zu beschleunigen, und implementiert komplexe Techniken, um die Datenbankkonsistenz zu jedem Zeitpunkt sicherzustellen.
+Backup-Tools für virtuelle Maschinen kennen den Cache von Firebird nicht und betrachten Datenbankdateien normalerweise nicht als Dateien mit wahlfreiem Zugriff.
+
+Wenn die Sicherung der virtuellen Maschine abgeschlossen ist, hat die darin enthaltene Datenbankdatei den Status wie nach einem Hard-Reset der VM, und sehr oft ist eine solche Kopie nicht konsistent, also beschädigt.
+Die Wahrscheinlichkeit eines solchen Problems ist höher, wenn viele aktive Benutzer die Datenbank ändern oder wenn ein aktiver Sweep-Prozess läuft.
+
+Solche inkonsistenten Sicherungen können in jeder virtualisierten Umgebung, einschließlich öffentlicher Clouds, auftreten.
+
+Um eine gute Firebird-Datenbanksicherung mit dem VM-Sicherungstool zu erstellen, muss die Datenbankdatei vor der VM-Sicherung mit nbackup gesperrt und danach entsperrt werden.
+Normalerweise ermöglicht das VM-Sicherungstool die Ausführung benutzerdefinierter Skripts vor und nach der Sicherung, mit denen Sie Firebird-Datenbanken sperren / entsperren können.
 
 [[nbackup-deltafile]]
 == Delta-Datei einstellen
@@ -995,6 +1044,16 @@ In der zweiten Tabelle: Selbstwiederherstellung -> Benutzerwiederherstellung.
 |01. Jul. 2020
 |MK
 |Deutsche Übersetzung basierend auf der englischen Dokumentenversion 1.5.
+
+|1.6
+|25. Jul. 2020
+|AK
+|Absatz über VM-Sicherungen, Beispiel mit nicht standardmäßigem Port, Absatz mit Leistungshinweisen zur inkrementellen Sicherung
+
+|1.6-de
+|25. Jul. 2020
+|MK
+|Ergänzungen von Alexey Kovyazin in deutsche Übersetzung implementiert. Dokumenttitel angepasst.
 |===
 
 :sectnums:
@@ -1017,7 +1076,7 @@ Copyright (C) 2005-2020.
 Alle Rechte vorbehalten. 
 Kontakt zum Original-Autor: <firstname> at <lastname> dot nl.
 
-Mitwirkende: Thomas Steinmaurer; Mark Rotteveel; Martin Köditz - siehe <<fbcache-dochist,Dokumenthistorie>>.
+Mitwirkende: Thomas Steinmaurer; Mark Rotteveel; Alexey Kovyazin; Martin Köditz - siehe <<fbcache-dochist,Dokumenthistorie>>.
 
 
 :sectnums:
