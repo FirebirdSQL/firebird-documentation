@@ -1,0 +1,390 @@
+[[fb-shell-scripts]]
+= Firebird Shell-Skripte
+Norman Dunbar; Mark Rotteveel; Martin Köditz
+1.3-de, 31. Juli 2020
+:doctype: book
+:sectnums:
+:sectanchors:
+:toc: left
+:toclevels: 3
+:icons: font
+:experimental:
+:imagesdir: ../../images
+include::../../attributes-de.adoc[]
+
+////
+HINWEIS: Einige Abschnitte haben eine sekundäre ID wie [[d0e33986]].
+Entfernen Sie sie nicht, sie werden zur Kompatibilität mit Links zur alten Dokumentation mit generierten IDs bereitgestellt.
+////
+
+toc::[]
+
+[[fbscripts-intro]]
+== Einleitung
+
+Nach einer erfolgreichen Installation von Firebird enthält das Verzeichnis `/opt/firebird/bin` eine Reihe nützlicher Shell-Skripte.
+Dieses Handbuch enthält Einzelheiten dazu, wofür diese Skripte bestimmt sind und wie sie verwendet werden.
+
+Im Rest dieses Handbuchs werden die folgenden Skripte erläutert:
+
+* changeDBAPassword.sh
+* createAliasDB.sh
+* fb_config
+* changeRunUser.sh
+* restoreRootRunUser.sh
+* changeGdsLibraryCompatibleLink.sh (Classic server only.)
+
+[NOTE]
+====
+Die obige Liste ist zum Zeitpunkt des Schreibens korrekt und gilt, sofern nicht anders angegeben, nur für Firebird 1.5, 2.0 und 2.1 Super Server, die auf einem Linux-System installiert sind.
+Andere Unix-Varianten haben möglicherweise andere Skripte.
+Ich kann diese möglichen Änderungen derzeit nicht diskutieren, da ich keinen Zugriff auf andere Unix-Systeme habe.
+====
+
+[[fbscripts-dba-password]]
+== ChangeDBAPassword
+
+Das Skript `changeDBAPassword.sh` ermöglicht die Auswahl des Kennworts für die SYSDBA-Benutzer und das Handbuch der Eigentümer
+Das Skript wird im Rahmen des Installationsverfahrens im nicht interaktiven Modus geändert, um in ein Dateisches zu ändern, das in der Datei `/ opt / firebird / SYSDBA.password` verbessert ist.
+
+Bis zur Version 2.1 von Firebird wird das Kennwort entwickelt im Startskript `/etc/rc.d/init.d/firebird` verwendet, das auch einen Symlink enthält, der auf `/etc/init.d/firebird` verweist.
+
+Die Sicherheitsdatenbank wird auch mit dem neuen Kennwort aktualisiert. (`/opt/firebird/security.fdb` oder `/opt/firebird/security2.fdb`)
+
+[CAUTION]
+====
+Das Skript muss als Root-Benutzer ausgeführt werden. Wenn es ausgeführt wird, werden Sie durch `changeDBAPassword.sh` zur Eingabe des aktuellen SYSDBA-Kennworts und anschließend zur Eingabe eines neuen Kennworts aufgefordert.
+Beide werden auf dem Display angezeigt. Lassen Sie daher zur Erhöhung der Sicherheit niemanden über die Schulter schauen, wenn Sie das Skript ausführen.
+
+Nachdem das Skript ausgeführt wurde, enthält die Datei `/opt/firebird/SYSDBA.password` das Kennwort im Klartext. Stellen Sie daher sicher, dass diese Datei nur von root gelesen werden kann.
+====
+
+Das Folgende ist ein Beispiel für das Ausführen des Skripts, um das SYSDBA-Kennwort von 'masterkey' in 'biroguin' zu ändern, was als erfundenes Wort weniger knackbar oder erraten werden sollte.
+
+----
+# cd /opt/firebird/bin
+# ./changeDBAPassword.sh
+Please enter current password for SYSDBA user : masterkey
+Please enter new password for SYSDBA user : biroguin
+GSEC> GSEC>
+
+Running ed to modify /etc/init.d/firebird
+----
+
+[CAUTION]
+====
+Wenn Sie das SYSDBA-Kennwort mit dem Dienstprogramm `gsec` ändern, sollten Sie auch die Startskriptdatei ändern.
+Verwenden Sie dieses Skript immer, wenn Sie das Kennwort des SYSDBA-Benutzers ändern, um eine vollständige Aktualisierung sicherzustellen.
+
+Dies gilt nicht bei Verwendung von Firebird 2.1 und höher, da für das Startskript das SYSDBA-Kennwort nicht mehr erforderlich ist.
+
+Im obigen Beispiel wird die letzte Ausgabezeile auf Systemen mit Firebird 2.1 und höher nicht angezeigt, da die Startskripte nicht mehr geändert werden, wenn das SYSDBA-Kennwort geändert wird.
+====
+
+[[fbscripts-db-alias]]
+== CreateAliasDB
+
+Das Skript `createAliasDB.sh` ermöglicht die Erstellung einer neuen Datenbank und die Erstellung eines Alias für diese Datenbank in der Datei `/opt/firebird/aliases.conf`.
+
+[NOTE]
+====
+Das Skript `createAliasDB.sh` muss als Root-Benutzer ausgeführt werden.
+====
+
+Wenn Ihr System nicht ordnungsgemäß eingerichtet ist, schlägt der Schritt zur Datenbankerstellung möglicherweise fehl, der Alias wird jedoch weiterhin zur Alias-Datei hinzugefügt.
+Dies kann dazu führen, dass Sie den Alias später nicht mehr ordnungsgemäß hinzufügen können, da das Skript überprüft, ob Sie einen vorhandenen Alias nicht überschreiben.
+Sie müssen die Aliasdatei manuell bearbeiten, um den beschädigten Alias zu entfernen.
+
+Alle Datenbanken müssen dem Firebird-Benutzer und der Firebird-Gruppe gehören.
+Im Folgenden wird ein neues Verzeichnis angezeigt, das vom Root-Benutzer erstellt wird, damit Firebird-Datenbanken erstellt werden können.
+
+----
+# cd /u01
+# mkdir databases
+# chown firebird:firebird databases
+----
+
+Zu diesem Zeitpunkt steht das Verzeichnis `/u01/database` als Repository für eine oder mehrere Firebird-Datenbanken zur Verfügung.
+Im obigen Beispiel war das Verzeichnis `/u01` offensichtlich bereits vorhanden.
+
+[[fbscripts-db-alias-params]]
+=== createAliasDB.sh-Parameter[[d0e34931]]
+
+Um das Skript `createAliasDP.sh` ausführen zu können, muss ein Befehl wie in folgender Weise ausgeführt werden:
+
+[listing,subs=+quotes]
+----
+# createAliasDB.sh <__new_alias__> <__database_name__>
+----
+
+Das Skript verwendet zwei Parameter in der Befehlszeile, die beide obligatorisch sind:
+
+_new_alias_::
+Der erste Parameter ist der neue Alias, den Sie erstellen möchten.
+Dieser Alias darf nicht bereits in der Aliasdatei vorhanden sein. Andernfalls wird ein Fehler angezeigt und es werden keine weiteren Maßnahmen ergriffen.
+
+_database_filename_::
+Der zweite Parameter gibt den vollständigen Pfad zur Datenbankdatei an.
+Sie dürfen keinen relativen Pfad angeben, da dies dazu führen kann, dass zum Zeitpunkt der Verbindung falsche Datenbankdateinamen verwendet werden.
+Das Skript lehnt jeden Versuch ab, einen relativen Pfadnamen anstelle eines vollständigen Pfadnamens zu übergeben.
++ 
+Eine brandneue leere Datenbank wird erstellt, sofern der an das Skript übergebene Name noch nicht vorhanden ist.
+Wenn die Datenbank bereits vorhanden ist, wird nur der Alias erstellt und der Aliasdatei hinzugefügt.
+
+[[fbscripts-fb-config]]
+== Fb_config
+
+Das Skript `fb_config` soll aus einem Makefile heraus verwendet werden, um verschiedene Einstellungen und Compileroptionen bereitzustellen, die genau und spezifisch für die verwendete Installation sind.
+
+[NOTE]
+====
+Dieses Skript kann von jedem Benutzer ausgeführt werden, dem Ausführungsberechtigungen erteilt wurden.
+Sie müssen kein Root sein, um dieses Skript verwenden zu können.
+====
+
+[[fbscripts-fb-config-options]]
+=== fb_config-Optionen[[d0e34975]]
+
+Verwenden Sie zum Ausführen des Skripts `fb_config` eine Befehlszeile ähnlich der folgenden:
+
+[listing,subs=+quotes]
+----
+fb_config <__option__> [ <__option__> [...]]
+----
+
+Das Skript verwendet eine oder mehrere Optionen in der Befehlszeile:
+
+`--help`::
+Dieser Parameter zeigt die Liste der zulässigen Optionen an.
+Es sollte nicht zusätzlich zu anderen Optionen geliefert werden.
+
+`--cflags`::
+Diese Option gibt die Liste der Verzeichnisse zurück, in denen Firebird-Include-Dateien gespeichert sind.
+Dies wird von den C- und C ++ - Compilern benötigt, damit die #include-Anweisungen des Compilers korrekt aufgelöst werden können.
+Auf meinem eigenen System gibt diese Option '```-I/opt/firebird/include```' zurück.
+
+`--libs`::
+Diese Option gibt die Liste der Verzeichnisse zurück, in denen sich Firebird-Bibliotheken befinden, sowie eine Liste der Bibliotheken, die vom Linker verknüpft werden müssen, um eine Client-Server-Firebird-Anwendung zu erstellen.
+Diese Option gibt auf meinem System '```-L/opt/firebird/lib -lfbclient```' zurück.
+
+`--embedlibs`::
+Diese Option gibt die Liste der Verzeichnisse zurück, in denen sich Firebird-Bibliotheken befinden, sowie eine Liste der Bibliotheken, die vom Linker verknüpft werden müssen, um eine eingebettete Firebird-Anwendung zu erstellen.
+Diese Option gibt auf meinem System '```-L/opt/firebird/lib -lfbembed```' zurück.
+
+`--bindir`::
+Diese Option gibt auf meinem System den vollen Pfad '```/opt/firebird/bin```' für das `/bin`-Verzeichnis der Firebirdinstallation zurück.
+
+`--version`::
+Diese Option gibt eine dreiteilige Versionszeichenfolge zurück, die aus der Verkettung der Firebird-Build-Version, einem Bindestrich, der Paketversion, einem Punkt und der Systemarchitektur besteht.
+Mein eigenes Linux-Notebook gibt '```1.5.0.4290-0.i686```' zurück.
+
+Das Folgende ist ein kurzer Auszug aus einem Makefile, der zeigt, wie zwei Makros, `FBFLAGS` und `FBLIBS`, definiert und mit `fb_config` auf die richtigen Werte initialisiert werden.
+Beachten Sie die Verwendung des Back-Tick-Zeichens (`++`++`) anstelle eines einfachen Anführungszeichens (`'`).
+
+[source]
+----
+...
+FBFLAGS = `fb_config --cflags`
+FBLIBS = `fb_config --libs`
+...
+----
+
+[[fbscripts-run-user]]
+== ChangeRunUser
+
+Unter Firebird 1.5 gibt es zwei Versionen des Skripts `changeRunUser.sh`, die mit dem Präfix `SS` für Super Server-Installationen und die mit dem Präfix `CS` für Classic Server-Installationen.
+Ab Firebird 2 lautet das Skript einfach `changeRunUser.sh`.
+
+[NOTE]
+====
+Das Skript sollte als root ausgeführt werden.
+====
+
+Mit dem Skript `changeRunUser.sh` können der Benutzer und die Gruppe, unter denen der Firebird-Server ausgeführt wird, geändert werden.
+Standardmäßig ist dies jetzt der Firebird-Benutzer und die Firebird-Gruppe. In früheren Versionen wurde der Firebird-Server jedoch als Root-Benutzer ausgeführt, was aus Sicht der Systemsicherheit unerwünscht ist und das Erstellen von Datenbanken im gesamten Dateisystem ermöglichte.
+Mit dem neuen Firebird-Benutzer können Einschränkungen für die Erstellung von Datenbanken festgelegt werden.
+
+Das Skript ändert den geschuldeten Benutzer und die Gruppe einer Reihe von Dateien im Firebird-Installationsverzeichnis, die Protokolldatei sowie das Startskript `/etc/rc.d.init.d/firebird`, mit dem der Firebird-Server gestartet und gestoppt wird.
+
+[[fbscripts-run-user-params]]
+=== ChangeRunUser.sh-Parameter[[d0e35073]]
+
+Verwenden Sie zum Ausführen des Skripts eine Befehlszeile, die der folgenden ähnelt:
+
+[listing,subs=+quotes]
+----
+changeRunUser.sh <__username__> <__groupname__>
+----
+
+Das Skript verwendet zwei Parameter in der Befehlszeile, die beide optional sind, da Sie aufgefordert werden, wenn beide weggelassen werden.
+Wenn Sie nur einen Parameter angeben, wird davon ausgegangen, dass es sich um den Benutzernamen handelt, und Sie werden zur Eingabe des Gruppennamens aufgefordert.
+
+_username_::
+Dieser Parameter legt den Benutzernamen fest, unter dem der Firebird-Server ausgeführt werden soll.
+Der angegebene Wert wird gegen Einträge in `/etc/passwd` validiert.
+
+_groupname_::
+Dieser Parameter legt den Gruppennamen fest, unter dem der Firebird-Server ausgeführt werden soll.
+Der angegebene Wert wird anhand von Einträgen in `/etc/group` überprüft.
+
+Das folgende Beispiel zeigt die Verwendung von `changeRunUser.sh`, um den besitzenden Benutzer und die Gruppe in firebird zu ändern.
+Der Firebird-Benutzer und die Firebird-Gruppe sind bei der Installation von Firebird die Standardeinstellung. Sie müssen das Skript also nicht ausführen, es sei denn, Sie haben diese Details bereits geändert.
+
+----
+# cd /opt/firebird/bin
+# ./changeRunUser.sh firebird firebird
+Updating /opt/firebird
+Updating startup script
+Completed
+----
+
+Wenn Sie Firebird 2.1 oder höher ausführen, wird keine Eingabeaufforderung mehr angezeigt, wenn Sie dieses Skript ohne Parameter ausführen.
+Das Skript verwendet jetzt standardmäßig Firebird für den Benutzer und die Gruppe, wenn Sie keine Parameter angeben.
+Das Ausführen des Skripts unter 2.1 bietet Folgendes:
+
+----
+# cd /opt/firebird/bin
+# ./changeRunUser.sh
+Shutting down Firebird                                                done
+
+Change Firebird install for /opt/firebird to uid=firebird gid=firebird
+(User or group options can be changed by editing this script)
+
+Press return to continue - or ^C to abort
+
+Updating /etc file(s)
+Updating /opt/firebird
+Starting Firebird                                                     done
+Completed.
+----
+
+[WARNING]
+====
+Wenn Sie von diesem Skript eine Aufforderung "__Press return to continue ...__" erhalten, werden alle mit dem Datenbankserver verbundenen VNC-Sitzungen beendet.
+Stellen Sie sicher, dass sich der Server in einer ruhigen Phase befindet und nicht während der normalen Betriebszeiten, wenn Sie diese Änderung vornehmen.
+Dies betrifft Suse Linux Enterprise 10, kann jedoch auch andere Linux-Distributionen betreffen.
+====
+
+[[fbscripts-root-user]]
+== RestoreRootRunUser
+
+Unter Firebird 1.5 gibt es zwei Versionen des Skripts `restoreRootRunUser.sh`.
+Das Präfix 'SS' steht für Super Server-Installationen und das Präfix 'CS' für Classic Server-Installationen.
+Ab Firebird 2 lautet das Skript einfach "restoreRootRunUser.sh".
+
+[NOTE]
+====
+Dieses Skript muss als root ausgeführt werden.
+====
+
+Dieses Skript stellt einfach das Installationsformat im alten Stil wieder her, bei dem der Firebird Super Server als Root-Benutzer und Gruppe ausgeführt wird.
+
+[[fbscripts-symlink]]
+== ChangeGDSLibraryCompatibleLink
+
+Das Skript `changeGdsLibraryCompatibleLink.sh` ist nur bei Classic Server-Installationen verfügbar und wird verwendet, um den Symlink `libgds.so` so zu ändern, dass er auf die entsprechende Bibliothek für die Installation verweist.
+Es gibt zwei mögliche Bibliotheken, auf die der Symlink verweisen kann:
+
+* `/opt/firebird/lib/libfbclient.so` für Client-Server-Anwendungen.
+* `/opt/firebird/lib/libfbembed.so` für Embedded-Server-Anwendungen.
+
+Nach der Installation verweist der Symlink `libgds.so` standardmäßig auf die Client-Server-Bibliothek. Wenn Sie also eine eingebettete Anwendung ausführen, müssen Sie dieses Skript ausführen, um stattdessen `libgds.so` auf die eingebettete Bibliothek zu verweisen.
+
+[NOTE]
+====
+Dieses Skript muss als root ausgeführt werden.
+====
+
+Das folgende Beispiel zeigt, wie dieses Skript verwendet wird, um vom eingebetteten Server zum Client-Server zu wechseln:
+
+----
+# cd /opt/firebird/bin
+# ./changeGdsCompatibleLibraryLink.sh
+Für klassische Server gibt es zwei optionale abwärtskompatible Clients
+Bibliotheken. Dies sind libfbclient.so und libfbembed.so.
+
+libfbclient.so) Ermöglicht Ihrem Client das Multithreading, muss jedoch über 
+                einen Server eine Verbindung zu einer Datenbank herstellen.
+libfbembed.so)  Ermöglicht dem Client das direkte Öffnen der Datenbankdatei, 
+                unterstützt jedoch keinen Multithread-Zugriff
+
+Ihre aktuelle Einstellung ist:
+/usr/lib/libgds.so -> /opt/firebird/lib/libfbembed.so
+
+Which option would you like to choose (client|embed|remove) 
+                                                       [client] client
+#
+----
+
+Die Standardoption ist `client`, wodurch der Symlink zur Client-Server-Bibliothek neu erstellt wird. `embed` erstellt den Symlink zum eingebetteten Server neu, während `remove` den Symlink vollständig entfernt.
+
+Es werden keine Meldungen angezeigt, die Sie über den Erfolg des Skripts informieren. Wenn Sie es jedoch erneut ausführen, werden Sie feststellen, dass die aktuelle Einstellung von der Einstellung abweichen sollte, die angezeigt wurde, als Sie das Skript zuvor ausgeführt haben.
+
+:sectnums!:
+
+[appendix]
+[[fbscripts-dochist]]
+== Dokumentenhistorie
+
+Der genaue Dateiversionsverlauf wird im Firebird-Dokumentations-Git-Repository aufgezeichnet; siehe https://github.com/FirebirdSQL/firebird-documentation
+
+[%autowidth, width="100%", cols="4", options="header", frame="none", grid="none", role="revhistory"]
+|===
+4+|Revisionshistorie
+
+|0.1
+|22. Nov. 2004
+|ND
+|Erstellt als Kapitel im Handbuch der Befehlszeilen-Dienstprogramme.
+
+|1.0
+|19. Okt. 2009
+|ND
+|Für Firebird 2 aktualisiert, geringfügige Änderungen an der Zeichensetzung vorgenommen und dann in ein eigenständiges Handbuch konvertiert.
+
+|1.1
+|05. Jan. 2010
+|ND
+|Rechtschreibkorrektur.
+
+|1.2
+|27. Apr. 2010
+|ND
+|Beim Ändern des DBA-Passworts wird das Startskript nicht mehr geändert.
+Andere geändert für Version 2.1 hinzugefügt.
+
+|1.3
+|20. Jun. 2020
+|MR
+|Konvertierung in AsciiDoc, geringfügige Bearbeitung von Texten
+
+|1.3-de
+|31. Jul. 2020
+|MR
+|Übersetzung ins Deutsche.
+|===
+
+:sectnums:
+
+:sectnums!:
+
+[appendix]
+[[fbscripts-license]]
+== Lizenzhinweis
+
+
+Der Inhalt dieser Dokumentation unterliegt der "Public Documentation License Version 1.0" (der "`License`"); 
+die Dokumentation darf nur unter Respektierung dieser Lizenz genutzt werden. 
+Kopien der Lizenz sind verfügbar unter http://www.firebirdsql.org/pdfmanual/pdl.pdf (PDF) und http://www.firebirdsql.org/manual/pdl.html (HTML).
+
+Die Original-Dokumentation trägt den Titel [ref]_Firebird Shell Scripts_.
+
+Der ursprüngliche Autor der Original-Dokumentation ist: Norman Dunbar.
+
+Copyright (C) 2005-2020. 
+Alle Rechte vorbehalten.
+Kontakt zum Original-Autor: NormanDunbar at users dot sourceforge dot net.
+
+Mitwirkende: Norman Dunbar; Mark Rotteveel; Martin Köditz - siehe <<fbscripts-dochist,Dokumenthistorie>>.
+
+:sectnums:
