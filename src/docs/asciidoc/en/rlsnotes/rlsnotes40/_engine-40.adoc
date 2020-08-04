@@ -1,0 +1,1315 @@
+[[rnfb40-engine]]
+= Changes in the Firebird Engine
+
+The Firebird engine, version 4, presents no radical changes in architecture or operation.
+Improvements and enhancements continue, including a doubling of the maximum database page size and the long-awaited ability to impose timeouts on connections and statements that could be troublesome, primary-replica replication and international time zone support.
+
+Firebird 4 creates databases with the on-disk structure numbered 13 -- "`ODS 13`".
+The remote interface protocol number is 16.
+
+[[rnfb40-engine-maxpagesize]]
+== Extended Maximum Page Size
+Dmitry Yemanov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-2192[CORE-2192]
+
+The maximum page size for databases created under ODS 13 has been increased from 16 KB to 32 KB.
+
+[[rnfb40-engine-deprecated-udfs]]
+== External Functions (UDFs) Feature Deprecated
+
+The original design of external functions (UDF) support has always been a source of security problems.
+The most dangerous security holes, that occurred when UDFs and external tables were used simultaneously, were fixed as far back as Firebird 1.5.
+Nevertheless, UDFs have continued to present vulnerability issues like server crashes and the potential to  execute arbitrary code.
+
+The use of UDFs has been aggressively deprecated in Firebird 4: 
+
+* The default setting for the configuration parameter `UdfAccess` is `NONE`.
+In order to run UDFs at all will now require an explicit configuration of `Restrict UDF`
+* The UDF libraries (`ib_udf`, `fbudf`) are no longer distributed in the installation kits
+* Most of the functions in the libraries previously distributed in the shared (dynamic) libraries `ib_udf` and `fbudf` had already been replaced with built-in functional analogs.
+A few remaining UDFs have been replaced with either analog routines in a new library of UDRs named `udf_compat` or converted to stored functions.
++ 
+Refer to <<rnfb40-compat-udfs,Deprecation of External Functions (UDFs)>> in the <<rnfb40-compat,Compatibility>> chapter for details and instructions about upgrading to use the safe functions.
+* Replacement of UDFs with UDRs or stored functions is strongly recommended
+
+[[rnfb40-timezone]]
+== Support for International Time Zones
+Adriano dos Santos Fernandes
+
+Tracker tickets http://tracker.firebirdsql.org/browse/CORE-909[CORE-909] and http://tracker.firebirdsql.org/browse/CORE-694[CORE-694]
+
+Time zone support from Firebird 4.0 onward consists of 
+
+* data types `TIME WITH TIME ZONE` and `TIMESTAMP WITH TIME ZONE`;
+implicitly also `TIME WITHOUT TIME ZONE` and `TIMESTAMP WITHOUT TIME ZONE` as aliases for the existing types `TIME` and `TIMESTAMP`
+* expressions and statements to work with time zones
+* conversion between data types without/with time zones
+
+[IMPORTANT]
+====
+The data types `TIME WITHOUT TIME ZONE`, `TIMESTAMP WITHOUT TIME ZONE` and `DATE` are defined to use the [term]_session time zone_ when converting from or to a `TIME WITH TIME ZONE` or `TIMESTAMP WITH TIME ZONE`.
+`TIME` and `TIMESTAMP` are synonymous to their respective `WITHOUT TIME ZONE` data types.
+====
+
+[[rnfb40-timezone-session]]
+=== Session Time Zone
+
+As the name implies, the session time zone, can be different for each database attachment.
+It can be set explicitly in the DPB or SPB with the item `isc_dpb_session_time_zone`;
+otherwise, by default, it uses the same time zone as the operating system of the Firebird server process.
+This default can be overridden in `firebird.conf`, see <<rnfb40-config-deftimezone,DefaultTimeZone setting>> in the <<rnfb40-fbconf,Configuration Additions and Changes>> chapter.
+
+Subsequently, the time zone can be changed to a given time zone using a  `SET TIME ZONE` statement or reset to its original value  with `SET TIME ZONE LOCAL`.
+
+[[rnfb40-timezone-format]]
+=== Time Zone Format
+
+A time zone is a string, either a time zone region (for example, 'America/Sao_Paulo') or a displacement from GMT in hours:minutes (for example, '-03:00').
+
+A time/timestamp with time zone is considered equal to another time/timestamp with time zone if their conversions to UTC are equivalent.
+For example, `time '10:00 -02'` and `time '09:00 -03'` are equivalent, since both are the same as `time '12:00 GMT'`.
+
+[IMPORTANT]
+====
+The same equivalence applies in `UNIQUE` constraints and for sorting purposes.
+====
+
+[[rnfb40-timezone-datatypes]]
+=== Data Types for Time Zone Support
+
+The syntax for declaring the data types `TIMESTAMP` and `TIME` has been extended to include arguments defining whether the field should be defined with or without time zone adjustments, i.e.,
+
+[listing]
+----
+TIME [ { WITHOUT | WITH } TIME ZONE ]
+
+TIMESTAMP [ { WITHOUT | WITH } TIME ZONE ]
+----
+
+The default for both `TIME` and `TIMESTAMP` is `WITHOUT TIME ZONE`.
+For more details, see <<rnfb40-ddl-timezone-datatypes,Data Type Extensions for Time Zone Support>> in the <<rnfb40-ddl,Data Definition Language>> chapter.
+
+[[rnfb40-timezone-api-support]]
+=== API Support for Time Zones
+
+* <<rnfb40-apiods-timezone-structs,Structures (structs)>>
+* <<rnfb40-apiods-timezone-functions,Functions>>
+
+[[rnfb40-timezone-stmts]]
+=== Time Zone Statements and Expressions
+
+Additions and enhancements to syntax in DDL and DML are listed in this section.
+Follow the links indicated to the details in the  DDL and DML chapters. 
+
+<<rnfb40-timezone-settimezone,Statement `SET TIME ZONE`>>::
+Changes the session time zone
+
+<<rnfb40-dml-timezone-expr-at,Expression `AT`>>::
+Translates a time/timestamp value to its corresponding value in another time zone
+
+<<rnfb40-dml-timezone-expr-extract,Expression `EXTRACT`>>::
+Two new arguments have been added to the `EXTRACT` expression: `TIMEZONE_HOUR` and `TIMEZONE_MINUTE` to extract the time zone hours displacement and time zone minutes displacement, respectively.
+
+<<rnfb40-dml-timezone-expr-localtime,Expression `LOCALTIME`>>::
+Returns the current time as a `TIME WITHOUT TIME ZONE`, i.e., in the session time zone
+
+<<rnfb40-dml-timezone-expr-localtimestamp,Expression `LOCALTIMESTAMP`>>::
+Returns the current timestamp as a `TIMESTAMP WITHOUT TIME ZONE`, i.e., in the session time zone
+
+<<rnfb40-dml-timezone-changes,Expressions `CURRENT_TIME` and `CURRENT_TIMESTAMP`>>::
+In version 4.0, `CURRENT_TIME` and `CURRENT_TIMESTAMP` now return `TIME WITH TIME ZONE` and `TIMESTAMP WITH TIME ZONE`, with the time zone set by the session time zone
+
+[[rnfb40-timezone-zonestable]]
+=== Virtual table RDB$TIME_ZONES
+
+A virtual table listing time zones supported in the engine.
+Columns: 
+
+* `RDB$TIME_ZONE_ID` type `INTEGER`
+* `RDB$TIME_ZONE_NAME` type `CHAR(63)`
+
+[[rnfb40-timezone-zone-util]]
+=== Package RDB$TIME_ZONE_UTIL
+
+A package of time zone utility functions and procedures:
+
+[[rnfb40-timezone-zone-util-version]]
+==== Function DATABASE_VERSION
+
+`RDB$TIME_ZONE_UTIL.DATABASE_VERSION` returns the version of the time zone database as a `VARCHAR(10) CHARACTER SET ASCII`.
+
+[float]
+===== Example
+
+[source]
+----
+select rdb$time_zone_util.database_version() from rdb$database;
+----
+
+Returns:
+
+[source]
+----
+DATABASE_VERSION
+================
+2017c
+----
+
+[[rnfb40-timezone-zone-util-transitions]]
+==== Procedure TRANSITIONS
+
+`RDB$TIME_ZONE_UTIL.TRANSITIONS` returns the set of rules between the start and end timestamps.
+
+The input parameters are: 
+
+* `TIME_ZONE_NAME` type `CHAR(63)`
+* `FROM_TIMESTAMP` type `TIMESTAMP WITH TIME ZONE`
+* `TO_TIMESTAMP` type `TIMESTAMP WITH TIME ZONE`
+
+Output parameters: 
+
+`START_TIMESTAMP`::
+type `TIMESTAMP WITH TIME ZONE` -- The start timestamp of the transition
+
+`END_TIMESTAMP`::
+type `TIMESTAMP WITH TIME ZONE` -- The end timestamp of the transition
+
+`ZONE_OFFSET`::
+type `SMALLINT` -- The zone's offset, in minutes
+
+`DST_OFFSET`::
+type `SMALLINT` -- The zone's DST offset, in minutes
+
+`EFFECTIVE_OFFSET`::
+type `SMALLINT` -- Effective offset (`ZONE_OFFSET` + `DST_OFFSET`)
+
+[float]
+===== Example
+
+[source]
+----
+select *
+  from rdb$time_zone_util.transitions(
+    'America/Sao_Paulo',
+    timestamp '2017-01-01',
+    timestamp '2019-01-01');
+----
+
+Returns:
+
+[source]
+----
+             START_TIMESTAMP                END_TIMESTAMP ZONE_OFFSET DST_OFFSET EFFECTIVE_OFFSET
+============================ ============================ =========== ========== ================
+2016-10-16 03:00:00.0000 GMT 2017-02-19 01:59:59.9999 GMT       -180        60             -120
+2017-02-19 02:00:00.0000 GMT 2017-10-15 02:59:59.9999 GMT       -180         0             -180
+2017-10-15 03:00:00.0000 GMT 2018-02-18 01:59:59.9999 GMT       -180        60             -120
+2018-02-18 02:00:00.0000 GMT 2018-10-21 02:59:59.9999 GMT       -180         0             -180
+2018-10-21 03:00:00.0000 GMT 2019-02-17 01:59:59.9999 GMT       -180        60             -120
+----
+
+[[rnfb40-timezone-dbupdate]]
+=== Updating the Time Zone Database
+
+Time zones are often changed: of course, when it happens, it is desirable to update the time zone database as soon as possible.
+
+Firebird stores `WITH TIME ZONE` values translated to UTC time.
+Suppose a value is created with one time zone database and a later update of that database changes the information in the range of our stored value.
+When that value is read, it will be returned as different to the value that was stored initially.
+
+Firebird uses the http://www.iana.org/time-zones[IANA time zone database] through the ICU library.
+The ICU library presented in the Firebird kit (Windows), or installed in a POSIX operating system, can sometimes have an outdated time zone database.
+
+An updated database can be found on https://github.com/FirebirdSQL/firebird/tree/master/extern/icu/tzdata[this page on the FirebirdSQL GitHub].
+Filename `le.zip` stands for little-endian and is the necessary file for most computer architectures (Intel/AMD compatible x86 or x64), while `be.zip` stands for big-endian architectures and is necessary mostly for RISC computer architectures.
+The content of the zip file must be extracted in the `/tzdata` sub-directory of the Firebird installation, overwriting existing `*.res` files belonging to the database.
+
+[NOTE]
+====
+`/tzdata` is the default directory where Firebird looks for the time zone database.
+It can be overridden with the `ICU_TIMEZONE_FILES_DIR` environment variable.
+====
+
+[[rnfb40-replication]]
+== Firebird Replication
+Dmitry Yemanov; Roman Simakov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-2021[CORE-2021]
+
+Firebird 4 introduces built-in support for uni-directional ("`primary-replica`") logical replication.
+Logical here means record-level replication, as opposed to physical (page-level) replication.
+Implementation is primarily directed towards providing for high availability, but it can be used for other tasks as well.
+
+Events that are tracked for replication include 
+
+* inserted/updated/deleted records
+* sequence changes
+* DDL statements
+
+Replication is transactional and commit order is preserved.
+Replication can track changes either in all tables, or in a customized subset of tables.
+Any table that is to be replicated must have a primary key or, at least, a unique key. 
+
+[[rnfb40-replication-modes]]
+=== Replication Modes
+
+Both [term]_synchronous_ and [term]_asynchronous_ modes are available.
+
+[[rnfb40-replication-modes-synch]]
+==== Synchronous Mode
+
+In synchronous replication, the primary (master) database is permanently connected to the replica (slave) database(s) and changes are replicated immediately.
+Effectively the databases are in sync after every commit, which could have an impact on performance due to additional network traffic and round-trips. 
+
+[NOTE]
+====
+Although some recent uncommitted changes may be buffered, they are not transmitted until committed.
+====
+
+More than one synchronous replication can be configured, if necessary.
+
+[[rnfb40-replication-modes-asynch]]
+==== Asynchronous Mode
+
+In asynchronous replication, changes are written into local journal files that are transferred over the wire and applied to the replica database.
+The impact on performance is much lower, but imposes a delay -- [term]_replication lag_ -- while changes wait to be applied to the replica database;
+i.e. the replica database is always "`catching up`" to the master database.
+
+[[rnfb40-replication-access-modes]]
+=== Access Modes
+
+There are two access modes for replica databases: [term]_read-only_ and  [term]_read-write_. 
+
+* With a read-only replica, only queries that do not modify data are allowed.
+Modifications are limited to the replication process only.
++
+NOTE: Global temporary tables can be modified, as they are not replicated. 
+
+* A read-write replica allows execution of any query.
+In this access mode, potential conflicts must be resolved by users.
+
+[[rnfb40-replication-journalling]]
+=== Journaling
+
+Asynchronous replication is implemented with journaling.
+Replicated changes are written into the journal which consists of multiple files, known as [term]_replication segments_.
+The Firebird server writes segments continuously, one after another.
+Every segment has a unique number which is generated sequentially.
+This number, known as a [term]_segment sequence_, is combined with the database UUID to provide globally unique identification of journal segments.
+The global sequence counter is stored inside the replicated database and is reset only when the database is restored from backup.
+
+Segments are rotated regularly, a process that is controlled by either [term]_maximum segment size_ or [term]_timeout_.
+Both thresholds are configurable.
+Once the active segment reaches the threshold, it is marked as "`full`" and writing switches to the next available segment.
+
+Full segments are archived and then reused for subsequent writes.
+Archiving consists of copying the segment in preparation for transferring it to the replica host and applying it there.
+Copying can be done by the Firebird server itself or, alternatively, by a user-specified custom command.
+
+On the replica side, journal segments are applied in the replication sequence order.
+The Firebird server periodically scans for new segments appearing in the configured directory.
+Once the next segment is found, it gets replicated.
+For each replication source, the replication state is stored in a local file named for the UUID and the replication source.
+It contains markers for  
+
+* latest segment sequence (LSS)
+* oldest segment sequence (OSS)
+* a list of active transactions started between the OSS and the LSS
+
+[[rnfb40-replication-lss-and-oss]]
+==== About the LSS and OSS
+
+LSS refers to the last replicated segment.
+OSS refers to the segment that started the earliest transaction that was incomplete at the time LSS was processed.
+
+These markers control two things:  
+
+. what segment must be replicated next and
+. when segment files can be safely deleted
+
+Segments with numbers between the OSS and the LSS are preserved in case the journal needs replaying after the replicator disconnects from the replica database;
+for example, due to a replication error or an idle timeout.
+
+If there are no active transactions pending and the LSS was processed without errors, all segments up to and including the LSS are deleted.
+
+If a critical error occurs, replication is temporarily suspended and will be retried after the timeout.
+
+[[rnfb40-replication-error-reprt]]
+=== Error Reporting
+
+All replication errors and warnings (such as detected conflicts) are written into the `replication.log` file.
+It may also include detailed descriptions of the operations performed by the replicator.
+
+.Log file location
+[NOTE]
+====
+The `replication.log` file is stored in the [term]_Firebird log directory_.
+By default, the Firebird log directory is the root directory of the Firebird installation.
+====
+
+[[rnfb40-replication-setup]]
+=== Setting Up Replication
+
+Setup involves tasks on both the primary and replica sides.
+
+[[rnfb40-replication-setup-primary]]
+==== Setting Up the Primary Side[[rnfb40-replication-setup-master]]
+
+Replication is configured using a single configuration file, `replication.conf`, on the host serving the primary database.
+Both global and per-database settings are possible within the same file.
+The available options are listed inside `replication.conf`, along with commented descriptions of each.
+
+.Per-database configurations
+[IMPORTANT]
+====
+When configuring options at per-database level, the full database path must be specified within the \{database\} section.
+Aliases and wildcards are not accepted.
+====
+
+Inside the database, replication should be enabled using the following DDL statement:
+
+[source]
+----
+ALTER DATABASE ENABLE PUBLICATION
+----
+
+[[rnfb40-replication-setup-primary-custom]]
+===== Defining a Custom Replication Set[[rnfb40-replication-setup-master-custom]]
+
+Optionally, the replication set (aka publication) should be defined.
+It includes tables that should be replicated.
+This is done using the following DDL statements:
+
+[source]
+----
+-- to replicate all tables (including the ones created later)
+ALTER DATABASE ADD ALL TO PUBLICATION 
+
+-- to replicate specific tables
+ALTER DATABASE ADD TABLE T1, T2, T3 TO PUBLICATION
+----
+
+Tables may later be excluded from the replication set:
+
+[source]
+----
+-- to disable replication of all tables (including the ones created later)
+ALTER DATABASE DROP ALL FROM PUBLICATION 
+
+-- to disable replication of specific tables
+ALTER DATABASE DROP TABLE T1, T2, T3 FROM PUBLICATION
+----
+
+Tables enabled for replication inside the database can be additionally filtered using two settings in `replication.conf`: `include_filter` and `exclude_filter`.
+They are regular expressions that are applied to table names, defining the rules for including or excluding them from the replication set.
+The regular expression syntax used to match table names is the same as in `SIMILAR TO` boolean expressions.
+
+[[rnfb40-replication-setup-primary-sync]]
+===== Synchronous/Asynchronous Modes[[rnfb40-replication-setup-master-sync]]
+
+Synchronous Mode::
+Synchronous replication can be turned on by setting the `sync_replica` specifying a connection string to the replica database, prefixed with username and password.
+Multiple entries are allowed. 
++
+In the SuperServer and SuperClassic architectures, the replica database is attached internally when the first user gets connected to the primary database and is detached when the last user disconnects from the primary database.
++
+In the Classic Server architecture, each server process keeps its own active connection to the replica database.
+
+Asynchronous Mode::
+For asynchronous replication the journaling mechanism must be set up.
+The primary parameter is `log_directory` which defines location of the replication journal.
+Specifying this location turns on asynchronous replication and tells the Firebird server to start producing the journal segments.
+
+[[rnfb40-replication-setup-primary-minimal]]
+===== A Minimal Configuration[[rnfb40-replication-setup-master-minimal]]
+
+A minimal primary-side configuration would look like this:
+
+[source]
+----
+database = /data/mydb.fdb
+{
+    log_directory = /dblogs/mydb/
+    log_archive_directory = /shiplogs/mydb/
+}
+----
+
+Archiving is performed by the Firebird server copying the segments from `/dblogs/mydb/` to `/shiplogs/mydb/`.
+
+The same setup, but with user-defined archiving:
+
+[source]
+----
+database = /data/mydb.fdb
+{
+    log_directory = /dblogs/mydb/
+    log_archive_directory = /shiplogs/mydb/
+    log_archive_command = "test ! -f $\(archpathname\) && cp $(logpathname) $(archpathname)"
+}
+----
+
+-- where `$(logpathname)` and `$(archpathname)` are built-in macros that are expanded to full path names when running the specified custom shell command.
+
+.About custom archiving
+[NOTE]
+====
+Custom archiving, through use of the setting `log_archive_command` allows use of any system shell command, including scripts or batch files, to deliver segments to the replica side.
+It could use compression, FTP, or whatever else is available on the server.
+
+The actual transport implementation is up to the DBA: Firebird just produces segments on the primary side and expects them to appear at the replica side.
+If the replica storage can be remotely attached to the primary host, it becomes just a matter of copying the segment files.
+In other cases, some transport solution is required.
+
+If custom archiving is used, the setting `log_archive_directory` can be omitted, unless `log_archive_command` mentions the `$(archpathname)` macro.
+====
+
+The same setup, with archiving performed every 10 seconds:
+
+[source]
+----
+database = /data/mydb.fdb
+{
+    log_directory = /dblogs/mydb/
+    log_archive_directory = /shiplogs/mydb/
+    log_archive_command = "test ! -f $(archpathname) && cp $(logpathname) $(archpathname)"
+    log_archive_timeout = 10
+}
+----
+
+Read `replication.conf` for other possible settings.
+
+[[rnfb40-replication-setup-primary-applying]]
+===== Applying the Primary Side Settings[[rnfb40-replication-setup-master-applying]]
+
+To take into effect changes applied to the primary-side settings, all users connected to a database must be disconnected (or a database must be shutdown).
+After that, all users connected again would use an updated configuration.
+
+[[rnfb40-replication-setup-replica]]
+==== Setting Up the Replica Side
+
+`replication.conf` file is also used for setting up the replica side.
+Setting the parameter `log_source_directory` specifies the location that the Firebird server scans for the transmitted segments.
+In addition, the DBA may specify explicitly which source database is accepted for replication, by setting the parameter `source_guid`.
+
+[[rnfb40-replication-setup-replica-sample]]
+===== A Sample Replica Setup
+
+A configuration for a replica could looks like this:
+
+[source]
+----
+database = /data/mydb.fdb
+{
+    log_source_directory = /incominglogs/
+    source_guid = {6F9619FF-8B86-D011-B42D-00CF4FC964FF}
+}
+----
+
+Read `replication.conf` for other possible settings.
+
+[[rnfb40-replication-setup-replica-applying]]
+===== Applying the Replica Side Settings
+
+To take into effect changes applied to replica-side settings, the Firebird server must be restarted.
+
+[[rnfb40-replication-setup-replica-create]]
+===== Creating a Replica Database
+
+[float]
+===== Task 1 -- Make the initial replica
+
+In this Beta release, any physical copying method can be used to create an initial replica of the primary database:
+
+* File-level copy while the Firebird server is shut down
+* `ALTER DATABASE BEGIN BACKUP` + file-level copy + `ALTER DATABASE END BACKUP`
+* `nbackup -l` + file-level copy + `nbackup -n`
+* `nbackup -b 0`
+
+[float]
+===== Task 2 -- Activate the _replica_ access mode
+
+Activating the access mode -- for the copied database involves the command-line utility _gfix_ with the new `-replica` switch and either `read-only` or `read-write` as the argument:
+
+* To set the database copy as a read-only replica 
++
+[source]
+----
+gfix -replica read-only <database>
+----
++
+If the replica is read-only then only the replicator connection can modify the database.
+This is mostly intended for high-availability solutions, as the replica database is guaranteed to match the primary one and can be used for fast recovery.
+Regular user connections may perform any operations allowed for read-only transactions: select from tables, execute read-only procedures, write into global temporary tables, etc.
+Database maintenance such as sweeping, shutdown, monitoring is also allowed.
++ 
+A read-only replica can be useful for distributing read-only load, for example, analytics, away from the master database. 
++
+WARNING: Read-only connections have the potential to conflict with replication if DDL statements that are performed on the master database are of the kind that requires an exclusive lock on metadata.
+
+* To set the database copy as a read-write replica
++
+[source]
+----
+gfix -replica read-write <database>
+----
++
+Read-write replicas allow both the replicator connection and regular user connections to modify the database concurrently.
+With this mode, there is no guarantee that the replica database will be in sync with the master one.
+Therefore, use of a read-write replica for high availability conditions is not recommended unless user connections on the replica side are limited to modifying only tables that are excluded from replication.
+
+[float]
+===== Task 3 -- Converting the replica to a regular database
+
+A third `gfix -replica` argument is available for "`switching off`" replication to a read-write replica when conditions call for replication flow to be discontinued for some reason.
+Typically, it would be used to promote the replica to become the primary database after a failure;
+or to make physical backup copies from the replica.
+
+[source]
+----
+gfix -replica none <database>
+----
+
+[[rnfb40-connection-pool]]
+== Pooling of External Connections
+Vlad Khorsun
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5990[CORE-5990]
+
+To avoid delays when external connections are being established frequently, the external data source (EDS) subsystem has been augmented by a pool of external connections.
+The pool retains unused external connections for a period to reduce unnecessary overhead from frequent connections and disconnections by clients using the same connection strings.
+
+[[rnfb40-connection-pool-characteristics]]
+=== Key Characteristics of Connection Pooling
+
+The implementation of connection pooling in Firebird 4 eliminates the problem of interminable external connections by controlling and limiting the number of idle connections.
+The same pool is used for all external connections to all databases and all local connections handled by a given Firebird process.
+It supports a quick search of all pooled connections using four parameters, described below in <<rnfb40-connection-pool-new-conn,New Connections>>.
+
+[[rnfb40-connection-pool-characteristics-terms]]
+.Terminology
+****
+Two terms recur in the management of the connection pool, in configuration, by DDL `ALTER` statements during run-time and in new context variables in the `SYSTEM` namespace:
+
+Connection life time::
+The time interval allowed from the moment of the last usage of a connection to the moment after which it will be forcibly closed.
+SQL parameter `LIFETIME`, configuration parameter `ExtConnPoolLifeTime`, context variable `EXT_CONN_POOL_LIFETIME`.
+
+Pool size::
+The maximum allowed number of idle connections in the pool.
+SQL parameter `SIZE`, configuration parameter `ExtConnPoolSize`, context variable `EXT_CONN_POOL_SIZE`.
+****
+
+[[rnfb40-connection-pool-how]]
+=== How the Connection Pool Works
+
+Every successful connection is associated with a pool, which maintains two lists -- one for idle connections and one for active connections.
+When a connection in the "`active`" list has no active requests and no active transactions, it is assumed to be "`unused`".
+A reset of the unused connection is attempted using an `ALTER SESSION RESET` statement and, 
+
+* if the reset succeeds (no errors occur) the connection is moved into the "`idle`" list;
+* if the reset fails, the connection is closed;
+* if the pool has reached its maximum size, the oldest idle connection is closed.
+* When the [term]_lifetime_ of an idle connection expires, it is deleted from the pool and closed.
+
+[[rnfb40-connection-pool-new-conn]]
+==== New Connections
+
+When the engine is asked to create a new external connection, the pool first looks for a candidate in the "`idle`" list.
+The search, which is case-sensitive, involves four parameters: 
+
+. connection string
+. username
+. password
+. role
+
+If suitable connection is found, it is tested to check that it is still alive. 
+
+* If it fails the check, it is deleted and the search is repeated, without reporting any error to the client
+* Otherwise, the live connection is moved from the "`idle`" list to the "`active`" list and returned to the caller
+* If there are multiple suitable connections, the most recently used one is chosen
+* If there is no suitable connection, a new one is created and added to the "`active`" list.
+
+[[rnfb40-connection-pool-management]]
+=== Managing the Connection Pool
+
+A new SQL statement has been introduced to manage the pool during run-time from any connection, between Firebird restarts,  i.e., changes made with `ALTER EXTERNAL CONNECTIONS POOL` are not persistent.
+
+This is the syntax pattern: 
+
+[listing]
+----
+ALTER EXTERNAL CONNECTIONS POOL { <parameter variants> }
+----
+
+[float]
+===== Syntax Variants Available
+
+`ALTER EXTERNAL CONNECTIONS POOL SET SIZE <int>`::
+Sets the maximum number of idle connections
+
+`ALTER EXTERNAL CONNECTIONS POOL SET LIFETIME <int> <time_part>`::
+Sets the lifetime of an idle connection, from 1 second to 24 hours.
+The `<time_part>` can be `SECOND | MINUTE | HOUR`.
+
+`ALTER EXTERNAL CONNECTIONS POOL CLEAR ALL`::
+Closes all idle connections and instigates dissociation of all active connections so they are immediately closed when they become unused
+
+`ALTER EXTERNAL CONNECTIONS POOL CLEAR OLDEST`::
+Closes expired idle connections
+
+For a full descriptions and examples of the variants, see <<rnfb40-msql-connpooling,ALTER EXTERNAL CONNECTIONS POOL Statement>> in the chapter <<rnfb40-msql,Management Statements>>.
+
+[[rnfb40-connection-pool-contextvars]]
+=== Querying the Connection Pool
+
+The state of the external connections pool can be queried using a set of new context variables in the 'SYSTEM' namespace: 
+
+[horizontal]
+`EXT_CONN_POOL_SIZE`:: Pool size
+`EXT_CONN_POOL_LIFETIME`:: Idle connection lifetime, in seconds
+`EXT_CONN_POOL_IDLE_COUNT`:: Count of currently inactive connections
+`EXT_CONN_POOL_ACTIVE_COUNT`:: Count of active connections associated with the pool
+
+[[rnfb40-config-pool]]
+=== Parameters for Configuring the Connection Pool
+
+Two new parameters, for `firebird.conf` only, are for configuring the connection pool at process start.
+Follow the links for details. 
+
+<<rnfb40-config-pool-size,ExtConnPoolSize>>::
+Configures the maximum number of idle connections allowed in the pool
+
+<<rnfb40-config-pool-lifetime,ExtConnPoolLifetime>>::
+Configures the number of seconds a connection should stay available after it has gone idle
+
+[[rnfb40-engine-timeouts]]
+== Timeouts at Two levels
+Vladyslav Khorsun
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5488[CORE-5488]
+
+Firebird 4 introduces configurable timeouts for running SQL statements and for idle connections (sessions).
+
+[[rnfb40-session-timeouts]]
+=== Idle Session Timeouts
+
+An idle session timeout allows a user connection to close automatically after a specified period of inactivity.
+The database admin could use it to enforce closure of old connections that have become inactive, to reduce unnecessary consumption of resources.
+It could also be used by application and tools developers as an alternative to writing their own modules for controlling connection lifetime.
+
+By default, the idle timeout is not enabled.
+No minimum or maximum limit is imposed but a reasonably large period, such as a few hours, is recommended.
+
+[[rnfb40-session-timeouts-how]]
+==== How the Idle Session Timeout Works
+
+* When the user API call leaves the engine (returns to the calling connection) a special idle timer associated with the current connection is started
+* When another user API call from that connection enters the engine, the idle timer is stopped and reset to zero
+* If the maximum idle time is exceeded, the engine immediately closes the connection in the same way as with asynchronous connection cancellation:
++
+** all active statements and cursors are closed
+** all active transactions are rolled back
+** The network connection remains open at this point, allowing the client application to get the exact error code on the next API call.
+The network connection will be closed on the server side, after an error is reported or in due course as a result of a network timeout from a client-side disconnection.
+
+[NOTE]
+====
+Whenever a connection is cancelled, the next user API call returns the error `isc_att_shutdown` with a secondary error specifying the exact reason.
+Now, we have
+
+`isc_att_shut_idle`:: Idle timeout expired
+
+in addition to
+
+`isc_att_shut_killed`:: Killed by database administrator
+`isc_att_shut_db_down`:: Database is shut down
+`isc_att_shut_engine`:: Engine is shut down
+====
+
+[[rnfb40-session-timeouts-setting]]
+==== Setting the Idle Session Timeout
+
+[NOTE]
+====
+The idle timer will not start if the timeout period is set to zero.
+====
+
+An idle session timeout can be set: 
+
+* At database level, the database administrator can set the configuration parameter `ConnectionIdleTimeout`, an integer value **in minutes**.
+The default value of zero means no timeout is set.
+It is configurable per-database, so it may be set globally in `firebird.conf` and overridden for individual databases in `databases.conf` as required.
++ 
+The scope of this method is all user connections, except system connections (garbage collector, cache writer, etc.).
+* at connection level, the idle session timeout is supported by both the API and a new SQL statement syntax.
+The scope of this method is specific to the supplied connection (attachment).
+Its value in the API is **in seconds**.
+In the SQL syntax it can be hours, minutes or seconds.
+Scope for this method is the connection to which it is applied.
+
+[[rnfb40-session-timeout-effective]]
+===== Determining the Timeout that is In Effect
+
+The effective idle timeout value is determined whenever a user API call leaves the engine, checking first at connection level and then at database level.
+A connection-level timeout can override the value of a database-level setting, as long as the period of time for the connection-level setting is no longer than any non-zero timeout that is applicable at database level.
+
+[IMPORTANT]
+====
+Take note of the difference between the time units at each level.
+At database level, in the `conf` file, the unit for `SessionTimeout` is minutes.
+In SQL, the default unit is minutes but can be expressed in hours or seconds explicitly.
+At the API level, the unit is seconds.
+
+Absolute precision is not guaranteed in any case, especially when the system load is high, but timeouts are guaranteed not to expire earlier than the moment specified.
+====
+
+[[rnfb40-session-timeouts-sql]]
+===== SQL Syntax for Setting an Idle Session Timeout
+
+The statement for setting an idle timeout at connection level can run outside transaction control and takes effect immediately.
+The syntax pattern is as follows: 
+
+[listing,subs=+quotes]
+----
+SET SESSION IDLE TIMEOUT _value_ [{ HOUR | MINUTE | SECOND }]
+----
+
+If the time unit is not set, it defaults to `MINUTE`.
+
+[[rnfb40-session-timeouts-api]]
+===== Support at API Level
+
+Get/set idle connection timeout, seconds
+
+[source]
+----
+interface Attachment
+	uint getIdleTimeout(Status status);
+	void setIdleTimeout(Status status, uint timeOut);
+----
+
+The values of the idle connection timeout at both configuration and connection levels, along with the current actual timeout, can be obtained using the `isc_database_info()` API with some new info tags: 
+
+`fb_info_ses_idle_timeout_db`:: Value set at config level
+`fb_info_ses_idle_timeout_att`:: Value set at given connection level
+`fb_info_ses_idle_timeout_run` :: Actual timeout value for the given connection, evaluated considering the values set at config and connection levels, see <<rnfb40-session-timeout-effective>> above.
+
+.Notes regarding remote client implementation
+[NOTE]
+====
+. `Attachment::setIdleTimeout()` issues a "```SET SESSION IDLE TIMEOUT```" SQL statement
+. `Attachment::getIdleTimeout()` calls `isc_database_info()` with the `fb_info_ses_idle_timeout_att` tag
+. If the protocol of the remote Firebird server is less than 16, it does not support idle connection timeouts.
+If that is the case,
+** `Attachment::setIdleTimeout()` will return the error `isc_wish_list`
+** `Attachment::getIdleTimeout()` will return zero and set the `isc_wish_list` error
+** `isc_database_info()` will return the usual `isc_info_error` tag in the info buffer
+====
+
+[[rnfb40-session-timeouts-cntxtvar]]
+==== Context Variable Relating to Idle Session Timeouts
+
+The 'SYSTEM' context has a new variable: `SESSION_IDLE_TIMEOUT`.
+It contains the current value of idle connection timeout that was set at connection level, or zero, if no timeout was set.
+
+[[rnfb40-session-timeouts-montables]]
+==== Idle Session Timeouts in the Monitoring Tables
+
+In `MON$ATTACHMENTS`:
+
+`MON$IDLE_TIMEOUT`:: Connection level idle timeout
+`MON$IDLE_TIMER`:: Idle timer expiration time
+
+`MON$IDLE_TIMEOUT` contains timeout value set at connection level, in seconds.
+Zero, if timeout is not set.
+
+`MON$IDLE_TIMER` contains `NULL` if an idle timeout was not set or if a timer is not running.
+
+[[rnfb40-stmnt-timeouts]]
+=== Statement Timeouts
+
+The statement timeout feature enables the ability to set a timeout for an SQL statement, allowing execution of a statement to be stopped automatically when it has been running longer than the given timeout period.
+It gives the database administrator an instrument for limiting excessive resource consumption from heavy queries.
+
+Statement timeouts could be useful to application developers when creating and debugging complex queries without advance knowledge of execution time.
+Testers and others could find them handy for detecting long-running queries and establishing finite run times for test suites.
+
+[[rnfb40-stmt-timeouts-how]]
+==== How the Statement Timeout Works
+
+When the statement starts execution or a cursor is opened, the engine starts a special timer.
+It is stopped when the statement completes execution or the last record has been fetched by the cursor.
+
+[NOTE]
+====
+A fetch does not reset this timer.
+====
+
+When the timeout point is reached: 
+
+* if statement execution is active, it stops at closest possible moment
+* if statement is not active currently (between fetches, for example), it is marked as cancelled and the next fetch will actually break execution and return an error
+
+.Statement types excluded from timeouts
+[NOTE]
+====
+Statement timeouts are not applicable to some types of statement and will simply be ignored: 
+
+* All DDL statements
+* All internal queries issued by the engine itself
+====
+
+[[rnfb40-stmnt-timeouts-setting]]
+==== Setting a Statement Timeout
+
+[NOTE]
+====
+The timer will not start if the timeout period is set to zero.
+====
+
+A statement timeout can be set: 
+
+* at database level, by the database administrator, by setting the configuration parameter `StatementTimeout` in `firebird.conf` or `databases.conf`, an integer representing the number of seconds after which statement execution will be cancelled automatically by the engine.
+Zero means no timeout is set.
+A non-zero setting will affect all statements in all connections.
+* at connection level, using the API and/or the new SQL statement syntax for setting a statement timeout.
+A connection-level setting (via SQL or the API) affects all statements for the given connection;
+units for the timeout period at this level can be specified to any granularity from hours to milliseconds.
+* at statement level, using the API, in milliseconds
+
+[[rnfb40-stmnt-timeout-effective]]
+===== Determining the Statement Timeout that is In Effect
+
+The statement timeout value that is in effect is determined whenever a statement starts executing or a cursor is opened.
+In searching out the timeout in effect, the engine goes up through the levels, from statement through to database and/or global levels until it finds a non-zero value.
+If the value in effect turns out to be zero then no statement timer is running and no timeout applies.
+
+A statement-level or connection-level timeout can override the value of a database-level setting, as long as the period of time for the lower-level setting is no longer than any non-zero timeout that is applicable at database level.
+
+[IMPORTANT]
+====
+Take note of the difference between the time units at each level.
+At database level, in the conf file, the unit for `StatementTimeout` is seconds.
+In SQL, the default unit is seconds but can be expressed in hours, minutes or milliseconds explicitly.
+At the API level, the unit is milliseconds.
+
+Absolute precision is not guaranteed in any case, especially when the system load is high, but timeouts are guaranteed not to expire earlier than the moment specified.
+====
+
+Whenever a statement times out and is cancelled, the next user API call returns the error `isc_cancelled` with a secondary error specifying the exact reason, viz., 
+
+`isc_cfg_stmt_timeout`:: Config level timeout expired
+`isc_att_stmt_timeout`:: Attachment level timeout expired
+`isc_req_stmt_timeout`:: Statement level timeout expired
+
+[[rnfb40-stmnt-timeout-notes]]
+===== Notes about Statement Timeouts
+
+. A client application could wait longer than the time than set by the timeout value if the engine needs to undo a large number of actions as a result of the statement cancellation
+. When the engine runs an `EXECUTE STATEMENT` statement, it passes the remainder of the currently active timeout to the new statement.
+If the external (remote) engine does not support statement timeouts, the local engine silently ignores any corresponding error.
+. When engine acquires some lock from the lock manager, it tries to lower the value of the lock timeout using the remainder of the currently active statement timeout, if possible.
+Due to lock manager internals, any statement timeout remainder will be rounded up to whole seconds.
+
+[[rnfb40-stmnt-timeouts-sql]]
+===== SQL Syntax for Setting a Statement Timeout
+
+The statement for setting a statement execution timeout at connection level can run outside transaction control and takes effect immediately.
+The statement syntax pattern is: 
+
+[listing,subs=+quotes]
+----
+SET STATEMENT TIMEOUT _value_ [{ HOUR | MINUTE | SECOND | MILLISECOND }]
+----
+
+If the time part unit is not set, it defaults to `SECOND`.
+
+[[rnfb40-stmnt-timeouts-api]]
+===== Support for Statement Timeouts at API Level
+
+statement execution timeout at connection level, milliseconds:
+
+[source]
+----
+interface Attachment
+	uint getStatementTimeout(Status status);
+	void setStatementTimeout(Status status, uint timeOut);
+----
+
+Get\set statement execution timeout at statement level, milliseconds:
+
+[source]
+----
+interface Statement
+	uint getTimeout(Status status);
+	void setTimeout(Status status, uint timeOut);
+----
+
+Set statement execution timeout at statement level using ISC API, milliseconds:
+
+[source]
+----
+ISC_STATUS ISC_EXPORT fb_dsql_set_timeout(ISC_STATUS*, isc_stmt_handle*, ISC_ULONG);
+----
+
+Getting the statement execution timeout at config and/or connection levels can be done using the `isc_database_info()` API function with some new info tags:
+
+* `fb_info_statement_timeout_db`
+* `fb_info_statement_timeout_att`
+
+Getting the statement execution timeout at statement level can be done using the `isc_dsql_info()` API function with some new info tags: 
+
+`isc_info_sql_stmt_timeout_user`:: Timeout value of given statement
+`isc_info_sql_stmt_timeout_run`:: Actual timeout value of given statement.
+Valid only for statements currently executing, i.e., when a timeout timer is actually running.
+Evaluated considering the values set at config, connection and statement levels, see <<rnfb40-stmnt-timeout-effective>> above.
+
+.Notes regarding remote client implementation
+[NOTE]
+====
+. `Attachment::setStatementTimeout()` issues a "```SET STATEMENT TIMEOUT```" SQL statement
+. `Attachment::getStatementTimeout()` calls `isc_database_info()` with the `fb_info_statement_timeout_att` tag
+. `Statement::setTimeout()` saves the given timeout value and passes it with `op_execute` and `op_execute2` packets
+. `Statement::getTimeout()` returns the saved timeout value
+. `fb_dsql_set_timeout()` is a wrapper over `Statement::setTimeout()`
+. If the protocol of the remote Firebird server is less than 16, it does not support statement timeouts.
+If that is the case,
+** "`set`" and "`get`" functions will return an `isc_wish_list` error
+** "`info`" will return the usual `isc_info_error` tag in the info buffer
+====
+
+[[rnfb40-stmnt-timeouts-cntxtvar]]
+==== Context Variable relating to Statement Timeouts
+
+The 'SYSTEM' context has a new variable: `STATEMENT_TIMEOUT`.
+It contains the current value of the statement execution timeout that was set at connection level, or zero, if no timeout was set.
+
+[[rnfb40-stmnt-timeouts-montables]]
+==== Statement Timeouts in the Monitoring Tables
+
+In `MON$ATTACHMENTS`:
+
+`MON$STATEMENT_TIMEOUT`:: Connection level statement timeout
+
+In `MON$STATEMENTS`:
+
+`MON$STATEMENT_TIMEOUT`:: Statement level statement timeout
+`MON$STATEMENT_TIMER`:: Timeout timer expiration time
+
+`MON$STATEMENT_TIMEOUT` contains timeout value set at connection or statement level, in milliseconds.
+Zero, if timeout is not set.
+
+`MON$STATEMENT_TIMER` contains `NULL` if no timeout was set or if a timer is not running.
+
+[[rnfb40-stmnt-timeouts-isql]]
+==== Support for Statement Timeouts in _isql_
+
+A new command has been introduced in _isql_ to enable an execution timeout in milliseconds to be set for the next statement.
+The syntax is: 
+
+[listing,subs=+quotes]
+----
+SET LOCAL_TIMEOUT _int-value_
+----
+
+After statement execution, the timer is automatically reset to zero.
+
+[[rnfb40-engine-trans-commit-order]]
+== Commit Order for Capturing the Database Snapshot
+Nickolay  Samofatov; Roman Simakov; Vladyslav Khorsun
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5953[CORE-5953]
+
+Traditionally, a SNAPSHOT ("`concurrency`") transaction takes a private copy of the transaction inventory page (TIP) at its start and uses it to refer to the state of the latest committed versions of all records in the database, right up until it commits or rolls back its own changes.
+Thus, by definition, a SNAPSHOT transaction sees the database state only as it was at the moment it started.
+
+In the traditional model, a READ COMMITTED transaction does not use a stable snapshot view of database state and does not keep a private copy of the TIP.
+Instead, it asks the TIP for the most recent state of a record committed by another transaction.
+In Super ("`SuperServer`") mode, the TIP cache is shared to provide optimal access to it by READ COMMITTED transactions.
+
+[[rnfb40-engine-commit-order]]
+=== The 'Commit Order' Approach
+
+Firebird 4 takes a new approach to establishing a consistent view of the database state visible to running transactions.
+This new approach uses the concept of [term]_commit order_.
+
+It is sufficient to know the [term]_order of commits_ in order to capture the state of any transaction at the moment when a snapshot is created.
+
+[[rnfb40-engine-commit-order-elements]]
+==== Commit Order for Transactions
+
+The elements for establishing and utilising commit order are: 
+
+* Initialize a [term]_Commit Number (CN)_ for each database when the database is first opened
+* Each time a transaction is committed, the Commit Number for that database is incremented and the new CN is associated with the specific transaction
+* This specific transaction and commit number combination -- "`transaction CN`" are stored in memory and can be queried subsequently while the database remains active
+* A [term]_database snapshot_ is identified by the value stored for the global CN at moment when the database snapshot was created
+
+[[rnfb40-engine-trans-cn-values]]
+==== Special Values for the Transaction CN
+
+Possible values for the transaction Commit Number include some special CN values that signify whether the transaction is active or dead, viz.: 
+
+CN_ACTIVE = 0::
+Transaction is active
+
+CN_PREHISTORIC = 1::
+Transaction was committed before the database started (i.e., older than OIT)
+
+CN_PREHISTORIC < CN < CN_DEAD::
+Transaction was committed while the database was working
+
+CN_DEAD = MAX_TRA_NUM - 2::
+Dead transaction
+
+CN_LIMBO = MAX_TRA_NUM - 1::
+Transaction is in limbo
+
+[[rnfb40-engine-record-visibility]]
+==== The Rule for Record Visibility
+
+Supposing [term]_database snapshot_ is the current snapshot in use by the current transaction and [term]_other transaction_ is the transaction that created the given record version, the rule for determining the visibility of the record version works like this: 
+
+* If the state of [term]_other transaction_ is 'active', 'dead' or 'in limbo' then the given record version is not visible to the current transaction
+* If the state of [term]_other transaction_ is 'committed' then the visibility of the given record version depends on the timing of the creation of [term]_database snapshot_, so
+** if it was committed before [term]_database snapshot_ was created, it is visible to the current transaction;
+** if it was committed after [term]_database snapshot_ was created, it is not visible to the current transaction.
+
+Thus, as long as a maintained list of all known transactions with their associated Commit Numbers is in existence, it is enough to compare the CN of [term]_other transaction_ with the CN of [term]_database snapshot_ to decide whether the given record version should be visible within the scope of [term]_database snapshot_.
+
+[NOTE]
+====
+The status of an association between a transaction and its CN can be queried using a new built-in function, <<rnfb40-dml-new-get-cn,RDB$GET_TRANSACTION_CN>>.
+====
+
+SNAPSHOT transactions now use the _database snapshot_ described above.
+Instead of taking a private copy of TIP when started it just remembers value of global Commit Number at that moment.
+
+[[rnfb40-engine-cn-implementation]]
+==== Implementation details
+
+The list of all known transactions with associated Commit Numbers is maintained in shared memory.
+It is implemented as an array whose index is a transaction ID and its item value is the corresponding Commit Number. 
+
+The whole array is split into fixed-size blocks containing the CN's for all transactions between the OIT and Next Transaction markers.
+When Next Transaction moves out of the scope of the highest block, a new block is allocated.
+An old block is released when the OIT moves out of the scope of the lowest block.
+
+[[rnfb40-engine-cn-blocksize]]
+===== Block Size
+
+The default size of a TIP cache block is 4MB, providing capacity for 512 * 1024 transactions.
+It is configurable in `firebird.conf` and `databases.conf` using the new parameter [term]_TipCacheBlockSize_.
+
+[[rnfb40-engine-stmt-level-consistency]]
+=== Read Consistency for Statements in Read-Committed Transactions
+
+The existing implementation of READ COMMITTED isolation for transactions suffers from an important problem: a single statement, such as a `SELECT`, could see different views of the same data during execution.
+
+For example, imagine two concurrent transactions, where the first inserts 1000 rows and commits, while the second runs `SELECT COUNT(*)` over the same table.
+
+If the isolation level of the second transaction is READ COMMITTED, its result is hard to predict.
+It could be any of:
+
+. the number of rows in the table before the first transaction started, or
+. the number of rows in the table after the first transaction committed, or
+. any number between those two numbers.
+
+Which of those results is actually returned depends on how the two transactions interact: 
+
+* CASE 1 would occur if the second transaction finished counting before the first transaction was committed, since the uncommitted inserts at that point are visible only to the first transaction.
+* CASE 2 would occur if the second transaction started after the first had committed all of the inserts.
+* CASE 3 occurs in any other combination of the conditions: the second transaction sees some, but not all, of the inserts during the commit sequence of the first transaction.
+
+CASE 3 is the problem referred to as [term]_inconsistent read at the statement level_.
+It matters because, by definition, each [term]_statement_ in a READ COMMITTED transaction has its own distinct view of database state.
+In the existing implementation, the statement's view is not certain to remain stable for the duration of its execution: it could change between the start of execution and the completion.
+
+Statements running in a SNAPSHOT transaction do not have this problem, since every statement runs against a consistent view of database state.
+Also, different statements that run within the same READ COMMITTED transaction could see different views of database state but this is "`as designed`" and is not a source of statement-level inconsistency.
+
+[[rnfb40-engine-stmt-level-consistency-solution]]
+==== Solving the Inconsistent Read Problem
+
+See Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5954[CORE-5954].
+
+The obvious solution to the inconsistent read problem is to have the read-committed transaction use a stable database snapshot during execution of a statement.
+Each new top-level statement creates its own database snapshot that sees the most recently committed data.
+With snapshots based on commit order, this is a very cheap operation.
+Let this snapshot be called a _statement-level snapshot_ for further references.
+Nested statements (triggers, nested stored procedures and functions, dynamic statements, etc.) use the same statement-level snapshot that was created by the top-level statement.
+
+[[rnfb40-engine-read-consistency]]
+===== New Isolation Sub-Level for READ COMMITTED
+
+A new sub-level for transactions in READ COMMITTED isolation is introduced: READ COMMITTED READ CONSISTENCY.
+
+The existing sub-levels for READ COMMITTED isolation, RECORD VERSION and NO RECORD VERSION, are still supported and operate as before (without using statement-level snapshots), but could be regarded as "`legacy`" in future Firebird versions.
+
+In summary, the three variants for transactions in READ COMMITTED isolation are now: 
+
+* READ COMMITTED READ CONSISTENCY
+* READ COMMITTED NO RECORD VERSION
+* READ COMMITTED RECORD VERSION
+
+[[rnfb40-engine-read-consistency-conflicts]]
+===== Handling of Update Conflicts
+
+When a statement executes in a READ COMMITTED READ CONSISTENCY transaction, its database view is retained in a fashion similar to a SNAPSHOT transaction.
+This makes it pointless to wait for the concurrent transaction to commit, in the hope of being able to read the newly-committed record version.
+So, when a READ COMMITTED READ CONSISTENCY transaction reads data, it behaves similarly to READ COMMITTED RECORD VERSION transaction: walks the back versions chain looking for a record version visible to the current snapshot. 
+
+When an update conflict occurs, the behaviour of a READ COMMITTED READ CONSISTENCY transaction is different to that of one in READ COMMITTED RECORD VERSION.
+The following actions are performed: 
+
+. Transaction isolation mode is temporarily switched to READ COMMITTED NO RECORD VERSION.
+. A write lock is taken for the conflicting record.
+. Remaining records of the current `UPDATE`/`DELETE` cursor are processed and they are write-locked too.
+. Once the cursor is fetched, all modifications performed since the top-level statement was started are undone, already taken write locks for every updated/deleted/locked record are preserved, all inserted records are removed.
+. Transaction isolation mode is restored to READ COMMITTED READ CONSISTENCY, new statement-level snapshot is created and the top-level statement is restarted.
+
+This algorithm ensures that already updated records remain locked after restart, they are visible to the new snapshot, and could be updated again with no further conflicts.
+Also, due to READ CONSISTENCY nature, the modified record set remains consistent.
+
+.Notes
+[NOTE]
+====
+* This restart algorithm is applied to `UPDATE`, `DELETE`, `SELECT WITH LOCK` and `MERGE` statements, with or without the `RETURNING` clause, executed directly by a client application or inside some PSQL object (stored procedure/function, trigger, `EXECUTE BLOCK`, etc).
+* If `UPDATE`/`DELETE` statement is positioned on some explicit cursor (using the `WHERE CURRENT OF` clause), then the step (3) above is skipped, i.e. remaining cursor records are not fetched and write-locked.
+* If the top-level statement is selectable and update conflict happens after one or more records were returned to the client side, then an update conflict error is reported as usual and restart is not initiated.
+* Restart does not happen for statements executed inside autonomous blocks (`IN AUTONOMOUS TRANSACTION DO ...`).
+* After 10 unsuccessful attempts the restart algorithm is aborted, all write locks are released, transaction isolation mode is restored to READ COMMITTED READ CONSISTENCY and an update conflict error is raised.
+* Any error not handled at step (3) above aborts the restart algorithm and statement execution continues normally.
+* `UPDATE`/`DELETE` triggers fire multiple times for the same record if the statement execution was restarted and record is updated/deleted again.
+* Statement restart is usually fully transparent to client applications and no special actions should be taken by developers to handle it in any way.
+The only exception is the code with side effects that are outside the transactional control, for example:
+** usage of external tables, sequences or context variables
+** sending e-mails using UDF
+** usage of autonomous transactions or external queries
+
++
+and so on.
+Beware that such code could be executed more than once if update conflict happens.
+* There is no way to detect whether a restart happened, but it could be done manually using code with side effects as described above, for example using a context variable.
+* Due to historical reasons, error _isc_update_conflict_ is reported as the secondary error code, with the primary error code being _isc_deadlock_.
+====
+
+[[rnfb40-engine-read-committed-read-only]]
+===== Read Committed Read-Only Transactions
+
+In the existing implementation, READ COMMITTED transactions in READ ONLY mode are marked as committed when the transaction starts.
+This provides a benefit in that record versions in such transactions are never "`interesting`", thus not inhibiting the regular garbage collection and not delaying the advance of the OST marker.
+
+READ CONSISTENCY READ ONLY transactions are still started as pre-committed, but in order to avoid the regular garbage collection breaking future statement-level snapshots, it delays the advance of the OST marker in the same way as it happens for SNAPSHOT transactions.
+
+[NOTE]
+====
+This delays only the _regular_ (traditional) garbage collection, the _intermediate_ garbage collection (see below) is not affected.
+====
+
+[[rnfb40-engine-read-consistency-syntax]]
+===== Syntax and Configuration
+
+Support for the new READ COMMITTED READ CONSISTENCY isolation level is found in SQL syntax, in the API and in configuration settings.
+
+Where `SET TRANSACTION` is available in SQL, the new isolation sub-level is set as follows:
+
+[source]
+----
+SET TRANSACTION READ COMMITTED READ CONSISTENCY
+----
+
+To start a READ COMMITTED READ CONSISTENCY transaction via the ISC API, use the new constant `isc_tpb_read_consistency` in the Transaction Parameter Buffer.
+
+Starting with Firebird 4, usage of the legacy READ COMMITTED modes (RECORD VERSION and NO RECORD VERSION) is discouraged and READ CONSISTENCY mode is recommended to be used instead.
+For now, existing applications can be tested with the new READ COMMITTED READ CONSISTENCY isolation level by setting the new configuration parameter <<rnfb40-config-readconsistency,ReadConsistency>> described in the Configuration Additions and Changes chapter.
+
+[IMPORTANT]
+====
+Please pay attention that the `ReadConsistency` configuration setting is enabled by default, thus forcing all READ COMMITTED transactions to be executed in the READ CONSISTENCY mode.
+Consider disabling this setting if the legacy behaviour of READ COMMITTED transactions must be preserved.
+====
+
+[[rnfb40-engine-commit-order-gc]]
+=== Garbage Collection
+
+The [term]_record version visibility rule_ provides the following logic for identifying record versions as garbage: 
+
+* If snapshot _CN_ can see some record version (_RV_X_) then all snapshots with numbers greater than _CN_ can also see _RV_X_.
+* If all existing snapshots can see _RV_X_ then all its back-versions can be removed, OR
+* If the oldest active snapshot can see _RV_X_ then all its back-versions can be removed.
+
+The last part of the rule reproduces the legacy rule, whereby all record versions at the tail of the versions chain start from some "`mature`" record version.
+The rule allows that mature record version to be identified so that the whole tail after it can be cut.
+
+However, with snapshots based on commit-order, version chains can be further shortened because it enables some record versions located in intermediate positions in the versions chain to be identified as eligible for GC.
+Each record version in the chain is marked with the value of the oldest active snapshot that can see it.
+If several consecutive versions in a chain are marked with the same oldest active snapshot value, then all those following the first one can be removed.
+
+The engine performs garbage collection of intermediate record versions during the following processes: 
+
+* sweep
+* table scan during index creation
+* background garbage collection in SuperServer
+* in every user attachment after an updated or delete record is committed
+
+[NOTE]
+====
+Regular (traditional) garbage collection mechanism is not changed and still works the same way as in prior Firebird versions.
+====
+
+To make it work, the engine maintains in shared memory an array of all active database snapshots.
+When it needs to find the oldest active snapshot that can see a given record version, it just searches for the CN of the transaction that created that record version.
+
+The default initial size of this shared memory block is 64KB but it will grow automatically when required.
+The initial block can be set to a custom size in `firebird.conf` and/or `databases.conf` using the new parameter `SnapshotsMemSize`.
+
+[[rnfb40-engine-expr-prcsn-fix]]
+== Precision Improvement for Calculations Involving NUMERIC and DECIMAL
+Alex Peshkov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-4409[CORE-4409]
+
+As a side-effect of implementing the internal 128-bit integer data type, some improvements were made to the way Firebird handles the precision of intermediate results from calculations involving long `NUMERIC` and `DECIMAL` data types.
+In prior Firebird versions, numerics backed internally by the `BIGINT` data type (i.e. with precision between 10 and 18 decimal digits) were multiplied/divided using the same `BIGINT` data type for the result, which could cause overflow errors due to limited precision available.
+In Firebird 4, such calculations are performed using 128-bit integers, thus reducing possibilities for unexpected overflows.
+
+[[rnfb40-engine-formats-views]]
+== Increased Number of Formats for Views
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5647[CORE-5647]
+
+Views are no longer limited to 255 formats (versions) before the database requires a backup and restore.
+The new limit is 32,000 versions.
+
+[NOTE]
+====
+This change does not apply to tables.
+====
+
+[[rnfb40-engine-expr-grpby-fix]]
+== Optimizer Improvement for GROUP BY
+Dmitry Yemanov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-4529[CORE-4529]
+
+The improvement allows the use of a `DESCENDING` index on a column that is specified for `GROUP BY`.
+
+[[rnfb40-engine-ux-native-listener]]
+== _xinetd_ Support on Linux Replaced
+Alex Peshkov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5238[CORE-5238]
+
+On Linux, Firebird 4 uses the same network listener process (Firebird) for all architectures.
+For Classic, the main (listener) process now starts up via _init/systemd_, binds to the 3050 port and spawns a worker firebird process for every connection -- similarly to what happens on Windows.
+
+[[rnfb40-engine-risc-v64]]
+== Support for RISC v.64 Platform
+Richard Jones
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5779[CORE-5779]
+
+A patch was introduced to compile Firebird 4.0 on the RISC v.64 platform.

@@ -1,0 +1,675 @@
+[[rnfb40-apiods]]
+= Changes to the Firebird API and ODS
+
+*since Firebird 3.0 release*
+
+[[rnfb40-apiods-ods]]
+== ODS (On-Disk Structure) Changes
+
+[[rnfb40-apiods-ods-number]]
+=== New ODS Number
+
+Firebird 4.0 creates databases with an ODS (On-Disk Structure) version of 13. 
+
+[[rnfb40-apiods-new-systabs]]
+=== New System Tables
+
+System tables added in ODS13: 
+
+[horizontal]
+`RDB$TIME_ZONES`:: Virtual table that enumerates supported time zones
+`RDB$PUBLICATIONS`:: Publications defined in the database
+`RDB$PUBLICATION_TABLES`:: Tables enabled for publication
+
+[NOTE]
+====
+In Firebird 4.0, there's a single (pre-defined) publication named `RDB$DEFAULT`.
+User-defined publications will be available in future Firebird releases.
+====
+
+[[rnfb40-apiods-new-syscols]]
+=== New Columns in System Tables
+
+Column `RDB$SQL_SECURITY` was added to the following system tables in ODS13:
+
+* `RDB$DATABASE`
+* `RDB$RELATIONS`
+* `RDB$TRIGGERS`
+* `RDB$FUNCTIONS`
+* `RDB$PROCEDURES`
+* `RDB$PACKAGES`
+
+For `RDB$DATABASE`, it defines the default SQL SECURITY mode (_DEFINER_ or _INVOKER_) applied to the newly created objects.
+For other system tables, it defines the SQL SECURITY mode active for the appropriate objects.
+
+Also, column `RDB$SYSTEM_PRIVILEGES` is added to the system table `RDB$ROLES`.
+It stores system privileges granted to a role.
+
+[[rnfb40-apiods-api]]
+== Application Programming Interfaces
+
+The wire protocol version for the Firebird 4.0 API is 16.
+Additions and changes are described in the sections below.
+
+[[rnfb40-apiods-api-service]]
+=== Services Cleanup
+Alex Peshkov
+
+Apart from the widely-known Services Manager (`service_mgr`), Firebird has a group of so-called "`version 1`" service managers.
+Backup and _gsec_ are examples, along with a number of other services related to shared cache control and the unused journaling feature.
+Since at least Firebird 3 they seem to be in a semi-working state at best, so they have undergone a cleanup.
+
+A visible effect is that the constant `service_mgr` is no longer required in the connection string for a service request.
+The request call will ignore anything in that field, including an empty string.
+The remote client will do the right thing just by processing the host name, such as `localhost:`,  `inet://localhost/` or `inet://localhost`.
+
+[[rnfb40-apiods-api-timeouts]]
+=== Timeouts for Sessions & Statements
+
+[[rnfb40-apiods-api-session-timeouts]]
+==== Session Timeouts
+
+See <<rnfb40-session-timeouts-api,Support for Session Timeouts at API Level>> in the chapter <<rnfb40-engine,Changes in the Firebird Engine>>.
+
+[[rnfb40-apiods-api-stmnt-timeouts]]
+==== Statement Timeouts
+
+See <<rnfb40-stmnt-timeouts-api,Support for Statement Timeouts at API Level>> in the chapter <<rnfb40-engine,Changes in the Firebird Engine>>.
+
+[[rnfb40-apiods-api-readconsistency]]
+=== New Isolation Sub-level for READ COMMITTED Transactions
+
+Provides API support for the new <<rnfb40-engine-read-consistency,READ COMMITTED READ CONSISTENCY>> isolation sub-level for READ COMMITTED transactions.
+To start a READ COMMITTED READ CONSISTENCY transaction via the ISC API, use the new constant `isc_tpb_read_consistency` in the Transaction Parameter Buffer.
+
+[[rnfb40-apiods-api-batchops]]
+=== Support for Batch Insert and Update Operations in the API
+Alex Peshkov
+
+The OO-API in Firebird 4 supports execution of statements with more than a single set of parameters -- [term]_batch execution_.
+The primary purpose of the batch interface design is to satisfy JDBC requirements for batch processing of prepared statements, but it has some fundamental differences: 
+
+* As with all data operations in Firebird, it is oriented on messages, not on single fields
+* An important extension of our batch interface is support for inline use of BLOBs, which is especially efficient when working with small BLOBs
+* The `execute()` method returns not a plain array of integers but the special `BatchCompletionState` interface which, depending on the batch creation parameters, can contain both the information about the updated records and the error flag augmented by detailed status vectors for the messages that caused execution errors
+
+The methods described below illustrate how to implement everything needed for JDBC-style prepared statement batch operations.
+Almost all of the methods described are used in `11.batch.cpp`.
+Please refer to it to see a live example of batching in Firebird.
+
+[[rnfb40-apiods-api-batch-create]]
+==== Creating a Batch
+
+As with `ResultSet` a batch may be created in two ways -- using either the `Statement` or the `Attachment` interface.
+In both cases, the `createBatch()` method of appropriate interface is called.
+
+For the `Attachment` case, the text of the SQL statement to be executed in a batch is passed directly to `createBatch()`.
+
+Tuning of the batch operation is performed using the Batch Parameters Block (BPB) whose format is similar to DPB v.2: beginning with the tag (`IBatch::CURRENT_VERSION`) and followed by the set of wide clumplets: 1-byte tag, 4-byte length, length-byte value.
+Possible tags are described in batch interface.
+
+The recommended (and simplest) way to create a BPB for batch creation is to use the appropriate `XpbBuilder` interface:
+
+[source]
+----
+IXpbBuilder* pb = utl->getXpbBuilder(&status, IXpbBuilder::BATCH, NULL, 0);
+pb->insertInt(&status, IBatch::RECORD_COUNTS, 1);
+----
+
+This usage of the BPB directs the batch to account for a number of updated records on per-message basis.
+
+[[rnfb40-apiods-api-batchintf-create]]
+==== Creating the Batch Interface
+
+To create the batch interface with the desired parameters, pass the BPB to a `createBatch()` call:
+
+[source]
+----
+IBatch* batch = att->createBatch(&status, tra, 0, sqlStmtText, SQL_DIALECT_V6, NULL,
+pb->getBufferLength(&status), pb->getBuffer(&status));
+----
+
+In this sample, the batch interface is created with the default message format because `NULL` is passed instead of the input metadata format.
+
+[[rnfb40-apiods-api-batch-msgformat]]
+===== Getting the Message Format
+
+To proceed with the created batch interface, we need to get the format of the messages it contains, using the `getMetadata()` method:
+
+[source]
+----
+IMessageMetadata* meta = batch->getMetadata(&status);
+----
+
+If you have passed your own format for messages to the batch, of course you can simply use that.
+
+We assume here that some function is present that can fill the buffer "`data`" according to the passed format "`metadata`".
+For example,
+
+[source]
+----
+fillNextMessage(unsigned char* data, IMessageMetadata* metadata)
+----
+
+[[rnfb40-apiods-api-batch-msgbuffer]]
+===== A Message Buffer
+
+To work with the messages we need a buffer for our "`data`":
+
+[source]
+----
+unsigned char* data = new unsigned char[meta->getMessageLength(&status)];
+----
+
+Now we can add some messages full of data to the batch:
+
+[source]
+----
+fillNextMessage(data, meta);
+batch->add(&status, 1, data);
+fillNextMessage(data, meta);
+batch->add(&status, 1, data);
+----
+
+[NOTE]
+====
+An alternative way to work with messages is to use the `FB_MESSAGE` macro.
+An example of this method can be found in the batch interface example, `11.batch.cpp`.
+====
+
+[[rnfb40-apiods-api-batch-execute]]
+==== Executing the Batch
+
+The batch is now ready to be executed:
+
+[source]
+----
+IBatchCompletionState* cs = batch->execute(&status, tra);
+----
+
+We requested accounting of the number of modified records (inserted, updated or deleted) per message.
+The interface `BatchCompletionState` is used to print it.
+The total number of messages processed by the batch could be less than the number of messages passed to the batch if an error happened and the option enabling multiple errors during batch processing was not turned on.
+To determine the number of messages processed:
+
+[source]
+----
+unsigned total = cs->getSize(&status);
+----
+
+Now to print the state of each message:
+
+[source]
+----
+for (unsigned p = 0; p < total; ++p)
+    printf("Msg %u state %d\n", p, cs->getState(&status, p));
+----
+
+A complete example of printing the contents of `BatchCompletionState` is in the function `print_cs()` in sample `11.batch.cpp`.
+
+[[rnfb40-apiods-api-batch-cleanup]]
+===== Cleaning Up
+
+Once analysis of the completion state is finished, remember to dispose of it:
+
+[source]
+----
+cs->dispose();
+----
+
+If you want to empty the batch's buffers without executing it for some reason, such as preparing for a new portion of messages to process, use the `cancel()` method:
+
+[source]
+----
+batch->cancel(&status);
+----
+
+Being reference-counted, the batch does not have special method to close it -- just a standard `release()` call:
+
+[source]
+----
+batch->release();
+----
+
+[[rnfb40-apiods-api-msgs-multi]]
+==== Multiple Messages per Call
+
+More than a single message can be added in one call to the batch.
+It is important to remember that messages should be appropriately aligned for this feature to work correctly.
+The required alignment and aligned size of the message should be obtained from the interface `MessageMetadata`.
+For example:
+
+[source]
+----
+unsigned aligned = meta->getAlignedLength(&status);
+----
+
+Later that size will be useful when allocating an array of messages and  working with it:
+
+[source]
+----
+unsigned char* data = new unsigned char[aligned * N];
+      // N is the desired number of messages
+for (int n = 0; n < N; ++n) fillNextMessage(&data[aligned * n], meta);
+batch->add(&status, N, data);
+----
+
+After that, the the batch can be executed or the next portion of messages can be added to it.
+
+[[rnfb40-apiods-api-blobs-batches]]
+==== Passing In-line BLOBs in Batch Operations
+
+As a general rule, BLOBs are not compatible with batches.
+Batching is efficient when a lot of small data are to be passed to the server in single step.
+BLOBs are treated as large objects so, as a rule, it makes no sense to use them in batches.
+
+Nevertheless, in practice it often happens that BLOBs are not too big.
+When that is the case, use of the traditional BLOB API (create BLOB, pass segments to the server, close BLOB, pass BLOB's ID in the message) kills performance, especially over a WAN.
+Firebird's batching therefore supports passing BLOBs to the server [term]_in-line_, along with other messages.
+
+[[rnfb40-apiods-api-blobs-policy]]
+===== BLOB usage policy
+
+To use the in-line BLOB feature, first a [term]_BLOB usage policy_ has to be set up as an option in the BPB for the batch being created:
+
+[source]
+----
+pb->insertInt(&status, IBatch::BLOB_IDS, IBatch::BLOB_IDS_ENGINE);
+----
+
+In this example, for the simplest and fairly common usage scenarios, the Firebird engine generates the temporary BLOB IDs needed to keep a link between a BLOB and the message where it is used.
+Imagine that the message is described as follows:
+
+[source]
+----
+FB_MESSAGE(Msg, ThrowStatusWrapper,
+(FB_VARCHAR(5), id)
+(FB_VARCHAR(10), name)
+(FB_BLOB, desc)
+) project(&status, master);
+----
+
+Something like the following will send a message to the server containing the BLOB:
+
+[source]
+----
+project->id = ++idCounter;
+project->name.set(currentName);
+batch->addBlob(&status, descriptionSize, descriptionText, &project->desc);
+batch->add(&status, 1, project.getData());
+----
+
+[[rnfb40-apiods-api-blobs-oversize]]
+====== Over-sized BLOBs
+
+If some BLOB happens to be too big to fit into your existing buffer, then, instead of reallocating the buffer, you can use the `appendBlobData()` method to append more data to the last added BLOB:
+
+[source]
+----
+batch->addBlob(&status, descriptionSize, descriptionText, &project->desc, bpbLength, bpb);
+----
+
+After adding the first part of the BLOB, get the next portion of data into `descriptionText`, update `descriptionSize` and then do:
+
+[source]
+----
+batch->appendBlobData(&status, descriptionSize, descriptionText);
+----
+
+You can do this work in a loop but take care not to overflow the internal batch buffers.
+Its size is controlled by the `BUFFER_BYTES_SIZE` option when creating the batch interface.
+The default size is 10MB, but it cannot exceed 40MB.
+If you need to process a BLOB that is too big, having chosen to use batching on the basis of data involving a lot of small BLOBs, just use the standard BLOB API and the `registerBlob` method of the Batch interface.
+
+[[rnfb40-apiods-api-user-blob-ids]]
+====== User-Supplied BLOB IDs
+
+Another possible choice in the BLOB policy is `BLOB_IDS_USER`,  to supply a temporary `BLOB_ID` instead of having one generated by Firebird.
+
+Usage is not substantially different.
+Before calling `addBlob()`, place the correct execution ID, which is unique per batch, into the memory  referenced by the last parameter.
+Exactly the same ID should be passed in the data message for the BLOB.
+
+Considering that generation of BLOB IDs by the engine is very fast, such a policy may seem useless.
+However, imagine a case where you get BLOBs and other data in relatively independent streams (blocks in a file, for example) and some good IDs are already present in them.
+Supplying the BLOB IDs can greatly simplify your code for such cases.
+
+[[rnfb40-apiods-api-blobs-stuff]]
+===== Streams vs Segments
+
+Be aware that BLOBs created by the Batch interface are by default streamed, not segmented like BLOBs created by means of `createBlob()`.
+Segmented BLOBs provide nothing interesting compared with streamed ones -- we support that format only for backward compatibility and recommend avoiding them in new development.
+
+[[rnfb40-apiods-api-blobs-segments]]
+====== Overriding to Use Segmented BLOBs
+
+If you really must have segmented BLOBs, you can override the default by calling:
+
+[source]
+----
+batch->setDefaultBpb(&status, bpbLength, bpb);
+----
+
+[NOTE]
+====
+Of course, the passed BPB could contain other BLOB creation parameters, too.
+You could also pass the BPB directly to `addBlob()` but, if most of the BLOBs you are going to add have the same non-default format, it is slightly more efficient to use `setDefaultBpb()`.
+====
+
+A call to `addBlob()` will add the first segment to the BLOB;
+successive calls to `appendBlobData()` will add more segments.
+
+.Segment size limit!
+[WARNING]
+====
+Keep in mind that segment size is limited to 64KB -1.
+Attempting to pass more data in a single call will cause an error.
+====
+
+[[rnfb40-apiods-api-blobs-streams]]
+====== Multiple BLOBs Using Streams
+
+Using the method `addBlobStream()`, it is possible to add more than one BLOB to the batch in a single call.
+
+A blob stream is a sequence of BLOBs, each starting with a BLOB header which needs to be appropriately aligned.
+The `Batch` interface provides a special call for this purpose:
+
+[source]
+----
+unsigned alignment = batch->getBlobAlignment(&status);
+----
+
+It is assumed that all components of a BLOB stream in a batch will be aligned, at least at the alignment boundary.
+This includes the size of stream potions passed to `addBlobStream()`, which should be a multiple of this alignment.
+
+The header contains three fields: an 8-byte BLOB ID (must be non-zero), a 4-byte total BLOB size and a 4 byte BPB size.
+The total BLOB size includes the enclosed BPB, i.e. the next BLOB in the stream will always be found in the BLOB-size bytes after the header, taking the alignment into account.
+
+The BPB is present if the BPB size is not zero and is placed immediately after the header.
+The BPB BLOB data goes next, its format depending upon whether the BLOB is streamed or segmented:
+
+* For a stream BLOB it is a plain sequence of bytes whose size is (BLOB-size - BPB-size)
+* For a segmented BLOB, things are a bit more complicated: the BLOB data is a set of segments where each segment has the format: 2-bytes for the size of the segment, aligned at `IBatch::BLOB_SEGHDR_ALIGN` boundary, followed by as many bytes as are accounted for by this 2-byte segment size
+
+[#rnfb40-apiods-api-blobs-streams-cont,float]
+====== Bigger BLOBS in the Stream
+
+When a big BLOB is added to the stream, its size is not always known in advance.
+To avoid having too large a buffer for that BLOB (recalling that the size has to be provided in the BLOB header, before the BLOB data) a [term]_BLOB continuation record_ may be used.
+In the BLOB header, you leave BLOB size at a value known when creating that header and add a continuation record.
+The format of the continuation record is identical to the BLOB header, except that both the BLOB ID and the BPB size must always be zero.
+
+Typically, you will want to have one continuation record per `addBlobStream()` call.
+
+An example of this usage can be found in `sample 11.batch.cpp`.
+
+[[rnfb40-apiods-api-blobs-register]]
+===== Registering a Standard BLOB
+
+The last method used to work with BLOBs stands apart from the first three that pass BLOB data inline with the rest of the batch data.
+It is required for registering in a batch the ID of a BLOB created using the standard BLOB API.
+This may be unavoidable if a really big BLOB has to be passed to the batch.
+
+The ID of such BLOB cannot be used in the batch directly without causing an invalid BLOB ID error during batch execution.
+Instead do: 
+
+[source]
+----
+batch->registerBlob(&status, &realId, &msg->desc);
+----
+
+If the BLOB policy is making the Firebird engine generate BLOB IDs then this code is enough to correctly register an existing BLOB in a batch.
+In other cases you will have to assign to `msg>>desc` the ID that is correct from the point of view of the batch.
+
+[[rnfb40-apiods-api-batch-isc-api]]
+==== Batch Ops in the Legacy (ISC) API
+
+A word or two about access to batches from the ISC API: a prepared ISC statement can be executed in batch mode.
+The main support for it is present in the `Util` interface, namely in the methods `getTransactionByHandle` and `getStatementByHandle`.
+These methods enable access to the appropriate interfaces in the same way as to existing ISC handles.
+
+An example of this usage can be found in `12.batch_isc.cpp`.
+
+[[rnfb40-apiods-timezone-support]]
+=== API Support for Time Zones
+
+[[rnfb40-apiods-timezone-structs]]
+==== Structures (structs)
+
+[source]
+----
+struct ISC_TIME_TZ
+{
+    ISC_TIME utc_time;
+    ISC_USHORT time_zone;
+};
+
+struct ISC_TIMESTAMP_TZ
+{
+    ISC_TIMESTAMP utc_timestamp;
+    ISC_USHORT time_zone;
+};
+
+struct ISC_TIME_TZ_EX
+{
+    ISC_TIME utc_time;
+    ISC_USHORT time_zone;
+    ISC_SHORT ext_offset;
+};
+
+struct ISC_TIMESTAMP_TZ_EX
+{
+    ISC_TIMESTAMP utc_timestamp;
+    ISC_USHORT time_zone;
+    ISC_SHORT ext_offset;
+};
+----
+
+[[rnfb40-apiods-timezone-functions]]
+==== API Functions: (FirebirdInterface.idl -- IUtil interface)
+
+[source]
+----
+void decodeTimeTz(
+    Status status,
+    const ISC_TIME_TZ* timeTz,
+    uint* hours,
+    uint* minutes,
+    uint* seconds,
+    uint* fractions,
+    uint timeZoneBufferLength,
+    string timeZoneBuffer
+);
+
+void decodeTimeStampTz(
+    Status status,
+    const ISC_TIMESTAMP_TZ* timeStampTz,
+    uint* year,
+    uint* month,
+    uint* day,
+    uint* hours,
+    uint* minutes,
+    uint* seconds,
+    uint* fractions,
+    uint timeZoneBufferLength,
+    string timeZoneBuffer
+);
+
+void encodeTimeTz(
+    Status status,
+    ISC_TIME_TZ* timeTz,
+    uint hours,
+    uint minutes,
+    uint seconds,
+    uint fractions,
+    const string timeZone
+);
+
+void encodeTimeStampTz(
+    Status status,
+    ISC_TIMESTAMP_TZ* timeStampTz,
+    uint year,
+    uint month,
+    uint day,
+    uint hours,
+    uint minutes,
+    uint seconds,
+    uint fractions,
+    const string timeZone
+);
+
+void decodeTimeTzEx(
+    Status status,
+    const ISC_TIME_TZ_EX* timeTzEx,
+    uint* hours,
+    uint* minutes,
+    uint* seconds,
+    uint* fractions,
+    uint timeZoneBufferLength,
+    string timeZoneBuffer
+);
+
+void decodeTimeStampTzEx(
+    Status status,
+    const ISC_TIMESTAMP_TZ_EX* timeStampTzEx,
+    uint* year,
+    uint* month,
+    uint* day,
+    uint* hours,
+    uint* minutes,
+    uint* seconds,
+    uint* fractions,
+    uint timeZoneBufferLength,
+    string timeZoneBuffer
+);
+----
+
+[[rnfb40-apiods-api-decfloat-numerics]]
+=== API Support for DECFLOAT and Long Numerics
+Alex Peshkov
+
+`DecFloat16` and `DecFloat34` are helper interfaces that simplify working with the `DECFLOAT` (16-digit and 34-digit respectively) data types.
+Available methods in the `DecFloat16` interface are the following:
+
+[source]
+----
+void toBcd(const FB_DEC16* from, int* sign, uchar* bcd, int* exp);
+void toString(Status status, const FB_DEC16* from, uint bufferLength, string buffer);
+void fromBcd(int sign, const uchar* bcd, int exp, FB_DEC16* to);
+void fromString(Status status, const string from, FB_DEC16* to);
+----
+
+The `DecFloat34` interface shares the same methods, just using the `FB_DEC34` structure. 
+
+`Int128` is a helper interface for 128-bit integers (used internally as a base type for `INT128, and `NUMERIC` and `DECIMAL` data types with precision > 18), it contains the following methods:
+
+[source]
+----
+void toString(Status status, const FB_I128* from, int scale, uint bufferLength, string buffer);
+void fromString(Status status, int scale, const string from, FB_I128* to);
+----
+
+Structures used by the aforementioned interfaces are defined below:
+
+[source]
+----
+struct FB_DEC16
+{
+	ISC_UINT64 fb_data[1];
+};
+
+struct FB_DEC34
+{
+	ISC_UINT64 fb_data[2];
+};
+
+struct FB_I128
+{
+	ISC_UINT64 fb_data[2];
+};
+----
+
+In order to work with these new interfaces, the `Util` interface has been extended with the following methods:
+
+[source]
+----
+DecFloat16 getDecFloat16(Status status);
+DecFloat34 getDecFloat34(Status status);
+Int128 getInt128(Status status);
+----
+
+[[rnfb40-apiods-api-new-datatypes]]
+=== Additions to the Other Interfaces
+Alex Peshkov
+
+A number of new methods have been added to the following interfaces.
+
+.`Attachment`
+[source]
+----
+uint getIdleTimeout(Status status);
+void setIdleTimeout(Status status, uint timeOut);
+
+uint getStatementTimeout(Status status);
+void setStatementTimeout(Status status, uint timeOut);
+
+Batch createBatch(Status status, Transaction transaction, uint stmtLength, const string sqlStmt,
+                  uint dialect, MessageMetadata inMetadata, uint parLength, const uchar* par);
+----
+
+.`Statement`
+[source]
+----
+uint getTimeout(Status status);
+void setTimeout(Status status, uint timeout);
+Batch createBatch(Status status, MessageMetadata inMetadata, uint parLength, const uchar* par);
+----
+
+.`ClientBlock`
+[source]
+----
+AuthBlock getAuthBlock(Status status);
+----
+
+.`Server`
+[source]
+----
+void setDbCryptCallback(Status status, CryptKeyCallback cryptCallback);
+----
+
+.`MessageMetadata`
+[source]
+----
+uint getAlignment(Status status);
+uint getAlignedLength(Status status);
+----
+
+.`MetadataBuilder`
+[source]
+----
+void setField(Status status, uint index, const string field);
+void setRelation(Status status, uint index, const string relation);
+void setOwner(Status status, uint index, const string owner);
+void setAlias(Status status, uint index, const string alias);
+----
+
+.`Util`
+[source]
+----
+Transaction getTransactionByHandle(Status status, isc_tr_handle* hndlPtr);
+Statement getStatementByHandle(Status status, isc_stmt_handle* hndlPtr);
+----
+
+They can be used to get an OO API object from the corresponding ISC API handle. 
+
+.`FirebirdConf`
+[source]
+----
+uint getVersion(Status status);
+----
+
+.`ConfigManager`
+[source]
+----
+const string getDefaultSecurityDb();
+----

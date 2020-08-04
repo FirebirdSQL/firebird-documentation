@@ -1,0 +1,401 @@
+[[rnfb40-util]]
+= Monitoring & Command-line Utilities
+
+Improvements and additions to the Firebird utilities continue.
+
+[[rnfb40-util-mon]]
+== Monitoring
+
+Additions to `MON$ATTACHMENTS` and `MON$STATEMENTS` to report on timeouts and wire status.
+Refer to <<rnfb40-engine-timeouts,Timeouts at Two levels>> in the  chapter <<rnfb40-engine,Changes in the Firebird Engine>> for details.
+
+New columns in the tables: 
+
+* In `MON$DATABASE`:
++
+--
+`MON$CRYPT_STATE`:: Current state of database encryption (not encrypted = 0, encrypted = 1, decryption in progress = 2, encryption in progress = 3)
+--
+* In `MON$ATTACHMENTS`:
++
+--
+`MON$IDLE_TIMEOUT`:: Connection level idle timeout
+`MON$IDLE_TIMER`:: Idle timer expiration time
+`MON$STATEMENT_TIMEOUT`:: Connection level statement timeout
+`MON$WIRE_COMPRESSED`:: Wire compression (enabled = 1, disabled = 0)
+`MON$WIRE_ENCRYPTED`:: Wire encryption (enabled = 1, disabled = 0)
+`MON$WIRE_CRYPT_PLUGIN`:: Name of the wire encryption plugin used by client
+--
+* In `MON$STATEMENTS`:
++
+--
+`MON$STATEMENT_TIMEOUT`:: Connection level statement timeout
+`MON$STATEMENT_TIMER`:: Timeout timer expiration time
+--
+* In `MON$RECORD_STATS`:
++
+--
+`MON$RECORD_IMGC`:: Number of records processed by the intermediate garbage collection
+--
+
+[[rnfb40-util-nbackup]]
+== __nBackup__: UUID-based Backup and In-Place Merge
+Roman Simakov; Vlad Khorsun
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-2216[CORE-2216]
+
+The _nBackup_ utility in Firebird 4 can perform a physical backup that uses the GUID (UUID) of the most recent backup of a read-only standby database to establish the backup target file.
+Increments from the _source database_ can be applied continuously to the standby database, eliminating the need to keep and apply all increments since the last full backup.
+
+The new style of "`warm`" backup and merge to a standby database can be run without affecting an existing multilevel backup scheme on the live database.
+
+[[rnfb40-util-nbackup-bkp]]
+=== Making Backups
+
+The syntax pattern for this form of backup with _nBackup_ is as follows: 
+
+[listing]
+----
+nbackup -B[ACKUP] <level> | <GUID> <source database> [<backup file>]
+----
+
+[[rnfb40-util-nbackup-rstr]]
+=== Merging-in-Place from the Backup
+
+The syntax pattern for an in-place "`restore`" to merge the incremental backup file with the standby database is: 
+
+[listing]
+----
+nbackup -I[NPLACE] -R[ESTORE] <standby database> <backup file>
+----
+
+[NOTE]
+====
+"`Restore`" here means merging the increment from the backup file with the standby database.
+
+__Switch names may change before the final release__.
+====
+
+[[rnfb40-util-nbackup-exmpl]]
+=== Example of an On-line Backup and Restore
+
+[loweralpha]
+. Use _gstat_ to get the UUID of the standby database:
++
+[source]
+----
+gstat -h <standby database>
+...
+    Variable header data:
+        Database backup GUID: {8C519E3A-FC64-4414-72A8-1B456C91D82C}
+----
+. Use the backup UUID to produce an incremental backup:
++
+[source]
+----
+nbackup -B {8C519E3A-FC64-4414-72A8-1B456C91D82C} <source database> <backup file>
+----
+. Apply increment to the standby database:
++
+[source]
+----
+nbackup -I -R <standby database> <backup file>
+----
+
+[[rnfb40-util-isql-stmnt-timeouts]]
+== __isql__: Support for Statement Timeouts
+
+A new command has been introduced in _isql_ to enable an execution timeout in milliseconds to be set for the next statement.
+The syntax is: 
+
+[listing]
+----
+SET LOCAL_TIMEOUT <int>
+----
+
+After statement execution, the timer is automatically reset to zero.
+
+[[rnfb40-util-isql-keeptranparams]]
+== __isql__: Better transaction control
+
+A new command has been introduced in _isql_ to remember and reuse the last entered transaction parameters.
+The syntax is: 
+
+[listing]
+----
+SET KEEP_TRAN_PARAMS [{ ON | OFF}]
+----
+
+When set to `ON`, _isql_ keeps the complete SQL text of the following successful `SET TRANSACTION` statement and new transactions are started using the same SQL text (instead of the default `CONCURRENCY WAIT` mode).
+When set to `OFF`, _isql_ starts new transactions as usual.
+Name `KEEP_TRAN` can be used as a shorthand for `KEEP_TRAN_PARAMS`.
+
+.Examples
+[source]
+----
+-- check current value
+SQL> SET;
+...
+Keep transaction params: OFF
+
+-- toggle value
+SQL> SET KEEP_TRAN;
+SQL> SET;
+...
+Keep transaction params: ON
+SET TRANSACTION
+
+SQL>commit;
+
+-- start new transaction, check KEEP_TRAN value and actual transaction's parameters
+SQL>SET TRANSACTION READ COMMITTED WAIT;
+SQL>SET;
+...
+Keep transaction params: ON
+  SET TRANSACTION READ COMMITTED WAIT
+SQL> SELECT RDB$GET_CONTEXT('SYSTEM', 'ISOLATION_LEVEL') FROM RDB$DATABASE;
+
+RDB$GET_CONTEXT
+
+=============================================================
+READ COMMITTED
+
+SQL> commit;
+
+-- start new transaction, ensure is have parameters as KEEP_TRAN value
+SQL> SELECT RDB$GET_CONTEXT('SYSTEM', 'ISOLATION_LEVEL') FROM RDB$DATABASE;
+
+RDB$GET_CONTEXT
+
+=============================================================
+READ COMMITTED
+
+-- disable KEEP_TRAN, current transaction is not changed
+SQL> SET KEEP_TRAN OFF;
+SQL> SELECT RDB$GET_CONTEXT('SYSTEM', 'ISOLATION_LEVEL') FROM RDB$DATABASE;
+
+RDB$GET_CONTEXT
+
+=============================================================
+READ COMMITTED
+
+SQL> commit;
+
+-- start new transaction, ensure is has default parameters (SNAPSHOT)
+SQL> SELECT RDB$GET_CONTEXT('SYSTEM', 'ISOLATION_LEVEL') FROM RDB$DATABASE;
+
+RDB$GET_CONTEXT
+
+=============================================================
+SNAPSHOT
+
+SQL> SET;
+...
+Keep transaction params: OFF
+----
+
+[[rnfb40-util-gbak]]
+== _gbak_
+Alex Peshkov
+
+[[rnfb40-util-gbak-crypt]]
+=== Backup and Restore with Encryption
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5808[CORE-5808]
+
+With an encrypted database, sooner or later it will need to be backed up and restored.
+It is not unreasonable to want the database backup to be encrypted as well.
+If the encryption key is delivered to the plug-in by some means that does not require input from the client application, it is not a big problem.
+However, if the server expects the key to be delivered from the client side, that could become a problem.
+
+The introduction of keys to _gbak_ in  Firebird 4 provides a solution.
+
+[[rnfb40-util-gbak-crypt-reqs]]
+==== Prerequisites
+
+A [term]_keyholder plug-in_ is required. This plug-in is able to load keys from some external source, such as a configuration file, and deliver them using the call
+
+[source]
+----
+ICryptKeyCallback* IKeyHolderPlugin::chainHandle(IStatus* status)
+----
+
+That key holder and the dbcrypt plug-ins that work with it should be installed on the workstation that will be used to perform backups.
+
+[[rnfb40-util-gbak-crypt-switches]]
+==== New Switches for Encrypted Backups & Restores
+
+With the prerequisites in place, the following new switches are available for use.
+They are case-insensitive. 
+
+.Switches for Encrypted Backups/Restores
+[cols="1m,3", frame="topbot", options="header", stripes="none"]
+|===
+| Switch
+| What it Does
+
+|-KEYHOLDER
+|This is the main switch necessary for _gbak_ to access an encrypted database.
+
+|-KEYNAME
+|Available to name the key explicitly, in place of the default key specified in the original database (when backing up) or in the backup file (when restoring).
+
+|-CRYPT
+|Available to name the plug-in to use to encrypt the backup file or restored database in place of the default plug-in.
+It can also be used in combination with the `-KEYNAME` switch to encrypt the backup of a non-encrypted database or to encrypt a database restored from a non-encrypted backup.
+See example below.
+
+|-ZIP
+|Only for a backup, to compress the backup file before encrypting it.
+The switch is necessary because the usual approach of compressing the backup file with some favoured compression routine after _gbak_, perhaps using pipe, does not work with encrypted backups because they are not compressible.
+The `-ZIP` switch is unnecessary for a restore because the format is detected automatically.
+|===
+
+[[rnfb40-util-gbak-crypt-usage]]
+==== Usage and Examples
+
+To back up an encrypted database do something like this: 
+
+[source]
+----
+gbak -b -keyholder MyKeyHolderPlugin host:dbname backup_file_name
+----
+
+The backup file will be encrypted using the same crypt plug-in and key that are used for database encryption.
+This ensures that it will not be any easier to steal data from your backup file than from the database.
+
+To restore a database that was previously backed up encrypted:
+
+[source]
+----
+gbak -c -keyholder MyKeyHolderPlugin backup_file_name host:dbname
+----
+
+The restored database will be encrypted using the same plug-in and key as the backup file.
+Using the backup example above, of course this means the same plug-in and key as the original database.
+
+[NOTE]
+====
+The database is first encrypted right after creation and only after the encryption data are restored into the header.
+This is a bit faster than a "`restore-then-encrypt`" approach but, mainly, it is to avoid having non-encrypted data on the server during the restore process.
+====
+
+The next example will either:
+
+* restore the database from a backup file made using non-default Crypt and Keyholder plug-ins, using the same key name as was used for the backup; OR
+* restore a non-encrypted backup as an encrypted database
+
+
+[source]
+----
+gbak -c -keyholder MyKeyHolderPlugin -crypt MyDbCryptPlugin
+   -keyname SomeKey non_encrypted_backup_file host:dbname
+----
+
+The restored database will encrypted by `MyDbCryptPlugin` using `SomeKey`.
+
+To make an encrypted backup of a non-encrypted database:
+
+[source]
+----
+gbak -b -keyholder MyKeyHolderPlugin -crypt MyDbCryptPlugin
+   -keyname SomeKey host:dbname encrypted_backup_file
+----
+
+.Take note:
+[WARNING]
+====
+Attempts to create a non-encrypted backup of an encrypted database or to restore an encrypted backup to a non-encrypted database will fail.
+Such operations are intentionally disallowed to avoid foolish operator errors that would expose critical data in non-encrypted form.
+====
+
+To create a compressed, encrypted backup:
+
+[source]
+----
+gbak -b -keyholder MyKeyHolderPlugin -zip host:dbname backup_file_name
+----
+
+The backup file will be compressed before being encrypted using the same crypt plug-in and same key that are used for the database encryption.
+ZLib is used to compress the backup file content and the appropriate record is added to its header.
+
+.Compressing Non-Encrypted Databases
+[NOTE]
+====
+The `-ZIP` switch is also available for compressing a non-encrypted database.
+It is important to understand that the format of a backup file thus created is not the same as one created by compressing a backup file with a utility such as 7Zip.
+It can be decompressed only by a _gbak_ restore.
+====
+
+[[rnfb40-util-gbak-batch-restore]]
+=== Enhanced Restore Performance
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5952[CORE-5952]
+
+The new Batch API is used to enhance the performance of restoring from backup.
+
+[[rnfb40-util-gbak-batch-fixmessage]]
+=== Friendlier "`-fix_fss_*`" Messages
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5741[CORE-5741]
+
+The messages in the verbose output from a restore using the "`-fix_fss_*`" switches now use the word "`adjusting`" instead of "`fixing`".
+
+The same change was backported to version 3.0.5.
+
+[[rnfb40-util-gbak-include-data]]
+== Ability to Backup/Restore Only Specified Tables
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5538[CORE-5538]
+
+A new command-line switch has been added to _gbak_: `-INCLUDE(_DATA)`.
+Similarly to the existing `-SKIP(_DATA)` switch, it accepts one parameter which is a regular expression pattern used to match table names.
+If specified, it defines tables to be backed up or restored.
+The regular expression syntax used to match table names is the same as in `SIMILAR TO` boolean expressions.
+Interaction between both switches is described in the following table. 
+
+.Interaction between `-INCLUDE(_DATA)` and `-SKIP(_DATA)` switches
+[cols="1,1,1,1"]
+|===
+h| {nbsp}
+3+^h| INCLUDE_DATA
+
+h| SKIP_DATA
+h| NOT SET
+h| MATCHED
+h| NOT MATCHED
+
+|NOT SET
+|included
+|included
+|excluded
+
+|MATCHED
+|excluded
+|excluded
+|excluded
+
+|NOT MATCHED
+|included
+|included
+|excluded
+|===
+
+[[rnfb40-util-gfix]]
+== _gfix_
+
+The _gfix_ repertoire now includes the new `-replica` switch for configuring and managing <<rnfb40-replication,Firebird replication>>.
+For more detail, see the topic <<rnfb40-replication-setup-replica-create,Creating a Replica Database>>.
+
+It takes one of three arguments (case-insensitive):
+
+`read-only`::
+Sets the database copy as a read-only replica, usually for a high-availability solution.
+
+`read-write`::
+Sets the database copy as a read-write replica, for asynchronous replication.
+
+`none`::
+Converts the replica to a regular database, "`switching off`" replication to a read-write replica when conditions call for replication flow to be discontinued for some reason.
+Typically, it would be used to promote the replica to become the master database after a failure;
+or to make physical backup copies from the replica.

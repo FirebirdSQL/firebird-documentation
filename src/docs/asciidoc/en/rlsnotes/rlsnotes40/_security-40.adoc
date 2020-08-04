@@ -1,0 +1,760 @@
+[[rnfb40-security]]
+= Security
+
+Security enhancements in Firebird 4 include:
+
+[[rnfb4-enhancedprivs]]
+== Enhanced System Privileges
+Alex Peshkov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5343[CORE-5343]
+
+This feature enables granting and revoking some special privileges for regular users to perform tasks that have been historically limited to SYSDBA only, for example: 
+
+* Run utilities such as _gbak_, _gfix_, _nbackup_ and so on
+* Shut down a database and bring it online
+* Trace other users' attachments
+* Access the monitoring tables
+* Run <<rnfb40-msql,management statements>>
+
+The implementation involved creating a set of _system privileges_, analogous to object privileges, from which lists of privileged tasks could be assigned to roles.
+
+[[rnfb4-validsysprivs]]
+=== List of Valid System Privileges
+
+The following table lists the names of the valid system privileges that can be granted to and revoked from roles.
+
+[cols="6m,7", frame="none", stripes="none"]
+|===
+
+|USER_MANAGEMENT
+|Manage users
+
+|READ_RAW_PAGES
+|Read pages in raw format using `Attachment::getInfo()`
+
+|CREATE_USER_TYPES
+|Add/change/delete non-system records in `RDB$TYPES`
+
+|USE_NBACKUP_UTILITY
+|Use nbackup to create database copies
+
+|CHANGE_SHUTDOWN_MODE
+|Shut down database and bring online
+
+|TRACE_ANY_ATTACHMENT
+|Trace other users' attachments
+
+|MONITOR_ANY_ATTACHMENT
+|Monitor (tables `MON$`) other users' attachments
+
+|ACCESS_SHUTDOWN_DATABASE
+|Access database when it is shut down
+
+|CREATE_DATABASE
+|Create new databases (given in security.db)
+
+|DROP_DATABASE
+|Drop this database
+
+|USE_GBAK_UTILITY
+|Use appropriate utility
+
+|USE_GSTAT_UTILITY
+|...
+
+|USE_GFIX_UTILITY
+|...
+
+|IGNORE_DB_TRIGGERS
+|Instruct engine not to run DB-level triggers
+
+|CHANGE_HEADER_SETTINGS
+|Modify parameters in DB header page
+
+|SELECT_ANY_OBJECT_IN_DATABASE
+|Use `SELECT` for any selectable object
+
+|ACCESS_ANY_OBJECT_IN_DATABASE
+|Access (in any possible way) any object
+
+|MODIFY_ANY_OBJECT_IN_DATABASE
+|Modify (up to drop) any object
+
+|CHANGE_MAPPING_RULES
+|Change authentication mappings
+
+|USE_GRANTED_BY_CLAUSE
+|Use `GRANTED BY` in `GRANT` and `REVOKE` statements
+
+|GRANT_REVOKE_ON_ANY_OBJECT
+|`GRANT` and `REVOKE` rights on any object in database
+
+|GRANT_REVOKE_ANY_DDL_RIGHT
+|`GRANT` and `REVOKE` any DDL rights
+
+|CREATE_PRIVILEGED_ROLES
+|Use `SET SYSTEM PRIVILEGES` in roles
+
+|MODIFY_EXT_CONN_POOL
+|Use command `ALTER EXTERNAL CONNECTIONS POOL`
+
+|REPLICATE_INTO_DATABASE
+|Use replication API to load change sets into database
+|===
+
+[[rnfb4-new-grantee-type]]
+=== New Grantee Type SYSTEM PRIVILEGE
+
+At a lower level, a new grantee type `SYSTEM PRIVILEGE` enables the SYSDBA to grant and revoke specific access privileges on database objects to a named system privilege.
+For example,
+
+[source]
+----
+GRANT ALL ON PLG$SRP_VIEW TO SYSTEM PRIVILEGE USER_MANAGEMENT
+----
+
+grants to users having `USER_MANAGEMENT` privilege all rights to the view that is used in the SRP user management plug-in.
+
+[[rnfb4-sysprivs-creating-roles]]
+=== Assigning System Privileges to a Role
+
+To put all this to use, we have some new clauses in the syntax of the `CREATE ROLE` and `ALTER ROLE` statements for attaching a list of the desired system privileges to a new or existing role.
+
+[[rnfb4-setsysprivs]]
+==== The SET SYSTEM PRIVILEGES Clause
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-2557[CORE-2557]
+
+The syntax pattern for setting up or changing these special roles is as follows:
+
+[listing,subs=+quotes]
+----
+CREATE ROLE _name_ SET SYSTEM PRIVILEGES TO <privilege1> {, <privilege2> {, ...  <privilegeN> }}
+ALTER ROLE _name_ SET SYSTEM PRIVILEGES TO <privilege1> {, <privilege2> {, ...  <privilegeN> }}
+----
+
+Both statements assign a non-empty list of system privileges to role _name_.
+The `ALTER ROLE` statement clears privileges previously assigned to the named role, before constructing the new list.
+
+[IMPORTANT]
+====
+Be aware that each system privilege provides a very thin level of control.
+For some tasks it may be necessary to give the user more than one privilege to perform some task.
+For example, add `IGNORE_DB_TRIGGERS` to `USE_GSTAT_UTILITY` because gstat needs to ignore database triggers.
+====
+
+Note that this facility provides a solution to an old Tracker request (http://tracker.firebirdsql.org/browse/CORE-2557[CORE-2557]) to implement permissions on the monitoring tables:
+
+[source]
+----
+CREATE ROLE MONITOR SET SYSTEM PRIVILEGES TO MONITOR_ANY_ATTACHMENT;
+GRANT MONITOR TO ROLE MYROLE;
+----
+
+[[rnfb4-dropsysprivs]]
+==== Dropping System Privileges from a Role
+
+This statement is used to clear the list of system privileges from the named role:
+
+[listing,subs=+quotes]
+----
+ALTER ROLE _name_ DROP SYSTEM PRIVILEGES
+----
+
+The role _name_ is not dropped, just the list of system privileges attached to it.
+
+[[rnfb4-rdb-systemprivilege-function]]
+=== Function RDB$SYSTEM_PRIVILEGE
+
+To accompany all this delegation of power is a new built-in function, `RDB$SYSTEM_PRIVILEGE()`.
+It takes a valid system privilege as an argument and returns True if the current attachment has the given system privilege.
+
+.Syntax
+[source]
+----
+RDB$SYSTEM_PRIVILEGE( <privilege> )
+----
+
+Example 
+[source]
+----
+select rdb$system_privilege(user_management) from rdb$database;
+----
+
+[[rnfb4-grant-role-to-role]]
+== Granting a Role to Another Role
+Roman Simakov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-1815[CORE-1815]
+
+Firebird 4 allows a role to be granted to another role -- a phenomenon that has been nicknamed "`cumulative roles`".
+If you hear that term, it is referring to roles that are embedded within other roles by way of `GRANT ROLE a TO ROLE b`, something Firebird would not allow before.
+
+[IMPORTANT]
+====
+Take careful note that the `GRANT ROLE` syntax has been extended, along with its effects.
+====
+
+.Syntax Pattern
+[listing,subs=+quotes]
+----
+GRANT [DEFAULT] _role_name_ TO [USER | ROLE] _user/role_name_ [WITH ADMIN OPTION];
+REVOKE [DEFAULT] _role_name_ FROM [USER | ROLE] _user/role_name_ [WITH ADMIN OPTION];
+----
+
+NOTE: Above syntax is a simplified version, the full `GRANT` and `REVOKE` has more options.
+
+[[rnfb4-grant-role-default]]
+=== The DEFAULT Keyword
+
+If the optional `DEFAULT` keyword is included, the role will be used every time the user logs in, even if the role is not specified explicitly in the login credentials.
+During attachment, the user will get the privileges of all roles that have been granted to him/her with the `DEFAULT` property.
+This set will include all the privileges of all the embedded roles that have been granted to the _role_name_ role with the `DEFAULT` property.
+
+Setting (or not setting) a role in the login does not affect the default role.
+The set of rights, given (by roles) to the user after login is the union of the login role (when set), all default roles granted to the user and all roles granted to this set of roles.
+
+[NOTE]
+====
+A user still cannot acquire any privileges associated with a base role that has not been granted to his account or has been revoked.
+====
+
+[[rnfb4-grant-role-with-admin]]
+=== WITH ADMIN OPTION Clause
+
+If a user is to be allowed to grant a role to another user or to another role, the `WITH ADMIN OPTION` should be included.
+Subsequently, the user will be able to grant any role in the sequence of roles granted to him, provided every role in the sequence has `WITH ADMIN OPTION`.
+
+[[rnfb4-grant-role-example]]
+=== Example Using a Cumulative Role
+
+[source]
+----
+CREATE DATABASE 'LOCALHOST:/TMP/CUMROLES.FDB';
+CREATE TABLE T(I INTEGER);
+CREATE ROLE TINS;
+CREATE ROLE CUMR;
+GRANT INSERT ON T TO TINS;
+GRANT DEFAULT TINS TO CUMR WITH ADMIN OPTION;
+GRANT CUMR TO USER US WITH ADMIN OPTION;
+CONNECT 'LOCALHOST:/TMP/CUMROLES.FDB' USER 'US' PASSWORD 'PAS';
+INSERT INTO T VALUES (1);
+GRANT TINS TO US2;
+----
+
+[[rnfb4-revoke-role-default]]
+=== Revoking the DEFAULT Property of a Role Assignment
+
+To remove the `DEFAULT` property of a role assignment without revoking the role itself, include the `DEFAULT` keyword in the `REVOKE` statement:
+
+[source]
+----
+REVOKE DEFAULT ghost FROM USER henry
+REVOKE DEFAULT ghost FROM ROLE poltergeist
+----
+
+Otherwise, revoking a role altogether from a user is unchanged.
+However, now a role can be revoked from a role.
+For example,
+
+[source]
+----
+REVOKE ghost FROM USER henry
+REVOKE ghost FROM ROLE poltergeist
+----
+
+[[rnfb4-rdb-role-in-use-function]]
+=== Function RDB$ROLE_IN_USE
+Roman Simakov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-2762[CORE-2762]
+
+A new built-in function lets the current user check whether a specific role is available under his/her current credentials.
+It takes a single-quoted role name as a string argument of arbitrary length and returns a Boolean result.
+
+.Syntax
+[listing,subs=+quotes]
+----
+RDB$ROLE_IN_USE(_role_name_)
+----
+
+[[rnfb4-list-current-roles]]
+==== List Currently Active Roles
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-751[CORE-751]
+
+To get a list of currently active roles you can run:
+
+[source]
+----
+SELECT * FROM RDB$ROLES WHERE RDB$ROLE_IN_USE(RDB$ROLE_NAME)
+----
+
+[[rnfb40-sec-sqlsecurity]]
+== SQL SECURITY Feature
+Roman Simakov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5568[CORE-5568]
+
+This new feature in Firebird 4 enables executable objects (triggers, stored procedures, stored functions) to be defined to run in the context of an SQL SECURITY clause, as defined in the SQL standards (2003, 2011).
+
+The SQL SECURITY scenario has two contexts: _INVOKER_ and _DEFINER_.
+The _INVOKER_ context corresponds to the privileges available to the _CURRENT_USER_ or the calling object, while _DEFINER_ corresponds to those available to the owner of the object.
+
+The SQL SECURITY property is an optional part of an object's definition that can be applied to the object with DDL statements.
+The property cannot be dropped but it can be changed from _INVOKER_ to _DEFINER_ and vice versa.
+
+It is not the same thing as SQL privileges, which are applied to users and some database object types to give them various  types of access to database objects.
+When an executable object in Firebird needs access to a table, a view or another executable object, the target object is not accessible if the invoker does not have the necessary privileges on it.
+That has been the situation in previous Firebird versions and remains so in Firebird 4.
+That is, by default, all executable objects have the SQL SECURITY _INVOKER_ property in Firebird 4.
+Any caller lacking the necessary privileges will be rejected.
+
+If a routine has the SQL SECURITY _DEFINER_ property applied to it, the invoking user or routine will be able to execute it if the required privileges have been granted to its owner, without the need for the caller to be granted those privileges specifically.
+
+In summary: 
+
+* If _INVOKER_ is set, the access rights for executing the call to an executable object are determined by checking the current user's active set of privileges
+* If _DEFINER_ is set, the access rights of the object owner will be applied instead, regardless of the current user's active privilege set
+
+.Syntax Patterns
+[listing,subs=+quotes]
+----
+CREATE TABLE _table_name_ (...) [SQL SECURITY {DEFINER | INVOKER}]
+ALTER TABLE _table_name_ ... [{ALTER SQL SECURITY {DEFINER | INVOKER} | DROP SQL SECURITY}]
+CREATE [OR ALTER] FUNCTION _function_name_ ... [SQL SECURITY {DEFINER | INVOKER}] AS ...
+CREATE [OR ALTER] PROCEDURE _procedure_name_ ... [SQL SECURITY {DEFINER | INVOKER}] AS ...
+CREATE [OR ALTER] TRIGGER _trigger_name_ ... [SQL SECURITY {DEFINER | INVOKER} | DROP SQL SECURITY] [AS ...]
+CREATE [OR ALTER] PACKAGE _package_name_ [SQL SECURITY {DEFINER | INVOKER}] AS ...
+
+ALTER DATABASE SET DEFAULT SQL SECURITY {DEFINER | INVOKER}
+----
+
+.Packaged Routines
+[WARNING]
+====
+An explicit SQL SECURITY clause is not valid for procedures and functions defined in a package and will cause an error.
+====
+
+[[rnfb40-sec-sqlsecurity-triggers]]
+=== Triggers
+
+Triggers inherit the setting of the SQL SECURITY property from the table, but it can be overridden explicitly.
+If the property is changed for a table, triggers that do not carry the overridden property will not see the effect of the change until next time the trigger is loaded into the metadata cache.
+
+To remove an explicit SQL SECURITY option from a trigger, e.g. one named `tr_ins`, you can run
+
+[source]
+----
+alter trigger tr_ins DROP SQL SECURITY;
+----
+
+To set it again to SQL SECURITY _INVOKER_, run
+
+[source]
+----
+alter trigger tr_ins sql security invoker;
+----
+
+[[rnfb40-sec-sqlsecurity-examples]]
+=== Examples Using the SQL SECURITY Property
+
+. With _DEFINER_ set for table `t`, user `US` needs only the `SELECT` privilege on it.
+If it were set for _INVOKER_, the user would also need the `EXECUTE` privilege on function `f`.
++
+[source]
+----
+set term ^;
+create function f() returns int
+as
+begin
+    return 3;
+end^
+set term ;^
+create table t (i integer, c computed by (i + f())) SQL SECURITY DEFINER;
+insert into t values (2);
+grant select on table t to user us;
+
+commit;
+
+connect 'localhost:/tmp/7.fdb' user us password 'pas';
+select * from t;
+----
+. With _DEFINER_ set for function `f`, user `US` needs only the `EXECUTE` privilege on it.
+If it were set for _INVOKER_, the user would also need the `INSERT` privilege on table `t`.
++
+[source]
+----
+set term ^;
+create function f (i integer) returns int SQL SECURITY DEFINER
+as
+begin
+  insert into t values (:i);
+  return i + 1;
+end^
+set term ;^
+grant execute on function f to user us;
+
+commit;
+
+connect 'localhost:/tmp/59.fdb' user us password 'pas';
+select f(3) from rdb$database;
+----
+. With _DEFINER_ set for procedure `p`, user `US` needs only the `EXECUTE` privilege on it.
+If it were set for _INVOKER_, either the user or the procedure would also need the `INSERT` privilege on table `t`.
++
+[source]
+----
+set term ^;
+create procedure p (i integer) SQL SECURITY DEFINER
+as
+begin
+  insert into t values (:i);
+end^
+set term ;^
+
+grant execute on procedure p to user us;
+commit;
+
+connect 'localhost:/tmp/17.fdb' user us password 'pas';
+execute procedure p(1);
+----
+. With _DEFINER_ set for trigger `tr`, user `US` needs only the `INSERT` privilege on it.
+If it were set for _INVOKER_, either the user or the trigger would also need the `INSERT` privilege on table `t`.
++
+[source]
+----
+create table tr (i integer);
+create table t (i integer);
+set term ^;
+create trigger tr_ins for tr after insert SQL SECURITY DEFINER
+as
+begin
+  insert into t values (NEW.i);
+end^
+set term ;^
+grant insert on table tr to user us;
+
+commit;
+
+connect 'localhost:/tmp/29.fdb' user us password 'pas';
+insert into tr values(2);
+----
++ 
+The result would be the same if SQL SECURITY _DEFINER_ were specified for table `TR`:
++
+[source]
+----
+create table tr (i integer) SQL SECURITY DEFINER;
+create table t (i integer);
+set term ^;
+create trigger tr_ins for tr after insert
+as
+begin
+  insert into t values (NEW.i);
+end^
+set term ;^
+grant insert on table tr to user us;
+
+commit;
+
+connect 'localhost:/tmp/29.fdb' user us password 'pas';
+insert into tr values(2);
+----
+. With _DEFINER_ set for package `pk`, user `US` needs only the `EXECUTE` privilege on it.
+If it were set for _INVOKER_, either the user would also need the `INSERT` privilege on table `t`.
++
+[source]
+----
+create table t (i integer);
+set term ^;
+create package pk SQL SECURITY DEFINER
+as
+begin
+    function f(i integer) returns int;
+end^
+
+create package body pk
+as
+begin
+    function f(i integer) returns int
+    as
+    begin
+      insert into t values (:i);
+      return i + 1;
+    end
+end^
+set term ;^
+grant execute on package pk to user us;
+
+commit;
+
+connect 'localhost:/tmp/69.fdb' user us password 'pas';
+select pk.f(3) from rdb$database;
+----
+
+[[rnfb4-builtin-crypto-functions]]
+== Built-in Cryptographic Functions
+Alex Peshkov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5970[CORE-5970]
+
+Firebird 4 introduces eight new built-in functions supporting cryptographic tasks.
+
+[[rnfb4-builtin-crypto-encrypt]]
+=== ENCRYPT() and DECRYPT()
+
+For encrypting/decrypting data using a symmetric cipher.
+
+.Syntax
+[listing]
+----
+{ENCRYPT | DECRYPT} ( <string | blob> USING <algorithm> [MODE <mode>] KEY <string>
+    	[IV <string>] [<endianness>] [CTR_LENGTH <smallint>] [COUNTER <bigint>])
+
+<algorithm> ::= { <block_cipher> | <stream_cipher> }
+<block_cipher> ::= { AES | ANUBIS | BLOWFISH | KHAZAD | RC5 | RC6 | SAFER+ | TWOFISH | XTEA }
+<stream_cipher> ::= { CHACHA20 | RC4 | SOBER128 }
+<mode> ::= { CBC | CFB | CTR | ECB | OFB }
+<endianness> ::= { CTR_BIG_ENDIAN | CTR_LITTLE_ENDIAN }
+----
+
+[IMPORTANT]
+====
+* Mode should be specified for block ciphers
+* Initialization vector (IV) should be specified for block ciphers in all modes except ECB and all stream ciphers except RC4
+* Endianness may be specified only in CTR mode, default is little endian counter
+* Counter length (CTR_LENGTH, bytes) may be specified only in CTR mode, default is the size of IV
+* Initial counter value (COUNTER) may be specified only for CHACHA20 cipher, default is 0
+* Sizes of data strings passed to these functions are in accordance with the selected algorithm and mode requirements
+* Functions return BLOB when the first argument is blob and varbinary for all text types.
+====
+
+.Examples
+[source]
+----
+select encrypt('897897' using sober128 key 'AbcdAbcdAbcdAbcd' iv '01234567')
+    from rdb$database;
+select decrypt(x'0154090759DF' using sober128 key 'AbcdAbcdAbcdAbcd' iv '01234567') 
+    from rdb$database;
+select decrypt(secret_field using aes mode ofb key '0123456701234567' iv init_vector) 
+    from secure_table;
+----
+
+[[rnfb4-builtin-crypto-rsa-private]]
+=== RSA_PRIVATE()
+
+Returns an RSA private key of specified length (in bytes) in PKCS#1 format as a VARBINARY string.
+
+.Syntax
+[listing]
+----
+RSA_PRIVATE ( <smallint> )
+----
+
+.Example
+[source]
+----
+select rdb$set_context('USER_SESSION', 'private_key', rsa_private(256))
+    from rdb$database;
+----
+
+[WARNING]
+====
+Putting private keys in the context variables is not secure.
+SYSDBA and users with the role `RDB$ADMIN` or the system privilege `MONITOR_ANY_ATTACHMENT` can see all context variables from all attachments.
+====
+
+[[rnfb4-builtin-crypto-rsa-public]]
+=== RSA_PUBLIC()
+
+Returns the RSA public key for a specified RSA private key.
+Both keys are in PKCS#1 format.
+
+.Syntax
+[listing]
+----
+RSA_PUBLIC ( <private key> )
+----
+
+[TIP]
+====
+Run your samples one by one from the `RSA_PRIVATE` function forward.
+====
+
+.Example
+[source]
+----
+select rdb$set_context('USER_SESSION', 'public_key',
+    rsa_public(rdb$get_context('USER_SESSION', 'private_key'))) from rdb$database;
+----
+
+[[rnfb4-builtin-crypto-rsa-encrypt]]
+=== RSA_ENCRYPT()
+
+Pads data using https://en.wikipedia.org/wiki/Optimal_asymmetric_encryption_padding[OAEP padding] and encrypts it using an RSA public key.
+Normally used to encrypt short symmetric keys which are then used in block ciphers to encrypt a message.
+
+.Syntax
+[listing]
+----
+RSA_ENCRYPT ( <string> KEY <public key> [LPARAM <string>] [HASH <hash>] )
+----
+
+`KEY` should be a value returned by the `RSA_PUBLIC` function.
+`LPARAM` is an additional system-specific tag that can be applied to identify which system encoded the message.
+Its default value is `NULL`.
+
+[listing]
+----
+<hash> ::= { MD5 | SHA1 | SHA256 | SHA512 }
+----
+
+Default is `SHA256`.
+
+[TIP]
+====
+Run your samples one by one from the `RSA_PRIVATE` function forward.
+====
+
+.Example
+[source]
+----
+select rdb$set_context('USER_SESSION', 'msg', rsa_encrypt('Some message'
+    key rdb$get_context('USER_SESSION', 'public_key'))) from rdb$database;
+----
+
+[[rnfb4-builtin-crypto-rsa-decrypt]]
+=== RSA_DECRYPT()
+
+Decrypts using the RSA private key and OAEP de-pads the resulting data.
+
+.Syntax
+[listing]
+----
+RSA_DECRYPT ( <string> KEY <private key> [LPARAM <string>] [HASH <hash>] )
+----
+
+`KEY` should be a value returned by the `RSA_PRIVATE` function.
+`LPARAM` is the same variable passed to `RSA_ENCRYPT`.
+If it does not match what was used during encoding, `RSA_DECRYPT` will not decrypt the packet.
+
+[listing]
+----
+<hash> ::= { MD5 | SHA1 | SHA256 | SHA512 }
+----
+
+Default is `SHA256`.
+
+[TIP]
+====
+Run your samples one by one from the RSA_PRIVATE function forward.
+====
+
+.Example
+[source]
+----
+select rsa_decrypt(rdb$get_context('USER_SESSION', 'msg')
+    key rdb$get_context('USER_SESSION', 'private_key')) from rdb$database;
+----
+
+[[rnfb4-builtin-crypto-rsa-sign]]
+=== RSA_SIGN()
+
+Performs PSS encoding of the message digest to be signed and signs using the RSA private key.
+
+.PSS encoding
+****
+Probabilistic Signature Scheme (PSS) is a cryptographic signature scheme  specifically developed to allow modern methods of security analysis to prove that  its security directly relates to that of the RSA problem.
+There is no such proof  for the traditional PKCS#1 v1.5 scheme. 
+****
+
+.Syntax
+[listing]
+----
+RSA_SIGN ( <string> KEY <private key> [HASH <hash>] [SALT_LENGTH <smallint>] )
+----
+
+`KEY` should be a value returned by the `RSA_PRIVATE` function.
+
+[listing]
+----
+<hash> ::= { MD5 | SHA1 | SHA256 | SHA512 }
+----
+
+Default is `SHA256`.
+
+`SALT_LENGTH` indicates the length of the desired salt, and should typically be small.
+A good value is between 8 and 16.
+
+[TIP]
+====
+Run your samples one by one from the `RSA_PRIVATE` function forward.
+====
+
+.Example
+[source]
+----
+select rdb$set_context('USER_SESSION', 'msg', rsa_sign(hash('Test message' using sha256)
+  key rdb$get_context('USER_SESSION', 'private_key'))) from rdb$database;
+----
+
+[[rnfb4-builtin-crypto-rsa-verify]]
+=== RSA_VERIFY()
+
+Performs PSS encoding of message digest to be signed and verifies its digital signature using the RSA public key.
+
+.Syntax
+[listing]
+----
+RSA_VERIFY ( <string> SIGNATURE <string>
+             KEY <public key>
+             [HASH <hash>] [SALT_LENGTH <smallint>] )
+----
+
+`SIGNATURE` should be a value returned by the `RSA_SIGN` function.
+`KEY` should be a value returned by `RSA_PUBLIC` function.
+
+[listing]
+----
+<hash> ::= { MD5 | SHA1 | SHA256 | SHA512 }
+----
+
+Default is `SHA256`.
+
+`SALT_LENGTH` indicates the length of the desired salt, and should typically be small.
+A good value is between 8 and 16.
+
+[TIP]
+====
+Run your samples one by one from the RSA_PRIVATE function forward.
+====
+
+.Example
+[source]
+----
+
+select rsa_verify(hash('Test message' using sha256)
+                  signature rdb$get_context('USER_SESSION', 'msg')
+                  key rdb$get_context('USER_SESSION', 'public_key')) 
+from rdb$database;
+----
+
+[[rnfb4-sec-improvements]]
+== Improvements to Security Features
+
+The following improvements were made to existing security features:
+
+[[rnfb4-sec-improvements-01]]
+=== User Managing Other Users
+Alex Peshkov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5770[CORE-5770]
+
+A user that was created with user account administration privileges in the security database (via the `... GRANT ADMIN ROLE` clause) no longer has to hold the `RDB$ADMIN` role in the connected database and pass it explicitly in order to create, alter or drop other users.
+
+[NOTE]
+====
+This improvement is also backported to Firebird 3.0.5.
+====

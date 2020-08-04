@@ -1,0 +1,502 @@
+[[rnfb40-ddl]]
+= Data Definition Language (DDL)
+
+[[rnfb40-ddl-links]]
+== Quick Links
+
+* <<rnfb40-ddl-objectnames>>
+* <<rnfb40-ddl-decfloat>>
+* <<rnfb40-ddl-longer-numerics>>
+* <<rnfb40-ddl-float>>
+* <<rnfb40-ddl-timezone-datatypes>>
+* <<rnfb40-ddl-varbinary>>
+* <<rnfb40-ddl-identity>>
+* <<rnfb40-ddl-execstmt-excess>>
+* <<rnfb40-ddl-replication>>
+
+[[rnfb40-ddl-objectnames]]
+== Extended Length for Object Names
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-749[CORE-749]
+
+The maximum length of objects names from this version forward is 63 characters, up from the previous maximum of 31 bytes.
+
+Multi-byte identifiers can also be long now.
+For example, the previous limit allowed only 15 Cyrillic characters;
+now, they could be up to 63.
+
+[NOTE]
+====
+Double quotes around a column name are not counted.
+====
+
+[[rnfb40-ddl-objectnames-restricting]]
+=== Restricting the Length
+
+If, for some reason, you need to restrict the maximum size of object names, either globally or for individual databases, two new configuration parameters are available in `firebird.conf` and/or `databases.conf`: see <<rnfb40-config-max-id-lgth,Parameters to Restrict Length of Object Identifiers>> in the <<rnfb40-fbconf,Configuration>> chapter for further details.
+
+[[rnfb40-ddl-new-data-types]]
+== New Data Types
+
+New data types implemented in Firebird 4.0:
+
+[[rnfb40-ddl-decfloat]]
+=== Data Type DECFLOAT
+Alex Peshkov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5525[CORE-5525]
+
+`DECFLOAT` is an SQL:2016 standard-compliant numeric type that stores floating-point numbers precisely (decimal floating-point type), unlike `FLOAT` or `DOUBLE PRECISION` that provide a binary approximation of the purported precision.
+Firebird 4 accords with the IEEE 754-1985 standard types `Decimal64` and `Decimal128` by providing both 16-digit and 34-digit precision for this type.
+
+All intermediate calculations are performed with 34-digit values.
+
+.16-digit and 34-digit
+[NOTE]
+====
+The "`16`" and "`34`" refer to the maximum precision in Base-10 digits.
+See https://en/wikipedia.org/wiki/iEEE_754#Basic_and_interchange_formats[https://en/wikipedia.org/wiki/iEEE_754#Basic_and_interchange_formats] for a comprehensive table.
+====
+
+.Syntax Rules
+[listing]
+----
+DECFLOAT(16)
+DECFLOAT(34)
+DECFLOAT
+----
+
+The default precision is 34 digits, i.e., if `DECFLOAT` is declared with no parameter, it will be defined as `DECFLOAT(34)`.
+Storage complies with IEEE 754, storing data as 64 and 128 bits, respectively.
+
+.Examples
+[source]
+----
+DECLARE VARIABLE VAR1 DECFLOAT(34);
+--
+CREATE TABLE TABLE1 (FIELD1 DECFLOAT(16));
+----
+
+[NOTE]
+====
+The precision of the `DECFLOAT` column or domain is stored in the system table `RDB$FIELDS`, in `RDB$FIELD_PRECISION`.
+====
+
+[[rnfb40-ddl-decfloat-usage]]
+==== Aspects of DECFLOAT Usage
+
+[[rnfb40-ddl-decfloat-literals]]
+===== Length of Literals
+
+The length of DECFLOAT literals cannot exceed 1024 characters.
+Scientific notation is required for longer values.
+For example, `0.0<1020 zeroes>11` cannot be used as a literal, the equivalent in scientific notation, `1.1E-1022` is valid.
+Similarly, `10<1022 zeroes>0` can be presented as `1.0E1024`.
+
+[[rnfb40-ddl-decfloat-stdfuncs]]
+===== Use with Standard Functions
+
+A number of standard scalar functions can be used with expressions and values of the `DECFLOAT` type.
+They are: 
+
+[cols="5*m", frame="none", grid="none", stripes="none"]
+|===
+| ABS
+| CEILING
+| EXP
+| FLOOR
+| LN
+| LOG
+| LOG10
+| POWER
+| SIGN
+| SQRT
+|===
+
+The aggregate functions `SUM`, `AVG`, `MAX` and `MIN` work with `DECFLOAT` data, as do all of the statistics aggregates (including but not limited to `STDDEV` or `CORR`).
+
+[[rnfb40-ddl-decfloat-specialfuncs]]
+===== Special Functions for DECFLOAT
+
+Firebird supports four functions, designed to support `DECFLOAT` data specifically:
+
+`COMPARE_DECFLOAT`:: compares two `DECFLOAT` values to be equal, different or unordered
+`NORMALIZE_DECFLOAT`:: takes a single `DECFLOAT` argument and returns it in its simplest form
+`QUANTIZE`:: takes two `DECFLOAT` arguments and returns the first argument scaled using the second value as a pattern
+`TOTALORDER`:: performs an exact comparison on two `DECFLOAT` values
+
+Detailed descriptions are in the DML chapter, in the topic <<rnfb40-dml-new-decfloat-funcs,Special Functions for DECFLOAT>>. 
+
+[[rnfb40-ddl-decfloat-sessionctl]]
+===== Session Control Operator SET DECFLOAT
+
+Firebird supports the session control operator `SET DECFLOAT` that allows to change the `DECFLOAT` data type properties.
+For details, see <<rnfb40-msql-set-decfloat-props,Setting DECFLOAT Properties>> in the <<rnfb40-msql,Management Statements>> chapter.
+
+[[rnfb40-ddl-enhance]]
+== DDL Enhancements
+
+Enhancements have been added to the SQL data definition language lexicon in Firebird 4 include a new, high-precision floating-point data type as well as other extensions.
+
+New and extended DDL statements supporting the new security features are described in the <<rnfb40-security,Security chapter>>.
+
+[[rnfb40-ddl-longer-numerics]]
+=== Increased Precision for NUMERIC and DECIMAL Types
+Alex Peshkov
+
+Fixed decimal types `NUMERIC` and `DECIMAL` can now be defined with up to 38 digits precision.
+Any value with precision higher than 18 digits will be stored as a 38-digit number.
+
+.Syntax rules
+[listing,subs=+quotes]
+----
+NUMERIC [( _P_ [, _S_] )]
+DECIMAL [( _P_ [, _S_] )]
+----
+
+where _P_ is precision (_P_ ++<=++ 38, previously limited to 18 digits), and the optional _S_ is scale, as previously, i.e., the number of digits after the decimal separator.
+
+*Storage* for _P_ >= 19 is a 128-bit signed integer.
+
+.Examples
+. Declare a variable of 25 digits to behave like an integer:
++
+[source]
+----
+DECLARE VARIABLE VAR1 DECIMAL(25);
+----
+. Define a column to accommodate up to 38 digits, with 19 decimal places:
++
+[source]
+----
+CREATE TABLE TABLE1 (FIELD1 NUMERIC(38, 19));
+----
+
+[NOTE]
+====
+Numerics with precision less than 19 digits use `SMALLINT`, `INTEGER`, `BIGINT` or `DOUBLE PRECISION` as the base datatype, depending on the number of digits and  SQL dialect.
+When precision is between 19 and 38 digits a 128-bit integer is used for internal storage, and the actual precision is always extended to the full 38 digits.
+
+For complex calculations, those digits are casted internally to <<rnfb40-ddl-decfloat,DECFLOAT(34)>>.
+The result of various mathematical operations, such as `LOG()`, `EXP()` and so on, and aggregate functions using a high precision numeric argument, will be `DECFLOAT(34)`.
+====
+
+[[rnfb40-ddl-float]]
+=== Standard Compliance for Data Type FLOAT
+Mark Rotteveel
+
+`FLOAT` data type was enhanced to support precision in binary digits as defined in the SQL:2016 specification.
+The approximate numeric types supported by Firebird are a 32-bit single precision and a 64-bit double precision binary floating-point type.
+These types are available with the following SQL standard type names: 
+
+* `REAL` : 32-bit single precision (synonym for `FLOAT`)
+* `FLOAT` : 32-bit single precision
+* `FLOAT(__P__)` where _P_ is the precision of the significand in binary digits
+** 1 ++<=++ _P_ ++<=++ 24 : 32-bit single precision (synonym for `FLOAT`)
+** 25 ++<=++ _P_ ++<=++ 53 : 64-bit double precision (synonym for `DOUBLE PRECISION`)
+* `DOUBLE PRECISION` : 64-bit double precision
+
+In addition the following non-standard type names are supported: 
+
+* `LONG FLOAT` : 64-bit double precision (synonym for `DOUBLE PRECISION`)
+* `LONG FLOAT(__P__)` where _P_ is the precision of the significand in binary digits (1 ++<=++ _P_ ++<=++ 53 : synonym for `DOUBLE PRECISION`)
+
+These non-standard type names are deprecated and they may be removed in a future version.
+
+.Compatibility Notes
+[NOTE]
+====
+. `REAL` has been available as a synonym for `FLOAT` since Firebird 1.0 and even earlier, but was never documented.
+. Firebird 3.0 and earlier supported `FLOAT(__P__)` where _P_ was the approximate precision in decimal digits, with 0 ++<=++ _P_ ++<=++ 7 mapped to 32-bit single precision and _P_ > 7 mapped to 64-bit double precision.
+This syntax was never documented.
+. For _P_ in `FLOAT(__P__)`, the values 1 ++<=++ _P_ ++<=++ 24 are all treated as _P_ = 24, values 25 ++<=++ _P_ ++<=++ 53 are all handled as _P_ = 53.
+. Firebird 3.0 and earlier supported `LONG FLOAT(__P__)` where _P_ was the approximate precision in decimal digits, where any value for _P_ mapped to  64-bit double precision.
+This type name and syntax were never documented.
+. For _P_ in `LONG FLOAT(__P__)`, the values 1 ++<=++ _P_ ++<=++ 53 are all handled as _P_ = 53.
+====
+
+[[rnfb40-ddl-timezone-datatypes]]
+=== Data Type Extensions for Time Zone Support
+
+The syntax for declaring the data types `TIMESTAMP` and `TIME` has been extended to include arguments defining whether the column, domain, parameter or variable should be defined with or without time zone adjustments, i.e.,
+
+[listing]
+----
+TIME [ { WITHOUT | WITH } TIME ZONE ]
+
+TIMESTAMP [ { WITHOUT | WITH } TIME ZONE ]
+----
+
+[IMPORTANT]
+====
+For a summary of the effects of time zone support on existing data and application code, refer to <<rnfb40-compat-sql-timezone-changes,Changes in DDL and DML Due to Timezone Support>> in the <<rnfb40-compat,Compatibility>> chapter.
+====
+
+[float]
+===== Storage
+
+Data of types `TIME/TIMESTAMP WITH TIME ZONE` are stored respectively with the same storage as `TIME/TIMESTAMP WITHOUT TIME ZONE` plus two extra bytes for the time zone identifier or displacement. 
+
+* The time/timestamp parts, translated from the informed time zone, are stored in UTC.
+* Time zone identifiers (from regions) are put directly in the time_zone bytes.
+They start from 65535, for the GMT code, decreasing as new time zones are added.
++ 
+The time zone literals, together with their time zone identifiers, can be obtained from the `RDB$TIME_ZONES` system table.
+* Time zone displacements `(+/- HH:MM)` are encoded with `(sign * (HH * 60 + MM)) + 1439`.
++ 
+For example, a `00:00` displacement is encoded as `(1 * (0 * 60 + 0)) + 1439 = 1439` and `-02:00` as `(-1 * (2 * 60 + 0)) + 1439 = 1319`.
+
+The default for both `TIME` and `TIMESTAMP` is `WITHOUT TIME ZONE`.
+
+See also <<rnfb40-msql-timezone-statements,Management Statements Pertaining to Time Zone Support>> in the <<rnfb40-msql,Management Statements>> chapter.
+
+[[rnfb40-ddl-varbinary]]
+=== Aliases for Binary String Types
+Dimitry Sibiryakov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5064[CORE-5064]
+
+Data types named `BINARY(n)`, `VARBINARY(n)` and `BINARY VARYING(n)` have been added to the lexicon as optional aliases for defining string columns in `CHARACTER SET OCTETS`.
+
+`BINARY(n)` is an alias for `CHAR(n) CHARACTER SET OCTETS`, while `VARBINARY(n)` and `BINARY VARYING(n)` are aliases for `VARCHAR(n) CHARACTER SET OCTETS` and for each other.
+
+[[rnfb40-ddl-identity]]
+=== Extensions to the IDENTITY Type
+Adriano dos Santos Fernandes
+
+An `IDENTITY` column is one that is formally associated with an internal sequence generator and has its value set automatically when omitted from an `INSERT` statement.
+
+The `IDENTITY` sub-type was introduced in Firebird 3 and has undergone a number of extensions in version 4, including implementation of `DROP IDENTITY`, the `GENERATED ALWAYS` and `OVERRIDE` directives, and the `INCREMENT BY` option.
+
+[[rnfb40-ddl-identity-syntx]]
+==== Extended Syntax for Managing IDENTITY Columns
+
+[listing,subs=+quotes]
+----
+<column definition> ::=
+  _name_ <type> GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY [ ( <identity column option>... ) ] <constraints>
+
+<identity column option> ::=
+  START WITH _value_ |  INCREMENT [ BY ] _value_
+
+<alter column definition> ::=
+  _name_ <set identity column generation clause> [ <alter identity column option>... ] |
+  _name_ <alter identity column option>... |
+  _name_ DROP IDENTITY
+
+<set identity column generation clause> ::=
+  SET GENERATED { ALWAYS | BY DEFAULT }
+
+<alter identity column option> ::=
+  RESTART [ WITH _value_ ] | SET INCREMENT [ BY ] _value_
+----
+
+.Rules and Characteristics
+* The type of an identity column must be an exact number type with zero scale, comprising `SMALLINT`, `INTEGER`, `BIGINT`, `NUMERIC(__p__,0)` and `DECIMAL(__p__,0)` with 1 ++<=++ _p_ ++<=++ 18.
+* Identity columns cannot have a `DEFAULT` value or be defined as `COMPUTED BY <expr>`
+* A regular column cannot be altered to be an identity column
+* Identity columns cannot be defined or made non-nullable
+* The engine does not enforce uniqueness automatically.
+A unique constraint or index of the required kind must be defined explicitly.
+* An `INCREMENT` value cannot be zero
+
+[[rnfb40-ddl-identity-fb4]]
+==== The Firebird 4 Extensions to IDENTITY
+
+The Firebird 3 implementation was minimal, effectively formalizing the traditional way of implementing generated keys in Firebird, without many options.
+Firebird 4 puts some meat on those bones. 
+
+[[rnfb40-ddl-identity-always]]
+===== The GENERATED ALWAYS and BY DEFAULT Directives
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5463[CORE-5463]
+
+The earlier implementation behaved like the traditional Firebird setup for generating integer keys automatically when the column was omitted from the insert operation's column list.
+If the column was not listed, the `IDENTITY` generator would supply the value.
+
+A `GENERATED BY` clause is mandatory.
+The `GENERATED BY DEFAULT` directive, present in the Firebird 3 syntax, implemented this behaviour formally  without the alternative `GENERATED ALWAYS` option:
+
+[source]
+----
+create table objects (
+  id integer generated BY DEFAULT as
+     identity primary key,
+  name varchar(15)
+);
+
+insert into objects (name) values ('Table');
+insert into objects (name) values ('Book');
+insert into objects (id, name) values (10, 'Computer');
+
+select * from objects order by id;
+
+commit;
+----
+
+[source]
+----
+          ID NAME
+============ ===============
+           1 Table
+           2 Book
+          10 Computer
+----
+
+The `GENERATED ALWAYS` directive introduces alternative behaviour that enforces the use of the identity generator, whether or not the user supplies a value.
+
+.Overriding the defined behaviour
+[NOTE]
+====
+For one-off cases this enforcement can be overridden in DML by including an `OVERRIDING SYSTEM VALUE` clause.
+
+On the other hand, for one-off cases where you want to override the defined action for a column defined with the `GENERATED BY DEFAULT` directive to behave as though it were defined as `GENERATED ALWAYS` and ignore any DML-supplied value, the clause `OVERRIDING USER VALUE` is available.
+
+For more details, see <<rnfb40-dml-identity-overriding,OVERRIDING Clause for IDENTITY Columns>> in the <<rnfb40-dml,Data Manipulation Language>> chapter.
+====
+
+[[rnfb40-ddl-identity-setgenerated]]
+====== Changing the Defined Behaviour
+
+The `ALTER COLUMN` clause of `ALTER TABLE` now has syntax for changing the default `GENERATED` behaviour from `BY DEFAULT` to `ALWAYS`, or vice versa:
+
+[source]
+----
+alter table objects
+  alter id
+  SET GENERATED ALWAYS;
+----
+
+[[rnfb40-ddl-identity-drop]]
+===== DROP IDENTITY Clause
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5431[CORE-5431]
+
+For a situation where you want to drop the `IDENTITY` property from a column but retain the data, the `DROP IDENTITY` clause is available to the `ALTER TABLE` statement:
+
+[source]
+----
+alter table objects
+  alter id
+  DROP IDENTITY;
+----
+
+[[rnfb40-ddl-identity-increment]]
+===== INCREMENT BY Option for IDENTITY Columns
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5430[CORE-5430]
+
+By default, identity columns start at 1 and increment by 1.
+The `INCREMENT BY` option can now be used to set the increment for some positive or negativestep, i.e., 1 or more or -1 or less:
+
+[source]
+----
+create table objects (
+  id integer generated BY DEFAULT as
+     identity (START WITH 10000 INCREMENT BY 10)
+     primary key,
+  name varchar(15)
+);
+----
+
+[[rnfb40-ddl-identity-setincrement]]
+====== Changing the Increment (Step) Value
+
+For changing the step value of the sequence produced by an `IDENTITY` generator, the `SET INCREMENT` clause is available in the `ALTER TABLE` statement syntax:
+
+[source]
+----
+alter table objects
+  alter id SET INCREMENT BY 5;
+----
+
+[NOTE]
+====
+. Changing the step value does not affect existing data.
+. It is not necessary to specify `SET INCREMENT BY 1` for a new column, nor for one that has not been altered previously, as the default step is 1.
+====
+
+[[rnfb40-ddl-identity-impl]]
+==== Implementation
+
+Two columns have been added to `RDB$RELATION_FIELDS`: `RDB$GENERATOR_NAME` and `RDB$IDENTITY_TYPE`.
+`RDB$GENERATOR_NAME` stores the automatically created generator for the column.
+
+In `RDB$GENERATORS`, the value of `RDB$SYSTEM_FLAG` of that generator will be 6.
+`RDB$IDENTITY_TYPE` stores the value 0 for `GENERATED ALWAYS`, 1 for `GENERATED BY DEFAULT`, and `NULL` for non-identity columns.
+
+[[rnfb40-ddl-execstmt-excess]]
+=== Excess parameters in EXECUTE STATEMENT
+Vladyslav Khorsun
+
+Input parameters of the `EXECUTE STATEMENT` command may be prefixed by the `EXCESS` keyword.
+If `EXCESS` is specified, then the given parameter may be omitted from the query text.
+
+.Example
+[source]
+----
+CREATE PROCEDURE P_EXCESS (A_ID INT, A_TRAN INT = NULL, A_CONN INT = NULL)
+  RETURNS (ID INT, TRAN INT, CONN INT)
+AS
+DECLARE S VARCHAR(255);
+DECLARE W VARCHAR(255) = '';
+BEGIN
+  S = 'SELECT * FROM TTT WHERE ID = :ID';
+
+  IF (A_TRAN IS NOT NULL)
+  THEN W = W || ' AND TRAN = :a';
+
+  IF (A_CONN IS NOT NULL)
+  THEN W = W || ' AND CONN = :b';
+
+  IF (W <> '')
+  THEN S = S || W;
+
+  -- could raise error if TRAN or CONN is null
+  -- FOR EXECUTE STATEMENT (:S) (a := :A_TRAN, b := A_CONN, id := A_ID)
+
+  -- OK in all cases
+  FOR EXECUTE STATEMENT (:S) (EXCESS a := :A_TRAN, EXCESS b := A_CONN, id := A_ID)
+    INTO :ID, :TRAN, :CONN
+      DO SUSPEND;
+END
+----
+
+[[rnfb40-ddl-replication]]
+=== Replication Management
+Dmitry Yemanov
+
+Once replication is set up in the `replication.conf` configuration file, it can be enabled/disabled at runtime using the special extension to the `ALTER DATABASE` statement.
+Also, the replication set (i.e. tables to be replicated) can be customized using the extensions to the `ALTER DATABASE` and `CREATE/ALTER TABLE` statements.
+
+[[rnfb40-ddl-replication-syntax]]
+==== Extended Syntax for Replication Management
+
+[listing,subs=+quotes]
+----
+ALTER DATABASE ... [<database replication management>]
+
+CREATE TABLE _tablename_ ... [<replication state>]
+ALTER TABLE _tablename_ ... [<replication state>]
+
+<database replication management> ::=
+  <replication state> |
+  ADD <replication set> TO PUBLICATION |
+  DROP <replication set> FROM PUBLICATION
+
+<replication state> ::=
+  ENABLE PUBLICATION |
+  DISABLE PUBLICATION
+
+<replication set> ::=
+  ALL |
+  TABLE _tablename_ [, _tablename_ ...]
+----
+
+.Comments
+* All replication management commands are DDL statements and thus effectively executed at the transaction commit time.
+* `ALTER DATABASE ENABLE REPLICATION` allows replication to begin (or continue) with the next transaction started after this transaction commits.
+* `ALTER DATABASE DISABLE REPLICATION` disables replication immediately after commit.
+* If `ADD ALL TO PUBLICATION` clause is used, then all tables created afterwards will also be replicated, unless overridden explicitly in the `CREATE TABLE` statement.
+* If `DROP ALL FROM PUBLICATION` clause is used, then all tables created afterwards will not be replicated, unless overridden explicitly in the `CREATE TABLE` statement.

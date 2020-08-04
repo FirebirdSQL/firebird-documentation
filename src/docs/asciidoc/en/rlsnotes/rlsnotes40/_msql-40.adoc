@@ -1,0 +1,306 @@
+[[rnfb40-msql]]
+= Management Statements
+
+Over the more recent releases of Firebird a new class of DSQL statement has emerged in Firebird's SQL lexicon, usually for administering aspects of the client/server environment.
+Typically, such statements commence with the verb `SET`, especially those introduced in Firebird 4.
+
+[NOTE]
+====
+Some statements of this class, introduced earlier, use the verb `ALTER`, although management statements should not be confused with DDL `ALTER` statements that modify database objects like tables, views, procedures, roles, et al.
+====
+
+Management statements can run anywhere DSQL can run but, typically, the developer will want to run a management statement in a database trigger.
+In past releases, management statements were treated in PSQL like DDL, precluding them from running directly inside a PSQL module.
+From Firebird 4 forward, a pre-determined set of them can be used directly in PSQL modules without the need to wrap them in an `EXECUTE STATEMENT` block.
+For more details of the current set, see <<rnfb40-psql-mngment-stmts,Allow Management Statements in PSQL Blocks>> in the PSQL chapter.
+
+Most of the management statements introduced in Firebird 4 affect the current connection ("`session`") only, and do not require any authorization over and above the login privileges of a current user without elevated privileges.
+
+Some management statements operate beyond the scope of the current session.
+Examples are the `ALTER DATABASE ...` statements to control _nBackup_ or the `ALTER EXTERNAL CONNECTIONS POOL` statements introduced in Firebird 4 to manage connection pooling.
+A new set of [term]_system privileges,_ analogous with SQL privileges granted for database objects, is provided for assignment to a role, to enable the required authority to run a specific management statement in this category.
+For details, refer to <<rnfb4-enhancedprivs,Enhanced System Privileges>> in the <<rnfb40-security,Security>> chapter.
+
+[[rnfb40-msql-connpooling]]
+== Connections Pooling Management
+
+A group of management statements for use with connections pooling. 
+
+.Authorization
+[IMPORTANT]
+====
+A role carrying the new system privilege `MODIFY_EXT_CONN_POOL` is required to run the statements.
+====
+
+[[rnfb40-msql-connpooling-alter-ext]]
+=== ALTER EXTERNAL CONNECTIONS POOL
+
+The new statement `ALTER EXTERNAL CONNECTIONS POOL` has been added to the repertoire for managing the external connections pool.
+
+The syntax is: 
+
+[listing]
+----
+ALTER EXTERNAL CONNECTIONS POOL { <parameter variants> }
+----
+
+When prepared it is described like a DDL statement but its effect is immediate -- it is executed immediately and completely, without waiting for transaction commit.
+
+The statements can be issued from any connection, and changes are applied to the in-memory instance of the pool in the current Firebird process.
+If the process is a Classic one, a change submitted there does not affect other Classic processes.
+
+Changes made with `ALTER EXTERNAL CONNECTIONS POOL` are not persistent: after a restart, Firebird will use the pool settings configured in `firebird.conf` by `ExtConnPoolSize` and ``ExtConnPoolLifeTime``. 
+
+[float]
+===== Full Syntax
+
+Full syntax for the variants follows.
+
+To set the maximum number of idle connections:
+
+[listing,subs=+quotes]
+----
+ALTER EXTERNAL CONNECTIONS POOL SET SIZE _int_value_
+----
+
+Valid values are from 0 to 1000.
+Setting it to zero disables the pool.
+The default value is set using the parameter `ExtConnPoolSize` in `firebird.conf`. 
+
+To set the lifetime of an idle connection:
+
+[listing,subs=+quotes]
+----
+ALTER EXTERNAL CONNECTIONS POOL SET LIFETIME _int_value_ <time_part>
+
+<time_part> ::= { SECOND | MINUTE | HOUR }
+----
+
+Valid values are from `1 SECOND` to `24 HOUR`.
+The default value (in seconds) is set using the parameter `ExtConnPoolLifetime` in `firebird.conf`. 
+
+To close all idle connections and instigate dissociation of all active connections so they are immediately closed when they become unused:
+
+[listing]
+----
+ALTER EXTERNAL CONNECTIONS POOL CLEAR ALL
+----
+
+To close expired idle connections:
+
+[listing]
+----
+ALTER EXTERNAL CONNECTIONS POOL CLEAR OLDEST
+----
+
+[[rnfb40-msql-alter-session-reset]]
+== ALTER SESSION RESET
+
+[float]
+===== Syntax
+
+[listing]
+----
+ALTER SESSION RESET
+----
+
+This statement is used to reset the current user session to its initial state.
+It could be useful for re-using the session by a client application (for example, by a client-side connection pool).
+In order to reuse a session, all its user context variables and contents of temporary tables should be cleared and all its session-level settings should be reset to their default values.
+
+This statement is executed the following way: 
+
+* Error _isc_ses_reset_err_ is raised if any transaction remains active in the current session, except for two-phase-commit transactions in the prepared state.
+* The current transaction (the one executing `ALTER SESSION RESET`), if present, is rolled back.
+A warning is reported if this transaction had modified some data in tables before resetting the session.
+* `DECFLOAT` parameters (`TRAP` and `ROUND`) are reset to the initial values defined using DPB at connection time, or otherwise the system default
+* Session and statement timeouts are reset to zero.
+* Context variables defined for the 'USER_SESSION' namespace are removed.
+* Global temporary tables defined as `ON COMMIT PRESERVE ROWS` are truncated (their contents is cleared).
+* Current role is restored to the initial value defined using DPB at connection time, the security classes cache is cleared (if role was changed).
+* A new transaction is implicitly started with the same parameters as the transaction that was rolled back (if it was present).
+* The session time zone is reset to the initial value defined using DPB at connection time, or otherwise the system default
+* The bind configuration is reset to the initial value defined using DPB at connection time, or otherwise the database or system default
+* In general, configuration values should revert to values configured using DPB at connection time, or otherwise the database or system default
+
+[[rnfb40-msql-timezone-statements]]
+== Time Zone Management
+
+Statement syntax has been added to support management of the time zone features for the current connection.
+
+[[rnfb40-timezone-settimezone]]
+=== SET TIME ZONE
+
+Changes the session time zone.
+
+[float]
+===== Syntax
+
+[listing,subs=+quotes]
+----
+SET TIME ZONE { _time_zone_string_ | LOCAL }
+----
+
+[float]
+===== Examples
+
+[source]
+----
+set time zone '-02:00';
+set time zone 'America/Sao_Paulo';
+set time zone local;
+----
+
+[[rnfb40-msql-timeout-statements]]
+== Timeout Management
+
+The timeout periods for session and statement timeouts can be managed at session level using the management statements <<rnfb40-session-timeouts-sql,`SET SESSION IDLE TIMEOUT`>>  and <<rnfb40-stmnt-timeouts-setting,`SET STATEMENT TIMEOUT`>>,  respectively.
+
+[[rnfb40-msql-set-decfloat-props]]
+== Setting DECFLOAT Properties
+
+Syntax:
+
+[listing]
+----
+SET DECFLOAT <property-name> [TO] <value>
+----
+
+are available for controlling the properties of the `DECFLOAT` data type for the current session.
+
+Possible properties and their values are the following: 
+
+* `SET DECFLOAT ROUND <mode>` controls the rounding mode used in operations with `DECFLOAT` values.
+Valid modes are:
++
+--
+[horizontal]
+`CEILING`:: towards +infinity
+`UP`:: away from 0
+`HALF_UP`:: to nearest, if equidistant, then up
+`HALF_EVEN`:: to nearest, if equidistant, ensure last digit in the result will be even
+`HALF_DOWN`:: to nearest, if equidistant, then down
+`DOWN`:: towards 0
+`FLOOR`:: towards -infinity
+`REROUND`:: up if digit to be rounded is 0 or 5, down in other cases
+--
++
+The default rounding mode is `HALF-UP`.
+The initial configuration may be specified via API by using DPB tag `isc_dpb_decfloat_round` followed by the string value.
+* `SET DECFLOAT TRAPS TO <comma-separated traps list which may be empty>` controls which exceptional conditions cause a trap.
+Valid traps are:
++
+--
+[horizontal]
+`Division_by_zero`:: (set by default)
+`Inexact`:: --
+`Invalid_operation`:: (set by default)
+`Overflow`:: (set by default)
+`Underflow`:: --
+--
++
+The initial configuration may be specified via API by using DPB tag `isc_dpb_decfloat_traps` followed by the string value.
+
+
+
+[[rnfb40-msql-set-bind]]
+== Setting Data Type Coercion Rules
+
+Syntax:
+
+[listing]
+----
+SET BIND OF { <type-from> | TIME ZONE } TO { <type-to> | LEGACY | NATIVE | EXTENDED }
+----
+
+This management statement makes it possible to substitute one data type with another one when performing the client-server interaction.
+In other words, _type-from_ returned by the engine is represented as _type-to_ in the client API.
+
+When an incomplete type definition is used (i.e. simply `CHAR` instead of `CHAR(n)`) in the _FROM_ part, the coercion is performed for all `CHAR` columns.
+The special incomplete type `TIME ZONE` stands for all types `WITH TIME ZONE` (namely `TIME` and `TIMESTAMP`).
+When an incomplete type definiton is used in the _TO_ part, the engine defines missing details about that type automatically based on source column.
+
+From the `SET BIND` point of view there is no difference between `NUMERIC` and `DECIMAL` datatypes.
+Changing binding of any `NUMERIC` does not affect the underlying integer type.
+On contrary, changing binding of the `INTEGER` datatype also affects dependent ``NUMERIC``s.
+
+The special format `LEGACY` is used when a data type, missing in previous Firebird version, should be represented in a way, understandable by old client software (possibly with some data loss).
+The coercion rules applied in this case are shown in the table below.
+
+[[rnfb4-msql-set-bind-native-to-legacy-coercion-rules]]
+.NATIVE to LEGACY coercion rules
+[cols="1,1", options="header",stripes="none"]
+|===
+| Native data type
+| Legacy data type
+
+|BOOLEAN
+|CHAR(5)
+
+|DECFLOAT
+|DOUBLE PRECISION
+
+|NUMERIC(38)
+|NUMERIC(18)
+
+|TIME WITH TIME ZONE
+|TIME WITHOUT TIME ZONE
+
+|TIMESTAMP WITH TIME ZONE
+|TIMESTAMP WITHOUT TIME ZONE
+|===
+
+Using `EXTENDED` in the _TO_ part causes the engine to use an extended form of the _FROM_ data type.
+Currently, this works only for `TIME/TIMESTAMP WITH TIME ZONE`, they are coerced to `EXTENDED TIME/TIMESTAMP WITH TIME ZONE`.
+The `EXTENDED` type contains both the time zone name and the corresponding GMT offset, so it remains usable if the client application cannot process named time zones properly (e.g. due to the missing ICU library).
+
+Setting some binding to `NATIVE` means to reset the existing coercion rules for this data type and return it in the native format.
+
+Examples:
+
+[source]
+----
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;	--native
+
+                   CAST
+=======================
+                 123.45
+
+SET BIND OF DECFLOAT TO DOUBLE PRECISION;
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;	--double
+
+                   CAST
+=======================
+      123.4500000000000
+
+SET BIND OF DECFLOAT(34) TO CHAR;
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;	--still double
+
+                   CAST
+=======================
+      123.4500000000000
+
+SELECT CAST('123.45' AS DECFLOAT(34)) FROM RDB$DATABASE;	--text
+
+CAST
+==========================================
+123.45
+----
+
+In the case of missing ICU on the client side:
+
+[source]
+----
+SELECT CURRENT_TIMESTAMP FROM RDB$DATABASE;
+
+                                        CURRENT_TIMESTAMP
+=========================================================
+2020-02-21 16:26:48.0230 GMT*
+
+SET BIND OF TIME ZONE TO EXTENDED;
+SELECT CURRENT_TIMESTAMP FROM RDB$DATABASE;
+
+                                        CURRENT_TIMESTAMP
+=========================================================
+2020-02-21 19:26:55.6820 +03:00
+----

@@ -1,0 +1,172 @@
+[[rnfb40-psql]]
+= Procedural SQL (PSQL)
+
+Recursion is now supported in sub-routines.
+A few improvements have been implemented to help in logging exceptions from the various error contexts supported in PSQL.
+
+[[rnfb40-psql-subroutines]]
+== Recursion for subroutines
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5380[CORE-5380]
+
+Starting in FB 4, subroutines may be recursive or call other subroutines.
+
+.A couple of recursive sub-functions in EXECUTE BLOCK
+[source]
+----
+execute block returns (i integer, o integer)
+as
+    -- Recursive function without forward declaration.
+    declare function fibonacci(n integer) returns integer
+    as
+    begin
+      if (n = 0 or n = 1) then
+       return n;
+     else
+       return fibonacci(n - 1) + fibonacci(n - 2);
+    end
+    begin
+      i = 0;
+
+      while (i < 10)
+      do
+      begin
+        o = fibonacci(i);
+        suspend;
+        i = i + 1;
+      end
+   end
+
+-- With forward declaration and parameter with default values.
+
+execute block returns (o integer)
+as
+    -- Forward declaration of P1.
+    declare procedure p1(i integer = 1) returns (o integer);
+
+    -- Forward declaration of P2.
+    declare procedure p2(i integer) returns (o integer);
+
+    -- Implementation of P1 should not re-declare parameter default value.
+    declare procedure p1(i integer) returns (o integer)
+    as
+    begin
+        execute procedure p2(i) returning_values o;
+    end
+
+    declare procedure p2(i integer) returns (o integer)
+    as
+    begin
+        o = i;
+    end
+begin
+    execute procedure p1 returning_values o;
+    suspend;
+end
+----
+
+[[rnfb40-psql-errorlogging]]
+== A Helper for Logging Context Errors
+
+A new system function enables the module to pass explicit context information from the error block to a logging routine.
+
+[[rnfb40-psql-rdb-error]]
+=== System Function RDB$ERROR()
+Dmitry Yemanov
+
+Tracker tickets http://tracker.firebirdsql.org/browse/CORE-2040[CORE-2040] and http://tracker.firebirdsql.org/browse/CORE-1132[CORE-1132]
+
+The function `RDB$ERROR()` takes a PSQL error context as input and returns the specific context of the active exception.
+Its scope is confined to the context of the exception-handling block in PSQL.
+Outside the exception handling block, `RDB$ERROR` always returns `NULL`.
+
+The type of the return value depends on the <<rnfb40-psql-rdb-error-contexts,context>>. 
+
+.Syntax
+[listing]
+----
+RDB$ERROR ( <context> )
+<context> ::= { GDSCODE | SQLCODE | SQLSTATE | EXCEPTION | MESSAGE }
+----
+
+[[rnfb40-psql-rdb-error-contexts]]
+==== Contexts
+
+[cols="1m,1m,2", frame="none", stripes="none"]
+|===
+
+|GDSCODE
+|INTEGER
+|Context variable: refer to documentation
+
+|SQLCODE
+|INTEGER
+|Context variable: refer to documentation
+
+|SQLSTATE
+|CHAR(5) CHARACTER SET ASCII
+|Context variable: refer to documentation
+
+|EXCEPTION
+|VARCHAR(63) CHARACTER SET UTF8
+|Returns name of the active user-defined exception or `NULL` if the active exception is a system one
+
+|MESSAGE
+|VARCHAR(1024) CHARACTER SET UTF8
+|Returns interpreted text for the active exception
+|===
+
+[NOTE]
+====
+For descriptions of the context variables `GDSCODE`, `SQLCODE` and `SQLSTATE`, refer to the  https://www.firebirdsql.org/file/documentation/html/en/refdocs/fblangref25/firebird-25-language-reference.html#fblangref25-contextvars[Context Variables] topic in the [ref]_Firebird 2.5 Language Reference_.
+====
+
+==== Example of RDB$ERROR
+
+[source]
+----
+BEGIN
+  ...
+WHEN ANY DO
+  EXECUTE PROCEDURE P_LOG_EXCEPTION(RDB$ERROR(MESSAGE));
+END
+----
+
+[[rnfb40-psql-mngment-stmts]]
+== Allow Management Statements in PSQL Blocks
+Adriano dos Santos Fernandes
+
+See Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5887[CORE-5887].
+
+In prior Firebird versions, <<rnfb40-msql,management statements>> were not allowed inside PSQL blocks.
+They were allowed only as top-level SQL statements, or as the top-level statement of an `EXECUTE STATEMENT` embedded in a PSQL block.
+
+Now they can be used directly in PSQL blocks (triggers, procedures, `EXECUTE BLOCK`), which is especially helpful for applications that need some management statements to be issued at the start of a session, specifically in `ON CONNECT` triggers.
+
+The management statements permitted for this usage are: 
+
+[listing]
+----
+ALTER SESSION RESET
+SET DECFLOAT ROUND
+SET DECFLOAT TRAPS TO
+SET DECFLOAT BIND
+SET ROLE
+SET SESSION IDLE TIMEOUT
+SET STATEMENT TIMEOUT
+SET TIME ZONE
+SET TIME ZONE BIND
+SET TRUSTED ROLE
+----
+
+.Example
+[source]
+----
+create or alter trigger on_connect on connect
+as
+begin
+    set decfloat bind double precision;
+    set time zone 'America/Sao_Paulo';
+end
+----

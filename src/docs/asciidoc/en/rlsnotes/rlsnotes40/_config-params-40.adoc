@@ -1,0 +1,183 @@
+[[rnfb40-fbconf]]
+= Configuration Additions and Changes
+
+[[rnfb40-config-timeouts]]
+== Parameters for Timeouts
+
+Two new parameters are available for global and per-database configuration, respectively, of server-wide and database-wide idle session and statement timeouts.
+They are discussed in detail elsewhere (see links).
+
+[[rnfb40-config-timeouts-session]]
+=== ConnectionIdleTimeout
+
+The value is integer, expressing minutes.
+Study the notes on idle session timeouts carefully to understand how this configuration fits in with related settings via SQL and the API.
+
+See <<rnfb40-session-timeouts-setting,Setting the Session Timeout>> in the chapter <<rnfb40-engine,Changes in the Firebird Engine>>.
+
+[[rnfb40-config-timeouts-stmnt]]
+=== StatementTimeout
+
+The value is integer, expressing seconds.
+Study the notes on statement timeouts carefully to understand how this configuration fits in with related settings via SQL and the API.
+
+See <<rnfb40-stmnt-timeouts-setting,Setting a Statement Timeout>> in the chapter <<rnfb40-engine,Changes in the Firebird Engine>>.
+
+[[rnfb40-config-connpool]]
+== Parameters for External Connection Pooling
+
+These parameters enable customization of aspects of pooling  external connections.
+
+[[rnfb40-config-pool-size]]
+=== ExtConnPoolSize
+
+Configures the maximum number of idle connections allowed in the pool.
+It is an integer, from 0 to 1000.
+The installation default is 0, which disables the connection pool.
+
+[[rnfb40-config-pool-lifetime]]
+=== ExtConnPoolLifetime
+
+Configures the number of seconds a connection should stay available  after it has gone idle.
+The installation default is 7200 seconds.
+
+[[rnfb40-config-max-id-lgth]]
+== Parameters to Restrict Length of Object Identifiers
+
+Object identifiers in an ODS 13 database can be up to 63 characters in length, and the engine stores them in UTF-8, not UNICODE_FSS as previously.
+Two new global or per-database parameters are available if you need to restrict either the byte-length or the character-length of object names in ODS 13 databases for some reason.
+
+Longer object names are optional, of course.
+Reasons you might need to restrict their length could include: 
+
+* Constraints imposed by the client language interface of existing applications, such as _gpre_ or Delphi
+* In-house coding standards
+* Interoperability for cross-database applications such as a third-party replication system or an in-house system that uses multiple versions of Firebird
+
+This is not an exhaustive list.
+It is the responsibility of the developer to test usage of longer object names and establish whether length restriction is necessary.
+
+Whether setting one or both parameters has exactly the same effect will depend on the characters you use.
+Any non-ASCII character requires 2 bytes or more in UTF-8, so one cannot assume that byte-length and character-length have a direct relationship in all situations.
+
+The two settings are verified independently and if either constrains the length limit imposed by the other, use of the longer identifier will be disallowed.
+
+[WARNING]
+====
+If you set either parameter globally, i.e. in firebird.conf, it will affect all databases, including the security database.
+That has the potential to cause problems!
+====
+
+[[rnfb40-config-max-id-bytes]]
+=== MaxIdentifierByteLength
+
+Sets a limit for the number of bytes allowed in an object identifier.
+It is an integer, defaulting to 252 bytes, i.e., 63 characters * 4, 4 being the maximum number of bytes for each character.
+
+To set it to the limit in previous Firebird versions, use 31.
+
+[[rnfb40-config-max-id-chars]]
+=== MaxIdentifierCharLength
+
+Sets a limit for the number of characters allowed in an object identifier.
+It is an integer, defaulting to 63, the new limit implemented in Firebird 4.
+
+[[rnfb40-config-read-consistency]]
+== Parameters Supporting Read Consistency in Transactions
+
+Firebird 4 takes a <<rnfb40-engine-commit-order,new approach to read consistency within transaction snapshots>>, enabling, amongst other benefits, a sustained consistent read for statements within READ COMMITTED transactions.
+This group of parameters allows for some customisation of the elements involved.
+
+[[rnfb40-config-readconsistency]]
+=== ReadConsistency
+
+For now, existing applications can be tested with and without the new <<rnfb40-engine-read-consistency,READ COMMITTED READ CONSISTENCY>> isolation level by setting this parameter.
+Possible values are 1 and 0. 
+
+ReadConsistency = 1::
+(Default) The engine ignores the specified [NO] RECORD VERSION sub-level and forces all read-committed transactions to be READ COMMITTED READ CONSISTENCY.
+
+ReadConsistency = 0::
+Allows the legacy engine behaviour, with the RECORD VERSION and NO RECORD VERSION sub-levels working as before.
+READ COMMITTED READ CONSISTENCY is available but needs to be specified explicitly.
+
+This behaviour can be defined in `firebird.conf` and/or `databases.conf`.
+
+[[rnfb40-config-read-tpcblocksize]]
+=== TipCacheBlockSize
+
+The list of all known transactions with associated Commit Numbers is maintained in shared memory.
+It is implemented as an array whose index is a transaction ID and its item value is the corresponding Commit Number. 
+
+The whole array is split into fixed-size blocks containing the CN's for all transactions between the OIT and Next Transaction markers.
+When the "`Next Transaction`" marker moves out of the scope of the  highest block, a new block is allocated.
+An old block is released when the "`Oldest [Interesting] Transaction`" (OIT) marker moves out of the scope of the lowest block.
+
+The default size for a TIP cache block is 4MB, providing capacity for 512 * 1024 transactions.
+Use this parameter to configure a custom TIP cache block size in `firebird.conf` and/or `databases.conf`.
+
+[[rnfb40-config-read-snapmemsize]]
+=== SnapshotsMemSize
+
+To handle garbage collection of record versions younger than the Oldest Snapshot, ("`intermediate record versions`") the engine maintains in shared memory an array that it can search for the Commit Number (CN) of a particular record version.
+See the <<rnfb40-engine-commit-order-gc,Garbage Collection>> topic the chapter <<rnfb40-engine,Changes in the Firebird Engine>>.
+
+The default initial size of this shared memory block is 64KB but it will grow automatically when required.
+The initial block can be set to a custom size in `firebird.conf` and/or `databases.conf`.
+
+[[rnfb40-config-other]]
+== Other Parameters
+
+[[rnfb40-config-clientbatchbuf]]
+=== ClientBatchBuffer
+
+Defines the buffer size used by the client connection for batch-mode transmission to the server (when Batch API is used).
+See the <<rnfb40-apiods-api-batchops,Support for Batch Insert and Update Operations in the API>> topic for more details.
+
+[[rnfb40-config-datatypecompat]]
+=== DataTypeCompatibility
+
+Specifies the compatibility level that defines what SQL data types can be exposed to the client API.
+Currently two options are available: "3.0" and "2.5". The "3.0" emulation mode hides data types introduced after Firebird 3.0 release, in particular `DECIMAL`/`NUMERIC` with precision 19 or higher, `DECFLOAT`, `TIME/TIMESTAMP WITH TIME ZONE`.
+The corresponding values are returned via data types already supported by Firebird 3.0.
+The "2.5" emulation mode also converts the `BOOLEAN` data type.
+See the <<rnfb4-msql-set-bind-native-to-legacy-coercion-rules,Native to Legacy Coercion Rules table>> for details.
+This setting allows legacy client applications to work with Firebird 4.0 without recompiling and adjusting them to understand the new data types.
+
+[[rnfb40-config-deftimezone]]
+=== DefaultTimeZone
+
+Defines the time zone used when the client session does not specify it explicitly.
+If left empty, the default is the operating system time zone.
+When set at the server side, it's the default session time zone for attachments.
+When set at the client side, it's the default time zone used with client-side API functions.
+
+[[rnfb40-config-outputredirection]]
+=== OutputRedirectionFile
+
+Allows to (optionally) redirect server's stdout/stderr streams to some user-defined file.
+By default, these streams are opened by the server but the output is discarded.
+Available as a global setting inside `firebird.conf`.
+
+[[rnfb40-config-srp256]]
+=== Srp256 becomes the default authentication method
+
+See Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5788[CORE-5788]
+
+The Secure Remote Password authentication plugin now uses the SHA-256 algorithm to calculate the client's proof for both server and client sides (see `AuthServer` and `AuthClient` settings in `firebird.conf`).
+For backward compatbility, the client is configured to use the old Srp plugin (which implements the SHA-1 algorithm) as a fallback.
+This setup allows to communicate with Firebird 3 servers that are not configured to use `Srp256` (available since v3.0.4).
+
+[[rnfb40-config-chacha]]
+=== ChaCha is added as a default wire encryption method
+
+`WireCryptPlugin` setting now defaults to ChaCha#20 as a wire encryption algorithm.
+If the appropriate plugin is missing, then Alleged RC4 (aka ARC4) algorithm is used.
+
+[[rnfb40-config-tempcachelimit]]
+=== TempCacheLimit at database level
+
+See Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5718[CORE-5718]
+
+`TempCacheLimit`, for setting the maximum amount of temporary space that can be cached in memory, can now be configured at database level, i.e., in `databases.conf`.
+Previously, it was available only as a global setting for all databases.

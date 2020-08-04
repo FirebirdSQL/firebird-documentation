@@ -1,0 +1,1049 @@
+[[rnfb40-dml]]
+= Data Manipulation Language (DML)
+
+In this chapter are the additions and improvements that have been added to the SQL data manipulation language subset in Firebird 4.0.
+
+[[rnfb40-dml-quicklinks]]
+== Quick Links
+
+* <<rnfb40-dml-lateral>>
+* <<rnfb40-dml-context-default>>
+* <<rnfb40-dml-identity-overriding>>
+* <<rnfb40-dml-framed-windows>>
+* <<rnfb40-dml-named-windows>>
+* <<rnfb40-dml-windows-newfunctions>>
+* <<rnfb40-dml-filter-clause>>
+* <<rnfb40-dml-autocommit>>
+* <<rnfb40-dml-set-tran-snapshot>>
+* <<rnfb40-dml-built-in-functions>>
+* <<rnfb40-dml-udfs>>
+* <<rnfb40-dml-improvement-01>>
+* <<rnfb40-engine-dml-improvement-02>>
+* <<rnfb40-engine-dml-improvement-03>>
+
+[[rnfb40-dml-lateral]]
+== Lateral Derived Tables
+Dmitry Yemanov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-3435[CORE-3435]
+
+A derived table defined with the `LATERAL` keyword is called a lateral derived table.
+If a derived table is defined as lateral, then it is allowed to refer to other tables in the same `FROM` clause, but only those declared before it in the `FROM` clause.
+
+The feature is defined in (SQL:2011): 7.6 <table reference> (Feature T491).
+
+.Examples
+[source]
+----
+select dt.population, dt.city_name, c.country_name
+from (select distinct country_name from cities) AS c,
+  LATERAL (select first 1 city_name, population
+           from cities
+           where cities.country_name = c.country_name
+           order by population desc) AS dt;
+--
+select salespeople.name,
+       max_sale.amount,
+       customer_of_max_sale.customer_name
+from salespeople,
+  LATERAL ( select max(amount) as amount from all_sales
+            where all_sales.salesperson_id = salespeople.id
+  ) as max_sale,
+  LATERAL ( select customer_name from all_sales
+            where all_sales.salesperson_id = salespeople.id
+  and all_sales.amount = max_sale.amount
+) as customer_of_max_sale;
+----
+
+[[rnfb40-dml-context-default]]
+== DEFAULT Context Value for Inserting and Updating
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5449[CORE-5449]
+
+Support has been implemented to enable the declared default value for a column or domain to be included directly in `INSERT`, `UPDATE`, `MERGE` and `UPDATE OR INSERT` statements by use of the keyword `DEFAULT` in the column's position.
+If `DEFAULT` appears in the position of a column that has no default value defined, the engine will attempt to write `NULL` to that column.
+
+The feature is defined in (SQL:2011): 6.5 <contextually typed value specification>.
+
+.Simple Examples
+[source]
+----
+insert into sometable (id, column1)
+values (DEFAULT, 'name')
+--
+update sometable 
+  set column1 = 'a', column2 = default
+----
+
+[NOTE]
+====
+If id is an identity column, the identity value will be generated, even if there is an `UPDATE ... SET` command associated with the column.
+
+If `DEFAULT` is specified on a computed column, the parser will allow it but it will have no effect.
+
+In columns populated by triggers in the traditional way, the value from `DEFAULT` enters the `NEW` context variable of any `BEFORE INSERT` or `BEFORE UPDATE` trigger.
+====
+
+[[rnfb40-dml-defaultstuff]]
+=== DEFAULT vs DEFAULT VALUES
+
+Since version 2.1, Firebird has supported the `DEFAULT VALUES` clause.
+The two clauses are not the same.
+The `DEFAULT VALUES` clause is an alternative to the `VALUES` clause and can be used only when all of the columns specified in the column list have been defined with default values.
+
+[[rnfb40-dml-identity-overriding]]
+== OVERRIDING Clause for IDENTITY Columns
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5463[CORE-5463]
+
+Identity columns defined with the `BY DEFAULT` attribute can be overridden in statements that insert rows (`INSERT`, `UPDATE OR INSERT`, `MERGE ... WHEN NOT MATCHED`) just by specifying the value in the values list.
+For identity columns defined with the `GENERATE ALWAYS` attribute, that kind of override is not allowed.
+
+Making the value passed in the `INSERT` statement for an `ALWAYS` column acceptable to the engine requires use of the `OVERRIDING` clause with the `SYSTEM VALUE` sub-clause, as illustrated below:
+
+[source]
+----
+insert into objects (id, name)
+  OVERRIDING SYSTEM VALUE values (11, 'Laptop');
+----
+
+`OVERRIDING` supports another sub-clause, `USER VALUE`, for use with `BY DEFAULT` columns to direct the engine to ignore the value passed in `INSERT` and use the sequence defined for the identity column:
+
+[source]
+----
+insert into objects (id, name)
+  OVERRIDING USER VALUE values (12, 'Laptop');  -- 12 is not used
+----
+
+[[rnfb40-dml-windowing-ext]]
+== Extension of SQL Windowing Features
+Adriano dos Santos Fernandes
+
+The `OVER` clause for Window functions in Firebird now supports not just the sub-clauses `PARTITION` and `ORDER` subclauses but also [term]_frames_ and [term]_windows with names_ that can be re-used in the same query.
+
+The pattern for Firebird 4 windowing syntax is as follows:
+
+.Syntax Pattern
+[listing,subs=+quotes]
+----
+<window function> ::=
+  <window function name>([<expr> [, <expr> ...]])
+    OVER {<window specification> | _existing_window_name_}
+
+<window specification> ::=
+  ([_existing_window_name_] [<window partition>] [<window order>] [<window frame>])
+
+<window partition> ::=
+  PARTITION BY <expr> [, <expr> ...]
+
+<window order> ::=
+  ORDER BY <expr> [<direction>] [<nulls placement>] [, <expr> [<direction>] [<nulls placement>]] ...
+
+<window frame> ::=
+  {RANGE | ROWS} <window frame extent>
+
+<window frame extent> ::=
+  {<window frame start> | <window frame between>}
+
+<window frame start> ::=
+  {UNBOUNDED PRECEDING | <expr> PRECEDING | CURRENT ROW}
+
+<window frame between> ::=
+  BETWEEN {UNBOUNDED PRECEDING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW} AND
+          {UNBOUNDED FOLLOWING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW}
+
+<direction> ::=
+  {ASC | DESC}
+
+<nulls placement> ::=
+  NULLS {FIRST | LAST}
+
+<query spec> ::=
+  SELECT
+    [<limit clause>]
+    [<distinct clause>]
+    <select list>
+    <from clause>
+    [<where clause>]
+    [<group clause>]
+    [<having clause>]
+    [<named windows clause>]
+    [<plan clause>]
+
+<named windows clause> ::=
+  WINDOW <window definition> [, <window definition>] ...
+
+<window definition> ::=
+  _new_window_name_ AS <window specification>
+----
+
+[[rnfb40-dml-framed-windows]]
+=== Frames for Window Functions
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-3647[CORE-3647]
+
+A _frame_ can be specified, within which certain window functions are to work.
+
+The following extract from the syntax pattern above explains the elements that affect frames:
+
+.Syntax Elements for Frames
+[listing]
+----
+<window frame> ::=
+  {RANGE | ROWS} <window frame extent>
+
+<window frame extent> ::=
+  {<window frame start> | <window frame between>}
+
+<window frame start> ::=
+  {UNBOUNDED PRECEDING | <expr> PRECEDING | CURRENT ROW}
+
+<window frame between> ::=
+  BETWEEN {UNBOUNDED PRECEDING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW} AND
+          {UNBOUNDED FOLLOWING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW}
+----
+
+The frame comprises three pieces: unit, start bound and end bound.
+The unit can be `RANGE` or `ROWS` and defines how the bounds will work.
+The bounds are:
+
+[none]
+* `<expr> PRECEDING`
+* `<expr> FOLLOWING`
+* `CURRENT ROW`
+
+// separator to start new list
+
+* With `RANGE`, the `ORDER BY` should specify only one expression, and that expression should be of a numeric, date, time or timestamp type.
+For `<expr> PRECEDING` and `<expr> FOLLOWING` bounds, `<expr>` is subtracted from the order expression in the case of `PRECEDING` and added to it in the case of `FOLLOWING`.
+For `CURRENT ROW`, the order expression is used as-is.
++ 
+All rows inside the partition that are between the bounds are considered part of the resulting window frame.
+
+* With `ROWS`, order expressions are not limited by number or type.
+For this unit, `<expr> PRECEDING`, `<expr> FOLLOWING` and `CURRENT ROW` relate to the row position under the partition, and not to the values of the ordering keys.
+
+`UNBOUNDED PRECEDING` and `UNBOUNDED FOLLOWING` work identically with `RANGE` and `ROWS`.
+`UNBOUNDED PRECEDING` looks for the first row and `UNBOUNDED FOLLOWING` the last one, always inside the partition.
+
+The frame syntax with `<window frame start>` specifies the start frame, with the end frame being `CURRENT ROW`.
+
+Some window functions discard frames: 
+
+* `ROW_NUMBER`, `LAG` and `LEAD` always work as `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+* `DENSE_RANK`, `RANK`, `PERCENT_RANK` and `CUME_DIST` always work as `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`.
+* `FIRST_VALUE`, `LAST_VALUE` and `NTH_VALUE` respect frames, but the `RANGE` unit behaviour is identical to `ROWS`.
+
+[[rnfb40-dml-navig-functions]]
+==== Navigational Functions with Frames
+
+Navigational functions, implemented in Firebird 3, get the simple (non-aggregated) value of an expression from another row that is within the same partition.
+They can operate on frames.
+These are the syntax patterns:
+
+[listing]
+----
+<navigational window function> ::=
+  FIRST_VALUE(<expr>) |
+  LAST_VALUE(<expr>) |
+  NTH_VALUE(<expr>, <offset>) [FROM FIRST | FROM LAST] |
+  LAG(<expr> [ [, <offset> [, <default> ] ] ) |
+  LEAD(<expr> [ [, <offset> [, <default> ] ] )
+----
+
+The default frame is `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` which might produce strange results when a frame with these properties is operated on by `FIRST_VALUE`, `NTH_VALUE` or, particularly, `LAST_VALUE`.
+
+==== Example Using Frames
+
+When the `ORDER BY` window clause is used, but a frame clause is omitted, the default frame just described causes the query below to produce weird behaviour for the `sum_salary` column.
+It sums from the partition start to the current key, instead of summing the whole partition.
+
+[source]
+----
+select
+    id,
+    salary,
+    sum(salary) over (order by salary) sum_salary
+  from employee
+  order by salary;
+----
+
+Result: 
+
+[source]
+----
+| id | salary | sum_salary |
+|---:|-------:|-----------:|
+|  3 |   8.00 |       8.00 |
+|  4 |   9.00 |      17.00 |
+|  1 |  10.00 |      37.00 |
+|  5 |  10.00 |      37.00 |
+|  2 |  12.00 |      49.00 |
+----
+
+A frame can be set explicitly to sum the whole partition, as follows:
+
+[source]
+----
+select
+    id,
+    salary,
+    sum(salary) over (
+      order by salary
+      ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+                     ) sum_salary
+  from employee
+  order by salary;
+----
+
+Result: 
+
+[source]
+----
+| id | salary | sum_salary |
+|---:|-------:|-----------:|
+|  3 |   8.00 |      49.00 |
+|  4 |   9.00 |      49.00 |
+|  1 |  10.00 |      49.00 |
+|  5 |  10.00 |      49.00 |
+|  2 |  12.00 |      49.00 |
+----
+
+This query "`fixes`" the weird nature of the default frame clause, producing a result similar to a simple `OVER ()` clause without `ORDER BY`.
+
+We can use a range frame to compute the count of employees with salaries between (an employee's salary - 1) and (his salary + 1) with this query:
+
+[source]
+----
+select
+    id,
+    salary,
+    count(*) over (
+      order by salary
+      RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING
+    ) range_count
+  from employee
+  order by salary;
+----
+
+Result: 
+
+[source]
+----
+| id | salary | range_count |
+|---:|-------:|------------:|
+|  3 |   8.00 |           2 |
+|  4 |   9.00 |           4 |
+|  1 |  10.00 |           3 |
+|  5 |  10.00 |           3 |
+|  2 |  12.00 |           1 |
+----
+
+[[rnfb40-dml-named-windows]]
+=== Named Windows
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5346[CORE-5346]
+
+In a query with the `WINDOW` clause, a window can be explicitly named to avoid repetitive or confusing expressions.
+
+A named window can be used 
+
+[loweralpha]
+. in the `OVER` element to reference a window definition, e.g. `OVER <window-name>`
+. as a base window of another named or inline (`OVER`) window, if it is not a window with a frame (`ROWS` or `RANGE` clauses).
++
+NOTE: a window with a base window cannot have `PARTITION BY`, nor override the ordering (`ORDER BY` sequence) of a base window.
+
+In a query with multiple `SELECT` and `WINDOW` clauses (for example, with subqueries), the scope of the window name is confined to its query context.
+That means a window name from an inner context cannot be used in an outer context, nor vice versa.
+However, the same window name definition can be used independently in different contexts.
+
+.Example Using Named Windows
+[source]
+----
+select
+    id,
+    department,
+    salary,
+    count(*) over w1,
+    first_value(salary) over w2,
+    last_value(salary) over w2
+  from employee
+  window w1 as (partition by department),
+         w2 as (w1 order by salary)
+  order by department, salary;
+----
+
+[[rnfb40-dml-windows-newfunctions]]
+=== More Window Functions
+Adriano dos Santos Fernandes; Hajime Nakagami
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-1688[CORE-1688]
+
+More SQL:2003 window functions -- the ranking functions `PERCENT_RANK`, `CUME_DIST` and `NTILE`.
+
+.Ranking Functions
+[listing]
+----
+<ranking window function> ::=
+  DENSE_RANK() |
+  RANK() |
+  PERCENT_RANK() |
+  CUME_DIST() |
+  NTILE(<expr>) |
+  ROW_NUMBER()
+----
+
+Ranking functions compute the ordinal rank of a row within the window partition.
+The basic functions in this category, present since Firebird 3, are `DENSE_RANK`, `RANK` and `ROW_NUMBER`.
+These function enable creation of various types of incremental counters to generate sets in ways that are analogous with operations such as `SUM(1) OVER (ORDER BY SALARY)`.
+
+The new functions implemented in Firebird 4 are: 
+
+* `PERCENT_RANK` is a ratio of `RANK` to group count.
+* `CUME_DIST` is the cumulative distribution of a value in a group.
+* `NTILE` takes an argument and distributes the rows into the specified number of groups.
+The argument is restricted to integral positive literal, variable (`:var`) and DSQL parameter (`?`).
+
+The following example illustrates the behaviour of ranking functions.
+`SUM` is included for comparison.
+
+.Simple Example
+[source]
+----
+select
+    id,
+    salary,
+    dense_rank() over (order by salary),
+    rank() over (order by salary),
+    percent_rank() over (order by salary),
+    cume_dist() over (order by salary),
+    ntile(3) over (order by salary),
+    row_number() over (order by salary),
+    sum(1) over (order by salary)
+  from employee
+  order by salary;
+----
+
+The result set looks something like the following, although trailing zeroes have been truncated here in order to fit the lines to the document page: 
+
+[source]
+----
+id  salary   dense_rank   rank   percent_rank   cume_dist   ntile   row_number   sum
+3     8.00            1      1      0.0000000  0.20000000       1            1     1
+4     9.00            2      2      0.2500000  0.40000000       1            2     2
+1    10.00            3      3      0.5000000  0.80000000       2            3     4
+5    10.00            3      3      0.5000000  0.80000000       2            4     4
+2    12.00            4      5      1.0000000  1.00000000       3            5     5
+----
+
+[[rnfb40-dml-filter-clause]]
+== FILTER Clause for Aggregate Functions
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5768[CORE-5768]
+
+The `FILTER` clause extends aggregate functions (`sum`, `avg`, `count`, etc.) with an additional `WHERE` clause.
+The set returned is the aggregate of the rows that satisfy the conditions of both the main `WHERE` clause and those inside the `FILTER` clause(s).
+
+It can be thought of as a shortcut for situations where one would use an aggregate function with some condition (`decode`, `case`, `iif`) to ignore some of the values that would be considered by the aggregation.
+
+The clause can be used with any aggregate functions in aggregate or windowed (`OVER`) statements, but not with window-only functions like `DENSE_RANK`.
+
+*Example*
+
+Suppose you have a query where you want to count the number of `status = 'A'` and the number of `status = 'E'` as different columns.
+The old way to do it would be:
+
+[source]
+----
+select count(decode(status, 'A', 1)) status_a,
+       count(decode(status, 'E', 1)) status_e
+  from data;
+----
+
+The `FILTER` clause lets you express those conditions more explicitly:
+
+[source]
+----
+select count(*) filter (where status = 'A') status_a,
+       count(*) filter (where status = 'E') status_e
+  from data;
+----
+
+[TIP]
+====
+You can use more than one `FILTER` modifier in an aggregate query.
+You could, for example, use 12 filters on totals aggregating sales for a year to produce monthly figures for a pivot set
+====
+
+[[rnfb40-dml-filter-clause-syntax]]
+=== Syntax for FILTER Clauses
+
+[listing]
+----
+aggregate_function [FILTER (WHERE <condition>)] [OVER (<window>)]
+----
+
+[[rnfb40-dml-autocommit]]
+== Optional AUTOCOMMIT for SET TRANSACTION
+Dmitry Yemanov
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5119[CORE-5119]
+
+Autocommit mode is now supported in the `SET TRANSACTION` statement syntax.
+
+.Example
+[source]
+----
+SET TRANSACTION SNAPSHOT NO WAIT AUTO COMMIT;
+----
+
+[[rnfb40-dml-set-tran-snapshot]]
+== Sharing Transaction Snapshots
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-6018[CORE-6018]
+
+With this feature it's possible to create parallel processes (using different attachments) reading consistent data from a database.
+For example, a backup process may create multiple threads reading data from the database in parallel.
+Or a web service may dispatch distributed sub-services doing some processing in parallel.
+
+For this purpose, the `SET TRANSACTION` statement is extended with the `SNAPSHOT [ AT NUMBER __snapshot_number__ ]` option.
+Alternatively, this feature can also be used via API, new Transaction Parameter Buffer item `isc_tpb_at_snapshot_number <snapshot number length> __snapshot number__` is added for this purpose.
+
+The _snapshot_number_ from an active transaction can be obtained with `RDB$GET_CONTEXT('SYSTEM', 'SNAPSHOT_NUMBER')` in SQL or using the transaction information API call with `fb_info_tra_snapshot_number` information tag.
+Note that the _snapshot_number_ passed to the new transaction must be a snapshot of a currently active transaction.
+
+.Example
+[source]
+----
+SET TRANSACTION SNAPSHOT AT NUMBER 12345;
+----
+
+[[rnfb40-dml-built-in-functions]]
+== Expressions and Built-in Functions
+
+Additions and changes to the sets of built-in functions and expressions in Firebird 4.
+
+[[rnfb40-dml-new-built-in-functions]]
+=== New Functions and Expressions
+
+Built-in functions and expressions added in Firebird 4.0.
+
+[[rnfb40-dml-new-timezonefuncs]]
+==== Functions & Expressions for Timezone Operations
+Adriano dos Santos Fernandes
+
+Expressions and built-in functions for timezone operations.
+
+[[rnfb40-dml-timezone-expr-at]]
+===== AT Expression
+
+Translates a time/timestamp value to its corresponding value in another time zone.
+If `LOCAL` is used, the value is converted to the session time zone.
+
+[float]
+===== Syntax
+
+[listing]
+----
+<at expr> ::= <expr> AT { TIME ZONE <time zone string> | LOCAL }
+----
+
+.Examples
+[source]
+----
+select time '12:00 GMT' at time zone '-03' from rdb$database;
+select current_timestamp at time zone 'America/Sao_Paulo' from rdb$database;
+select timestamp '2018-01-01 12:00 GMT' at local from rdb$database;
+----
+
+[[rnfb40-dml-timezone-expr-localtime]]
+===== LOCALTIME Expression
+
+Returns the current time as a `TIME WITHOUT TIME ZONE`, in the session time zone.
+
+.Example
+[source]
+----
+select localtime from rdb$database;
+----
+
+[[rnfb40-dml-timezone-expr-localtimestamp]]
+===== LOCALTIMESTAMP Expression
+
+Returns the current timestamp as a `TIMESTAMP WITHOUT TIME ZONE`, in the session time zone.
+
+.Example
+[source]
+----
+select localtimestamp from rdb$database;
+----
+
+[[rnfb40-dml-new-timefuncs]]
+==== Two New Date/Time Functions
+Adriano dos Santos Fernandes
+
+`FIRST_DAY`::
+Returns a date or timestamp (as appropriate) with the first day of the year, month or week of a given date or timestamp value.
++
+.Syntax
+[listing]
+----
+FIRST_DAY( OF { YEAR | MONTH | WEEK } FROM <date_or_timestamp> )
+----
++
+--
+.. The first day of the week is considered as Sunday, following the same rules as for `EXTRACT` with `WEEKDAY`
+.. When a timestamp is passed the return value preserves the time part
+--
++
+.Examples
+[source]
+----
+select first_day(of month from current_date) from rdb$database;
+select first_day(of year from current_timestamp) from rdb$database;
+select first_day(of week from date '2017-11-01') from rdb$database;
+----
+
+`LAST_DAY`::
+Returns a date or timestamp (as appropriate) with the last day of the year, month or week of a given date or timestamp value.
++
+.Syntax
+[listing]
+----
+LAST_DAY( OF { YEAR | MONTH | WEEK } FROM <date_or_timestamp> )
+----
++
+--
+.. The last day of the week is considered as Saturday, following the same rules as for `EXTRACT` with `WEEKDAY`
+.. When a timestamp is passed the return value preserves the time part
+--
++
+.Examples
+[source]
+----
+select last_day(of month from current_date) from rdb$database;
+select last_day(of year from current_timestamp) from rdb$database;
+select last_day(of week from date '2017-11-01') from rdb$database;
+----
+
+[[rnfb40-dml-new-security-funcs]]
+==== Security Functions
+
+Two new built-in functions were added to support the new security features.
+They are not described here -- the descriptions are located in the <<rnfb40-security,Security>> chapter.
+They are: 
+
+* <<rnfb4-rdb-systemprivilege-function,RDB$SYSTEM_PRIVILEGE>>
+* <<rnfb4-rdb-role-in-use-function,RDB$ROLE_IN_USE>>
+
+A number of cryptographic functions were also added.
+See <<rnfb4-builtin-crypto-functions,Built-in Cryptographic Functions>> in the <<rnfb40-security,Security>> chapter for syntax and usage details.
+
+[[rnfb40-dml-new-decfloat-funcs]]
+==== Special Functions for DECFLOAT
+
+Firebird supports four functions, designed to support DECFLOAT data specifically: 
+
+`COMPARE_DECFLOAT`::
+compares two `DECFLOAT` values to be equal, different or unordered.
+Returns a `SMALLINT` value, one of:
++
+--
+[horizontal]
+`0`:: Values are equal
+`1`:: First value is less than second
+`2`:: First value is greater than second
+`3`:: Values are unordered, i.e., one or both is NaN / sNaN
+--
++
+Unlike the comparison operators ('```<```', '```=```', '```>```', etc.) comparison is exact: `COMPARE_DECFLOAT(2.17, 2.170)` returns 2, not 0.
+
+`NORMALIZE_DECFLOAT`::
+takes a single `DECFLOAT` argument and returns it in its simplest form.
+That means that for any non-zero value, trailing zeros are removed with appropriate correction of the exponent.
++ 
+For example, `NORMALIZE_DECFLOAT(12.00)` returns 12 and `NORMALIZE_DECFLOAT(120)` returns 1.2E+2.
+
+`QUANTIZE`::
+takes two `DECFLOAT` arguments.
+The returned value is the first argument scaled using the second value as a pattern.
++ 
+For example, `QUANTIZE(1234, 9.999)` returns 1234.000.
++ 
+There are almost no retrictions on the pattern.
+However, in almost all usages, sNaN will produce an exception, `NULL` will make the function return `NULL`, and so on.
++
+[source]
+----
+SQL> select v, pic, quantize(v, pic) from examples;
+
+                       V                   PIC QUANTIZE
+ ======================= ===================== ==================
+                    3.16 0.001                   3.160
+                    3.16 0.01                    3.16
+                    3.16 0.1                     3.2
+                    3.16 1                       3
+                    3.16 1E+1                    0E+1
+                    -0.1 1                      -0
+                       0 1E+5                    0E+5
+                     316 0.1                     316.0
+                     316 1                       316
+                     316 1E+1                    3.2E+2
+                     316 1E+2                    3E+2
+----
++
+[NOTE]
+====
+If scaling like the example produces a result that would exceed the precision, the error "`Decimal float invalid operation`" is returned.
+====
+
+`TOTALORDER`::
+compares two `DECFLOAT` values including any special value.
+The comparison is exact.
+Returns a `SMALLINT` value, one of:
++
+[cols="1,1", frame="none", stripes="none"]
+|===
+
+|-1
+|First value is less than second
+
+|0
+|Values are equal
+
+|1
+|First value is greater than second
+|===
++ 
+For `TOTALORDER` comparisons, `DECFLOAT` values are ordered as follows:
++
+[listing]
+----
+-NaN < -sNaN < -INF < -0.1 < -0.10 < -0 < 0 < 0.10 < 0.1 < INF < sNaN < NaN
+----
+
+[[rnfb40-dml-new-get-cn]]
+==== Function RDB$GET_TRANSACTION_CN: Supporting Snapshots Based on Commit Order
+Vlad Khorsun
+
+See Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5921[CORE-5921].
+For the background, see <<rnfb40-engine-trans-commit-order,Commit Order for Capturing the Database Snapshot>> in the <<rnfb40-engine,Engine>> chapter.
+
+Returns the commit number ("`CN`")of the supplied transaction.
+Result type is `BIGINT`.
+
+.Syntax
+[Listing]
+----
+RDB$GET_TRANSACTION_CN( <transaction number> )
+----
+
+If the value returned is greater than 1, it will be the actual CN of the transaction if it was committed after the database was started.
+
+The function could return one of the following results instead, indicating the commit status of the transaction: 
+
+[horizontal]
+`-2`:: Transaction is dead (rolled back)
+`-1`:: Transaction is in limbo
+`{nbsp}0`:: Transaction is still active
+`{nbsp}1`:: Transaction committed before the database started or less than the Oldest Interesting Transaction for the database
+`NULL`:: Transaction number supplied is NULL or greater than Next Transaction for the database
+
+.Note about the numerics
+[NOTE]
+====
+Internally, the engine uses unsigned 8-byte integer for commit numbers and unsigned 6-byte integer for transaction numbers.
+Thus, although the SQL language has no unsigned integers and `RDB$GET_TRANSACTION_CN` returns a signed `BIGINT`, a negative commit number will never be returned except for the special values returned for uncommitted transactions.
+====
+
+.Examples
+[source]
+----
+select rdb$get_transaction_cn(current_transaction) from rdb$database;
+select rdb$get_transaction_cn(123) from rdb$database;
+----
+
+[[rnfb40-dml-new-make-dbkey]]
+==== Function MAKE_DBKEY
+Vlad Khorsun
+
+Creates a DBKEY value using relation name or ID, record number, and (optionally) logical number of data page and pointer page.
+Result type is `BINARY(8)`.
+
+.Syntax
+[listing,subs=+quotes]
+----
+MAKE_DBKEY( _relation_, _recnum_ [, _dpnum_ [, _ppnum_>]] )
+----
+
+.Notes
+. If _relation_ is a string expression or literal, then it is treated as a relation name, and the engine searches for the corresponding relation ID.
+The search is case-sensitive.
+In the case of string literal, relation ID is evaluated at query preparation time.
+In the case of expression, relation ID is evaluated at execution time.
+If the relation could not be found, then error `isc_relnotdef` is raised.
+. If _relation_ is a numeric expression or literal, then it is treated as a relation ID and used "`as is`", without verification against existing relations.
+If the argument value is negative or greater than the maximum allowed relation ID (65535 currently), then `NULL` is returned.
+. Argument _recnum_ represents an absolute record number in the relation (if the next arguments _dpnum_ and _ppnum_ are missing), or a record number relative to the first record, specified by the next arguments.
+. Argument _dpnum_ is a logical number of data page in the relation (if the next argument _ppnum_ is missing), or number of data page relative to the first data page addressed by the given _ppnum_.
+. Argument _ppnum_ is a logical number of pointer page in the relation.
+. All numbers are zero-based.
+Maximum allowed value for _dpnum_ and _ppnum_ is 2^32^ (4294967296).
+If _dpnum_ is specified, then _recnum_ could be negative.
+If _dpnum_ is missing and _recnum_ is negative, then `NULL` is returned.
+If _ppnum_ is specified, then _dpnum_ could be negative.
+If _ppnum_ is missing and _dpnum_ is negative, then `NULL` is returned.
+. If any of specified arguments has `NULL` value, the result is also `NULL`.
+. Argument `<relation>` is described as `INTEGER` during query preparation, but it can be overridden by a client application as `VARCHAR` or `CHAR`.
+Arguments _recnum_, _dpnum_ and _ppnum_ are described as `BIGINT`.
+
+.Examples
+[source]
+----
+-- (1) Select record using relation name
+--     (note: relation name is uppercased)
+select * from rdb$relations where rdb$db_key = make_dbkey('RDB$RELATIONS', 0)
+
+-- (2) Select record using relation ID
+select * from rdb$relations where rdb$db_key = make_dbkey(6, 0)
+
+-- (3) Select all records physically residing on the first data page
+select * from rdb$relations
+  where rdb$db_key >= make_dbkey(6, 0, 0)
+	and rdb$db_key < make_dbkey(6, 0, 1)
+
+-- (4) Select all records physically residing on the first data page
+--     of 6th pointer page
+select * from SOMETABLE
+  where rdb$db_key >= make_dbkey('SOMETABLE', 0, 0, 5)
+	and rdb$db_key < make_dbkey('SOMETABLE', 0, 1, 5)
+----
+
+[[rnfb4-builtin-base64]]
+==== BASE64_ENCODE() and BASE64_DECODE()
+Alex Peshkov
+
+These two functions are for encoding and decoding input data between string and BASE64 representation.
+They operate with character strings and BLOBs.
+Considered useful when working with binary objects, for example with keys.
+
+.Syntax
+[listing,subs=+quotes]
+----
+BASE64_ENCODE( _binary_data_ )
+BASE64_DECODE( _base64_data_ )
+----
+
+.Example
+[source]
+----
+select base64_encode(public_key) from clients;
+----
+
+[[rnfb4-builtin-hex]]
+==== HEX_ENCODE() and HEX_DECODE()
+Alex Peshkov
+
+These two functions are for encoding and decoding input data between string and hexadecimal representation.
+They operate with character strings and BLOBs.
+
+.Syntax
+[listings,subs=+quotes]
+----
+HEX_ENCODE( _binary_data_ )
+HEX_DECODE( _hex_data_ )
+----
+
+.Example
+[source]
+----
+select hex_encode(binary_string) from clients;
+----
+
+[[rnfb4-builtin-crc32]]
+==== CRC32()
+Alex Peshkov
+
+Accepts an argument than can be a field, variable or expression of any type recognised by DSQL/PSQL and returns a CRC-32 code calculated from the input data with the polynomial 0x04C11DB7.
+A constant, such as a file name passed as a string, returns the CRC for only the input.
+
+.Syntax
+[listing,subs=+quotes]
+----
+CRC32( _any_value_ )
+----
+
+.Example
+[source]
+----
+select crc32(job_title) from job;
+
+select crc32('Firebird-4.0.0.716-Alpha1.amd64.tar.gz') from rdb$database;
+----
+
+[NOTE]
+====
+Initially, CRC codes were designed as a tool to detect accidental changes to raw data when transferred over the wire or stored somewhere.
+
+It can be used as a very fast and rather efficient hash function.
+If the risk of collisions is not critical, its 32-bit integer output bestows a significant advantage over the widely-used SHA family of hashes in that it is easier to use later in various calculations if needed.
+====
+
+[[rnfb40-dml-changes-built-in-functions]]
+=== Changes to Built-in Functions and Expressions
+
+Functions changed or extended in this release:
+
+[[rnfb40-dml-changes-functions-timezone]]
+==== Changes Arising from Timezone Support
+
+[[rnfb40-dml-timezone-expr-extract]]
+===== EXTRACT Expressions
+
+Two new arguments have been added to the `EXTRACT` expression: 
+
+[horizontal]
+`TIMEZONE_HOUR`:: extracts the time zone hours displacement
+`TIMEZONE_MINUTE`:: extracts the time zone minutes displacement
+
+.Example
+[source]
+----
+select extract(timezone_hour from current_time) from rdb$database;
+select extract(timezone_minute from current_timestamp) from rdb$database;
+----
+
+[[rnfb40-dml-timezone-changes]]
+===== Changes in CURRENT_TIME and CURRENT_TIMESTAMP
+
+In version 4.0, `CURRENT_TIME` and `CURRENT_TIMESTAMP` are changed: they now return `TIME WITH TIME ZONE` and `TIMESTAMP WITH TIME ZONE`, with the time zone set by the session time zone.
+In previous versions, `CURRENT_TIME` and `CURRENT_TIMESTAMP` returned the respective types according to the system clock, i.e. without any time zone.
+
+To ease the transition, `LOCALTIME` and `LOCALTIMESTAMP` were added at version 3.0.4, allowing developers to adjust application code without any functional changes, before migrating to Firebird 4.
+
+[IMPORTANT]
+====
+See also <<rnfb40-compat-sql-timezone-changes,Changes in DDL and DML Due to Timezone Support>> in the <<rnfb40-compat,Compatibility>> chapter.
+====
+
+[[rnfb40-dml-changes-functions-hash]]
+==== HASH()
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-4436[CORE-4436]
+
+Returns a hash for a string using a specified algorithm.
+
+.Syntax
+[listing]
+----
+HASH( <string> [ USING <algorithm> ] )
+
+<algorithm> ::= { MD5 | SHA1 | SHA256 | SHA512 }
+----
+
+The syntax with the optional `USING` clause is introduced in FB 4.0 and returns `VARBINARY` (`VARCHAR` strings in character set `OCTETS`).
+
+[IMPORTANT]
+====
+The syntax without the `USING` clause is still supported.
+It uses the 64-bit variation of the non-cryptographic PJW hash function (also known as ELF64):
+
+https://en.wikipedia.org/wiki/PJW_hash_function
+
+which is very fast and can be used for general purposes (hash tables, etc), but its collision quality is sub-optimal.
+Other hash functions (specified explicitly in the USING clause) should be used for more reliable hashing.
+====
+
+.Examples
+[source]
+----
+select hash(x using sha256) from y;
+--
+select hash(x) from y; -- not recommended
+----
+
+[[rnfb40-dml-substring]]
+=== SUBSTRING()
+
+A `SUBSTRING` start position smaller than 1 is now allowed.
+It has some properties that need to be taken into consideration for predicting the end of the string value returned.
+
+.Examples
+[listing]
+----
+select substring('abcdef' from 0) from rdb$database
+-- Expected result: 'abcdef'
+
+select substring('abcdef' from 0 for 2) from rdb$database
+-- Expected result: 'a' (and NOT 'ab', because there is
+-- "nothing" at position 0)
+
+select substring('abcdef' from -5 for 2) from rdb$database
+-- Expected result: ''
+----
+
+Those last two examples might not be what you expect.
+The `for __length__` is considered from the specified `from __start__` position, not the start of the string, so the string returned could be shorter than the specified _length_, or even empty.
+
+[[rnfb40-dml-udfs]]
+=== UDF Changes
+
+Many of the UDFs in previous versions became built-in functions.
+The UDF feature itself is heavily deprecated in Firebird 4 -- see <<rnfb40-engine-deprecated-udfs,External Functions (UDFs) Feature Deprecated>> in the <<rnfb40-engine,Engine>> chapter.
+Most of the remaining UDFs in the `ib_udf` and `fbudf` libraries now have analogues, either as UDRs in the new library `udf_compat` or as precompiled PSQL functions.
+
+A script in the `/misc/upgrade/4.0/` sub-directory of your installation provides an easy way to upgrade existing UDF declarations to the safe form that is available for each respective UDF.
+For details and instructions, see <<rnfb40-compat-udfs,Deprecation of External Functions (UDFs)>> in the <<rnfb40-compat,Compatibility>> chapter.
+
+[[rnfb40-dml-udfs-getexacttimestamputc]]
+==== New UDR GetExactTimestampUTC
+
+The new UDR `GetExactTimestampUTC`, in the `udf_compat` library, takes no input argument and returns the `TIMESTAMP WITH TIME ZONE` value at the moment the function is called.
+
+The older function, `GetExactTimestamp` has been refactored as a stored function, returning, as before, the `TIMESTAMP WITHOUT TIME ZONE` value at the moment the function is called.
+
+[[rnfb40-dml-improvements]]
+== Miscellaneous DML Improvements
+
+Improvements to behaviour and performance in DML include:
+
+[[rnfb40-dml-improvement-01]]
+=== Improve Error Message for an Invalid Write Operation
+Adriano dos Santos Fernandes
+
+See Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5874[CORE-5874].
+
+When a read-only column is incorrectly targeted in an `UPDATE ... SET xxx` operation, the error message now provides the name of the affected column.
+
+[[rnfb40-engine-dml-improvement-02]]
+=== Improved Failure Messages for Expression Indexes
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5606[CORE-5606]
+
+If computation of an expression index fails, the exception message will now include the name of the index.
+
+[[rnfb40-engine-dml-improvement-03]]
+=== RETURNING {asterisk} Now Supported
+Adriano dos Santos Fernandes
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-3803[CORE-3808]
+
+The engine now supports `RETURNING {asterisk}` syntax, and variants, to return a complete set of field values after committing a row that has been inserted, updated or deleted.
+The syntax and semantics of `RETURNING {asterisk}` are similar to `SELECT {asterisk}`.
+
+.Examples
+[source]
+----
+INSERT INTO T1 (F1, F2) VALUES (:F1, :F2) RETURNING *
+
+DELETE FROM T1 WHERE F1 = 1 RETURNING *
+
+UPDATE T1 SET F2 = F2 * 10 RETURNING OLD.*, NEW.*
+----
