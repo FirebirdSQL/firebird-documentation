@@ -1,0 +1,1468 @@
+[[wireprotocol]]
+= Firebird Wire Protocol
+Carlos Guzman Alvarez; Mark Rotteveel
+0.14, 4 August 2020
+:doctype: book
+:sectnums:
+:sectanchors:
+:toc: left
+:toclevels: 3
+:outlinelevels: 6:0
+:icons: font
+:experimental:
+:imagesdir: ../../images
+
+[[wireprotocol-introduction]]
+== Introduction
+
+This document describes the Firebird wire protocol.
+Most of the information was obtained by studying the Firebird source code and implementing the wire protocol in the Firebird .NET provider and Jaybird (Firebird JDBC driver).
+
+The protocol is described in the form of the message sent by the client and received from the server.
+The described protocol is Firebird/Interbase protocol version 10.
+Earlier (Interbase) versions of the protocol are not in scope for this document.
+Changes in later protocol versions are described in notes below the description of the relevant version 10 message (currently only version 11 is partially described).
+
+This document is not complete.
+It is advisable to consult the [ref]_Interbase 6.0 API Guide_ for additional information on subjects like parsing the status vector, information request items, and the meaning of operations.
+
+Unless otherwise indicated, a client request must be flushed to the server for processing.
+For some operations the flush can be deferred, so it is sent together with a different operation.
+Versions 11 and higher of the wire protocol explicitly support (or even require) deferring of operations, including deferring the read of the response.
+
+[[wireprotocol-responses]]
+== Responses
+
+The wire protocol has a limited set of responses.
+Some operations have a specific response, which is described together with the operation.
+Most operation however use one (or more) of the responses described in this section.
+The meaning and content depend on the operation that initiated the response.
+
+[[wireprotocol-responses-generic]]
+=== Generic response
+
+`Int32`::
+Operation code
+
+If operation equals `op_response`:
+
+`Int32`::
+Object handle
+
+`Int64`::
+Object ID
+
+`Buffer`::
+Data (meaning depends on the operation).
+
+`Byte[]`::
+Status vector
++
+[IMPORTANT]
+====
+Information about parsing the status vector can be found in the [ref]_Interbase 6.0 API Guide_ in the documentation set.
+It might also be advantageous to look at the sources of the Firebird .NET provider or Jaybird.
+====
+
+[[wireprotocol-responses-sql]]
+=== SQL response
+
+`Int32`::
+Operation code
+
+If operation equals `op_sql_response`:
+
+`Int32`::
+Message count
+
+`Buffer`::
+Response data (meaning depends on the operation).
+
+[[wireprotocol-responses-fetch]]
+=== Fetch response
+
+`Int32`::
+Operation code
+
+If operation equals `op_fetch_response`:
+
+`Int32`::
+Status
++
+[IMPORTANT]
+====
+A value of `0` is the success value.
+
+End of cursor is indicated with a non-zero status.
+
+A status with value of `100` means that there are no more rows.
+====
+
+`Int32`::
+Count of rows following response
++
+[IMPORTANT]
+====
+The data rows are not in a buffer as described in <<wireprotocol-appendix-types>>, but as a sequence of data rows, see <<wireprotocol-reading-row-data>>.
+====
+
+[[wireprotocol-responses-slice]]
+=== Slice response
+
+`Int32`::
+Operation code
+
+If operation equals `op_slice`:
+
+`Int32`::
+Slice length
+
+`Int32`::
+Slice length
+
+`Buffer`::
+Slice data
+
+[[wireprotocol-databases]]
+== Databases
+
+[[wireprotocol-databases-attach]]
+=== Attach
+
+Attachments to a database are done in two steps, first identification (connect) to the server, then attachment to a database.
+
+[[wireprotocol-databases-attach-identification]]
+==== Identification
+
+Performs the initial handshake and protocol selection.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_connect`)
+
+`Int32`::
+Operation code (`op_attach`)
+
+`Int32`::
+Version (`CONNECT_VERSION2`)
+
+`Int32`::
+Architecture type (eg `arch_generic` = `1`).
+
+`String`::
+Database path or alias
+
+`Int32`::
+Count of protocol versions understood (eg `1`)
+
+`Buffer`::
+User identification
+
+[IMPORTANT]
+====
+The next block of data declares the protocol(s) that the client is willing or able to support.
+It should be sent as many times as protocols are supported (and specified as _Count of protocol versions understood_), values depend on the protocol.
+====
+
+`Int32`::
+Protocol version (`PROTOCOL_VERSION10`)
+
+`Int32`::
+Architecture type (eg `arch_generic` = `1`)
+
+`Int32`::
+Minimum type (eg `ptype_rpc` = `2`)
+
+`Int32`::
+Maximum type (eg `ptype_batch_send` = `3`)
+
+`Int32`::
+Preference weight (eg `2`)
+
+[float]
+===== Server
+
+`Int32`::
+Operation code
+
+If operation equals `op_accept`:
+
+`Int32`::
+Protocol version number accepted by server
+
+`Int32`::
+Architecture for protocol
+
+`Int32`::
+Minumum type
+
+[[wireprotocol-databases-attach-attachment]]
+==== Attachment
+
+Attaches to a database.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_attach`)
+
+`Int32`::
+Database object id (`0`)
+
+`String`::
+Database path or alias
+
+`Buffer`::
+Database parameter buffer
++
+[[wireprotocol-databases-attach-attachment-dpb-content]]
+.Example of parameters sent in the DPB
+[cols="3m,2,1,1", frame="bottom", options="header", stripes="none"]
+|===
+| Parameter
+| Description
+| Value
+| Optional
+
+|isc_dpb_version1
+|Version (must be first item!)
+|{nbsp}
+|{nbsp}
+
+|isc_dpb_dummy_packet_interval
+|Dummy packet interval
+|120
+|*
+
+|isc_dpb_sql_dialect
+|SQL dialect
+|3
+|{nbsp}
+
+|isc_dpb_lc_ctype
+|Character set
+|UTF8
+|{nbsp}
+
+|isc_dpb_sql_role_name
+|User role
+|RDB$ADMIN
+|*
+
+|isc_dpb_connect_timeout
+|Connection timeout
+|10
+|*
+
+|isc_dpb_user_name
+|User name
+|SYSDBA
+|{nbsp}
+
+|isc_dpb_password
+|User password
+|masterkey
+|{nbsp}
+|===
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where the _Object handle_ is the database handle.
+
+[[wireprotocol-databases-detach]]
+=== Detach
+
+Detaches from the database.
+After detach the connection is still open, to disconnect use <<wireprotocol-databases-disconnect>> (`op_disconnect`).
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_detach`)
+
+`Int32`::
+Database handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-databases-create]]
+=== Create
+
+Create a database.
+Create is similar to <<wireprotocol-databases-attach-attachment>> (`op_attach`).
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_create`)
+
+`Int32`::
+Database object id (0)
+
+`String`::
+Database path
+
+`Buffer`::
+Database parameter buffer
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where the _Object handle_ is the database handle.
+
+[[wireprotocol-databases-drop]]
+=== Drop
+
+Drops the currently attached database.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_drop_database`)
+
+`Int32`::
+Database handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-databases-information]]
+=== Database information request
+
+Requests database or server information.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_info_database`)
+
+`Int32`::
+Database handle
+
+`Int32`::
+Incarnation of object (`0`)
+
+`Buffer`::
+Requested information items
+
+`Int32`::
+Length of buffer available for receiving response (too small may lead to receiving a truncated buffer, which necessitates requesting information again).
++
+The buffer in the response is sized to the actual length of the response (upto the declared available length), so specifying a larger than necessary size does not inflate the response on the wire.
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Data_ holds the requested information.
+
+[[wireprotocol-databases-disconnect]]
+=== Disconnect
+
+[float]
+==== Client
+
+`Int32`::
+Operation code (`op_disconnect`)
+
+No response, remote socket close.
+
+[[wireprotocol-transactions]]
+== Transactions
+
+[[wireprotocol-transactions-start]]
+=== Start transaction
+
+Starts a transaction with the transaction options specified in the transaction parameter buffer.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_transaction`)
+
+`Int32`::
+Database handle
+
+`Buffer`::
+Transaction parameter buffer
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Object handle_ is the new transaction handle.
+
+[[wireprotocol-transactions-commit]]
+=== Commit transaction
+
+Commits an active or prepared transaction.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_commit`)
+
+`Int32`::
+Transaction handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-transactions-rollback]]
+=== Rollback transaction
+
+Rolls back an active or prepared transaction.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_rollback`)
+
+`Int32`::
+Transaction handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-transactions-commitretain]]
+=== Commit retaining
+
+Commits an active or prepared transaction, retaining the transaction context.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_commit_retaining`)
+
+`Int32`::
+Transaction handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>.
+
+[[wireprotocol-transactions-rollbackretain]]
+=== Rollback retaining
+
+Rolls back an active or prepared transaction, retaining the transaction context.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_rollback_retaining`)
+
+`Int32`::
+Transaction handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-transactions-prepare]]
+=== Prepare
+
+Performs the first stage of a two-phase commit.
+After prepare a transaction is _in-limbo_ until committed or rolled back.
+
+[[wireprotocol-transactions-prepare-simple]]
+==== Simple prepare
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_prepare`)
+
+`Int32`::
+Transaction handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-transactions-prepare-message]]
+==== Prepare with message
+
+Associates a message (byte data) with the prepared transaction.
+This information is stored in `RDB$TRANSACTIONS` and can be used for recovery purposes.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_prepare2`)
+
+`Int32`::
+Transaction handle
+
+`Buffer`::
+Recovery information
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-transactions-info]]
+=== Transaction information request
+
+This is similar to <<wireprotocol-databases-information>>.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_transaction_info`)
+
+`Int32`::
+Database handle
+
+`Int32`::
+Incarnation of object (`0`)
+
+`Buffer`::
+Requested information items
+
+`Int32`::
+Length of buffer available for receiving response (too small may lead to receiving truncated buffer).
+
+<<wireprotocol-responses-generic>> -- where _Data_ holds the requested information.
+
+[[wireprotocol-statements]]
+== Statements
+
+[[wireprotocol-statements-allocate]]
+=== Allocate
+
+Allocates a statement handle on the server.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_allocate_statement`)
+
+`Int32`::
+Database handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Object handle_ is the allocated statement handle.
+
+[[wireprotocol-statements-allocate-v11]]
+==== Deviations for protocol version 11
+
+An allocate can only be sent together with a <<wireprotocol-statements-prepare>> operation.
+
+[[wireprotocol-statements-free]]
+=== Free
+
+Frees resources held by the statement.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_free_statement`)
+
+`Int32`::
+Statement handle
+
+`Int32`:: {empty}
++
+[%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
+|===
+|Option
+|Description
+
+|DSQL_close
+|Closes the cursor opened after statement execute.
+
+|DSQL_drop
+|Releases the statement handle.
+|===
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-statements-free-v11]]
+==== Deviations for protocol version 11
+
+Request flushing and response processing must be deferred.
+
+[[wireprotocol-statements-prepare]]
+=== Prepare
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_prepare_statement`)
+
+`Int32`::
+Transaction handle
+
+`Int32`::
+Statement handle
+
+`Int32`::
+SQL dialect
+
+`String`::
+Statement to be prepared
+
+`Buffer`::
+Describe and describe bind information items
++
+--
+.Example of requested information items
+* `isc_info_sql_select`
+* `isc_info_sql_describe_vars`
+* `isc_info_sql_sqlda_seq`
+* `isc_info_sql_type`
+* `isc_info_sql_sub_type`
+* `isc_info_sql_length`
+* `isc_info_sql_scale`
+* `isc_info_sql_field`
+* `isc_info_sql_relation`
+--
+
+`Int32`::
+Target buffer length (`32768`)
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Data_ holds the statement description (matching the requested information items)
+
+[[wireprotocol-statements-prepare-v11]]
+==== Deviations for protocol version 11
+
+The statement handle can no longer be allocated separately.
+The initial <<wireprotocol-statements-allocate>> operation *must* be sent together with the first prepare operation.
+When allocating and preparing together, the value of the statement handle of the prepare must be `0xFFFF` (invalid object handle). The responses must be processed in order: first allocate response, then prepare response.
+
+Once a statement handle has been allocated, it can be reused by sending a prepare with the obtained statement handle.
+
+[[wireprotocol-statements-describe]]
+=== Describe
+
+Describe of output parameters of a query is done using the <<wireprotocol-statements-information,statements information request message>>
+
+.Example of requested information items :
+* `isc_info_sql_select`
+* `isc_info_sql_describe_vars`
+* `isc_info_sql_sqlda_seq`
+* `isc_info_sql_type`
+* `isc_info_sql_sub_type`
+* `isc_info_sql_length`
+* `isc_info_sql_scale`
+* `isc_info_sql_field`
+* `isc_info_sql_relation`
+
+[[wireprotocol-statements-describe-bind]]
+=== Describe bind (input parameters)
+
+Describe of input parameters of a query is done using the <<wireprotocol-statements-information,statements information request message>>
+
+.Example of requested information items :
+* `isc_info_sql_select`
+* `isc_info_sql_describe_vars`
+* `isc_info_sql_sqlda_seq`
+* `isc_info_sql_type`
+* `isc_info_sql_sub_type`
+* `isc_info_sql_length`
+* `isc_info_sql_scale`
+* `isc_info_sql_field`
+* `isc_info_sql_relation`
+
+[[wireprotocol-statements-execute]]
+=== Execute
+
+[float]
+===== Client
+
+`Int32`::
+Operation code
++
+[%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
+|===
+|Operation
+|Usage
+
+|op_execute
+|DDL and DML statements.
+
+|op_execute2
+|Stored procedures.
+|===
+
+`Int32`::
+Statement handle
+
+`Int32`::
+Transaction handle
+
+If the statement has input parameters:
+
+`Buffer`::
+Parameters in BLR format
+
+`Int32`::
+Message number (0) ??
+
+`Int32`::
+Number of messages (1) ??
+
+`Buffer`::
+Parameter values
+
+If not statement has no input parameters:
+
+`Buffer`::
+Empty (length only 0)
+
+`Int32`::
+Message number (0) ??
+
+`Int32`::
+Number of messages (0) ??
+
+If the statement is a stored procedure and there are output parameters:
+
+`Buffer`::
+Output parameters in BLR format
+
+`Int32`::
+Output message number (0) ??
+
+[float]
+===== Server
+
+`Int32`::
+Operation code
+
+If operation equals `op_sql_response`:
+
+<<wireprotocol-responses-sql>>
+
+if not:
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-statements-rowsaffected]]
+=== Rows affected by query execution
+
+Obtain the rows affected by a query is done using the <<wireprotocol-statements-information,statements information request message>>
+
+.List of requested information items
+* `isc_info_sql_records`
+
+[[wireprotocol-statements-fetch]]
+=== Fetch
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_fetch`)
+
+`Int32`::
+Statement handle
+
+`Buffer`::
+Output parameters in BLR format
+
+`Int32`::
+Message number
+
+`Int32`::
+Message count/Fetch size (`200`)
+
+[float]
+===== Server
+
+`Int32`::
+Operation code
+
+If operation equals `op_fetch_response`:
+
+<<wireprotocol-responses-fetch>>.
+
+If not:
+
+<<wireprotocol-responses-generic>>.
+
+[[wireprotocol-statements-cursorname]]
+=== Set cursor name
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_set_cursor`)
+
+`Int32`::
+Statement handle
+
+`String`::
+Cursor name (null terminated)
+
+`Int32`::
+Cursor type (0).
++
+[IMPORTANT]
+====
+Reserved for future use
+====
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-statements-information]]
+=== Information request
+
+This is similar to <<wireprotocol-databases-information>>.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_info_sql`)
+
+`Int32`::
+Statement handle
+
+`Int32`::
+Incarnation of object (`0`)
+
+`Buffer`::
+Requested information items
+
+`Int32`::
+Requested information items buffer length
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Data_ holds the requested information.
+
+[IMPORTANT]
+====
+Information about how to parse the information buffer sent by the Firebird server can be found in the Interbase 6.0 documentation set
+====
+
+[[wireprotocol-blobs]]
+== Blobs
+
+[[wireprotocol-blobs-create]]
+=== Create/Open
+
+[float]
+===== Client
+
+`Int32`::
+Operation code
++
+[%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
+|===
+|Operation
+|Description
+
+|op_create_blob
+|Creates a new blob
+
+|op_create_blob2
+|Creates a new blob with a blob parameter buffer
+
+|op_open_blob
+|Opens an existing blob
+
+|op_open_blob2
+|Opens an existing blob with a blob parameter buffer
+|===
+
+`Buffer`::
+Blob parameter buffer (_not allowed with `op_create_blob` and `op_open_blob`, required with `op_create_blob2` and ``op_open_blob2``_)
+
+`Int32`::
+Transaction handle
+
+`Int64`::
+Blob ID
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where:
+
+[loweralpha]
+. _Object handle_ is the blob handle
+. _Object id_ is the blob id (_only for `op_create_blob` / `op_create_blob2`, garbage for `op_open_blob` / ``op_open_blob2``_)
+
+[[wireprotocol-blobs-getsegment]]
+=== Get segment
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_get_segment`)
+
+`Int32`::
+Blob handle
+
+`Int32`::
+Segment length (__max length = 32768__)
+
+`Int32`::
+Data segment (`0`)
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Data_ is the blob segment.
+
+[[wireprotocol-blobs-putsegment]]
+=== Put segment
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_batch_segments`)
+
+`Int32`::
+Blob handle
+
+`Buffer`::
+Blob Segments
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-blobs-seek]]
+=== Seek
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_seek_blob`)
+
+`Int32`::
+Blob handle
+
+`Int32`::
+Seek mode (`0`)
+
+`Int32`::
+Offset
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Object handle_ is the current position.
+
+[[wireprotocol-blobs-cancel]]
+=== Cancel
+
+Cancels and invalidates the blob handle.
+If this was a newly created blob, the blob is disposed.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_cancel_blob`)
+
+`Int32`::
+Blob handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- no useful information in response
+
+[[wireprotocol-blobs-cancel-v11]]
+==== Deviations for protocol version 11
+
+Request flushing and response processing must be deferred.
+
+[[wireprotocol-blobs-close]]
+=== Close
+
+Closes and invalidates the blob handle.
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_close_blob`)
+
+`Int32`::
+Blob handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- no useful information in response
+
+[[wireprotocol-blobs-close-v11]]
+==== Deviations for protocol version 11
+
+Request flushing and response processing must be deferred.
+
+[[wireprotocol-arrays]]
+== Arrays
+
+[[wireprotocol-arrays-getslice]]
+=== Get slice
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_get_slice`)
+
+`Int32`::
+Transaction handle
+
+`Int64`::
+Array handle
+
+`Int32`::
+Slice length
+
+`Buffer`::
+Slice descriptor (SDL)
+
+`String`::
+Slice parameters (Always an empty string)
+
+`Buffer`::
+Slice (Always empty)
+
+[float]
+===== Server
+
+<<wireprotocol-responses-slice>>
+
+[[wireprotocol-arrays-putslice]]
+=== Put slice
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_put_slice`)
+
+`Int32`::
+transaction handle
+
+`Int64`::
+Array handle (`0`)
+
+`Int32`::
+Slice length
+
+`Buffer`::
+Slice descriptor (SDL)
+
+`String`::
+Slice parameters (Always an empty string)
+
+`Int32`::
+Slice length
+
+`Buffer`::
+Slice data
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Object id_ is the array handle.
+
+[[wireprotocol-services]]
+== Services
+
+[[wireprotocol-services-attach]]
+=== Attach
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_service_attach`)
+
+`Int32`::
+Database object ID (`0`)
+
+`String`::
+Service name
++
+For local connections: `service_mgr`
++
+For remote connections: `hostname:service_mgr`
+
+`Buffer`::
+Service parameter buffer
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Object handle_ is the services manager attachment handle.
+
+[[wireprotocol-services-detach]]
+=== Detach
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_service_detach`)
+
+`Int32`::
+Services manager attachment handle
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-services-start]]
+=== Start
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_service_start`)
+
+`Int32`::
+Services manager attachment handle
+
+`Int32`::
+Incarnation of object (`0`)
+
+`Buffer`::
+Services parameter buffer
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-services-query]]
+=== Query service
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_service_info`)
+
+`Int32`::
+Services manager attachment handle
+
+`Int32`::
+Incarnation of object (`0`)
+
+`Buffer`::
+Services parameter buffer
+
+`Buffer`::
+Requested information items
+
+`Int32`::
+Requested information items buffer length
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Data_ contains the requested information.
+
+[[wireprotocol-events]]
+== Events
+
+[[wireprotocol-events-connect-request]]
+=== Connection request
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_connect_request`)
+
+`Int32`::
+Connection type (`P_REQ_async`)
+
+`Int32`::
+Partner identification (`0`)
+
+[float]
+===== Server
+
+`Int32`::
+Attachment handle
+
+`Int16`::
+Port number
++
+[IMPORTANT]
+====
+This is part of the `sockaddr_in` structure.
+
+It is not in XDR format
+====
+
+`Int16`::
+Socket family
++
+[IMPORTANT]
+====
+This is part of the `sockaddr_in` structure.
+
+It is not in XDR format
+====
+
+`Byte[4]`::
+IP Address
+[IMPORTANT]
+====
+This is part of the `sockaddr_in` structure.
+
+It is not in XDR format
+====
+
+`Byte[8]`::
+Zeroes
++
+[IMPORTANT]
+====
+This is part of the `sockaddr_in` structure.
+
+It is not in XDR format
+====
+
+`Byte[4]`::
+Garbage
+
+
+[[wireprotocol-events-que-events]]
+=== Queue events
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_que_events`)
+
+`Int32`::
+Database handle
+
+`Buffer`::
+Events parameter buffer
+
+`Int32`::
+Ast function address
+
+`Int32`::
+Ast parameters function address
+
+`Int32`::
+Local event id
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- where _Object handle_ holds the remote event id.
+
+[[wireprotocol-events-cancel-events]]
+=== Cancel events
+
+[float]
+===== Client
+
+`Int32`::
+Operation code (`op_cancel_events`)
+
+`Int32`::
+Database handle
+
+`Int32`::
+Local event id
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-reading-row-data]]
+== Reading row data
+
+TODO: Processing row data
+
+:sectnums!:
+
+[appendix]
+[[wireprotocol-appendix-xdr]]
+== External Data Representation (XDR)
+
+The Firebird wire protocol uses XDR for exchange messages between client and server.
+
+:sectnums:
+
+:sectnums!:
+
+[appendix]
+[[wireprotocol-appendix-types]]
+== Data types
+
+`Int32`::
+Integer 32-bits
+
+`Int64`::
+Integer 64-bits
+
+`Buffer`:: {empty}
++
+[%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
+|===
+|Type
+|Description
+
+|Int32
+|Length
+
+|Byte[]
+|Buffer data
+|===
+
+`Byte[]`::
+An array of bytes
+
+`String`::
+A text string (_Read/Written as a buffer_)
+
+:sectnums:
+
+:sectnums!:
+
+[appendix]
+[[wireprotocol-appendix-revhistory]]
+== Revision history
+
+[%autowidth, width="100%", cols="4", options="header", frame="none", grid="none", role="revhistory"]
+|===
+4+|Revision History
+
+|0.1
+|31 May 2004
+|{nbsp}
+|First draft for review.
+
+|0.2
+|02 Jun 2004
+|{nbsp}
+|Fixed issues reported by Paul Vinkenoog.
+
+|0.3
+|03 Jun 2004
+|{nbsp}
+|Added new subsections to the Statements section.
+
+|0.4
+|05 Jun 2004
+|{nbsp}
+|Fixed issues reported by Paul Vinkenoog.
+
+|0.5
+|06 Jun 2004
+|{nbsp}
+|Fixed issues reported by Paul Vinkenoog.
+
+|0.6
+|07 Jun 2004
+|{nbsp}
+|Added events system documentation.
+
+|0.7
+|16 Jun 2004
+|{nbsp}
+|Modifed document ID to wireprotocol.
+
+|0.8
+|17 Jun 2004
+|{nbsp}
+|Added two new segmendted lists.
+
+|0.9
+|18 Jun 2004
+|{nbsp}
+a|
+* Improved segmentedlist usage.
+* Fixed rendering of important tags.
+
+|0.10
+|19 Jun 2004
+|{nbsp}
+|Changed rendering of important tags using Paul Vinkenoog fix.
+
+|0.11
+|20 Jun 2004
+|{nbsp}
+a|
+* Added new segmentedlist.
+* Updated Statements.Prepare documentation.
+* Updated Statements.Execute documentation.
+* Updated Blobs.GetSegment documentation.
+* Updated Blobs.Seek documentation.
+
+|0.12
+|21 Jun 2004
+|{nbsp}
+|Updated services information.
+
+|0.13
+|13 Sep 2014
+|{nbsp}
+|Updated and expanded protocol information
+
+|0.14
+|4 Aug 2020
+|MR
+|Conversion to AsciiDoc, minor copy-editing
+|===
+
+:sectnums:
