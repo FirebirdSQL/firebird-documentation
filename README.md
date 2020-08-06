@@ -16,23 +16,35 @@ to get an overview of compilable targets.
 If that worked, try e.g.:
 
 ```
-./gradlew docbookHtml             [ Unix    ]
-gradlew docbookHtml               [ Windows ]
+./gradlew asciidocHtml             [ Unix    ]
+gradlew asciidocHtml               [ Windows ]
 ```
 
 to build the HTML version of the docs.
-(Note: the HTML pages will wind up in build/html-firebirddocs)
+(Note: the HTML pages will wind up in build/docs/asciidoc/html/en/firebirddocs)
+
+To build a specific document or a document from another set, you can specify:
+
+````
+gradlew asciidocHtml --docId=gbak
+gradlew asciidocPdf --baseName=refdocs --docId=fblangref25
+````
 
 To get more information on a task, use
 
 ```
-./gradlew help --task=docbookHtml [ Unix    ]
-gradlew help --task=docbookHtml   [ Windows ]
+./gradlew help --task=asciidocHtml [ Unix    ]
+gradlew help --task=asciidocHtml   [ Windows ]
 ```
 
-Warning: if you build the docbookPdf target, you will get lots of error
+Warning: if you build the asciidocPdf target, you might get some error
 messages. Don't let that discourage you. Just look at the last
 output lines: if it says BUILD SUCCESSFUL there, everything's fine.
+
+The `docbookHtml` and `docbookPdf` tasks are available to build documentation
+that has not been migrated to AsciiDoc. However, if you feel the need to build
+those documents, it might be an indication they need to be migrated. Please
+ask for guidance or help on the firebird-docs mailing list.
 
 If you have any questions, *first* get the Docbuilding Howto at:
 
