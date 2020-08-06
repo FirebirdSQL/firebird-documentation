@@ -23,11 +23,13 @@ gradlew asciidocHtml               [ Windows ]
 to build the HTML version of the docs.
 (Note: the HTML pages will wind up in build/docs/asciidoc/html/en/firebirddocs)
 
-To build a specific document or a document from another set, you can specify:
+To build a specific document, or a document from another set, or another
+language, you can specify:
 
 ````
 gradlew asciidocHtml --docId=gbak
 gradlew asciidocPdf --baseName=refdocs --docId=fblangref25
+gradlew asciidocHtml --language=de
 ````
 
 To get more information on a task, use
