@@ -1,0 +1,927 @@
+[[rnfb30-engine]]
+= Changes in the Firebird Engine
+
+In Firebird 3, the remodelling of the architecture that was begun in v.2.5 was completed with the implementation of full SMP support for the Superserver model.
+In the new scheme, it is possible to configure the execution model individually per database.
+
+[[rnfb30-engine-architecture]]
+== Remodelled Architecture
+Dmitry Yemanov
+
+The remodelled architecture integrates the core engine for Classic/Superclassic, Superserver and embedded models in a common binary.
+The cache and lock behaviours that distinguish the execution models are now determined externally by the settings in the new configuration parameter `ServerMode`.
+The connection method is determined by the order and content of another parameter, `Providers` and the <<rnfb30-engine-modes-protocols,connection protocol>> that is deduced at run-time from the connection string supplied when a client requests an attachment.
+
+The parameters for configuring the architecture are specified globally (in `firebird.conf`).
+`Providers` can be overridden specifically for a database (in `databases.conf`).
+
+[NOTE]
+====
+`databases.conf` is the old `aliases.conf` from previous versions, with a new name.
+In Firebird 3, the role of this file involves (potentially) much more than being just a lookup for database file paths.
+For more details about what can be configured at database level, refer to the chapter <<rnfb30-fbconf,Configuration Additions and Changes>>.
+====
+
+[[rnfb30-engine-modes]]
+=== Server Modes
+
+.Matrix of Server Modes
+[cols="1m,1m,2,1m", frame="all", options="header,footer", stripes="none"]
+|===
+^| ServerMode
+^| Synonym
+^| Resource Model
+^| Provider[s]
+
+|Super
+|ThreadedDedicated
+|Database is opened exclusively by a single server process.
+User attachments are processed by threads launched from the common pool and all share a single database page cache inside the process.
+_This is the installation default_.
+|Remote, +
+Engine12^1^, +
+Loopback
+
+|Superclassic
+|ThreadedShared
+|Databases are opened by a single server process, but access is not exclusive: an embedded process can open the same database concurrently.
+User attachments are processed by threads launched from the common pool, each having its own database page cache.
+|Remote, +
+Engine12, +
+Loopback
+
+|Classic
+|MultiProcess
+|A separate process is started for each attachment to server.
+A database may be opened by multiple Classic processes, including local processes for embedded access.
+Each process has its own database page cache.
+|Remote, +
+Engine12, +
+Loopback
+
+4+>d| ^1^ Only if exclusive access is available
+|===
+
+[[rnfb30-engine-providers]]
+=== Providers
+
+The providers are more or less what we traditionally thought of as the methods used to connect a client to a server, that is to say, across a network, host-locally, via the local loopback ("`localhost`") or by a more direct local connection (the old `libfbembed.so` on POSIX, now implemented as the plug-in library `libEngine12.so`; on Windows, `engine12.dll`; on MacOSX, `engine12.dylib`). 
+
+* In `firebird.conf`, all are available by default, as follows:
++
+[source]
+----
+#Providers = Remote,Engine12,Loopback
+----
+* In `databases.conf`, one or more providers can be blocked by pasting the line from `firebird.conf`, uncommenting it, and deleting the unwanted provider[s].
+
+[[rnfb30-engine-providers-about]]
+==== The Providers Architecture
+Alex Peshkov
+
+Although a key feature of Firebird 3, the _Providers architecture_ is not new.
+Providers existed historically in Firebird's predecessors and, though well hidden, are present in all previous versions of Firebird.
+They were introduced originally to deal with a task that has been performed since then by "`interface layers`" such as ODBC, ADO, BDE and the like, to enable access to different database engines using a single external interface.
+
+Subsequently, this Providers architecture (known then as Open Systems Relational Interface, OSRI) also showed itself as very efficient for supporting a mix of old and new database formats -- different major on-disk structure versions -- on a single server having mixed connections to local and remote databases.
+
+The providers implemented in Firebird 3 make it possible to support all these modes (remote connections, databases with differing ODS, foreign engines) as well as _chaining_ providers.
+Chaining is a term for a situation where a provider is using a callback to the standard API when performing an operation on a database.
+
+==== The Components
+
+The main element of the Providers architecture is the _y-valve_.
+On the initial `attach` or `create database` call, _y-valve_ scans the list of known providers and calls them one by one until one of them completes the requested operation successfully.
+For a connection that is already established, the appropriate provider is called at once with almost zero overhead.
+
+Let's take a look at some samples of _y-valve_ operation when it selects the appropriate provider at the `attach` stage.
+These use the default configuration, which contains three providers:
+
+* `Remote` (establish network connection)
+* `Engine12` (main database engine)
+* `Loopback` (force network connection to the local server for <database name>  without an explicit network protocol being supplied).
+
+The typical client configuration works this way: when one attaches to a database called `RemoteHost:dbname` (TCP/IP syntax) or `\\RemoteHost\dbname` (NetBios), the `Remote` provider detects explicit <<rnfb30-engine-modes-protocols,network protocol syntax>> and, finding it first in the Provider list, redirects the call to `RemoteHost`.
+
+When <database name> does not contain a network protocol but just the database name, the `Remote` provider rejects it, and the `Engine12` provider comes to the fore and tries to open the named database file.
+If it succeeds, we get an embedded connection to the database.
+
+[NOTE]
+====
+A special "`embedded library`" is no longer required.
+To make the embedded connection, the standard client loads the appropriate provider and becomes an embedded server.
+====
+
+===== Failure Response
+
+But what happens if the engine returns an error on an attempt to attach to a database?
+
+* If the database file to be attached does not exist there is no interest at all.
+* An embedded connection may fail if the user attaching to it does not have enough rights to open the database file.
+That would be the normal case if the database was not created by that user in embedded mode or if he was not explicitly given OS rights for embedded access to databases on that box.
++
+[NOTE]
+====
+Setting access rights in such a manner is a requirement for correct Superserver operation.
+====
+
+* After a failure of `Engine12` to access the database, the `Loopback` provider is attempted for an attach.
+It is not very different to `Remote` except that it tries to access the named database `<dbname>` on a server running a TCP/IP local loopback.
++ 
+On Windows, XNET is tried first, then TCP/IP loopback (with `localhost:` prepended to `<dbname>`), then Named Pipes (NetBEUI) loopback (with `\\.\` prepended).
+The server may be started with XNET (or any other protocol) disabled, so we try all the options.
+On POSIX only TCP/IP protocol is supported, other options are not available
++ 
+If the attachment succeeds, a remote-like connection is established with the database even though it is located on the local machine.
+
+==== Other Providers
+
+Use of providers is not limited to the three standard ones.
+Firebird 3 does not support pre-ODS 12 databases.
+Removing support for old formats from the engine helps to simplify its code and gain a little speed.
+Taking into account that this speed gain sometimes takes place in performance-critical places, like searching a key in an index block, avoiding old code and related branches really does make Firebird fly faster.
+
+Nevertheless, the Providers architecture does make it possible to access old databases when changing to a higher version of Firebird.
+A suitable provider may be considered for inclusion in a later sub-release.
+
+===== Custom Providers
+
+A strong feature of the Providers architecture is ability for the deployer to add their own providers to the server, the client, or both.
+
+So what else might be wanted on a client, other than a remote connection?
+Recall _Provider chaining_ that was mentioned earlier.
+Imagine a case where a database is accessed via a very slow network connection, say something like 3G or, worse, GPRS.
+What comes to mind as a way to speed it up is to cache -- on the client -- some big tables that rarely change.
+Such systems were actually implemented but, to do it, one had to rename `fbclient` to something arbitrary and load it into its own library called `fbclient`, thus making it possible to use standard tools to access the database at the same time as caching required tables.
+It works but, as a solution, it is clearly not ideal.
+
+With the Providers architecture, instead of renaming libraries, one just adds a local caching provider which can use any method to detect connections to it (something like a `cache@` prefix at the beginning of the database name, or whatever else you choose).
+
+In this example, when the database name `cache@RemoteHost:dbname` is used, the caching provider accepts the connection and invokes the _y-valve_ once more with the traditional database name `RemoteHost:dbname`.
+When the user later performs any call to his database, the caching provider gets control of it before `Remote` does and, for a locally cached table, can forestall calls to the remote server.
+
+Use of chaining allows a lot of other useful things to be implemented.
+An example might be MySQL-style replication at statement level without the need for triggers: just repeat the same  calls for the replication host, perhaps when a transaction is committed.
+In this case, the chaining provider would be installed on the server, not the client, and no modification of the command line would be needed.
+
+[NOTE]
+====
+That said, statement-level replication is a very questionable feature.
+====
+
+To avoid cycling when performing a callback to _y-valve_ at attach time, such a provider can modify the list of providers using the `isc_dpb_config parameter` in the DPB.
+The same technique may be used at the client, too.
+
+For details, see the <<rnfb30-fbconf,Configuration Additions and Changes>> chapter.
+
+The ability to access foreign database engines using providers should not be overlooked, either.
+It might seem strange to consider this, given the number of tools available for this sort of task.
+Think about the ability to access other Firebird databases using `EXECUTE STATEMENT`, that became available in Firebird 2.5.
+With a provider to ODBC or other common tool to access various data sources it is within reach to use `EXECUTE STATEMENT` to get direct access from procedures and triggers, to data from any database having a driver for the chosen access tool.
+It is even possible to have a provider to access some particular type of foreign database engine if there is some reason to want to avoid the ODBC layer.
+
+==== Providers Q & A
+
+[qanda]
+Interfaces and providers are probably very good, but I have an old task written using plain API functions and for a lot of reasons I can't rewrite it in the near future. Does it mean I will have problems migrating to Firebird 3?::
+
+Definitely no problems.
+The old API is supported for backward compatibility in Firebird 3 and will be supported in future versions as long as people need it.
+
+And what about performance when using the old API?::
+
+The functional API is implemented as a very thin layer over interfaces.
+Code in most cases is trivial: convert passed handles to pointers to interfaces -- hitherto referred to as "`handle validation`" -- and invoke the appropriate function from the interface.
++ 
+Functions that execute an SQL operation and fetch data from it are one place where coding is a little more complex, involving the SQLDA construct.
+The data moves related to the SQLDA have always created an overhead.
+The logic between the new and old APIs does not add significantly to that old overhead.
+
+[[rnfb30-engine-modes-protocols]]
+=== Connection String and Protocols
+
+[term]_Connection string_ refers to the local or remote path to the database to which a client requests an attachment (connection).
+The syntax of the connection string determines the transport protocol by which clients and the server communicate.
+The legacy syntaxes for the available protocols, supported by all Firebird versions, are as follows:  
+
+For TCP/IP (aka INET) protocol:: {empty}
++
+[listing]
+----
+<host> [ / <port>] : <database file path or alias>
+----
+For named pipes (aka NetBEUI, aka WNET) protocol:: {empty}
++
+[listing]
+----
+\\ <host> [ @ <port>] \ <database file path or alias>
+----
+For local connections, simply::
++
+[listing]
+----
+<database file path or alias>....
+----
+
+Local connection is implied if `<host>` is omitted.
+Depending on settings, platform and Firebird version, it could be performed via either the embedded engine, XNET (shared memory) protocol or TCP/IP localhost loopback.
+
+[float]
+===== Examples
+
+Connect via TCP/IP using database name:: {empty}
++
+[source]
+----
+192.168.0.11:/db/mydb.fdb
+192.168.0.11:C:\db\mydb.fdb
+myserver:C:\db\mydb.fdb
+localhost:/db/mydb.fdb
+----
+
+Connect via TCP/IP using database alias:: {empty}
++
+[source]
+----
+192.168.0.11:mydb
+myserver:mydb
+localhost:mydb
+----
+
+Connect via TCP/IP using non-default port 3051:: {empty}
++
+[source]
+----
+192.168.0.11/3051:C:\db\mydb.fdb
+192.168.0.11/3051:mydb
+myserver/3051:/db/mydb.fdb
+localhost/3051:/db/mydb.fdb
+myserver/3051:mydb
+localhost/3051:mydb
+----
+
+Connect via TCP/IP using non-default service name:: {empty}
++
+[source]
+----
+192.168.0.11/fb_db:C:\db\mydb.fdb
+192.168.0.11/fb_db:mydb
+localhost/fb_db:/db/mydb.fdb
+myserver/fb_db:/db/mydb.fdb
+myserver/fb_db:mydb
+localhost/fb_db:mydb
+----
+
+Connect via named pipes (Windows only):: {empty}
++
+[source]
+----
+\\myserver\C:\db\mydb.fdb
+\\myserver@fb_db\C:\db\mydb.fdb
+----
+
+Local connection:: {empty}
++
+[source]
+----
+/db/mydb.fdb
+C:\db\mydb.fdb
+mydb
+----
+
+==== URL-Style Connection Strings
+
+Firebird 3.0 introduces an additional, generalized, URL-style syntax for connection strings.
+The pattern is:
+
+[listing]
+----
+[ <protocol> : // [ <host> [ : <port> ] ] ] / <database file path or alias>
+
+<protocol> ::= INET | WNET | XNET
+----
+
+`INET` resolves to TCP/IP, `WNET` to Named Pipes, while `XNET` surfaces the old "`Windows local protocol`" (shared memory).
+
+[float]
+====== Examples
+
+Connect via TCP/IP using database name:: {empty}
++
+[source]
+----
+inet://192.168.0.11//db/mydb.fdb
+inet://192.168.0.11/C:\db\mydb.fdb
+inet://myserver/C:\db\mydb.fdb
+inet://localhost//db/mydb.fdb
+----
+
+Connect via TCP/IP using database alias:: {empty}
++
+[source]
+----
+inet://192.168.0.11/mydb
+inet://myserver/mydb
+inet://localhost/mydb
+----
+
+Connect via TCP/IP using non-default port 3051:: {empty}
++
+[source]
+----
+inet://192.168.0.11:3051/C:\db\mydb.fdb
+inet://192.168.0.11:3051/mydb
+inet://myserver:3051//db/mydb.fdb
+inet://localhost:3051//db/mydb.fdb
+inet://myserver:3051/mydb
+inet://localhost:3051/mydb
+----
+
+Connect via TCP/IP using non-default service name:: {empty}
++
+[source]
+----
+inet://192.168.0.11:fb_db/C:\db\mydb.fdb
+inet://192.168.0.11:fb_db/mydb
+inet://localhost:fb_db//db/mydb.fdb
+inet://myserver:fb_db//db/mydb.fdb
+inet://myserver:fb_db/mydb
+inet://localhost:fb_db/mydb
+----
+
+Connect via named pipes:: {empty}
++
+[source]
+----
+wnet://myserver/C:\db\mydb.fdb
+wnet://myserver:fb_db/C:\db\mydb.fdb
+----
+
+Loopback connection via TCP/IP:: {empty}
++
+[source]
+----
+inet:///db/mydb.fdb
+inet://C:\db\mydb.fdb
+inet://mydb
+----
+
+Loopback connection via named pipes:: {empty}
++
+[source]
+----
+wnet://C:\db\mydb.fdb
+wnet://mydb
+----
+
+Local connection via shared memory:: {empty}
++
+[source]
+----
+xnet://C:\db\mydb.fdb
+xnet://mydb
+----
+
+Local (embedded by default) connection:: {empty}
++
+[source]
+----
+/db/mydb.fdb
+C:\db\mydb.fdb
+mydb
+----
+
+Local connection is implied if `<host>` is omitted.
+Depending on settings, platform and Firebird version, it could be performed via either the embedded engine, XNET (shared memory) protocol or TCP/IP localhost loopback.
+
+On the server side, the <<rnfb30-engine-providers,provider configuration>> is in the default order Remote, Engine12, Loopback.
+If the [term]_Remote_ provider fails to match the connection string because the protocol or host parts are missing, then [term]_Engine12_, the embedded engine, handles it as a hostless connection.
+To connect locally using a specific transport protocol, it is necessary to specify that protocol:
+
+[source]
+----
+inet://<database file path or alias>
+or
+wnet://<database file path or alias>
+or
+xnet://<database file path or alias>
+----
+
+[NOTE]
+====
+WNET (named pipes) and XNET (shared memory) protocols are available only on Windows.
+====
+
+[[rnfb30-engine-plugins]]
+=== Plug-Ins
+Alex Peshkov
+
+From version 3 onward, Firebird's architecture supports plug-ins.
+For a number of predefined points in the Firebird code, a developer can write his own fragment of code for execution when needed.
+
+A plug-in is not necessarily one written by a third party: Firebird has a number of intrinsic plug-ins.
+Even some core parts of Firebird are implemented as plug-ins.
+
+==== What is a Plug-In?
+
+The term "`plug-in`" is used to name related but different things:
+
+* a dynamic library, containing code to be loaded as a plug-in (often called a _plug-in module_) and stored in the `$FIREBIRD/plugins` directory;
+* code _implementing_ a plug-in.
+That is slightly different from the _library_, since a single dynamic library may contain code for more than one plug-in;
+* a plug-in's _factory_: an object created by that code (pure virtual C{plus}{plus} class), creating instances of the plug-in at Firebird's request;
+* an _instance_ of the plug-in, created by its factory.
+
+==== Plug-In Types
+
+Firebird's plug-in architecture makes it possible to create plug-ins of predefined types.
+Each version of Firebird will have a fixed set of supported plug-in types.
+To add a further type, the first requirement is to modify the Firebird code.
+Our plug-in architecture facilitates both adding new types of plug-ins and simplifying the coding of the plug-in along generic lines.
+
+To be able to implement a plug-in, say, for encrypting a database on the disk, the Firebird code has to be prepared for it: it must have a point from which the plug-in is called.
+
+The set of plug-in types implemented in Firebird 3 comprises:
+
+user authentication related::
+** `AuthServer` (validates user's credentials on server when logins are used)
+** `AuthClient` (prepares credentials to be passed over the wire)
+** `AuthUserManagement` (maintains a list of users on a server in a format known to AuthServer)
+
+ExternalEngine::
+Controls the use of various engines, see <<rnfb30-engine-extengines,External Engines>>.
+
+Trace::
+The Trace plug-in was introduced in Firebird 2.5, but the way it interacts with the engine was changed in Firebird 3 to accord with the new generic rules.
+
+Encryption::
+encrypting plug-ins are for
+** network (`WireCrypt`)
+** disk (`DbCrypt`)
+** a helper plug-in (`KeyHolder`), used to help maintain the secret key(s) for `DbCrypt`
+
+Provider::
+Firebird 3 supports <<rnfb30-engine-providers-about,providers>> as a plug-in type.
+
+==== Technical Details
+
+Plug-ins use a set of special Firebird interfaces.
+All plug-in-specific interfaces are reference counted, thus putting their lifetime under specific control.
+Interfaces are declared in the include file `plug-in.h`.
+A simple example for writing a plug-in module can be found in `DbCrypt_example`.
+
+[NOTE]
+====
+The example does not perform any actual encryption, it is just a sample of how to write a plug-in.
+Complete instructions for writing plug-ins are not in scope for this document.
+====
+
+===== Features of a Plug-In
+
+A short list of plug-in features:
+
+* You can write a plug-in in any language that supports pure virtual interfaces.
+Interface declarations will need to be written for your language if they are missing.
+* As with UDFs, you are free to add any reasonable code to your plug-in -- with emphasis on _reasonable_.
+For example, prompting for user input at the server's console from a plug-in is hardly "`reasonable`"!
+* Calling the Firebird API from your plug-in is OK, if needed.
+For example, the default authentication server and user manager use a Firebird database to store accounts.
+* Firebird provides a set of interfaces to help with configuring your plug-ins.
+It is not obligatory to use them, since the plug-in code is generic and can employ any useful method for capturing configuration information.
+However, using the standard tools provides commonality with the established configuration style and should save the additional effort of rolling your own and documenting it separately.
+
+[[rnfb30-config-plugins]]
+===== Configuring Plug-ins
+
+Configuration of plug-ins has two parts:
+
+. The engine has to be instructed what plug-ins it should load
+. The plug-ins themselves sometimes need some configuration.
+
+The plug-ins to be loaded for each plug-in type are defined in the main configuration file, `firebird.conf`, usually with defaults.
+The ones defined in Firebird 3 are discussed in the chapter entitled "`<<rnfb30-fbconf,Configuration Additions and Changes>>`".
+In summary, the set that provides normal operation in the server, client and embedded cases consists of:
+
+* `AuthServer = Srp, Win_Sspi`
+* `AuthClient = Srp, Win_Sspi, Legacy_Auth`
+* `UserManager = Srp`
+* `TracePlugin = fbtrace`
+* `Providers = Remote,Engine12,Loopback`
+* `WireCryptPlugin = Arc4`
+
+[NOTE]
+====
+If you want to add other plug-ins, they must be cited in `firebird.conf`.
+Apart from other considerations, this requirement acts as a security measure to avoid loading unknown code.
+====
+
+Taking the entry `TracePlugin = fbtrace` as an example, what does the value `fbtrace` signify?
+In a trivial case, it can indicate the name of a dynamic library, but the precise answer is more complicated.
+
+As mentioned earlier, a single plug-in module may implement more than one plug-in.
+In addition, a single plug-in may have more than one configuration at once, with a separate plug-in factory created for each configuration.
+Each of these three object contexts (module | implementation | factory) has its own name:
+
+* The name of a module is the file name of a dynamic library
+* The name of a plug-in implementation is the one given to it by the developer of the plug-in.
+It is hard-coded inside the module.
+* The name of a factory is, by default, the same as the name of the plug-in implementation's name.
+It is the factory name which is actually used in `firebird.conf`.
+
+In a typical trivial case, a module contains one plug-in that works with just one configuration and all three names are equal, and no more configuration is needed.
+An example would be `libEngine12.so` / `Engine12.dll` / `Engine12.dylib`, that contains the implementation of the embedded provider `Engine12`.
+Nothing other than the record `Providers = Engine12` is needed to load it.
+
+For something more complex a file will help you to set up the plug-in factories precisely.
+
+[[rnfb30-config-plugins-conf]]
+===== plugins.conf
+
+The file `$(root)/plugins.conf` has two types of records: `config` and `plugin`.
+
+the `plugin` record is a set of rules for loading and activating the plug-in.
+Its format is:
+
+[listing]
+----
+Plugin = PlugName ## this is the name to be referenced in firebird.conf
+  {
+    Module = LibName ## name of dynamic library
+    RegisterName = RegName ## name given to plug-in by its developer
+    Config = ConfName ## name of config record to be used
+    ConfigFile = ConfFile ## name of a file that contains plug-in's configuration
+  }
+----
+
+When plug-in _PlugName_ is needed, Firebird loads the library _LibName_ and locates the plug-in registered with the name _RegName_.
+The configuration values from the config record _ConfName_ or the config file _ConfFile_ are passed to the library.
+
+[NOTE]
+====
+If both _ConfName_ and _ConfFile_ are given, then the config record will be used.
+
+If both parameters are missing, the default _PlugName_ is used; *except that* if the `ConfigFile` is present and its name is the same as the module's dynamic library but with a `.conf` extension, it will be used.
+====
+
+The `ConfigFile` is expected to use the format `Key=Value`, in line with other Firebird configuration files.
+
+For the plug-in configuration record the same format is used:
+
+[source]
+----
+Config = ConfName
+  {
+    Key1 = Value1
+    Key2 = Value2
+    ...
+  }
+----
+
+[float]
+====== A Sample Setup
+
+Suppose you have a server for which some clients trust the wire encryption from one vendor and others prefer a different one.
+They have different licences for the appropriate client components but both vendors use the name "`BestCrypt`" for their products.
+
+The situation would require renaming the libraries to, say, WC1 and WC2, since there cannot be two files in the same directory with the same name.
+Now, the modules stop loading automatically because neither is called "`BestCrypt`" any longer.
+
+To fix the problem, `plug-ins.conf` should contain something like this:
+
+[source]
+----
+Plugin = WC1
+  {
+    RegisterName = BestCrypt
+  }
+Plugin = WC2
+  {
+    RegisterName = BestCrypt
+  }
+----
+
+The module names will be automatically set to WC1 and WC2 and found.
+You can add any configuration info that the plug-ins need.
+
+Remember to modify `firebird.conf` to enable both plug-ins for the `WireCryptPlugin` parameter:
+
+[source]
+----
+WireCryptPlugin = WC1, WC2
+----
+
+The server will now select appropriate plug-in automatically to talk to the client.
+
+Another sample is distributed with Firebird, in `$(root)/plugins.conf`, configuring one of the standard plug-ins, UDR.
+Because it was written to a use non-default configuration, the module name and one configuration parameter are supplied explicitly.
+
+[[rnfb30-config-plugins-qanda]]
+==== Plug-Ins Q & A
+
+[qanda]
+There are plug-ins named `Remote`, `Loopback`, `Arc4` in the default configuration, but no libraries with such names. How do they work?::
+
+They are "`built-in`" plug-ins, built into the fbclient library, and thus always present.
+Their existence is due to the old ability to distribute the Firebird client for Windows as a single dll.
+The feature is retained for cases where the standard set of plug-ins is used.
+
+What do the names of `Srp` and `Arc4` plug-ins mean?::
+
+`Srp` implements the Secure Remote Passwords protocol, the default way of authenticating users in Firebird 3.
+Its effective password length is 20 bytes, resistant to most attacks (including "`man in the middle`") and works without requiring any key exchange between client and server to work.
++ 
+`Arc4` means Alleged RC4 -- an implementation of RC4 cypher.
+Its advantage is that it can generate a unique, cryptographically strong key on both client and server that is impossible to guess by capturing data transferred over the wire during password validation by SRP.
++ 
+The key is used by `Arc4` after the SRP handshake, which makes wire encryption secure without need to exchange any keys between client and server explicitly.
+
+What do `Win_Sspi` and `Legacy_Auth` mean?::
+
+Windows SSPI has been in use since Firebird 2.1 for Windows trusted user authentication.
+`Legacy_Auth` is a compatibility plug-in to enable connection by the Firebird 3 client to older servers.
+It is enabled by default in the client.
++ 
+And yes, it still transfers almost plain passwords over the wire, for compatibility.
++ 
+On the server it works with `security3.fdb` just as with a security database from Firebird 2.5.
+It should be avoided except in situations where you understand well what you are sacrificing.
++ 
+To use `Legacy_Auth` on the server you will need to avert network traffic encryption in `firebird.conf` by reducing the default `Required` setting for the `WireCrypt` parameter, either
++
+[source]
+----
+WireCrypt = Enabled
+----
++
+or
++
+[source]
+----
+WireCrypt = Disabled
+----
+
+How can I find out what the standard Authentication and User Manager plug-ins are?::
+
+They are listed in `firebird.conf`.
+
+[[rnfb30-engine-extengines]]
+=== External Engines
+Adriano dos Santos Fernandes
+
+The UDR (User Defined Routines) engine adds a layer on top of the FirebirdExternal engine interface with the purpose of
+
+* establishing a way to hook external modules into the server and make them available for use
+* creating an API so that external modules can register their available routines
+* making instances of routines "`per attachment`", rather than dependent on the internal implementation details of the engine
+
+[[rnfb30-engine-extengines-names]]
+==== External Names
+
+An external name for the UDR engine is defined as
+
+[listing]
+----
+'<module name>!<routine name>!<misc info>'
+----
+
+The `<module name>` is used to locate the library, `<routine name>` is used to locate the routine registered by the given module, and `<misc info>` is an optional user-defined string that can be passed to the routine to be read by the user.
+
+[[rnfb30-engine-extengines-modules]]
+==== Module Availability
+
+Modules available to the UDR engine should be in a directory listed by way of the path attribute of the corresponding `plugin_config` tag.
+By default, a UDR module should be on `<fbroot>/plugins/udr`, in accordance with its path attribute in `<fbroot>/plugins/udr_engine.conf`.
+
+The user library should include `FirebirdUdr.h` (or `FirebirdUdrCpp.h`) and link with the `udr_engine` library.
+Routines are easily defined and registered, using some macros, but nothing prevents you from doing things manually.
+
+[NOTE]
+====
+A sample routine library is implemented in `examples/udr`, showing how to write functions, selectable procedures and triggers.
+It also shows how to interact with the current attachment through the legacy API.
+====
+
+[[rnfb30-engine-extengines-scope]]
+==== Scope
+
+The state of a UDR routine (i.e., its member variables) is shared among multiple invocations of the same routine until it is unloaded from the metadata cache.
+However, it should be noted that the instances are isolated "`per session`".
+
+[[rnfb30-engine-extengines-charset]]
+==== Character Set
+
+By default, UDR routines use the character set that was specified by the client.
+
+[NOTE]
+====
+In future, routines will be able to modify the character set by overriding the `getCharSet` method.
+The chosen character set will be valid for communication with the old Firebird client library as well as the communications passed through the FirebirdExternal API.
+====
+
+[[rnfb30-engine-extengines-enable]]
+==== Enabling UDRs in the Database
+
+Enabling an external routine in the database involves a DDL command to "`create`" it.
+Of course, it was already created externally and (we hope) well tested.
+
+.Syntax
+[listing]
+----
+{ CREATE [ OR ALTER ] | RECREATE | ALTER } PROCEDURE <name>
+  [ ( <parameter list> ) ]
+  [ RETURNS ( <parameter list> ) ]
+  EXTERNAL NAME '<external name>' ENGINE <engine>
+
+{ CREATE [ OR ALTER ] | RECREATE | ALTER } FUNCTION <name>
+  [ <parameter list> ]
+  RETURNS <data type>
+  EXTERNAL NAME '<external name>' ENGINE <engine>
+
+{ CREATE [ OR ALTER ] | RECREATE | ALTER } TRIGGER <name>
+  ...
+  EXTERNAL NAME '<external name>' ENGINE <engine>
+----
+
+.Examples
+[source]
+----
+create procedure gen_rows (
+  start_n integer not null,
+  end_n integer not null
+) returns (
+  n integer not null
+) external name 'udrcpp_example!gen_rows'
+  engine udr;
+
+create function wait_event (
+  event_name varchar(31) character set ascii
+) returns integer
+  external name 'udrcpp_example!wait_event'
+  engine udr;
+
+create trigger persons_replicate
+  after insert on persons
+  external name 'udrcpp_example!replicate!ds1'
+  engine udr;
+----
+
+[[rnfb30-engine-extengines-how]]
+==== How it Works
+
+The external names are opaque strings to Firebird.
+They are recognized by specific external engines.
+External engines are declared in configuration files, possibly in the same file as a plug-in, as in the sample UDR library that is implemented in `$(root)/plugins`.
+
+[source]
+----
+external_engine = UDR {
+  plugin_module = UDR_engine
+}
+
+plugin_module = UDR_engine {
+  filename = $(this)/udr_engine
+  plugin_config = UDR_config
+}
+
+plugin_config = UDR_config {
+  path = $(this)/udr
+}
+----
+
+When Firebird wants to load an external routine (function, procedure or trigger) into its metadata cache, it gets the external engine through the plug-in external engine factory and asks it for the routine.
+The plug-in used is the one referenced by the attribute `plugin_module` of the external engine.
+
+[NOTE]
+====
+Depending on the server architecture (Superserver, Classic, etc) and implementation details, Firebird may get external engine instances "`per database`" or "`per connection`".
+Currently, it always gets instances "`per database`".
+====
+
+[[rnfb3-engine-optimizer]]
+== Optimizer Improvements
+Dmitry Yemanov
+
+* See Tracker item http://tracker.firebirdsql.org/browse/CORE-4528[CORE-4528].
++ 
+Hash/merge joins for non-field (DBKEY or derived expression) equalities are now allowed.
+
+* See Tracker item http://tracker.firebirdsql.org/browse/CORE-1482[CORE-1482].
++ 
+The optimizer now considers the `ORDER BY` optimization when making its decision about join order.
+
+[[rnfb3-engine-optimizations]]
+== Other Optimizations
+Vlad Khorsun
+
+* See Tracker item http://tracker.firebirdsql.org/browse/CORE-4556[CORE-4556].
++ 
+Data pages are now allocated as a group of sequential ordered pages (extents).
+
+* See Tracker item http://tracker.firebirdsql.org/browse/CORE-4445[CORE-4445].
++ 
+The main database file extends faster when physical backup state changes from _stalled_ to _merge_.
+
+* See Tracker item http://tracker.firebirdsql.org/browse/CORE-4443[CORE-4443].
++ 
+Linux systems that support "`fast file growth`" can now use it.
+
+* See Tracker item http://tracker.firebirdsql.org/browse/CORE-4432[CORE-4432].
++ 
+Attachments no longer block others when the allocation table is read for the first time.
+
+* See Tracker item http://tracker.firebirdsql.org/browse/CORE-4431[CORE-4431].
++ 
+Contention has been reduced for the allocation table lock while database is in _stalled_ physical backup state.
+
+[[rnfb3-engine-remote]]
+== Remote Interface/Network Protocol
+Dmitry Yemanov
+
+Tracker item http://tracker.firebirdsql.org/browse/CORE-2530[CORE-2530].
+
+Further improvements were made to Firebird's network protocol, providing a denser data stream and better prefetch logic.
+The following improvements were implemented:
+
+. The full length of a field whose value is `NULL` is no longer sent over the wire.
+(Tracker item http://tracker.firebirdsql.org/browse/CORE-2897[CORE-2897]).
+`NULL` flags (4 bytes per field) are replaced with a bitmap and only these flags are transmitted, in the bitmap.
++ 
+This improvement is available for the DSQL API only, so _gbak_ does not benefit from this improvement, as it uses a lower level BLR API.
+. The prefetch (batch receive) algorithm is now aware of variable-length messages, so that ``VARCHAR``s and ``NULL``s may reduce the transmitted message size, allowing more rows to be transmitted in each batch.
+
+.Acknowledgement
+[NOTE]
+====
+This work was sponsored by donations collected at the 9th Firebird Developers' Day conference in Brazil.
+====
+
+[[rnfb3-engine-misc]]
+== Miscellaneous Improvements
+
+Miscellaneous engine improvements include:
+
+[[rnfb3-engine-misc-conn-limit]]
+=== Connections Limit Raised
+Paul Beach
+
+(http://tracker.firebirdsql.org/browse/CORE-4439[CORE-4439])
+-- Maximum connections (`FD_SETSIZE`) on Windows Superserver and Superclassic was raised from 1024 to 2048.
+
+[[rnfb3-engine-misc-error-diag]]
+=== Better Error Diagnosis
+Dmitry Yemanov
+
+(http://tracker.firebirdsql.org/browse/CORE-3881[CORE-3881])
+-- The error reported for index/constraint violations has been extended to include the problematic key value.
+
+[[rnfb3-engine-misc-icu]]
+=== ICU Version Upgraded
+Adriano dos Santos Fernandes
+
+(http://tracker.firebirdsql.org/browse/CORE-2224[CORE-2224])
+-- The ICU version was upgraded to v.52.1.
+
+[[rnfb3-engine-misc-debug]]
+=== Internal Debug Info Made Human-readable
+Vlad Khorsun
+
+A new BLOB filter translates internal debug information into text.
+
+[[rnfb3-engine-misc-silly]]
+=== A Silly Message is Replaced
+Claudio Valderrama C.
+
+A silly message sent by the parser when a reference to an undefined object was encountered was replaced with one that tells it like it really is.
+
+[[rnfb3-engine-misc-record-version]]
+=== New Pseudocolumn RDB$RECORD_VERSION
+Adriano dos Santos Fernandes
+
+A pseudocolumn named `RDB$RECORD_VERSION` returns the number of the transaction that created the current record version.
+
+It is retrieved the same way as `RDB$DB_KEY`, i.e., `select RDB$RECORD_VERSION from aTable where...`
+
+[[rnfb3-engine-misc-systemd]]
+=== systemd init Scripts
+Alex Peshkov
+
+systemd init scripts are available in Firebird 3 POSIX installers.
+See Tracker ticket http://tracker.firebirdsql.org/browse/CORE-4085[CORE-4085].
+
+[[rnfb3-engine-loaderrors]]
+=== Firebird 3.0.4: Better Reporting on Dynamic Library Loading Errors
+Alex Peshkov
+
+A mistake in the initial design of the `ModuleLoader` class meant that errors displayed when dynamic libraries failed to load were lacking any OS-specific information about the reason for the failure (no such file, invalid format, unresolved external reference, etc.).
+The only report was "`Module/library not loaded`".
+In many cases, that made it extremely hard to find and fix the related bugs.
+
+Firebird 3.0.4 extends the reported errors to show the exact reason a library failed to load.
+
+.Exceptions
+[NOTE]
+====
+Because the use of external functions (UDFs) has been deprecated, those modules do not get this extended error treatment.
+The other exception is the ICU modules, due to the fact more than 50 retries are done when those libraries fail to load.
+Reporting such an avalanche of error detail was considered impracticable.
+====

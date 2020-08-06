@@ -1,0 +1,446 @@
+[[rnfb30-compat]]
+= Compatibility Issues
+
+In this section are features and modifications that might affect the way you have installed and used Firebird in earlier releases.
+
+[[rnfb30-compat-tools]]
+== Where Are the Tools?
+
+On Windows, you will find all of the executable programs, including the command-line and shell tools, in the Firebird installation (root) folder.
+In previous versions they were in a folder beneath the root folder, named `.\bin`.
+
+On POSIX platforms, you will find the tools and other executable programs in similar locations to those used for earlier versions.
+Exactly _where_ depends on the distribution you are using.
+
+[[rnfb30-compat-windoze]]
+== Other Windows Changes
+
+* Notice that the installer no longer gives the option to build `fbclient.dll` as `gds32.dll` or to locate it in the system folder.
+If your applications still require this, you will have to do it manually.
+
+[[rnfb30-compat-aliasesconf]]
+== aliases.conf Is No More
+
+The file `aliases.conf` is replaced by `databases.conf` in the Firebird root directory.
+The format for database aliases has not changed, so you can copy/paste the contents of your existing `aliases.conf` file into `databases.conf` successfully.
+The new file is capable of carrying a lot more configuration detail, however, to enable database-level configuration of many features that were previously available only at the global server level.
+
+[[rnfb30-compat-embedded]]
+== Embedded Connections
+
+For an embedded connection, an authenticated login is no longer required on POSIX platforms.
+If you provide a user name and password, the password is ignored.
+Applications may still require a user name and possibly a role name, due to SQL privileges in databases.
+
+This feature is new for embedded Firebird on POSIX, but it is the way embedded always worked on Windows, when the embedded engine was a separate executable.
+
+[[rnfb30-compat-initsec]]
+== Initializing the Security Database
+
+By default, Firebird 3 is configured for the new authentication model which uses SRP to work with user passwords and generate unique session identifiers for traffic encryption.
+The security database (`security3.fdb`) has no predefined users.
+This is intentional.
+
+However, when using the standard installers for Windows, Linux and MacOSX, the SYSDBA user is created during the final step of the installation, with a password that is either random or defined via a user input routine.
+
+In a situation where the SYSDBA initialization step either fails, or is missing from an OS-specific install process, such as a Windows `.zip` kit install, or a dedicated POSIX platform port, it may be necessary to initialize the security database manually for use with the SRP plugins.
+You will need to create the user SYSDBA and set up the password for it using SQL `CREATE USER` command syntax in embedded mode as your first step to getting access to databases and utilities.
+
+The _gsec_ utility can be used instead but, having been deprecated, it is not discussed here.
+
+[IMPORTANT]
+====
+This initialization is not required and should *not* be performed if you have configured the server to use legacy (pre-Firebird 3 style) authentication and user management.
+The legacy security plugins totally preserve the legacy behaviour and thus contain the legacy record for SYSDBA with "`masterke`" as the initial password.
+
+Instructions for configuring `firebird.conf` for legacy authentication behaviour are in <<rnfb30-compat-legacyauth,the next section>>.
+====
+
+[[rnfb30-compat-sysdba]]
+=== Initialization Steps
+
+Initialization is performed in embedded mode using the _isql_ utility.
+For an embedded connection, an authentication password is not required, and will be ignored if you provide one.
+An embedded connection will work fine with no login credentials and "`log you in`" using your host credentials if you omit a user name.
+However, even though the user name is not subject to authentication, creating or modifying anything in the existing security database requires that the user be SYSDBA;
+otherwise, _isql_ will throw a privilege error for the `CREATE USER` request.
+
+The SQL user management commands will work with any open database.
+Because the sample database `employee.fdb` is present in your installation and already aliased in `databases.conf`, it is convenient to use it for the user management task.
+
+. *Stop the Firebird server*. Firebird 3 caches connections to the security database aggressively.
+The presence of server connections may prevent _isql_ from establishing an embedded connection.
+. In a suitable shell, start an _isql_ interactive session, opening the employee database via its alias:
++
+[source]
+----
+> isql -user sysdba employee
+----
+. Create the SYSDBA user:
++
+[source]
+----
+SQL> create user SYSDBA password 'SomethingCryptic';
+SQL> commit;
+SQL> quit;
+----
++
+[NOTE]
+----
+The SYSDBA user will have full administrator rights automatically.
+Do not assign the ADMIN role (`RDB$ADMIN`) to SYSDBA.
+----
++
+.Quick Tip
+[TIP]
+====
+From version 3.0.1, the statement `CREATE OR ALTER USER SYSDBA PASSWORD <password>` can be used to initialize an empty `securityN.fdb` security database.
+====
+. To complete the initialization, start the Firebird server again.
+Now you will be able to perform a network login to databases, including the security database, using the password you assigned to SYSDBA.
+
+.About Passwords
+* An effective password, using the default user manager Srp, can be up to 20 characters, although a password of up to 255 characters will be valid.
+* If you intend in future to configure the server to use legacy authentication (not recommended!), then only the first 8 characters of any password, including that of the SYSDBA, will be read.
+* `masterkey` is NOT a recommended password for SYSDBA!
+
+[[rnfb30-compat-authnotes]]
+=== Additional Notes About Security Databases
+
+Since Firebird 2, users -- including SYSDBA -- could not log in to the security database directly.
+With Firebird 3 it is possible to establish a direct, embedded connection to the security database.
+With the appropriate configuration parameters, you can control the ability to connect remotely to other security databases.
+
+The _gsec_ utility, although deprecated in Firebird 3, is still available for access to `security3.fdb` only.
+It cannot be used to manage a custom user database.
+We recommend that database admins plan to move away from relying on _gsec_ and become familiar with the newer <<rnfb30-access-sql,SQL user management features>>.
+
+[[rnfb30-compat-legacyauth]]
+== Legacy Authentication
+
+If you do not intend to use SRP encrypted log-ins right away and want to use the security database -- `security3.fdb` -- as you have done in previous Firebird versions, proceed as follows:
+
+. Using a text editor, open `firebird.conf` and find the entry for the parameter `UserManager`:
++
+[source]
+----
+#UserManager = Srp
+----
++
+Delete the "`#`" symbol and change the value to:
++
+[source]
+----
+UserManager = Legacy_UserManager
+----
+. Find the entry for the `WireCrypt` parameter:
++
+[source]
+----
+#WireCrypt = Enabled (for client) / Required (for server)
+----
++
+Delete the "`#`" symbol and change the value to:
++
+[source]
+----
+WireCrypt = Enabled
+-- or, if you don't plan to use SRP encryption at all --
+WireCrypt = Disabled
+----
+. Find the entry for the `AuthServer` parameter:
++
+[source]
+----
+#AuthServer = Srp, WinSspi, Legacy_Auth
+----
++
+Delete the "`#`" symbol and change the order of the arguments:
++
+[source]
+----
+AuthServer = Legacy_Auth, Srp, WinSspi
+----
+. Find the entry for the `AuthClient` parameter:
++
+[source]
+----
+#AuthClient = Srp, WinSspi, Legacy_Auth
+----
++
+Delete the "`#`" symbol and change the order of the arguments:
++
+[source]
+----
+AuthClient = Legacy_Auth, Srp, WinSspi
+----
+. Save the changes.
+. Stop and restart Firebird for the changes to take effect.
+
+.Legacy Passwords
+[NOTE]
+====
+* The old `masterke` password is available for your first login as SYSDBA.
+It is known to the whole world and should be changed as soon as possible.
+* Reminder: Legacy authentication reads only the first 8 characters of any password.
+====
+
+[[rnfb30-compat-upgrade-secdb]]
+== Upgrading a v.2.x Security Database
+
+Because of the new authentication model in Firebird 3, upgrading a version 2.5 security database (`security2.fdb`) directly for use under Firebird 3 is not possible.
+However, an upgrade procedure is in place to enable retention of the user account data -- user name, first name, etc., but not passwords -- from the `security2.fdb` database that was used under version 2.x servers.
+
+The SYSDBA user is not touched: after the upgrade procedure, it will remain as it was before.
+
+[[rnfb30-compat-upgrade-secdb-steps]]
+=== Steps
+
+[NOTE]
+====
+* In the commands below, replace `masterkey` with the actual SYSDBA password for the server version, as appropriate.
+* The procedure requires running the script `security_database.sql` that is located in the `misc/upgrade` directory of your Firebird 3 installation.
+These instructions assume you have a temporary copy of this script in the same directory as the _isql_ executable.
+====
+
+. Under the Firebird 2.5 server, back up the security database.
+Here, use the SYSDBA password for the version 2.5 installation:
++
+[source]
+----
+gbak -user sysdba -pas masterkey -b {host/path}security2.fdb security2.fbk
+----
+. Under the Firebird 3 server, restore a copy of the version 2.5 backup.
+Here, use the SYSDBA password for the version 3 installation:
++
+[source]
+----
+gbak -user sysdba -pas masterkey -c security2.fbk {host/path}security2db.fdb
+----
+. Under the Firebird 3 server, go to the directory where the _isql_ utility is located and run the upgrade script:
++
+[source]
+----
+isql -user sysdba -pas masterkey -i security_database.sql {host/path}security2db.fdb
+----
++
+"security2db.fdb" is just a sample name for the database: it can be any preferred name.
+
+. The procedure will generate new, random passwords and will output them to screen afterwards.
+Capture the output and notify users of their new passwords.
+. When you are ready, shut down Firebird.
+Rename `security3.fdb` or move it another location;
+then rename the upgraded database to `security3.fdb`.
+
+[[rnfb30-compat-winlocal]]
+== Local Connections to Superserver on Windows
+
+In previous Firebird versions, a serverless protocol known as "`Windows Local`" was available to local clients connecting to Superserver on a Windows platform, using the XNET subsystem.
+A typical connection string looked like this:
+
+[source]
+----
+c:\Program Files\Firebird_2_5\examples\empbuild\employee.fdb
+----
+
+Under the new unified server, that form of connection is no longer valid for a serverless client connection to Superserver.
+It attempts to load an embedded server.
+If you try whilst Superserver is connected to your database, you will get a refusal message to the effect "`File is in use by another process`".
+
+This is not a bug.
+Since Superserver clients share resources, another server (in this case, an embedded server) cannot attach a client to the same database that Superserver has any clients attached to.
+
+However, all is not lost.
+The XNET subsystem can still do local client sessions for Superserver.
+You just need a more elaborate connection string now:
+
+[source]
+----
+xnet://alias-or-path-to-database
+----
+
+So, for our connection to the employee database:
+
+[source]
+----
+xnet://c:\Program Files\Firebird_3_0\examples\empbuild\employee.fdb
+----
+
+or using an alias:
+
+[source]
+----
+xnet://employee
+----
+
+[NOTE]
+====
+New connection strings are available as alternatives for other local connection protocols, too.
+For more information, see <<rnfb30-apiods-api-winlocal,New Connection Formats for Local Clients on Windows>>.
+====
+
+[[rnfb30-compat-config]]
+== Configuration Parameters
+
+The previously deprecated `firebird.conf` parameters `CompleteBooleanEvaluation`, `OldColumnNaming` and `OldSetClauseSemantics` are no longer supported anymore and have been removed.
+The lack of one or more of these parameters may break your application code, so please check these settings in `firebird.conf` on your older server version.
+
+The parameters `UsePriorityScheduler`, `PrioritySwitchDelay`, `PriorityBoost`, `LegacyHash` and `LockGrantOrder` no longer have any use and have been removed.
+
+[IMPORTANT]
+====
+Ensure that you study the chapter <<rnfb30-fbconf,Configuration Additions and Changes>> in preparation for upgrading user software to Firebird 3.
+====
+
+[[rnfb30-compat-systables]]
+== System Tables are Now Read-only
+
+The system tables (`RDB${asterisk}`) are now read-only.
+Attempting any DDL or insert/update/delete statement on them will be rejected.
+
+[[rnfb30-compat-sql]]
+== SQL Language Changes
+
+It will be necessary to pay attention to some changes in the SQL language implementation.
+
+[[rnfb30-compat-sql-psql-nomixedjoins]]
+=== Support for Mixed-Syntax Joins is Gone
+
+Improperly mixed explicit and implicit joins are no longer supported, in accordance with the SQL specification.
+It also means that, in the explicit `A JOIN B ON <condition>`, the condition is not allowed to refer to any stream except `A` and `B`.
+See http://tracker.firebirdsql.org/browse/CORE-2812[Tracker ticket CORE-2812] for more details.
+
+[[rnfb30-compat-psql-namelengths]]
+=== Enforcement of Length Limit for Local Alias and Variable Names
+
+The names for column and table aliases and for local variables names in PSQL are now restricted to 31 bytes in length.
+This enforcement has been made to comply with the SQL specification that requires them to be regular SQL identifiers, in accordance with the implementation-dependent limits.
+In Firebird, SQL identifiers are limited to 31 bytes.
+
+See also: http://tracker.firebirdsql.org/browse/CORE-2350[CORE-2350]
+
+[[rnfb30-compat-username-namelength]]
+=== Changes for User Names
+
+User names are treated as SQL identifiers and are accordingly now limited to 31 bytes in length.
+
+Case-sensitive user names are also supported now.
+The `CONNECT` and `CREATE DATABASE` statements in _isql_ will thus allow user names to be specified in double quotes.
+
+[[rnfb30-compat-psql-cursorcols]]
+=== Cursor Output Columns Must Be Named
+
+The `DECLARE CURSOR` statement in PSQL now requires all of the output columns to be explicitly named or aliased.
+The same requirement applies to the `FOR SELECT ... AS CURSOR <cursor name> DO ...` statement in PSQL.
+This requirement is necessitated by the new capability to read cursor elements directly as pseudo columns, e.g. `MY_CURSOR.COLUMN_A`.
+
+[float]
+==== Illustration
+
+[source]
+----
+create procedure sp_test
+as
+  declare c cursor for (select 1 /* as a */ from rdb$database);
+  declare n int;
+begin
+  open c;
+  fetch c into n;
+  close c;
+end
+----
+
+[source]
+----
+Statement failed, SQLSTATE = 42000
+unsuccessful metadata update
+-ALTER PROCEDURE SP_TEST failed
+-Dynamic SQL Error
+-SQL error code = -104
+-Invalid command
+-no column name specified for column number 1 in derived table C
+----
+
+[[rnfb30-compat-cursorstability]]
+=== "`Cursor Stability`" Effects
+
+Some statements may now work differently due to the <<rnfb30-psql-cursor-stablility,"`cursor stability`" improvement>>.
+Statements affected will be: 
+
+* those that modify the table that is being explicitly or implicitly selected from within the same statement
+* (as a side effect) some `MERGE` statements, that might work differently if multiple matches are possible.
++
+[NOTE]
+====
+The SQL standard stipulates that the `MERGE` statement must raise an error if multiple matches are found.
+Firebird is not so strict in this regard, but its behaviour should be considered undefined in these cases.
+====
+
+See also: http://tracker.firebirdsql.org/browse/CORE-3362[CORE-3362], http://tracker.firebirdsql.org/browse/CORE-3317[CORE-3317], http://tracker.firebirdsql.org/browse/CORE-4796[CORE-4796]. 
+
+[[rnfb30-compat-sql-reserv]]
+== Reserved Words
+
+A number of new reserved keywords are introduced.
+Please refer to the chapter <<rnfb30-reswords,Reserved Words and Changes>> and ensure your DSQL statements and procedure/trigger sources do not contain any of those keywords as identifiers.
+Otherwise, it will be necessary either to use them quoted (in Dialect 3 only) or to rename them.
+
+Pay special attention to the keywords `INSERTING`, `UPDATING` and `DELETING` in your PSQL modules.
+They are now reserved words and thus must not be used as identifiers.
+
+Also check very carefully that the keyword `BOOLEAN` is not used as a domain name in your databases.
+
+[[rnfb30-compat-trace-config]]
+== Trace Configuration Syntax
+
+The format of sections and key-value pairs in the trace configuration file has changed:
+
+.Old format
+[source]
+----
+<database %[\\/](test|azk2|rulez).fdb>
+  enabled true
+  time_threshold 100
+  log_statement_finish true
+</database>
+----
+
+.New format
+[source]
+----
+database = %[\\/](test|azk2|rulez).fdb
+{
+  enabled = true
+  time_threshold = 100
+  log_statement_finish = true
+}
+----
+
+[IMPORTANT]
+====
+Pay attention to the "`database`" section header and equality signs ('```=```') between parameter names and values.
+====
+
+[[rnfb30-compat-gdscode]]
+== Unexpected GDSCODE Errors
+
+An unexpected GDSCODE may be returned for `UPDATE`/`DELETE` statements, viz. `isc_deadlock` instead of `isc_lock_conflict`.
+
+In fact, the complete error stack previously contained `{isc_lock_conflict, isc_deadlock, isc_update_conflict}`, whereas it now contains, more correctly, `{isc_deadlock, isc_update_conflict}`.
+
+However, the `GDSCODE` system variable returns the first error element, thus causing possible compatibility issues.
+Be sure that, besides `isc_lock_conflict`, your error handlers for updates and deletes also check for the other error codes, `isc_deadlock` and `isc_update_conflict`.
+
+[[rnfb30-compat-remote]]
+== Remote Client Recognition
+
+From this version forward, the remote client address for TCPv4 and TCPv6 protocols  in `MON$ATTACHMENTS.MON$REMOTE_ADDRESS` includes the port number, separated from the IP address with a slash:
+
+[listing]
+----
+<IP address>/<port>
+----
+
+A new column in that table also reports the host name of the remote client.
+
+For details, see <<rnfb3-apiods-montables-reporting,Changes to Client Address Reporting>> in the chapter entitled _Changes to the Firebird API and ODS_.

@@ -1,0 +1,329 @@
+[[rnfb30-util]]
+= Monitoring & Command-line Utilities
+
+No new monitoring features or other utilities are released with Firebird 3.0.
+Existing features have undergone a few improvements.
+
+[[rnfb30-util-mon]]
+== Monitoring
+Dmitry Yemanov
+
+Several changes have been made to the set of virtual tables storing the monitoring information.
+These are listed in the <<rnfb3-apiods-montables-chgs,System Tables>> section of Chapter 4, Changes to the Firebird API and ODS.
+
+.Remote Client Recognition
+[NOTE]
+====
+From this version forward, the port number of the remote client address for TCPv4 and TCPv6 protocols is included in `MON$ATTACHMENTS.MON$REMOTE_ADDRESS`.
+A new column in that table also reports the host name of the remote client.
+For details, see <<rnfb3-apiods-montables-reporting,Changes to Client Address Reporting>> in the same chapter.
+====
+
+[[rnfb30-util-trace]]
+== Tracing
+
+Latest improvements to the Trace functions include:
+
+* Trace output now supports showing the explained plan.
+See Tracker http://tracker.firebirdsql.org/browse/CORE-4451[CORE-4451] (V. Khorsun).
+* Tracing execution of stored functions.
+See Tracker http://tracker.firebirdsql.org/browse/CORE-4345[CORE-4345] (V. Khorsun).
+* Trace no longer ignores the fact that users from different security databases are actually different users.
+It now "`knows`" in which security database a particular SYSDBA was authenticated or where a privileged user's elevated privileges are established.
+It is no longer possible, for example, for a user named SYSDBA to access `security3.fdb` if it is not currently authenticated for that access.
+See See Tracker http://tracker.firebirdsql.org/browse/CORE-4851[CORE-4851] (A. Peshkov).
+
+[[rnfb30-util-gbak]]
+== gbak
+
+[[rnfb30-util-gbak-skipdata]]
+=== New "`Skip Data`" Backup Option
+Alex Peshkov
+
+_gbak_ has a new option switch -- `-skip_d(ata)` to ignore the data from specific tables during a backup.
+
+The switch `-skip_d(ata)` accepts a regular expression as its argument.
+For example, to skip two tables in the employee database (aliased here as 'employee'):
+
+[source]
+----
+gbak -skip_d '(sales|customer)' employee e1.fbk
+----
+
+[TIP]
+====
+The regex used is the SQL one -- the same one that is used for Firebird's `SIMILAR TO` searches.
+A guide is available in the https://www.firebirdsql.org/file/documentation/html/en/refdocs/fblangref25/firebird-25-language-reference.html#fblangref25-commons-predsiimilarto[Common Language Elements] chapter of the Firebird 2.5 Language Reference, and in the DML chapter of the version 2.5 release notes available at the https://www.firebirdsql.org/file/documentation/release_notes/html/en/2_5/rnfb25-dml.html#rnfb25-dml-regex[Firebird web site].
+====
+
+[[rnfb30-util-gbak-longfilename]]
+=== Long Names for Log Files
+Alex Peshkov
+
+This improvement allows the _gbak_ log to take an extra-long name without encountering the message "`Attempt to store 256 bytes in a clumplet`".
+
+[[rnfb30-util-gbakstats]]
+=== Run-time Statistics in Verbose Output
+Vlad Khorsun
+
+_gbak_ can now show some runtime statistics in its verbose output.
+A new command-line switch `-STATISTICS` has been added to specify which statistics items should be produced.
+Currently, four items are implemented:
+
+[[rnfb30-util-tbl-gbakstats]]
+.Arguments for _gbak_ STATISTICS Output
+[cols="<2,^1m,<3", options="header", stripes="none"]
+|===
+<| Item
+^| Argument
+<| Data Reported
+
+|Total time
+|T
+|Time elapsed since the _gbak_ process started, in seconds and milliseconds
+
+|Time delta
+|D
+|Time elapsed since the previous line of output, in seconds and milliseconds
+
+|Page reads
+|R
+|Number of page reads since the previous line of output, integer
+
+|Page writes
+|W
+|Number of page writes since the previous line of output, integer
+|===
+
+At least one item is mandatory for the `STATISTICS` switch.
+The arguments are case-insensitive and they can be in any order.
+For example, "```TDRW```" and "```WdrT```" are equivalent.
+
+The `STATISTICS` switch will have no effect if the `-v[er]` switch is not specified.
+
+Verbose output with `STATISTICS` includes two special lines:
+
+* a line with headers for the specified statistics, printed before the other statistics lines:
++
+[source]
+----
+gbak: time delta reads writes
+----
+* a line with total statistics summaries for the specified items, printed after the end of the main process:
++
+[source]
+----
+gbak: 46.684 0.002 171 82442 total statistics
+----
+
+[NOTE]
+====
+The feature is fully supported in the Services API with <<rnfb30-api-spb-gbakstats,a new item in the SPB>> (Services Parameter Block).
+The _fbsvcmgr_ utility also supports the SPB implementation.
+====
+
+.Examples
+[loweralpha]
+. Show total time since _gbak_ start:
++
+[source]
+----
+gbak -v -STATISTICS T -b employee emp_bkp.fbk -y log21.log
+----
+. Show delta time and page reads:
++
+[source]
+----
+... -STAT DR ...
+----
+. Show all statistics items:
++
+[source]
+----
+... -sta TDRW ...
+----
+. Sample of _gbak_ verbose output:
++
+[source]
+----
+firebird>gbak -v -stat tdrw -r a.fbk a.fdb
+gbak:opened file a.fbk
+gbak: time delta reads writes
+gbak: 0.173 0.173 0 0 transportable backup -- data in XDR format
+gbak: 0.175 0.002 0 0 backup file is compressed
+gbak: 0.177 0.001 0 0 backup version is 10
+gbak: 0.270 0.092 0 650 created database a.fdb, page_size 8192 bytes
+gbak: 0.273 0.002 0 2 started transaction
+...
+gbak: 18.661 0.002 0 0 restoring data for table TEST1
+gbak: 18.698 0.036 0 0 10000 records restored
+...
+gbak: 25.177 0.036 0 0 1770000 records restored
+gbak: 25.220 0.042 0 1633 1780000 records restored
+...
+gbak: 38.702 0.002 0 0 restoring privilege for user SYSDBA
+gbak: 38.707 0.004 22 0 creating indexes
+gbak: 45.015 6.308 82 38394 activating and creating deferred index T2_VAL
+...
+gbak: 46.682 0.008 4 13 finishing, closing, and going home
+gbak: 46.684 0.002 171 82442 total statistics
+gbak:adjusting the ONLINE and FORCED WRITES flags
+----
+
+.See also
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-1999[CORE-1999]
+
+[[rnfb30-util-gbak-returncode]]
+=== New Return Code
+Alex Peshkov
+
+From version 3.0.1, _gbak_ returns a non-zero result code when restore fails on creating and activating a deferred user index.
+
+[[rnfb30-util-gsec]]
+== gsec
+
+The _gsec_ utility is deprecated from Firebird 3 forward.
+This means you are encouraged to use the new <<rnfb30-access-sql,SQL features for managing access>> described in Chapter 7, Security, in preference to existing equivalents provided by _gsec_.
+
+[IMPORTANT]
+====
+_gsec_ will continue to work with `security3.fdb`.
+However, it does not work with alternative security databases.
+====
+
+[[rnfb30-util-isql]]
+== isql
+
+[[rnfb30-util-isql-setexplain]]
+=== SET EXPLAIN Extensions for Viewing Detailed Plans
+Dmitry Yemanov
+
+A new `SET` option is added: `SET EXPLAIN [ON | OFF]`.
+It extends the `SET PLAN` option to report the <<rnfb30-dml-planoutput,explained plan>> instead of the standard one.
+
+If `SET PLAN` is omitted, then `SET EXPLAIN` turns the plan output on.
+`SET PLANONLY` works as in previous versions.
+
+.Usage options
+`SET PLAN`::
+simple plan + query execution
+
+`SET PLANONLY`::
+simple plan, no query execution
+
+`SET PLAN` + `SET EXPLAIN`::
+explained plan + query execution
+
+`SET PLAN` + `SET EXPLAIN` + `SET PLANONLY`::
+explained plan, no query execution
+
+`SET EXPLAIN`::
+explained plan + query execution
+
+`SET EXPLAIN` + `SET PLANONLY`::
+explained plan, no query execution
+
+[[rnfb30-util-isql-extract]]
+=== Metadata Extract
+Claudio Valderrama C.
+
+The metadata extract tool (`-[e]x[tract]` switch) was improved to create a script that takes the dependency order of objects properly into account.
+
+A label has also been added, reflecting the _deterministic_  flag for stored functions.
+(A. dos Santos Fernandes)
+
+[[rnfb30-util-isql-input]]
+=== Path to INPUT Files
+Adriano dos Santos Fernandes
+
+The `INPUT` command will now use a relative path based on the directory of the last-opened, unclosed file in the chain to locate the next file.
+
+[[rnfb30-util-isql-cmdbuffer]]
+=== Command Buffer Size Increase
+Adriano dos Santos Fernandes
+
+The size of the _isql_ command buffer has increased from 64 KB to 10 MB to match the new engine limits.
+See Tracker ticket http://tracker.firebirdsql.org/browse/CORE-4148[CORE-4148].
+
+[[rnfb30-util-isql-deterministic]]
+=== _Deterministic_ Label for Stored Functions
+Adriano dos Santos Fernandes
+
+A label was added in the `SHOW FUNCTION` command reflecting the _deterministic_ flag for stored functions.
+
+See Tracker item http://tracker.firebirdsql.org/browse/CORE-4940[CORE-4940].
+
+[[rnfb30-util-fblockprint]]
+== fb_lock_print
+
+[[rnfb30-util-fblockprint-inputargs]]
+=== Input Arguments
+Dmitry Yemanov
+
+_fb_lock_print_ now accepts 32-bit integers as the input arguments for seconds and intervals.
+Previously they were limited to `SMALLINT`.
+
+[[rnfb30-util-fblockprint-usability]]
+=== Usability Improvements
+Vlad Khorsun
+
+A few other small improvements:
+
+. More detailed usage help is available from the command line (`-help`).
+. Events history and list of owners are no longer output by default: they may be requested explicitly if required.
+Header-only is the new default.
+. New `-o[wners]` switch to print only owners (locks) with pending requests
+
+[[rnfb30-util-gfix]]
+== gfix
+
+[[rnfb30-util-gfix-nolinger]]
+=== -NoLinger Switch
+Alex Peshkov
+
+_gfix_ has a new switch `-NoLinger` to provide a one-off override to the `LINGER` setting of a database.
+
+For information regarding `LINGER`, see <<rnfb30-ddl-enhance-linger,the write-up in the DDL chapter>>.
+
+[[rnfb30-util-gfix-validation]]
+=== Improvements to Validation Messages
+Vlad Khorsun
+
+* Critical validation messages are now split from minor ones
+* The table name is now returned in the text of validation contraint error messages, to help identify the error context
+
+[[rnfb30-util-other]]
+== Other Tweaks
+
+Some implementation annoyances were cleared up in several utilities.
+
+[[rnfb30-util-other-all]]
+=== All Command-line Utilities
+
+[[rnfb30-util-other-dbpath]]
+==== Resolution of Database Path
+Alex Peshkov
+
+All utilities resolve database paths in `databases.conf` when they need to access a database file directly.
+But not all of them would follow the same rules when expanding a database name.
+Now, they do.
+
+[[rnfb30-util-other-helpversion]]
+==== Help and Version Information
+Claudio Valderrama C.
+
+All command-line utilities except _gpre_ and _qli_ now present help and version information in a unified and coherent way.
+
+No info yet at http://tracker.firebirdsql.org/browse/CORE-2540[CORE-2540].
+
+[[rnfb30-util-other-hardcodedmsg]]
+=== Hard-coded Messages Replaced
+Claudio Valderrama C.
+
+Hard-coded messages were replaced with the regular parameterised-style ones in _tracemanager_ and _nbackup_.
+
+[[rnfb30-util-other-switchcleanup]]
+=== Arbitrary Switch Syntax Clean-up
+Claudio Valderrama C.
+
+Switch options in _qli_ and _nbackup_ were made to check the correctness (or not) of the abbreviated switch options presented.

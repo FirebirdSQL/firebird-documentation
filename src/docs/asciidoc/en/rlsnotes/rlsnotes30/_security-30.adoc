@@ -1,0 +1,1137 @@
+[[rnfb30-security]]
+= Security
+
+Security improvements in Firebird 3 include:
+
+[[rnfb30-security-userlist]]
+== Location of User Lists
+Alex Peshkov
+
+http://tracker.firebirdsql.org/browse/CORE-685[CORE-685]
+
+Firebird now supports an unlimited number of security databases.
+Any database may act as a security database and can be a security database for itself.
+
+Use `databases.conf` to configure a non-default security database.
+This example configures `/mnt/storage/private.security.fdb` as the security database for the first and second databases:
+
+[source]
+----
+first = /mnt/storage/first.fdb
+{
+   SecurityDatabase = /mnt/storage/private.security.fdb
+}
+
+second = /mnt/storage/second.fdb
+{
+   SecurityDatabase = /mnt/storage/private.security.fdb
+}
+----
+
+Here we use a third database as its own security database:
+
+[source]
+----
+third = /mnt/storage/third.fdb
+{
+   SecurityDatabase = third
+}
+----
+
+[NOTE]
+====
+The value of the <<rnfb30-fbconf-securitydatabase,SecurityDatabase>> parameter can be a database alias or the actual database path.
+====
+
+[[rnfb30-security-createcustomdb]]
+=== Creating an Alternative Security Database
+
+To start using a separate, non-default security database, the first step is to create it, unless it already exists.
+An embedded _isql_ connection is used:
+
+[source]
+----
+> isql -user sysdba
+SQL> create database '/mnt/storage/private.security.fdb';
+----
+
+Now connect to any database which will be served by the security database you are currently preparing, in order to create its SYSDBA user:
+
+[source]
+----
+SQL> connect first;
+SQL> create user sysdba password 'sysdba-in-private-security-password';
+SQL> commit;
+SQL> exit;
+----
+
+[[rnfb30-security-encryption]]
+== Database Encryption
+Alex Peshkov
+
+http://tracker.firebirdsql.org/browse/CORE-657[CORE-657]
+
+With Firebird 3 comes the ability to encrypt data stored in database.
+Not all of the database file is encrypted: just data, index and blob pages.
+
+To make it possible to encrypt a database you need to obtain or write a database crypt plug-in.
+
+[NOTE]
+====
+The sample crypt plug-in in `examples/dbcrypt` does not perform real encryption, it is merely a sample of how to go about it.
+====
+
+[[rnfb30-security-encryption-secretkey]]
+=== Secret Key
+
+The main problem with database encryption is how to store the secret key.
+Firebird provides a helper to transfer that key from the client but that does not imply that storing the key on a client is the best way: it is no more than a possible alternative.
+A very bad option is to keep the key on the same disk as the database.
+
+[[rnfb30-security-encryption-tasks]]
+=== Encryption Tasks
+
+To separate encryption and key access efficiently, a database crypt plug-in is split into two parts: encryption itself and the secret key holder.
+This may be an efficient approach for third-party plug-ins when you want to use some good encryption algorithm, but you have your own secret way to store a key.
+
+[[rnfb30-security-encryption-encrypt]]
+==== Encrypting a Database
+
+Once you have decided on a crypt plug-in and a key, you can encrypt the database with:
+
+[source]
+----
+ALTER DATABASE ENCRYPT WITH <PLUGIN_NAME> [ KEY <key-name> ]
+----
+
+The optional `KEY` argument allows the key name to be passed in the command, if the plug-in requires it.
+
+Encryption will start right after this statement commits and will be performed in background.
+Normal database activity is not disturbed during encryption.
+
+[[rnfb30-security-encryption-monitoring]]
+===== Monitoring Encryption
+
+During encryption, progress can be monitored using the field `MON$CRYPT_PAGE` in the pseudo-table `MON$DATABASE`.
+For example:
+
+[source]
+----
+select MON$CRYPT_PAGE * 100 / MON$PAGES
+  from MON$DATABASE
+----
+
+The example query will output the percentage of encryption completed so far.
+
+You can also watch the database header page using repeated calls to `gstat -e`.
+If the database has been encrypted, `gstat -h` can also provide limited information about encryption state.
+
+[[rnfb30-security-encryption-decrypt]]
+==== Decrypting a Database
+
+To decrypt the database  do:
+
+[source]
+----
+ALTER DATABASE DECRYPT
+----
+
+For Linux, an example plug-in named `libDbCrypt_example.so` can be found in the `/plugins/` sub-directory.
+
+[[rnfb30-security-new-authentication]]
+== New Authentication Method in Firebird 3
+Alex Peshkov
+
+All of the code related to authentication is plug-in-enabled.
+Though Firebird performs the generic work, like extracting authentication data from a network message or putting it into such messages as appropriate, all the activity related to calculating hashes, storing data in databases or elsewhere, using specific prime numbers and so on is done by plug-ins.
+
+Firebird 3 has new method of user authentication implemented as a default plugin: secure remote password (SRP) protocol.
+Quoting from https://en.wikipedia.org/wiki/Secure_Remote_Password_protocol[Wikipedia]:
+
+____
+The SRP protocol creates a large private key shared between the two parties in a manner similar to Diffie-Hellman key exchange, then verifies to both parties that the two keys are identical and that both sides have the user's password.
+In cases where encrypted communications as well as authentication are required, the SRP protocol is more secure than the alternative SSH protocol and faster than using Diffie-Hellman key exchange with signed messages.
+It is also independent of third parties, unlike Kerberos.
+____
+
+SSH needs key pre-exchange between server and client when placing a public key on the server to make it work.
+SRP does not need that.
+All a client needs are login and password.
+All exchange happens when the connection is established.
+
+Moreover, SRP is resistant to "`man-in-the-middle`" attacks.
+
+[IMPORTANT]
+====
+Use of the new authentication method is not compatible with old security databases and passwords from them.
+However, an upgrade procedure is available to migrate users from a Firebird 2.x `security2.fdb` database.
+For instructions, see <<rnfb30-compat-upgrade-secdb,Upgrading a v.2.x Security Database>> in the Compatibility chapter.
+
+Use of an old security database can be supported with the <<rnfb30-security-plugin,Legacy_Auth>> authentication plug-in, but this kills the security benefits of Firebird 3.
+
+The Firebird 3 client is built to make it possible to talk to old servers with the default configuration.
+====
+
+[[rnfb30-security-ssltls]]
+=== SSL/TLS Support
+
+http://tracker.firebirdsql.org/browse/CORE-3251[CORE-3251]
+
+So, the answer to the question "`Does Firebird use SSL/TLS for password validation?`" is "`yes and no`".
+The "`No`" answer comes because, by default, SSL is not used.
+That is due to a minor licensing incompatibility between Firebird and OpenSSL, the most popular SSL implementation.
+
+The "`Yes`" applies because anyone is free to write an authentication plug-in that uses SSL and TLS.
+
+[[rnfb30-security-password]]
+=== Increased Password Length
+
+http://tracker.firebirdsql.org/browse/CORE-1898[CORE-1898].
+
+Implementation of SRP in our plugin has increased the password length from 8 bytes to 20 or more.
+Because of the use of SHA1 for hashes, maximum security is provided for passwords up to 20 characters in length.
+Longer passwords can be used without restriction but there is a remote possibility of hash collisions between passwords that differ beyond the 20th byte.
+Just be aware of the possibility that any password longer than 20 characters password could share the same hash with some shorter password so, theoretically, they could be attacked using brute force.
+
+A custom SRP plug-in could be built quite easily, using a hash algorithm that would guarantee unique hashes for longer passwords.
+
+[TIP]
+====
+The increased length limit means the default SYSDBA password in Windows and MacOS installations is the full 'masterkey' string (9 chars), no longer 'masterke' (8 chars) as in older versions!
+====
+
+Support for the `LegacyHash` and `Authentication` parameters in `firebird.conf` has been dropped.
+`Authentication` is overtaken by an `AuthServer` parameter in `firebird.conf` or elsewhere.
+
+[[rnfb30-security-plugin]]
+=== The Authentication Plug-in
+
+The Authentication plug-in comprises three parts:
+
+[horizontal]
+Client::
+prepares data at the client to be sent to server on client
+
+Server::
+validates password for correctness
+
+User{nbsp}Manager::
+adds, modifies and deletes users on the server.
+It is not needed if some external authentication method, such as Windows trusted authentication, is used.
+
+All three parts are actually separate plug-ins which should be configured separately in `firebird.conf`.
+Let's look at an example of configuring a server to accept connections from old clients.
+The default setting are:
+
+[source]
+----
+AuthServer = Srp, Win_Sspi
+UserManager = Srp
+----
+
+To enable access from old clients, AuthServer needs to be changed:
+
+[source]
+----
+AuthServer = Srp, Win_Sspi, Legacy_Auth
+----
+
+If we also want to manage the list of users in the old format we must add:
+
+[source]
+----
+UserManager = Legacy_UserManager
+----
+
+[NOTE]
+====
+Setting `UserManager` to only `Legacy_UserManager` will disable to option to manage `Srp` users.
+See the next section for details on allowing both to be managed.
+====
+
+[[rnfb30-security-multiusermanagers]]
+=== Multiple User Managers
+
+Multiple user managers can be enumerated in `firebird.conf`.
+The first member of the list of user managers is the default.
+Selecting from `SEC$USERS` would produce something like the following:
+
+[source]
+----
+SQL> select SEC$USER_NAME, SEC$PLUGIN from sec$users;
+
+SEC$USER_NAME                   SEC$PLUGIN
+=============================== ===============================
+SYSDBA                          Legacy_UserManager
+SYSDBA                          Srp
+QA_USER1                        Srp
+QA_USER2                        Srp
+QA_USER3                        Srp
+QA_USER4                        Srp
+QA_USER5                        Srp
+GUEST                           Srp
+SHUT1                           Srp
+SHUT2                           Srp
+QATEST                          Srp
+----
+
+There might well be two users named SYSDBA in such a list, because each user manager has its own SYSDBA.
+
+[NOTE]
+====
+* All user management commands can have the `USING PLUGIN` clause, whose purpose is to enable selection of a particular `UserManager` plug-in from the list in `firebird.conf`.
+* The default user manager in `firebird.conf` is `Srp`.
+If you need to manage legacy logins, add `Legacy_UserManager` to `UserManager`, e.g. `UserManager = Legacy_UserManager,Srp`.
+* `UserManager` can be configured at database level, in `databases.conf`.
+====
+
+[[rnfb30-security-srp-patch304]]
+=== V. 3.0.4 SRP Security Patch
+Alex Peshkov; Tony Whyman
+
+Review of the Firebird SRP implementation in terms of the NIST guidance on the use of SHA-1 appears to indicate that most uses of SHA-1 continue to be permitted except for its use in generating the client proof.
+
+The SHA-256 message digest may be used instead of SHA-1 for generating the client proof.
+For compatibility, SHA-1 remains the default for Firebird 3 but SHA-256 is available as an alternative from version 3.0.4 onward, until the decision is taken to make it the default.
+
+[[rnfb30-srp-update-plugins]]
+==== Plug-Ins
+
+Separate `AuthServer` and `AuthClient` plugins are available for each supported message digest, with the following names:
+
+[horizontal]
+Srp:: SHA-1 Client Proof
+Srp256:: SHA-256 Client Proof
+
+Both client and server must have an SRP authentication plug-in in common for authentication of a user's password to succeed.
+
+[[rnfb30-srp-update-details]]
+==== Configuration Details
+
+The SRP UserManager is still called "`Srp`" and it is unchanged.
+Neither the user manager nor the security database is affected by the choice of message digest used to compute the client proof.
+
+The default configuration file entries in `firebird.conf` for `AuthServer` and `AuthClient` are now:
+
+[cols="3m,1", frame="none", grid="none", stripes="none"]
+|===
+| AuthServer = Srp
+| All platforms
+
+| AuthClient = Srp, Srp256, Legacy_Auth
+| POSIX clients
+
+| AuthClient = Srp, Srp256, Win_Sspi, Legacy_Auth
+| Windows clients
+|===
+
+With these settings, a Firebird client can use SRP to authenticate using either SHA-256 or SHA-1 to compute the client proof and is thus backwards-compatible with Firebird 3 servers.
+
+.Beware!
+[WARNING]
+====
+A deployment where both clients and server support both the legacy `Srp` (using SHA-1) and the `Srp256` SHA-256 authentication plug-ins should be avoided, as it might enable an attacker to disrupt the `Srp256` authentication, thereby forcing Firebird to use the weaker `Srp` SHA-1 client proof without the user being aware of it.
+====
+
+For a more detailed description, please read the document `/doc/README.SecureRemotePassword.html` in your Firebird 3.0.4 installation.
+
+[[rnfb30-srp-update-nist]]
+===== NIST Compliance
+
+If you need NIST compliance and/or higher security you can set
+
+[source]
+----
+AuthServer = Srp256
+----
+
+This will break compatibility with pre-3.0.4 clients.
+
+[[rnfb30-security-wirecrypt]]
+== "Over the wire" Connection Encryption
+Alex Peshkov
+
+http://tracker.firebirdsql.org/browse/CORE-672[CORE-672] ...
+
+All network traffic in Firebird 3 may be optionally encrypted.
+As with authentication, plug-ins are used for encrypting and decrypting network traffic.
+
+The default plug-in is `arc4` (Alleged RC4).
+It is eminently possible to write your own crypt plug-in to encrypt data travelling over the wire.
+Whatever you use for your plug-in, it is necessary to use the Firebird 3 version of the `fbclient` library.
+
+[[rnfb30-security-wirecrypt-sessionkey]]
+=== The Secret Session Key
+
+The challenge with use of a symmetric cypher is where to get a key for it.
+Firebird assumes that such a key, also called a _secret session key_, is produced by the authentication plug-in at the connection establishment phase.
+SRP meets this requirement just fine by producing a cryptographically strong session key.
+
+[TIP]
+====
+If you want to use encryption with an authentication plug-in that does not provide the session key and agree to use some pre-defined key, say, one stored at the client side as a file and on the server in the security database for that specific client, then make that plug-in inform Firebird that it does have a session key.
+====
+
+[[rnfb30-security-wirecrypt-sessionkey-specs]]
+==== Specifications for the Key
+
+Specifications for the key's size, its format, how it is calculated and verified, etc., are not generalised.
+The key's format and other details are specific to the wire encryption/decryption plug-in.
+
+In particular, RC4 uses a symmetric key which can have any length, while the key produced by SRP has a length of 20 bytes.
+That key is a SHA-1 hash on SRP's session key and some other SRP-related things, such as user name.
+
+[[rnfb30-security-wirecrypt-sessionkey-export]]
+===== Exporting a Key from an Authentication Plug-in
+
+To export a key from your authentication plug-in, use the `ServerBlock` or the `ClientBlock` interface.
+One of these is always passed to the server/client part of an authentication plug-in.
+Both have a "`newKey`" method that returns a pointer to the `CryptKey` interface.
+That interface in turn has the methods `setSymmetric` and `setAsymmetric` for storing the symmetric or asymmetric key in the interface, i.e., exporting that key.
+
+[[rnfb30-security-mapping]]
+== Mapping of Users to Objects
+Alex Peshkov
+
+Firebird 3 introduces new SQL privileges to map access between users and groups and security objects and between databases.
+See Tracker item http://tracker.firebirdsql.org/browse/CORE-1900[CORE-1900].
+
+With Firebird now supporting multiple security databases, some new problems arise that could not occur with a single, global security database.
+Clusters of databases using the same security database were efficiently separated.
+Mappings provide the means to achieve the same efficiency when multiple databases are using their own security databases.
+Some cases require control for limited interaction between such clusters.
+For example:
+
+* when `EXECUTE STATEMENT ON EXTERNAL DATA SOURCE` requires some data exchange between clusters
+* when server-wide SYSDBA access to databases is needed from other clusters, using services.
+* comparable problems that have existed on Firebird 2.1 and 2.5 for Windows, due to support for Trusted User authentication: two separate lists of users -- one in the security database and another in Windows, with cases where it was necessary to relate them.
+An example is the demand for a `ROLE` granted to a Windows group to be assigned automatically to members of that group.
+
+The single solution for all such cases is *mapping* the login information assigned to a user when it connects to a Firebird server to internal security objects in a database -- `CURRENT_USER` and `CURRENT_ROLE`.
+
+[[rnfb3-security-mapping-rule]]
+=== The Mapping Rule
+
+The mapping rule consists of four pieces of information:
+
+. mapping scope
+-- whether the mapping is local to the current database or whether its effect is to be global, affecting all databases in the cluster, including security databases
+. mapping name
+-- an SQL identifier, since mappings are objects in a database, like any other
+. the object *FROM* which the mapping maps.
+It consists of four items:
+** The authentication source 
+*** plug-in name *or*
+*** the product of a mapping in another database *or*
+*** use of server-wide authentication *or*
+*** any method
+** The name of the database where authentication succeeded
+** The name of the object from which mapping is performed
+** The *type* of that name -- user name | role | OS group -- depending upon the plug-in that added that name during authentication.
++
+Any item is accepted but only *type* is required.
+. the object *TO* which the mapping maps.
+It consists of two items:
+** The name of the object *TO* which mapping is performed
+** The *type*, for which only `USER` or `ROLE` is valid
+
+
+[[rnfb30-security-mapping-ddl]]
+=== Syntax for MAPPING Objects
+
+Mappings are defined using the following set of DDL statements:
+
+[listing,subs=+quotes]
+----
+{CREATE | ALTER | CREATE OR ALTER} [GLOBAL] MAPPING _name_
+  USING {
+    PLUGIN _name_ [IN _database_] | ANY PLUGIN [IN _database_ | SERVERWIDE] |
+      MAPPING [IN _database_] | '*' [IN _database_]}
+  FROM {ANY _type_ | _type_ _name_}
+  TO {USER | ROLE} [_name_]
+  --
+DROP [GLOBAL] MAPPING _name_
+----
+
+.Description
+* Any mapping may be tagged as `GLOBAL`.
++ 
+Global mapping works best if a Firebird 3 or higher version database is used as the security database.
+If you plan to use another database for this purpose -- using your own provider, for example -- then you should create a table in it named `RDB$MAP`, with the same structure as `RDB$MAP` in a Firebird 3 database and with SYSDBA-only write access.
++
+.Beware!
+[WARNING]
+====
+If global and local mappings of the same name exist then know and make it known that they are different objects!
+====
+* The `CREATE`, `ALTER` and `CREATE OR ALTER` statements use the same set of options.
+The name (identifier) of a mapping is used to identify it, as in other DDL command sets.
+* The `USING` clause has a highly complicated set of options:
+** an explicit plug-in name means it will work only for that plug-in
+** it can use any available plug-in;
+although not if the source is the product of a previous mapping
+** it can be made to work only with server-wide plug-ins
+** it can be made to work only with previous mapping results
+** it can be left to use any method, using the asterisk (`{asterisk}`) argument
+** it can be provided with the name of the database that originated the mapping for the `FROM` object
++
+[NOTE]
+====
+This argument is not valid for mapping server-wide authentication.
+====
+* The `FROM` clause takes a mandatory argument, the _type_ of the object named.
++
+-> When mapping names from plug-ins, _type_ is defined by the plug-in. +
+-> When mapping the product of a previous mapping, _type_ can be only `USER` or `ROLE`. +
+-> If an explicit name is provided, it will be taken into account by this mapping +
+-> Use the `ANY` keyword to work with any name of the given type.
+* In the `TO` clause, the `USER` or `ROLE` to which the mapping is made must be specified.
+_name_ is optional: if it is not supplied, the name from the originating mapping is used.
+
+[float]
+==== Examples
+
+The examples use the `CREATE` syntax.
+Usage of `ALTER` is exactly the same and the usage of `DROP` should be obvious.
+
+. Enable use of Windows trusted authentication in all databases that use the current security database:
++
+[source]
+----
+CREATE GLOBAL MAPPING TRUSTED_AUTH
+  USING PLUGIN WIN_SSPI
+  FROM ANY USER
+  TO USER;
+----
+. Enable SYSDBA-like access for windows admins in current database:
++
+[source]
+----
+CREATE MAPPING WIN_ADMINS
+  USING PLUGIN WIN_SSPI
+  FROM Predefined_Group
+  DOMAIN_ANY_RID_ADMINS
+  TO ROLE RDB$ADMIN;
+----
++
+[NOTE]
+====
+The group `DOMAIN_ANY_RID_ADMINS` does not exist in Windows, but such a name would be added by the `Win_Sspi` plug-in to provide exact backwards compatibility.
+====
+. Enable a particular user from another database to access the current database with another name:
++
+[source]
+----
+CREATE MAPPING FROM_RT
+  USING PLUGIN SRP IN "rt"
+  FROM USER U1 TO USER U2;
+----
++
+[IMPORTANT]
+====
+Database names or aliases will need to be enclosed in double quotes on operating systems that have case-sensitive file names.
+====
+. Enable the server's SYSDBA (from the main security database) to access the current database.
+(Assume that the database is using a non-default security database):
++
+[source]
+----
+CREATE MAPPING DEF_SYSDBA
+  USING PLUGIN SRP IN "security.db"
+  FROM USER SYSDBA
+  TO USER;
+----
+. Ensure users who logged in using the legacy authentication plug-in do not have too many privileges:
++
+[source]
+----
+CREATE MAPPING LEGACY_2_GUEST
+  USING PLUGIN legacy_auth
+  FROM ANY USER
+  TO USER GUEST;
+----
+
+[[rnfb30-security-mapping-legacy]]
+=== Legacy Mapping Rule
+
+Previous versions of Firebird have one hard-coded global default rule: users authenticated in the security database are always mapped into any database one-to-one.
+It is a safe rule: it makes no sense for a security database not to trust itself!
+
+For backward compatibility this rule is retained in Firebird 3.
+
+Generic mapping is used to set the rule defining the user name under which the user accesses a database when performing a request from a database using one security database to a database using a different one, or when server-wide authentication, such as `Win_Sspi`, is used.
+The rule comes into action whenever the Firebird engine is processing the authentication block associated with a request to connect to a database.
+
+[[rnfb30-security-mapping-trusted]]
+==== Mapping Trusted Users to CURRENT_USER and CURRENT_ROLE
+
+Each record in an authentication block contains the name of the plug-in that added it, the type of record (user name, OS group, role, etc.), the name of an object of the specified type (user SYSDBA, role PUBLIC, group DOMAIN_ADMINS) and the name of the security database in which authentication took place.
+Under server-wide authentication, the security database name could be `NULL`.
+The mapping rule assesses all these parameters to define the value to assign to `CURRENT_USER` and `CURRENT_ROLE` in the resulting attachment.
+
+In Firebird 3, an explicit mapping must exist in systems with server-wide "`trusted user`" authentication enabled, including `Win_Sspi` authentication on Windows, in order for the system user's user name to be assigned to the context variables `CURRENT_USER` and `CURRENT_ROLE`.
+
+[[rnfb30-login-international]]
+== International Character Sets for User Accounts
+Alex Peshkov
+
+For creating user names and passwords, the new authentication plug-ins bring a degree of flexibility with regard to character sets.
+To make use of international credentials support, it is necessary to use SRP or any other set of authentication plug-ins that supports the new model.
+
+.Advice
+[WARNING]
+====
+Use of the legacy authentication plug-in is not recommended, except where it is necessary for connecting a client to a server version older than Firebird 3.
+Legacy authentication has never supported international characters in user names and passwords.
+This restriction is unchanged for Firebird 3 legacy authentication.
+====
+
+When writing authentication plug-ins it is unnecessary to be concerned about character sets, since all data exchange with the new plug-ins is done using UTF8.
+Just be prepared to handle user names and passwords that contain characters beyond the range of the 7-bit ASCII character subset.
+
+[[rnfb30-login-intl-logins]]
+=== Conditions for Non-ASCII Logins
+
+The simple rule to follow for using non-ASCII user names and passwords is that the character set and code page selected in the client for SQL input must match those in which the credentials are stored on the server and, obviously, the credentials must be supplied in the specified character set.
+On POSIX terminals and most GUI clients this condition is satisfied.
+However, there are three fairly common situations where problems could arise: 
+
+. connecting via a Windows text console with the default OEM code page selected
+. omitting the `SET NAMES` command in _isql_
+. running scripts
+
+Examining these situations in more detail: 
+
+. All operating systems except Windows use same the same character set (code page, locale), by default, for all programs.
+In Windows, for historical reasons, GUI applications use an ANSI code page, but applications started on the command-line console emulator use the corresponding OEM code page.
+As an example, the Russian version of Windows is uses code page 1251 (ANSI Russian) for GUI applications and code page 866 (OEM Russian) for command-line applications.
++ 
+The Firebird client always uses the ANSI code page.
+In order to provide the fully functional behaviour of a console application, the console must be switched to the ANSI codepage (`chcp 1251` for our Russian example).
++ 
+The Windows weirdness does not stop there.
+Parameters passed to a Windows application, but not to 16-bit DOS, are always passed in the ANSI encoding, even if it was started from a command-line console running in the default OEM mode.
+This might give the illusion that Firebird utilities run correctly out-of-the-box on an OEM console.
+However, they run correctly only as far as the international information supplied in a command line, e.g., 
++
+[source]
+----
+C:> isql server:database -user <intl-login> -pas <intl-password>
+----
++
+This works.
+However, as soon as you try to use a `CONNECT` or `CREATE DATABASE` command inside _isql_,  or to enter the password from the OEM terminal, you will encounter problems.
+This is inconvenient and we apologise for that.
+The OEM console issues are in the plan to be fixed in a future version.
+
+. Currently, command-line parameters and the `CONNECT` and `CREATE DATABASE` commands in _isql_ are not affected by `SET NAMES` or the `-CHarset` parameter.
+All the other commands, particularly `CREATE/ALTER/DROP USER`, are affected by them and thus, the character set must be specified.
+This is very important because, in future versions, the plan is to make all usage of international credentials depend on a character set that is explicitly specified.
++ 
+Take careful note of one very confusing use case, an attempt to set a non-ASCII password for the current user: 
++
+[source]
+----
+SQL> alter current user set password '<intl-password>';
+----
++
+This command will succeed, even if the character set has not been set correctly.
+However, a subsequent attempt to log in with the modified password will fail.
+
+. In scripts, the first requirement is to set the correct character set for the SQL server that is to run the script, using a `SET NAMES` statement.
+For Firebird 3, it is essential to pay attention to the locale and code page settings in the environment in which the script is to execute.
+They must match the character set that is set in the script.
++ 
+Setting the locale correctly affects particularly the credentials passed to the server when attaching to it.
+The rest of the script should proceed successfully even without configuring the environment properly.
++ 
+In summary, if you plan to use international character credentials in the script, you _DO_ need to attend to the international settings in your environment.
+
+.Reminder
+[IMPORTANT]
+====
+User names are SQL identifiers and thus conform to the same rules, i.e. enclosed in double quotes when containing international characters or when case-sensitivity is required.
+====
+
+[[rnfb30-access-sql]]
+== SQL Features for Managing Access
+
+Changes in architecture, stiffening of rules for security and data integrity, along with a bucket list of feature requests, have given rise in this release to a number of new SQL commands for managing users and access to objects.
+
+[[rnfb30-user-sql]]
+=== SQL-driven User Management
+Alex Peshkov
+
+The SQL set of DDL commands for managing user accounts has been enhanced in Firebird 3, thus improving the capability to manage (add, modify or delete) users in a security database from a regular database attachment.
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE USER _username_ [ <options_list> ]
+  TAGS ( <tag> [, <tag> ...] )
+ALTER USER _username_ [ SET ] [ <options_list> ]
+  TAGS ( <tag> [, <tag> ...] )
+ALTER CURRENT USER [ SET ] [ <options_list> ]
+  TAGS ( <tag> [, <tag> ...] )
+CREATE OR ALTER USER _username_ [ SET ] [ <options_list> ]
+  TAGS ( <tag> [, <tag> ...] )
+DROP USER _username_ [ USING PLUGIN _plugin_name_ ]
+----
+
+`<options_list>` is a (possibly empty) list with the following options:
+
+[listing,subs=+quotes]
+----
+PASSWORD '__password__'
+FIRSTNAME '__string value__'
+MIDDLENAME '__string value__'
+LASTNAME '__string value__'
+ACTIVE
+INACTIVE
+USING PLUGIN _plugin_name_
+----
+
+Each `<tag>` may have one of two forms:
+
+[listing,subs=+quotes]
+----
+_tagname_ = '__string value__'
+----
+
+or the `DROP __tagname__` tag form to remove a user-defined attribute entirely:
+
+[listing,subs=+quotes]
+----
+DROP _tagname_
+----
+
+[NOTE]
+====
+The _tagname_ side of the name/value pair can be any valid SQL identifier.
+====
+
+[[rnfb30-usermgmt-deprecation]]
+==== Older Methods Deprecated
+
+From Firebird 3.0, multiple security databases are supported.
+This capability is not supported by either the _gsec_ utility or the Services API.
+Use of both of these methods is deprecated.
+
+[[rnfb30-user-sql-usage]]
+==== Usage Details
+
+The `CREATE USER`, `CREATE OR ALTER USER` and `DROP USER` clauses are available only for SYSDBA or another user granted the `RDB$ADMIN` role in the security database (and logged in under that role, of course.)
+
+The `PASSWORD` clause is *required* when creating a new user.
+
+An ordinary user can `ALTER` their own password, real name attributes and tags.
+Any attempt to modify another user will fail, as will an attempt to make "`self`" inactive or active.
+
+If you want to modify "`self`", you can use the simplified form `ALTER CURRENT USER`.
+
+At least one of `PASSWORD`, `FIRSTNAME`, `MIDDLENAME`, `LASTNAME`, `ACTIVE`, `INACTIVE` or `TAGS` must be present in an `ALTER USER` or `CREATE OR ALTER USER` statement.
+
+It is not a requirement to use any of the clauses `FIRSTNAME`, `MIDDLENAME` and `LASTNAME`.
+Any of them may be left empty or used to store short information about the user.
+
+The `INACTIVE` clause is used to disable the user's login capability without dropping it.
+The `ACTIVE` clause restores that login ability.
+
+.Quick Tip
+[TIP]
+====
+From version 3.0.1, the statement `CREATE OR ALTER USER SYSDBA PASSWORD __password__` can be used to initialize an empty `securityN.fdb` security database.
+====
+
+`TAGS` is a list of end-user defined attributes.
+The length of the string value should not exceed 255 bytes.
+
+Setting a list of tags for the user retains previously set tags if they are not mentioned in the current list.
+
+[NOTE]
+====
+A UID or GID that was entered by the deprecated _gsec_ utility is treated as a tag in the SQL interface.
+====
+
+[float]
+===== Examples
+
+Generic:
+
+[source]
+----
+CREATE USER superhero PASSWORD 'test';
+ALTER USER superhero SET FIRSTNAME 'Clark' LASTNAME 'Kent';
+CREATE OR ALTER USER superhero SET PASSWORD 'IdQfA';
+DROP USER superhero;
+ALTER CURRENT USER SET PASSWORD 'SomethingLongEnough';
+----
+
+Working with tags:
+
+[source]
+----
+ALTER USER superhero SET TAGS (a='a', b='b');
+      NAME             VALUE
+      ================ ==============================
+      A                a
+      B                b
+
+ALTER USER superhero SET TAGS (b='x', c='d');
+      NAME             VALUE
+      ================ ==============================
+      A                a
+      B                x
+      C                d
+
+ALTER USER superhero SET TAGS (drop a, c='sample');
+      NAME             VALUE
+      ================ ==============================
+      B                x
+      C                sample
+----
+
+Displaying the list of users:
+
+[source]
+----
+SELECT CAST(U.SEC$USER_NAME AS CHAR(20)) LOGIN,
+  CAST(A.SEC$KEY AS CHAR(10)) TAG,
+  CAST(A.SEC$VALUE AS CHAR(20)) "VALUE",
+  SEC$PLUGIN "PLUGIN"
+FROM SEC$USERS U LEFT JOIN SEC$USER_ATTRIBUTES A
+  ON U.SEC$USER_NAME = A.SEC$USER_NAME;
+
+ LOGIN                TAG        VALUE                PLUGIN
+ ==================== ========== ==================== ===============================
+ SYSDBA               <null>     <null>               Srp
+ SUPERHERO            B          x                    Srp
+ SUPERHERO            C          sample               Srp
+ SYSDBA               <null>     <null>               Legacy_UserManager
+----
+
+[NOTE]
+====
+Output depends upon the user management plug-in.
+If the legacy plug-in is used, bear in mind that some options are not supported and will simply be ignored.
+====
+
+[[rnfb3-security-setrole]]
+=== SET ROLE
+Alex Peshkov
+
+See Tracker item http://tracker.firebirdsql.org/browse/CORE-1377[CORE-1377].
+
+The SQL:2008-compliant operator `SET ROLE` allows the `CURRENT_ROLE` context variable to be set to one that has been granted to the `CURRENT_USER` or to a user assigned to the database attachment as trusted (`SET TRUSTED ROLE`).
+
+[[rnfb3-security-setrole-syntax]]
+==== Syntax for SET ROLE
+
+Enable `CURRENT_USER` access to a role that has been previously granted:
+
+[listing, subs=+quotes]
+----
+SET ROLE _rolename_
+----
+
+[float]
+===== Example of SET ROLE Usage
+
+[source]
+----
+SET ROLE manager;
+select current_role from rdb$database;
+----
+
+Displays:
+
+[source]
+----
+ROLE
+===============================
+MANAGER
+----
+
+[[rnfb3-security-settrustedrole]]
+==== SET TRUSTED ROLE
+
+The idea of a separate `SET TRUSTED ROLE` command is that, when the trusted user attaches to a database without providing any role info, `SET TRUSTED ROLE` makes a trusted role (if one exists) the `CURRENT_ROLE` without any additional activity, such as setting it in the DPB.
+
+A trusted role is not a specific type of role but may be any role that was created using `CREATE ROLE`, or a predefined system role such as `RDB$ADMIN`.
+It becomes a trusted role for an attachment when the <<rnfb30-security-mapping,security objects mapping subsystem>> finds a match between the authentication result passed from the plug-in and a local or global mapping for the current database.
+The role may be one that is not even granted explicitly to that trusted user.
+
+[NOTE]
+====
+* A trusted role is not assigned to the attachment by default.
+It is possible to change this behaviour using an appropriate authentication plug-in and a <<rnfb30-security-mapping-ddl,CREATE/ALTER MAPPING>> command.
+* Whilst the `CURRENT_ROLE` can be changed using `SET ROLE`, it is not always possible to revert using the same command, because it performs an access rights check.
+====
+
+[float]
+===== Syntax Pattern
+
+Enable access to a trusted role, if the `CURRENT_USER` is logged in under Trusted User authentication and the role is available:
+
+[listing]
+----
+SET TRUSTED ROLE
+----
+
+An example of the use of a trusted role is assigning the system role `RDB$ADMIN` to a Windows administrator when Windows trusted authentication is in use.
+
+[[rnfb30-security-grantedby]]
+=== GRANT/REVOKE Rights GRANTED BY Specified User
+Alex Peshkov
+
+Previously, the grantor or revoker of SQL privileges was always the current user.
+This change makes it so that a different grantor or revoker can be specified in `GRANT` and `REVOKE` commands.
+
+.Syntax
+[listing, subs=+quotes]
+----
+GRANT <right> TO <object> [ { GRANTED BY | AS } [ USER ] _username_ ]
+REVOKE <right> FROM <object> [ { GRANTED BY | AS } [ USER ] _username_ ]
+----
+
+The `GRANTED BY` clause form is recommended by the SQL standard.
+The alternative form using `AS` is supported by Informix and possibly some other servers and is included for better compatibility.
+
+.Example (working as SYSDBA)
+[source]
+----
+create role r1;
+grant r1 to user1 with admin option;
+grant r1 to public granted by user1;
+
+-- (in isql)
+show grant;
+/* Grant permissions for this database */
+GRANT R1 TO PUBLIC GRANTED BY USER1
+GRANT R1 TO USER1 WITH ADMIN OPTION
+----
+
+[[rnfb30-security-revokeall]]
+=== REVOKE ALL ON ALL
+
+When a user is removed from the security database or another authentication source, this new command is useful for revoking its access to all objects in the database.
+
+.Syntax
+[listing,subs=+quotes]
+----
+REVOKE ALL ON ALL FROM [USER] _username_
+REVOKE ALL ON ALL FROM [ROLE] _rolename_
+----
+
+.Example
+[source]
+----
+# gsec -del guest
+# isql employee
+fbs bin # ./isql employee
+Database:  employee
+SQL> REVOKE ALL ON ALL FROM USER guest;
+SQL>
+----
+
+[[rnfb30-security-metadataprivs]]
+=== User Privileges for Metadata Changes
+Dmitry Yemanov; Roman Simakov
+
+In Firebird 3, the system tables are read-only.
+This SQL syntax provides the means to assign metadata write privileges to specified users or roles for specified objects.
+See Tracker item http://tracker.firebirdsql.org/browse/CORE-735[CORE-735].
+
+[NOTE]
+====
+Some people have been applying the nickname "`DDL privileges`" to this feature.
+Don't confuse it with "`DDL triggers`"!
+A more useful nickname would be "`Metadata privileges`".
+====
+
+[float]
+==== Syntax Patterns
+
+Granting metadata privileges:
+
+[listing,subs=+quotes]
+----
+GRANT CREATE <object-type>
+  TO [USER | ROLE] { _user-name_ | _role-name_ } [WITH GRANT OPTION];
+GRANT ALTER ANY <object-type>
+  TO [USER | ROLE] { _user-name_ | _role-name_ } [WITH GRANT OPTION];
+GRANT DROP ANY <object-type>
+  TO [USER | ROLE] { _user-name_ | _role-name_ } [WITH GRANT OPTION];
+----
+
+Revoking metadata privileges:
+
+[listing,subs=+quotes]
+----
+REVOKE [GRANT OPTION FOR] CREATE <object-type>
+  FROM [USER | ROLE] { _user-name_ | _role-name_ };
+REVOKE [GRANT OPTION FOR] ALTER ANY <object-type>
+  FROM [USER | ROLE] { _user-name_ | _role-name_ };
+REVOKE [GRANT OPTION FOR] DROP ANY <object-type>
+  FROM [USER | ROLE] { _user-name_ | _role-name_ };
+----
+
+Special form for database access:
+
+[listing,subs=+quotes]
+----
+GRANT CREATE DATABASE TO [USER | ROLE] { _user-name_ | _role-name_ };
+GRANT ALTER DATABASE
+  TO [USER | ROLE] { _user-name_ | _role-name_ } [WITH GRANT OPTION];
+GRANT DROP DATABASE
+  TO [USER | ROLE] { _user-name_ | _role-name_ } [WITH GRANT OPTION];
+
+REVOKE CREATE DATABASE FROM [USER | ROLE] { _user-name_ | _role-name_ };
+REVOKE [GRANT OPTION FOR] ALTER DATABASE
+  FROM [USER | ROLE] { _user-name_ | _role-name_ };
+REVOKE [GRANT OPTION FOR] DROP DATABASE
+  FROM [USER | ROLE] { _user-name_ | _role-name_ };
+----
+
+[float]
+==== Notes on Usage
+
+* `<object-type>` can be any of the following:
++
+[cols=4*m, frame="none", grid="none", stripes="none"]
+|===
+| CHARACTER SET
+| COLLATION
+| DOMAIN
+| EXCEPTION
+| FILTER
+| FUNCTION
+| GENERATOR
+| PACKAGE
+| PROCEDURE
+| ROLE
+| SEQUENCE
+| TABLE
+| VIEW
+| {nbsp}
+| {nbsp}
+| {nbsp}
+|===
++
+[NOTE]
+====
+The metadata for triggers and indices are accessed through the privileges for the table that owns them.
+====
+* If the `ANY` option is used, the user will be able to perform any operation on any object
+* If the `ANY` option is absent, the user will be able to perform operations on the object only if he owns it
+* If the `ANY` option was acquired via a `GRANT` operation then, to revoke it, the `REVOKE` operation must accord with that `GRANT` operation
+
+[float]
+==== Example
+
+[source]
+----
+GRANT CREATE TABLE TO Joe;
+GRANT ALTER ANY TABLE TO Joe;
+REVOKE CREATE TABLE FROM Joe;
+----
+
+[[rnfb30-security-udfperms]]
+=== GRANT EXECUTE Privileges for UDFs
+Dmitry Yemanov
+
+http://tracker.firebirdsql.org/browse/CORE-2554[CORE-2554]: EXECUTE permission is now supported for UDFs (both legacy and PSQL based ones).
+
+.Syntax
+[listing,subs=+quotes]
+----
+GRANT EXECUTE ON FUNCTION _name_ TO <grantee list>
+  [<grant option> <granted by clause>]
+--
+REVOKE EXECUTE ON FUNCTION _name_ FROM <grantee list>
+  [<granted by clause>]
+----
+
+[NOTE]
+====
+The initial `EXECUTE` permission is granted to the function owner (user who created or declared the function).
+====
+
+[[rnfb30-security-recursive-sp]]
+=== Improvement for Recursive Stored Procedures
+Alex Peshkov
+
+A recursive stored procedure no longer requires the `EXECUTE` privilege to call itself.
+See Tracker item http://tracker.firebirdsql.org/browse/CORE-3242[CORE-3242].
+
+[[rnfb30-security-otherprivs]]
+=== Privileges to Protect Other Metadata Objects
+
+New SQL:2008 compliant `USAGE` permission is introduced to protect metadata objects other than tables, views, procedures and functions.
+
+.Syntax
+[listing,subs=+quotes]
+----
+GRANT USAGE ON <object type> _name_ TO <grantee list>
+  [<grant option> <granted by clause>]
+--
+REVOKE USAGE ON <object type> _name_ FROM <grantee list>
+  [<granted by clause>]
+--
+<object type> ::=
+  {DOMAIN | EXCEPTION | GENERATOR | SEQUENCE | CHARACTER SET | COLLATION}
+----
+
+[NOTE]
+====
+The initial `USAGE` permission is granted to the object owner (user who created the object).
+
+In Firebird 3.0.0, only `USAGE` permissions for exceptions (http://tracker.firebirdsql.org/browse/CORE-2884[CORE-2884]) and generators/sequences (`gen_id`, `next value for`: http://tracker.firebirdsql.org/browse/CORE-2553[CORE-2553]) are enforced.
+Granting privileges for character sets, collations and domains is disabled, making these object types unavailable for any type of `GRANT` or `REVOKE` commands.
+Access to them is not subject to any form of enforcement, although this could change in future releases if it is deemed appropriate.
+====
+
+[[rnfb30-pseudo-users]]
+== Pseudo-Tables with List of Users
+
+http://tracker.firebirdsql.org/browse/CORE-2639[CORE-2639].
+
+To access lists of users and attributes, query the virtual tables `SEC$USERS` and `SEC$USER_ATTRIBUTES`.
+
+[IMPORTANT]
+====
+This feature depends highly on the user management plug-in.
+Take into an account that some options are ignored when using the legacy user management plug-in.
+====
+
+The pseudo-tables are much like the `MON$`-family tables used for monitoring the server.
+The table is created on demand when you run the statement
+
+[source]
+----
+SELECT * FROM SEC$USERS
+----
+
+or
+
+[source]
+----
+SELECT * FROM SEC$USER_ATTRIBUTES
+----
+
+The output lists the users (or their attributes) in the security database that is configured for the current database and available for management to the current user.
+`SEC$USERS` includes a field indicating whether a user has the `RDB$ADMIN` role in the security database.
+
+[[rnfb30-drop-role]]
+== Restriction on DROP ROLE (v.3.0.1)
+
+http://tracker.firebirdsql.org/browse/CORE-5248[CORE-5248].
+
+Prior to Firebird 3.0.1, any user could drop a role.
+This is a bug which has been fixed in sub-release 3.0.1.
+Now, only the user who created the role and one who has been granted the role `WITH ADMIN OPTION` can drop it.
+
+[IMPORTANT]
+====
+To obtain the proper behavior in old databases, roles should be recreated!
+====
