@@ -1,0 +1,194 @@
+[[fbodbc205-events-de]]
+= Firebird-Ereignisse
+
+Um die Verwendung von Firebird-Ereignissen mit dem ODBC/JDBC-Treiber zu veranschaulichen, verwenden wir die Beispieldatenbank `employee.fdb` und arbeiten mit der Tabelle `SALES`.
+Diese Tabelle enthält einen ``AFTER INSERT``-Trigger `POST_NEW_ORDER`, der die Anweisung `POST_EVENT 'new_order';`  enthält.
+Seine Wirkung besteht darin, einem Listener auf der Clientseite zu signalisieren, wenn ein neuer Datensatz in `SALES` übergeben wird.
+
+Nehmen wir an, dass die Tabelle auch einen ``BEFORE UPDATE``-Trigger hat, der ein Ereignis `'change_order'` in nachfolgenden Operationen veröffentlicht, wenn das Feld `ORDER_STATUS` geändert wird.
+
+[TIP]
+====
+Der Trigger `BEFORE UPDATE` existiert nicht, dieses Szenario dient nur zur Veranschaulichung, aber Sie könnten es erstellen, wenn Sie möchten:
+
+[source]
+----
+CREATE OR ALTER TRIGGER BI_SALES FOR SALES
+ACTIVE BEFORE UPDATE
+AS BEGIN
+  IF (NEW.ORDER_STATUS = 'new') THEN
+  BEGIN
+     NEW.ORDER_STATUS = 'open';
+     POST_EVENT 'change_order';
+  END
+END
+----
+====
+
+Für unsere Demo müssen wir einen neuen Datensatz in `SALES` einfügen.
+Das Feld `ORDER_STATUS` auf dem neu eingefügten Datensatz enthält den Standardwert `'new'`.
+Nach dem Festschreiben, indem das Ereignis `'new_order'` gepostet wird, möchten wir zurückgehen und etwas im neuen Datensatz ändern.
+Wenn Sie dies tun, überprüft unser ``BEFORE UPDATE``-Trigger `BI_SALES`, ob der Wert von `ORDER_STATUS` immer noch `'new'` ist und wenn ja, dann wird es in `'open'` ändern und das Ereignis `'change_order'` veröffentlichen.
+
+[NOTE]
+====
+Es interessiert uns nicht wirklich, wie sich das Einfügen und Ändern des Datensatzes auf den Datenbankzustand auswirkt.
+Die Idee hier ist, zu zeigen, wie der Treiber für die Verwaltung von mehreren Ereignissen eingerichtet wird.
+====
+
+[[fbodbc205-events-listener-de]]
+== Den Treiber dazu veranlassen, auf Ereignisse zu warten
+
+Der erste Schritt zum Einrichten des Treibers für das Abhören von Ereignissen besteht darin, eine Verbindung zu einer ODBC-Schnittstellendatei herzustellen, die die Verarbeitung von Firebird-Ereignissen beschreibt:
+
+[source]
+----
+#include "OdbcUserEvents.h"
+----
+
+Als nächstes spezifizieren wir in der Tabelle `eventInfo` die Ereignisse, an denen wir interessiert sind.
+Für unser Beispiel ist das Ereignis `'new_order'` das einzige, an dem wir uns zu diesem Zeitpunkt interessieren.
+Das Ereignis `'change_order'` ist nur auf dem Bild zu sehen, um die Fähigkeit des Treibers zu demonstrieren, mehrere Ereignisse zu verwalten.
+
+[source]
+----
+ODBC_EVENT_INFO eventInfo[] =
+{
+ INIT_ODBC_EVENT("new_order"),
+ INIT_ODBC_EVENT("change_order")
+};
+----
+
+Nun müssen wir eine Struktur erstellen -- die wir `MyUiqueData` nennen werden -- um die Datenaufgaben zu speichern, die an unserer Operation beteiligt sind.
+In unserem Beispiel wird  ein Feld `event_flag` ein Ereignis signalisieren, das vom Server geliefert wird.
+Unsere Arbeit beginnt an dieser Stelle.
+
+[source]
+----
+struct MyUniqueData
+{
+ int event_flag;
+ //... andere Definitionen für die Verwendung in astRoutine
+};
+----
+
+Wir müssen eine Callback-Funktion erstellen, `astRoutine`, die aktiviert wird, wenn in der ``eventInfo``-Tabelle definierte Ereignisse markiert sind:
+
+[source]
+----
+void astRoutine( void *userEventsInterfase, short length, char * updated )
+{
+    PODBC_USER_EVENTS_INTERFASE userInterfase = (PODBC_USER_EVENTS_INTERFASE)userEventsInterfase;
+    SQLSetConnectAttr( userInterfase->hdbc, SQL_FB_UPDATECOUNT_EVENTS, (SQLPOINTER)updated, SQL_LEN_BINARY_ATTR( length ) );
+    MyUniqueData &myData = *(MyUniqueData*)userInterfase->userData;
+    myData.event_flag++;
+    printf( "ast routine was called\n" );
+}
+----
+
+Die Funktion muss einen Anruf haben:
+
+[source]
+----
+SQLSetConnectAttr( userInterfase->hdbc,
+                   SQL_FB_UPDATECOUNT_EVENTS,
+                   (SQLPOINTER)updated,
+                   SQL_LEN_BINARY_ATTR( length ) );
+----
+
+Dieser Aufruf wird benötigt, um den Status von Ereignissen in unserer Struktur `eventInfo` zu aktualisieren.
+Diese Struktur hat ein Feld `countEvents`, das eine Gesamtzahl von Ereignisoperationen verwaltet, und ein Boolesches Feld `changed`, das auf Wahr gesetzt wird, wenn die 'vor'- und 'nach'-Werte von `countEvents` unterschiedlich sind.
+
+Wenn wir ein Ereignis, an dem wir interessiert sind, kennzeichnen möchten, geben wir folgenden Befehl aus:
+
+[source]
+----
+myData.event_flag++;
+----
+
+Es bietet einen ziemlich primitiven Mechanismus zur Synchronisierung von Arbeitsabläufen, aber es ist ausreichend für unsere Bedürfnisse.
+Seine Einrichtung ist wie folgt: 
+
+* Zur Verbindungszeit oder beim Erstellen des DSN muss die Option `NOWAIT` auf OFF gesetzt werden
+* Die folgenden Anweisungen müssen ausgegeben werden: 
++
+[source]
+----
+// Geben Sie an, dass der Firebird ODBC-Cursor immer verwendet wird, und verbinden Sie ihn dann.
+SQLSetConnectAttr( hdbc, SQL_ATTR_ODBC_CURSORS, (SQLPOINTER)SQL_CUR_USE_DRIVER, 0 );
+SQLConnect( hdbc, (UCHAR*)connectString, SQL_NTS, NULL, 0, NULL, 0 );
+----
+* Zum Zweck unserer Demonstration müssen wir eine SQL-Cursor-Anfrage vorbereiten.
+Ihr eigenes, realistisches Szenario wäre natürlich weniger trivial.
++
+[source]
+----
+SQLPrepare( stmtSel, (UCHAR*)
+  "SELECT po_number"
+  " FROM sales"
+  " WHERE order_status = 'new'"
+  " FOR UPDATE",
+  SQL_NTS );
+----
+* Wir konstruieren die Cursor-Abfrage für unsere Demo und nennen sie 'C': 
++
+[source]
+----
+char *cursor = "C";
+SQLSetCursorName( stmtSel, (UCHAR*)cursor, sizeof( cursor ) );
+
+SQLPrepare( stmtUpd, (UCHAR*)
+  "UPDATE sales"
+  " SET order_status = 'open'"
+  " WHERE CURRENT OF C",
+         SQL_NTS );
+----
+* Initialisieren Sie die Struktur `ODBC_EVENTS_BLOCK_INFO` als die Ereignisschnittstelle, die an den Treiber übergeben wird:
++
+[source]
+----
+myData.event_flag = 0;
+ODBC_EVENTS_BLOCK_INFO eventsBlockInfo = INIT_EVENTS_BLOCK_INFO(
+  hdbc, eventInfo, astRoutine, &myData );
+SQLSetConnectAttr(
+  hdbc, SQL_FB_INIT_EVENTS,
+  (SQLPOINTER)&eventsBlockInfo,
+  SQL_LEN_BINARY_ATTR((int)sizeof( eventsBlockInfo )) );
+- to inform connection, that we are ready to accept events.
+SQLSetConnectAttr( hdbc, SQL_FB_REQUEUE_EVENTS, (SQLPOINTER)NULL, 0 );
+----
+* Ereignisse beginnen ... 
++
+[source]
+----
+while ( !iret )
+{
+  // If the event was triggered, reset the buffer and re-queue
+  if ( myData.event_flag )
+  {
+    myData.event_flag = 0;
+    // Check for first ast_call.  isc_que_events fires
+    // each event to get processing started
+    if ( first )
+      first = 0;
+    else
+    {
+      // Select query to look at triggered events
+      ret = SQLExecute( stmtSel );
+      for (;;)
+      {
+        ret = SQLFetch( stmtSel );
+        if ( ret == SQL_NO_DATA_FOUND )
+          break;
+        ret = SQLExecute( stmtUpd );
+      }
+    }
+    /* Re-queue for the next event */
+    SQLSetConnectAttr( hdbc, SQL_FB_REQUEUE_EVENTS, (SQLPOINTER)NULL, 0 );
+    /* This does not block, but as a sample program there is nothing
+     * else for us to do, so we will take a nap
+     */
+    Sleep(1000);
+  }
+}
+----

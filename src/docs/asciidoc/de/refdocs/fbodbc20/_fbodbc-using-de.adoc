@@ -1,0 +1,485 @@
+[[fbodbc205-using-de]]
+= Entwickeln mit dem Firebird ODBC/JDBC-Treiber
+
+Der Firebird ODBC-Treiber unterstützt mehrere gleichzeitige Verbindungen zu verschiedenen Datenbanken und verschiedenen Servern, wobei jede Verbindung unabhängig von anderen funktioniert.
+
+[[fbodbc205-threading-de]]
+== Multithreading
+
+Thread-Protection kann auf zwei Ebenen festgelegt werden: 
+
+. teilen eines Umgebungshandles
+. teilen eines Verbindungshandles
+
+Standardmäßig wird der Treiber mit der folgenden Definition erstellt:
+
+[source]
+----
+#define DRIVER_LOCKED_LEVEL     DRIVER_LOCKED_LEVEL_CONNECT
+----
+
+Dadurch kann eine einzelne Verbindung mehrere lokale Threads gemeinsam nutzen. 
+
+Die Standardeinstellung spiegelt sich in der anfänglichen Einrichtung des DSN unter Windows wider: `SAFETHREAD=Y`.
+
+Wenn der Treiber mit der folgenden Definition erstellt wird:
+
+[source]
+----
+#define DRIVER_LOCKED_LEVEL     DRIVER_LOCKED_LEVEL_NONE
+----
+
+Dann wird der Treiber ohne Multi-Threading-Unterstützung erstellt und die Verantwortung für die Threading-Steuerung  wird in die Firebird-Client-Bibliothek übertragen.
+Dies sorgt für die schnellste Leistung. 
+
+Wenn Sie einen Build erstellt haben, der mit dieser Definition erstellt wurde, sollten Sie ihn zum Standard-Thread-Verhalten für den DSN machen, indem Sie `SAFETHREAD = N` in dessen Schnittstelle konfigurieren.
+
+Wenn der Treiber mit der folgenden Definition erstellt wird:
+
+[source]
+----
+#define DRIVER_LOCKED_LEVEL     DRIVER_LOCKED_LEVEL_ENV
+----
+
+dann kann ein einzelner Umgebungs-Handle von mehreren lokalen Threads gemeinsam genutzt werden. 
+
+[NOTE]
+====
+Sie können eine bestimmte Gruppe von Verbindungsbedingungen oder Außerkraftsetzungen in einem Datei-DSN speichern.
+====
+
+[[fbodbc205-transactions-de]]
+== Transaktionen
+
+Firebird unterstützt drei Transaktionsisolationsstufen: 
+
+* READ COMMITTED
+* SNAPSHOT ("`concurrency`" oder "`repeatable read`")
+* SNAPSHOT TABLE STABILITY "`consistency`")
+
+Die Standardisolationsstufe des ODBC/JDBC-Treibers ist READ COMMITTED, die in anderen Datenbanksystemen dem Lesevorgang festgeschrieben ist.
+Firebirds andere Isolationsstufen lassen sich nicht so einfach abbilden.
+Im ODBC/JDBC-Treiber wird SNAPSHOT mit einigen Optimierungen auf REPREATABLE READ und SNAPSHOT TABLE STABILITY auf SERIALIZABLE abgebildet. 
+
+Seit Version 2.0 konnte der Treiber alle Transaktionskonfigurationen unterstützen, die Firebird unterstützen kann, einschließlich der Tabellenreservierung ("`table blocking`").
+Dies wurde erreicht, indem die so genannte "`EmbeddedSQL`"-Syntax in den alten Pre-Compiler _gpre_ integriert wurde, um Aufrufe an die ODBC-API mit der Funktion `SQLExecDirect` vorzubereiten.
+
+[[fbodbc205-locking-de]]
+=== Locking
+
+Firebird implementiert optimistisches Locking auf Zeilenebene unter allen Bedingungen.
+Eine Transaktion versucht nicht, einen Datensatz zu sperren, bis er eine Aktualisierungsoperation bereitstellen kann, die sich auf diesen Datensatz auswirkt.
+Es kann vorkommen, dass ein Update fehlschlägt, weil ein anderer Client eine Sperre für den Datensatz hat, selbst wenn die fehlgeschlagene Transaktion vor der Transaktion gestartet wurde, die die Sperre gesichert hat.
+
+Die Recording-Engine von Firebird ist in der Lage, eine Granularität zu erzielen, die feiner ist als bei der herkömmlichen Sperrung auf Zeilenebene.
+Bei der Versionsverwaltung kann eine beliebige Anzahl von Transaktionen eine konsistente Kopie eines bestimmten Datensatzes lesen, auch wenn andere Transaktionen dieselbe Zeile gleichzeitig aktualisieren.
+Leser und Schreiber blockieren sich nie gegenseitig und Firebirds Wartung von Datensatzversionen ist für den Benutzer völlig transparent.
+
+[[fbodbc205-tx-request-de]]
+=== Transaktionsanforderungssyntax
+
+Die Syntax für eine ODBC-freundliche Transaktionsanforderung folgt.
+
+[listing,subs=+quotes]
+----
+SET | DECLARE TRANSACTION [LOCAL] [NAME _transaction-name_ [USING _namedUniqueWorkspace_]]
+[READ WRITE | READ ONLY]
+[WAIT | NO WAIT]
+[AUTOCOMMIT]
+[NO_AUTO_UNDO]
+[[ISOLATION LEVEL] {SNAPSHOT [TABLE STABILITY]
+| REPEATABLE READ
+| SERIALIZABLE
+| READ COMMITTED [[NO] RECORD_VERSION]}]
+[RESERVING _table-name-1_ [, _table-name-2_[, ..._table-name-n_] ]
+[FOR [SHARED | PROTECTED] {READ | WRITE}] [, ]
+----
+
+[[fbodbc205-tx-options-de]]
+==== Was bedeuten die Optionen?
+
+`DECLARE TRANSACTION ...` deklariert die beschriebene Transaktion, ohne sie zu aktivieren.
+`SET TRANSACTION ...` hingegen aktiviert die Transaktion und schaltet das globale Attribut `SQL_ATTR_AUTOCOMMIT` der ODBC-API vorübergehend auf `SQL_AUTOCOMMIT_OFF` um.
+Die Transaktion muss explizit abgeschlossen werden.
+Wenn sie endet, wird die Regel der API fortgesetzt.
+
+`LOCAL` beschränkt eine Transaktion auf die Ausführung nur im Kontext der aktuellen Verbindung.
+
+`NAME __transaction-name__` ist eine Transaktion mit eindeutigem Namen, die für die Verwendung durch beliebige Verbindungen in der globalen Umgebung vorbereitet ist.
+
+`USING __namedUniqueWorkspace__` ist ein eindeutig benannter Transaktionsarbeitsbereich `NAME __transaction-name__`, der so eingestellt werden kann, dass sie von beliebigen Verbindungen in der globalen Umgebung ausgeführt wird.
+Identisch benannte Transaktionen mit unterschiedlichen Parametern können in demselben benannten Arbeitsbereich ausgeführt werden.
+
+[[fbodbc205-tx-named-de]]
+===== Benannte Transaktionen und Transaktionsarbeitsbereiche
+
+Das Konstrukt `DECLARE TRANSACTION ... NAME __transaction-name__ [USING __namedUniqueWorkspace__]` ermöglicht es,  explizite Transaktionen zu konfigurieren und in der globalen Umgebung zu speichern, um sie für eine wiederholte  Verbindungsanfrage oder eine aktive Verbindung vorzubereiten.
+Eine Instanz der gespeicherten Transaktion kann durch ein bestimmtes Formular des Befehls `SET TRANSACTION` aufgerufen werden:
+
+Für eine Verbindungsanfrage:
+
+[source]
+----
+SET TRANSACTION NAME MyReadTransaction
+----
+
+oder
+
+[source]
+----
+SET TRANSACTION NAME MyReadTransaction USING MyDsnDb1
+----
+
+für separate Anfragen innerhalb einer einzigen aktiven Verbindung:
+
+[source]
+----
+SET TRANSACTION LOCAL NAME MyReadTransaction
+----
+
+oder
+
+[source]
+----
+SET TRANSACTION LOCAL NAME MyReadTransaction USING MyDsnDb1
+----
+
+und in diesem Zusammenhang für eine andere Anfrage:
+
+[source]
+----
+SET TRANSACTION LOCAL NAME MyWriteTransaction
+----
+
+oder
+
+[source]
+----
+SET TRANSACTION LOCAL NAME MyWriteTransaction USING MyDsnDb1
+----
+
+Die Form `SET TRANSACTION ... NAME __transaction-name__ [USING __namedUniqueWorkspace__]` unterscheided sich von früheren Implementierungen, wobei die Konfiguration durch den Befehl `SET` für die nächste Transaktion erneut verwendet werden kann.
+Die Einbeziehung der ``NAME``- und/oder ``USING``-Klauseln macht die Konfiguration bei Bedarf durch Verwendung des Namens wiederholbar.
+
+[IMPORTANT]
+====
+Eine Rückkehr zu dem normalen Betriebsmodus erfordert einen Trenn-/Verbindungszyklus.
+====
+
+[[fbodbc205-txns-finishing-de]]
+===== Explizite Transaktionen beenden
+
+In SQL wird eine Transaktion mittels `COMMIT` oder `ROLLBACK` oder beendet.
+ODBC hat Methoden, die das eine oder andere tun, wie z.B. `SQLEndTran`.
+Einige Programme können `SQLExecDirect` aufrufen, jedoch nicht `SQLEndTran`.
+Für diese Programme muss man explizit
+
+[source]
+----
+SQLExecDirect( hStmt, "COMMIT" )
+----
+
+aufrufen, um sicherzustellen, dass die Schnittstelle
+
+[source]
+----
+SQLEndTran( SQL_HANDLE_DBC, hConnection, SQL_COMMIT );
+----
+
+abschließend aufruft. 
+
+[NOTE]
+====
+Wenn eine Transaktion lokal initiiert wird, wird der Treiber `SQLEndTran` für das lokale `hStmt` aufrufen.
+====
+
+[[fbodbc205-tx-2-phase-de]]
+=== Zwei-Phasen-Commit-Transaktionen
+
+Der ODBC/JDBC-Treiber unterstützt zweiphasige Festschreibungstransaktionen, d.h. eine einzelne Transaktion in verschiedenen Firebird-Datenbanken.
+Auf bis zu 16 Datenbanken kann gleichzeitig in einer solchen Transaktion zugegriffen werden, was ein absolutes Limit darstellt.
+
+Der Aufruf zum Starten einer zweiphasigen Commit-Transaktion lautet:
+
+[source]
+----
+SQLSetConnectAttr (connection, 4000, (void*) TRUE, 0);
+----
+
+So brechen Sie die gemeinsame Verbindung ab:
+
+[source]
+----
+SQLSetConnectAttr (connection, 4000, (void*) FALSE, 0);
+----
+
+[[fbodbc205-multi-tx-de]]
+=== Mehr Transaktionen
+
+Firebird ODBC verwendet standardmäßig eine Transaktion pro Verbindung.
+Programmatisch können Sie eine flexiblere Transaktionsstruktur verwenden.
+Beispielsweise können Sie mehrere Transaktionen innerhalb einer Verbindung verwenden, wobei eine einzelne Verbindung  mehrere Lese-/Schreibtransaktionen gleichzeitig verwenden kann.
+
+.Ein Beispiel
+[source]
+----
+HSTMT stmtRd;
+HSTMT stmtWr;
+SQLAllocHandle( SQL_HANDLE_STMT, connection, &stmtRd );
+SQLAllocHandle( SQL_HANDLE_STMT, connection, &stmtWr );
+SQLExecDirect( stmtRd, (UCHAR*)
+  "SET TRANSACTION LOCAL\n"
+  "READ ONLY\n"
+  "ISOLATION LEVEL\n"
+  "READ COMMITTED NO RECORD_VERSION WAIT\n",
+  SQL_NTS );
+SQLExecDirect( stmtWr, (UCHAR*)
+  "SET TRANSACTION LOCAL\n"
+  "READ WRITE\n"
+  "ISOLATION LEVEL\n"
+  "READ COMMITTED NO RECORD_VERSION WAIT\n",
+  SQL_NTS );
+SQLExecDirect( stmtRd,(UCHAR*)
+  "SELECT CURRENCY FROM COUNTRY"
+  "   WHERE country = 'Canada'"
+  "   FOR UPDATE OF CURRENCY",
+  SQL_NTS );
+SQLFetch( stmtRd );
+SQLPrepare( stmtWr, (UCHAR*)
+  "update COUNTRY\n"
+  "set    CURRENCY = 'CndDlr'\n"
+  "where  COUNTRY = 'Canada'\n",
+  SQL_NTS );
+SQLExecute( stmtWr );
+SQLExecDirect( stmtWr, (UCHAR*)"COMMIT", SQL_NTS );
+----
+
+[[fbodbc205-tx-ms-dtc-de]]
+=== MS DTC-Transaktionen
+
+Der Microsoft Distributed Transaction Coordinator-Dienst (MS DTC) ist eine  Windows-Komponente, die für die Koordination von Transaktionen verantwortlich ist, die mehrere Ressourcenmanager umfassen, z.B. Datenbanksysteme, Nachrichtenwarteschlangen und Dateisysteme.
+Es kann globale, einphasige oder zweiphasige Commit-Transaktionen mit MSSQL Server, Sybase und anderen Servern durchführen, die damit arbeiten können.
+Unser ODBC/JDBC-Treiber bietet diese Möglichkeit für Firebird-Server.
+
+.Ein Beispiel mit MS DTC
+[source]
+----
+// Include MS DTC specific header files.
+//------------------------------------------------------------------------------
+#define INITGUID
+#include "txdtc.h"
+#include "xolehlp.h"
+
+ITransactionDispenser *pTransactionDispenser;
+ITransaction *pTransaction;
+// Obtain the ITransactionDispenser Interface pointer
+// by calling DtcGetTransactionManager()
+DtcGetTransactionManager( NULL,// [in] LPTSTR pszHost,
+     NULL,// [in] LPTSTR pszTmName,
+     IID_ITransactionDispenser,// [in] REFIID rid,
+     0,// [in] DWORDdwReserved1,
+     0, // [in] WORDwcbReserved2,
+     NULL,// [in] void FAR * pvReserved2,
+     (void **)&pTransactionDispenser // [out] void** ppvObject
+     );
+// Establish connection to database on server#1
+LogonToDB( &gSrv1 );
+// Establish connection to database on server#2
+LogonToDB( &gSrv2 );
+// Initiate an MS DTC transaction
+pTransactionDispenser->BeginTransaction(
+     NULL,// [in] IUnknown __RPC_FAR *punkOuter,
+     ISOLATIONLEVEL_ISOLATED,// [in] ISOLEVEL isoLevel,
+     ISOFLAG_RETAIN_DONTCARE,// [in] ULONG isoFlags,
+     NULL,// [in] ITransactionOptions *pOptions
+     &pTransaction// [out] ITransaction **ppTransaction
+     );
+// Enlist each of the data sources in the transaction
+SQLSetConnectOption( gSrv1->hdbc, SQL_COPT_SS_ENLIST_IN_DTC, (UDWORD)pTransaction );
+SQLSetConnectOption( gSrv2->hdbc, SQL_COPT_SS_ENLIST_IN_DTC, (UDWORD)pTransaction );
+// Generate the SQL statement to execute on each of the databases
+sprintf( SqlStatement,
+  "update authors set address = '%s_%d' where au_id = '%s'",
+   gNewAddress, i, gAuthorID );
+// Perform updates on both of the DBs participating in the transaction
+ExecuteStatement( &gSrv1, SqlStatement );
+ExecuteStatement( &gSrv2, SqlStatement );
+// Commit the transaction
+hr = pTransaction->Commit( 0, 0, 0 );
+// or roll back the transaction
+//hr = pTransaction->Abort( 0, 0, 0 );
+----
+
+[[fbodbc205-password-de]]
+== Kennwort-Sicherheit
+
+Wenn ein DSN mit dem Benutzernamen und dem Kennwort erstellt wird, ist das Datenbankkennwort verschlüsselt und wird in `odbc.ini` gespeichert.
+Alternativ können die Anmeldedaten während der Datenbankverbindungsphase eingegeben oder mit der Verbindungszeichenfolge übergeben werden.
+
+[[fbodbc205-cursors-de]]
+== Cursor
+
+Im aktuellen Firebird ODBC/JDBC-Treiber werden die Dynamic- und Keyset-Cursor so modifiziert, dass sie den statischen Cursor verwenden, über den keine Sets aktualisiert werden können.
+
+Für die beste Leistung, nutzen Sie den Cursor `ForwardOnly`.
+
+Die Leseoperatoren `SQLFetch`, `SQLExtendedFetch` und `SQLScrollFetch` nutzen `SQL_ROWSET_SIZE` und `SQL_ATTR_ROW_ARRAY_SIZE`.
+
+Verwenden Sie den Operator `SQLBindParameter`, unabhängig von der Größe des BLOB-Felds, um die beste Leistung mit BLOB-Feldern zu erzielen, da dies viel schneller als mit `SQLPutData`/`SQLGetData` funktioniert.
+
+Rufen Sie die folgenden Anweisungen auf, um die Cursor des Firebird-Treibers zu verwenden:
+
+[source]
+----
+// Specify that the Firebird ODBC Cursor is always used, then connect.
+SQLSetConnectAttr( hdbc, SQL_ATTR_ODBC_CURSORS, (SQLPOINTER)SQL_CUR_USE_DRIVER, 0 );
+SQLConnect( hdbc, (UCHAR*)connectString, SQL_NTS, NULL, 0, NULL, 0 );
+----
+
+[[fbodbc205-cursors-library-de]]
+=== ODBC Cursor-Bibliothek
+
+Dieses Thema ist in MSDN ausführlich dokumentiert.
+Wir müssen jedoch die absolute  Anforderung betonen, diese Anweisungen vor dem Verbinden zu verwenden:
+
+[source]
+----
+// Geben Sie an, dass die ODBC-Cursor-Bibliothek immer verwendet wird, und verbinden Sie sich dann.
+SQLSetConnectAttr( hdbc, SQL_ATTR_ODBC_CURSORS, (SQLPOINTER)SQL_CUR_USE_ODBC, 0 );
+SQLConnect( hdbc, (UCHAR*)connectString, SQL_NTS, NULL, 0, NULL, 0 );
+----
+
+Diese Daten setzen Schlüssel (?) In den Rowset-Puffern.
+Das Aktualisieren der Puffer erfordert diese Anweisung:
+
+[source]
+----
+SQLFetchScroll( hstmtSel, SQL_FETCH_RELATIVE, 0 );
+----
+
+[[fbodbc205-storedprocs-de]]
+== Gespeicherte Prozeduren
+
+In Firebird können wir zwei Arten von gespeicherten Prozeduren haben, bekannt als [term]_ausführbare_ und [term]_auswählbar_ (abfragbar).
+Beide Typen können Eingabeparameter und Rückgabewerte verwenden, unterscheiden sich jedoch sowohl in der Schreibweise als auch im Aufrufmechanismus.
+
+* Die Ausgabe einer ausführbaren Prozedur ist optional und jede zurückgegebene Ausgabe ist eine Menge von nicht mehr als einer "`Zeile`" von Werten.
+Wenn die Ausgabe definiert ist und keine Ausgabe erfolgt, ist die Ausgabe null.
++ 
+Das Zurückgeben von Daten ist nicht das primäre Ziel einer ausführbaren Prozedur.
+Sein Zweck ist es, Datenoperationen auszuführen, die für den Benutzer unsichtbar sind.
++ 
+Der Mechanismus zum Aufrufen einer ausführbaren Prozedur ist die SQL-Anweisung `EXECUTE PROCEDURE`.
+Zum Beispiel 
++
+[source]
+----
+execute procedure MyProc(?,?)
+----
+* Eine abfragbare Prozedur wird mit dem Ziel geschrieben, einen Datensatz von null, einer oder mehreren Datenzeilen zurückzugeben.
+Es kann verwendet werden, um Daten zu ändern, aber es sollte nicht dafür geschrieben werden.
+Die PSQL-Anweisung `SUSPEND` wird in dieser Prozedur verwendet, um eine Ausgabezeile zu übergeben, die innerhalb einer Iteration einer ``FOR SELECT ...``-Schleife  in einem Puffer gesammelt wurde.
++ 
+Der Mechanismus zum Aufrufen einer auswählbaren Prozedur ist die SQL-Anweisung `SELECT`.
++
+In diesem Beispiel haben wir eine auswählbare Prozedur, von der wir erwarten, basierend auf den Eingabeparametern eine Menge von null oder mehr Zeilen zu erhalten:
++
+[source]
+----
+select * from MyProc(?,?)
+----
+
+Microsoft Excel und einige andere Anwendungen verwenden diese Anweisung, um eine gespeicherte Prozedur aufzurufen:
+
+[source]
+----
+{[? =] Call MyProc (?,?)}.
+----
+
+Der Firebird ODBC/JDBC-Treiber bestimmt aus den Metadaten der Firebird-Engine, welcher Aufruf beim Ausführen einer gespeicherten Prozedur verwendet werden soll.
+Firebird markiert eine Prozedur als '`ausführbar`' oder '`auswählbar`' entsprechend der Anzahl der ``SUSPEND``-Anweisungen im zusammengesetzten (BLR) Code ihrer Definition.
+Für ein triviales Beispiel:
+
+[source]
+----
+create procedure TEST
+  as
+    begin
+    end
+----
+
+Da die Prozedur über keine ``SUSPEND``-Anweisungen verfügt, kann der ODBC-Treiber den Aufruf als `execute procedure TEST` weitergeben.
+
+Für dieses Verfahren:
+
+[source]
+----
+create procedure "ALL_LANGS"
+   returns ("CODE" varchar(5),
+         "GRADE" varchar(5),
+         "COUNTRY" varchar(15),
+         "LANG" varchar(15))
+   as
+   BEGIN
+     "LANG" = null;
+     FOR SELECT job_code, job_grade, job_country FROM job
+     INTO :code, :grade, :country
+     DO
+       BEGIN
+         FOR SELECT languages FROM show_langs(:code, :grade, :country)
+         INTO :lang
+           DO
+             SUSPEND;
+             /* Put nice separators between rows */
+             code = '=====';
+             grade = '=====';
+             country = '===============';
+             lang = '==============';
+             SUSPEND;
+       END
+     END
+----
+
+Der BLR-Code für die gespeicherte Prozedur enthält mehr als null ``SUSPEND``-Anweisungen, sodass der ODBC-Treiber `select * from "ALL_LANGS"` verwendet.
+
+[[fbodbc205-arraytype-de]]
+== ``ARRAY``-Datentypen
+
+Um eindimensionale Array-Datentypfelder zu ändern, müssen Sie die folgenden Regeln beachten: 
+
+* Geben Sie einfache Typen an (`INTEGER`, etc.) als {1, 2, 3}
+* Geben Sie einfache Typen an (`CHAR`, etc.) als {'1', '2', '3'}
+
+.FALLEN!
+[WARNING]
+====
+Wenn Sie z.B. ein Element des Arrays 1, 2 und 5 spezifizieren, jedoch nicht die anderen Elemente des Arrays, z.B. 3 und 4, dann werden die anderen Elemente des Arrays auf Null (Integer) oder leer (String) gesetzt.
+
+Bei einigen Programmen, deren Spalten von Array-Daten abhängig sind, können Array-Daten in eine aktuelle Array-Spalte `NULL` eingegeben werden, ohne dass eine Gültigkeitsprüfung der verschiedenen Array-Elemente durchgeführt wird.
+Unter diesen Umständen müssen die Array-Elemente vor dem Eingeben der Spaltendaten angegeben werden.
+====
+
+[[fbodbc205-array-trap01-de]]
+.Datenverlust beim Aktualisieren eines ARRAY-Feldes (1)
+image::{docimagepath}/fb_odbc_ModArrayField.png[scaledwidth=496px]
+
+[[fbodbc205-array-trap02-de]]
+.Datenverlust beim Aktualisieren eines ARRAY-Feldes (2)
+image::{docimagepath}/fb_odbc_ruleModArrayField.png[scaledwidth=495px]
+
+
+[[fbodbc205-clarion-de]]
+== Verwendung mit Clarion
+Jorge Brugger; Vernon Godwin; Vladimir Tsvigun
+
+Clarion-Benutzer können in Firebird mit Namen für gemischte Groß- und Kleinbuchstaben arbeiten. 
+
+. Erstellen Sie Ihre Datenbank mit Firebird. Sie können Tabellennamen wie `"Pending_Invoices"` und Felder wie `"Order_Number"` angeben.
+. Erstellen Sie den DSN für die Datenbank, und stellen Sie sicher, dass alle Optionen in "`Extended Identifier Properties`" aktiviert sind
+. Öffnen Sie Ihr Wörterbuch und importieren Sie mehrere Tabellen wie gewohnt aus der ODBC-Quelle.
+Es wird funktionieren, aber versuchen Sie nicht, die Dateien in einer Anwendung noch zu durchsuchen oder zu verwenden.
+. Geben Sie für jedes Feld den Namen "`External Name`" des Felds ein, das von Anführungszeichen umgeben ist (geben Sie beispielsweise `"Order_Number"` im externen Namen ein).
+
+Das ist es!
+Verwenden Sie jetzt Ihr Wörterbuch mit den Groß- und Kleinbuchstaben, ohne Probleme.
+Denken Sie jedoch daran -- Sie müssen in allen SQL-Anweisungen innerhalb von Clarion doppelte Anführungszeichen um Objektnamen verwenden.
