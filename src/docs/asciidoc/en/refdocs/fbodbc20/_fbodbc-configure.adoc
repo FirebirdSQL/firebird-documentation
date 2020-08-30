@@ -1,0 +1,309 @@
+[[fbodbc205-configure]]
+= Firebird ODBC Configuration
+
+The configuration settings you make in an ODBC data source description ("`DSN`") define the attributes for connecting to a specific database.
+On Windows, a dialog box captures parameters that correspond to the connection attributes.
+On Linux, the parameters are configured manually in text (`.ini`) files.
+
+[[fbodbc205-config-windows]]
+== Configuring a DSN on Windows
+
+First, find the applets in the _Administrative Tools_ section of the machine where you are going to set up a "`channel`" through which your application program is going to connect with a Firebird database, either on the same machine or elsewhere in the local or wide-area network.
+
+On a 64-bit machine, you will find two such applets:
+
+[[fbodbc205-systemdsn-001]]
+.Selecting a DSN setup applet on Windows
+image::{docimagepath}/fb_odbc_system_dsn_001.png[scaledwidth=496px]
+
+For the purpose of our example, we want to pick the item [term]_ODBC Data Sources (32-bit)_.
+Obviously, if we had installed the 64-bit driver with the intention of using it for a 64-bit application, we would pick the 64-bit item from this menu instead. 
+
+.Run as Administrator!
+[IMPORTANT]
+====
+Don't left-click the item: right-click and, from the context menu, select menu:Run{sp}as{sp}Administrator[].
+This is necessary because you are about to set up a _System DSN_.
+====
+
+Click on the tab labelled menu:System{sp}DSN[], where you will begin setting up your DSN.
+
+[[fbodbc205-systemdsn-002]]
+.Selecting the Firebird driver for the DSN 
+image::{docimagepath}/fb_odbc_system_dsn_002.png[scaledwidth=498px]
+
+Click btn:[Add...] on the first screen to bring up the list of drivers on the next.
+Select the `Firebird/InterBase(r)` driver, then click btn:[Finish].
+
+[[fbodbc205-config-windows-settings]]
+=== The DSN Settings
+
+After clicking btn:[Finish] on the previous screen, you are presented with a form into which you will enter the parameters for a connection and will be able to test that they all work.
+
+[[fbodbc205-systemdsn-003]]
+.Setting up parameters for the DSN
+image::{docimagepath}/fb_odbc_system_dsn_003.png[scaledwidth=397px]
+
+[[fbodbc205-config-dsn]]
+.Parameters for the DSN Configuration
+[cols="1,2", options="header", stripes="none]
+|===
+^| Parameter
+^| Entry
+
+|Data Source Name (DSN)
+|REQUIRED.
+A unique, meaningful name indicating the type of connection or its use.
+Make it brief as you can expand the narrative elsewhere.
+Examples: "`Connect from FbEmbed`" or "`ConnectFbServer`"
+
+|Description
+|Optional.
+Can be used to provide more details about the data source.
+
+|Database
+|REQUIRED.
+Full address of the database, as required for an embedded or network connection.
+If the connection is remote, it can be in TCP/IP or WNET format.
+TCP/IP is recommended.
+Firebird database aliases are supported.
+Refer to <<fbodbc205-examples-connection,Connection Examples>>.
+
+|Client
+|May be required.
+Local path to the Firebird client library.
+For embedded connections to a sub-V.3 Windows server, it can point to the copy of `fbembed.dll` in the application directory;
+otherwise, point it to where you have located the bitness-compatible Firebird remote client library unless you are certain the correct library will be found automatically in a system location.
+
+|Database Account
+|Optional, since login credentials can be captured during connection to a Firebird database.
+If it is not configured, the ODBC interface will prompt for a user ID (UID or USER) at connection time.
+
+|Password
+|Optional, since login credentials can be captured during connection to a Firebird database.
+If it is configured, it should be the password for the supplied User ID.
+Otherwise, the ODBC interface will prompt for a password (PWD or PASSWORD) at connection time.
+Any password configured is encrypted automatically and saved in `odbc.ini`.
+Storing the password here should not be a security risk.
+
+|Role
+|Optional.
+If it is defined and the login is by SYSDBA, role is ignored;
+otherwise, the login credentials, whether stored or captured at connection, must have been granted that role prior to the login attempt.
+
+|Character Set
+|May be blank.
+Sets the default character set of the client.
+
+2+^h|Options (set here in DSN or specify dynamically)
+
+2+<h|Transaction parameters
+
+|Read (default write)
+|Transactions are read/write by default.
+Check to make transactions read-only.
+
+|Nowait (default wait)
+|The transaction will wait if it encounters a lock conflict.
+Check to have the transaction return an error immediately upon encountering a lock conflict.
+
+|Lock timeout
+|When a transaction is set for WAIT conflict resolution, express the length of time in seconds until the lock times out and a lock conflict error is returned (`isc_lock_timeout`).
+
+2+<h|Other optional parameters
+
+|Dialect
+|SQL dialect for the client to use in accessing the database.
+The only valid options for Firebird are 1 or 3.
+Note, Dialect 1 is not compatible with quoted identifiers;
+Dialect 3 will not accept strings delimited by double quotes.
+
+|Quoted Identifier
+|Causes pairs of double quotes to be treated solely as delimiters of case-sensitive object identifiers.
+Attempts to pass double quotes as string delimiters will be treated as errors in both dialects.
+Note, double-quoted strings have always been illegal in Dialect 3.
+
+|Sensitive Identifier
+|This option affects the way the client treats the property `SQL_IDENTIFIER_CASE`.
+`SQL_IC_UPPER` (value=1) is the default, treating all identifiers as stored in upper case characters.
+Check to select `SQL_IC_SENSITIVE`  (value=3) to have the interface treat all identifiers that are not in all upper case as though they were case-sensitive.
+This is not recommended!
+For an explanation, see <<#fbodbc20-note-sensitive-identifier,Note (1)>> below.
+
+|Autoquoted Identifier
+|Default is `NO`.
+The effect of checking this is to change the setting to `YES`.
+In that case, every identifier in every statement will be double-quoted automatically.
+The need to set this on would be highly unusual and would need to be well understood to avoid non-stop errors.
+
+|SCHEMA options
+|Drop-down list offering three options for treatment of SQL schemas, which Firebird does not support.
+Normally, leave this at the default setting menu:Set{sp}null{sp}field{sp}SCHEMA[].
+For some details, see <<#fbodbc20-note-schema-setting,Note (2)>> below.
+|===
+
+[[fbodbc20-note-sensitive-identifier]]
+.Note (1) regarding "`Sensitive identifier`"
+[NOTE]
+====
+If this setting is checked on, it would cause this statement 
+
+[source]
+----
+SELECT A.Test_Field FROM Mixed_Caps_Table A
+ORDER BY A.Test_Field
+----
+
+to be converted to
+
+[source]
+----
+SELECT A."Test_Field" FROM "Mixed_Caps_Table" A
+ORDER BY A."Test_Field"
+----
+
+The following would result in a wrong conversion:
+
+[source]
+----
+Select A.Test_Field From Mixed_Caps_Table A
+Order By A.Test_Field
+----
+
+gets converted to
+
+[source]
+----
+"Select" A."Test_Field" "From" "Mixed_Caps_Table" A
+"Order" "By" A."Test_Field"
+----
+====
+
+[[fbodbc20-note-schema-setting]]
+.Note (2) regarding SCHEMA settings
+[NOTE]
+====
+Some applications generate SQL statements automatically, based on user inquiries, on the assumption that the target database supports namespaces and SQL SCHEMAs.
+For example,
+
+[source]
+----
+select SYSDBA.COUNTRY,SYSDBA.CURRENCY from SYSDBA.COUNTRY
+----
+
+or
+
+[source]
+----
+select * from SYSDBA.COUNTRY
+----
+
+This selection of schema settings attempts to prevent clashes with applications that do this kind of thing.
+The drop-down list offers the three variants:
+
+. Set null field SCHEMA
+. Remove SCHEMA from SQL query
+. Use full SCHEMA
+
+menu:Set{sp}null{sp}field{sp}SCHEMA[] is the default, causing the SCHEMA element to be set `NULL` whenever it is specified as part of a query.
+The result is a query that Firebird can process.
+
+menu:Remove{sp}SCHEMA{sp}from{sp}SQL{sp}query[] filters the namespace references from the statement whenever the `SQLExecDirect` command receives a request such as
+
+[source]
+----
+select SYSDBA.COUNTRY,SYSDBA.CURRENCY from SYSDBA.COUNTRY
+----
+
+transforming it before passing it to the API as
+
+[source]
+----
+select COUNTRY,CURRENCY from COUNTRY
+----
+
+menu:Use{sp}full{sp}SCHEMA[]] is reserved for a future in which Firebird has the capability to process these concepts itself -- perhaps in Firebird 4.
+In that event, the driver will have no need to screen out these constructions.
+====
+
+Click on the btn:[Test connection] button to confirm that your configuration is good:
+
+[[fbodbc205-systemdsn-004]]
+.Testing the Configuration
+image::{docimagepath}/fb_odbc_system_dsn_004.png[scaledwidth=397px]
+
+If all is well, click btn:[OK], return to the main form and save the configuration by clicking btn:[OK] there, too.
+
+[[fbodbc205-services-button]]
+=== The Services Button
+
+The Services button launches a number of server management utilities through a GUI management console.
+It is described later in <<fbodbc205-services,The Services Interface>>. 
+
+[[fbodbc205-linux-config]]
+== Configuring a DSN on Linux
+Pavel Cisar
+
+Configuration depends on the Linux distribution but, somewhere in `/etc` or `/etc/unixODBC`, should be two files named `odbc.ini` and `odbcinst.ini`.
+
+Add to odbcinst.ini:
+
+[source]
+----
+[Firebird]
+Description     = InterBase/Firebird ODBC Driver
+Driver          = /usr/local/lib64/libOdbcFb.so
+Setup           = /usr/local/lib64/libOdbcFb.so
+Threading       = 1
+FileUsage       = 1
+CPTimeout       =
+CPReuse         =
+----
+
+Add to odbc.ini:
+
+[source]
+----
+[employee]
+Description     = Firebird
+Driver          = Firebird
+Dbname          = localhost:/opt/firebird/examples/empbuild/employee.fdb
+User            = SYSDBA
+Password        = masterkey
+Role            =
+CharacterSet    =
+ReadOnly        = No
+NoWait          = No
+----
+
+[[fbodbc205-linux-config-test]]
+=== Testing the Configuration
+
+UnixODBC has a tool named `ISQL` (not to be confused with Firebird's tool of the same name!) that you can use to test the connection, as follows:
+
+[source]
+----
+isql -v employee
+----
+
+If you have connection problems, make sure the directory where you placed the Firebird ODBC shared library, e.g. `/usr/local/lib64/libOdbcFb.so`, is on the system loadable library path.
+If not you could set:
+
+[source]
+----
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/odbc
+----
+
+or, more simply,
+
+[source]
+----
+export LD_LIBRARY_PATH=/usr/lib/odbc
+----
+
+If you still have problems, the next thing is to try an `strace` to try to identify them:
+
+[source]
+----
+strace -o output.txt isql -v employee
+----

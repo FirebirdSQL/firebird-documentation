@@ -1,0 +1,194 @@
+[[fbodbc205-events]]
+= Firebird Events
+
+To illustrate the use of Firebird events with the ODBC/JDBC driver, we use the example database, `employee.fdb` and work with the `SALES` table.
+This table has an `AFTER INSERT` trigger `POST_NEW_ORDER` that contains the statement `POST_EVENT 'new_order';`.
+Its effect will be to signal a listener on the client side when a new record is committed into `SALES`.
+
+Let us suppose that the table has also a `BEFORE UPDATE` trigger that posts an event `'change_order'` in subsequent operations when the field `ORDER_STATUS` is changed.
+
+[TIP]
+====
+The trigger `BEFORE UPDATE` does not exist: this scenario is just for illustration purposes, but you could create it if you like:
+
+[source]
+----
+CREATE OR ALTER TRIGGER BI_SALES FOR SALES
+ACTIVE BEFORE UPDATE
+AS BEGIN
+  IF (NEW.ORDER_STATUS = 'new') THEN
+  BEGIN
+     NEW.ORDER_STATUS = 'open';
+     POST_EVENT 'change_order';
+  END
+END
+----
+====
+
+For our demo, we need to insert a new record into `SALES`.
+The field `ORDER_STATUS` on the newly-inserted record contains the default value `'new'`.
+After it commits, posting the event `'new_order'`, we want to go back and change something in the new record.
+When we do so, our `BEFORE UPDATE` trigger, `BI_SALES` will check whether the value of `ORDER_STATUS` is still `'new'` and, if so, it will change it to `'open'` and post the event `'change_order'`.
+
+[NOTE]
+====
+We are not really interested in how inserting and changing the record affects the database state.
+The idea here is to show how to prime the driver to manage listening for multiple events.
+====
+
+[[fbodbc205-events-listener]]
+== Priming the Driver to Listen for Events
+
+The first piece of setting up the driver to listen for events is to connect to an ODBC interface file that describes Firebird events processing: 
+
+[source]
+----
+#include "OdbcUserEvents.h"
+----
+
+Next, in the table `eventInfo`, we specify the events that we are interested in.
+For our example, the event `'new_order'` is the only one we are interested in at this stage.
+The event `'change_order'` is in the picture only to demonstrate the driver's ability to manage multiple events.
+
+[source]
+----
+ODBC_EVENT_INFO eventInfo[] =
+{
+ INIT_ODBC_EVENT("new_order"),
+ INIT_ODBC_EVENT("change_order")
+};
+----
+
+Now, we need to create a structure -- which we will name `MyUniqueData` -- to store the data tasks involved in our operation.
+In our example, a field `event_flag` will signal an event delivered from the server.
+Our job starts from there.
+
+[source]
+----
+struct MyUniqueData
+{
+ int event_flag;
+ //... other define for use into astRoutine
+};
+----
+
+We need to create a callback function, `astRoutine`, which will be activated when events defined in the `eventInfo` table are flagged:
+
+[source]
+----
+void astRoutine( void *userEventsInterfase, short length, char * updated )
+{
+    PODBC_USER_EVENTS_INTERFASE userInterfase = (PODBC_USER_EVENTS_INTERFASE)userEventsInterfase;
+    SQLSetConnectAttr( userInterfase->hdbc, SQL_FB_UPDATECOUNT_EVENTS, (SQLPOINTER)updated, SQL_LEN_BINARY_ATTR( length ) );
+    MyUniqueData &myData = *(MyUniqueData*)userInterfase->userData;
+    myData.event_flag++;
+    printf( "ast routine was called\n" );
+}
+----
+
+The function needs to have a call:
+
+[source]
+----
+SQLSetConnectAttr( userInterfase->hdbc,
+                   SQL_FB_UPDATECOUNT_EVENTS,
+                   (SQLPOINTER)updated,
+                   SQL_LEN_BINARY_ATTR( length ) );
+----
+
+This call is needed for updating the state of events in our structure `eventInfo`.
+That structure has a field `countEvents` that maintains a total of event operations and a Boolean field `changed` that is set True when the 'before' and 'after' values of `countEvents` are different.
+
+When we want to flag an event that we are interested in, we issue the command: 
+
+[source]
+----
+myData.event_flag++;
+----
+
+It provides a fairly primitive mechanism for synchronizing workflow, but it is sufficient for our needs.
+Its setup is as follows: 
+
+* At connection time or when the DSN is being constructed, the `NOWAIT` option must be set to `OFF`
+* The following statements need to be issued: 
++
+[source]
+----
+// Specify that the Firebird ODBC Cursor is always used, then connect.
+SQLSetConnectAttr( hdbc, SQL_ATTR_ODBC_CURSORS, (SQLPOINTER)SQL_CUR_USE_DRIVER, 0 );
+SQLConnect( hdbc, (UCHAR*)connectString, SQL_NTS, NULL, 0, NULL, 0 );
+----
+* For the purpose of our demonstration we need to prepare an SQL cursor request.
+Your own, real-life scenario would be less trivial, of course.
++
+[source]
+----
+SQLPrepare( stmtSel, (UCHAR*)
+  "SELECT po_number"
+  " FROM sales"
+  " WHERE order_status = 'new'"
+  " FOR UPDATE",
+  SQL_NTS );
+----
+* We'll construct the cursor query for our demo, naming it 'C': 
++
+[source]
+----
+char *cursor = "C";
+SQLSetCursorName( stmtSel, (UCHAR*)cursor, sizeof( cursor ) );
+
+SQLPrepare( stmtUpd, (UCHAR*)
+  "UPDATE sales"
+  " SET order_status = 'open'"
+  " WHERE CURRENT OF C",
+         SQL_NTS );
+----
+* Initialize the structure `ODBC_EVENTS_BLOCK_INFO` as the events interface that is passed to the driver: 
++
+[source]
+----
+myData.event_flag = 0;
+ODBC_EVENTS_BLOCK_INFO eventsBlockInfo = INIT_EVENTS_BLOCK_INFO(
+  hdbc, eventInfo, astRoutine, &myData );
+SQLSetConnectAttr(
+  hdbc, SQL_FB_INIT_EVENTS,
+  (SQLPOINTER)&eventsBlockInfo,
+  SQL_LEN_BINARY_ATTR((int)sizeof( eventsBlockInfo )) );
+- to inform connection, that we are ready to accept events.
+SQLSetConnectAttr( hdbc, SQL_FB_REQUEUE_EVENTS, (SQLPOINTER)NULL, 0 );
+----
+* Events begin ... 
++
+[source]
+----
+while ( !iret )
+{
+  // If the event was triggered, reset the buffer and re-queue
+  if ( myData.event_flag )
+  {
+    myData.event_flag = 0;
+    // Check for first ast_call.  isc_que_events fires
+    // each event to get processing started
+    if ( first )
+      first = 0;
+    else
+    {
+      // Select query to look at triggered events
+      ret = SQLExecute( stmtSel );
+      for (;;)
+      {
+        ret = SQLFetch( stmtSel );
+        if ( ret == SQL_NO_DATA_FOUND )
+          break;
+        ret = SQLExecute( stmtUpd );
+      }
+    }
+    /* Re-queue for the next event */
+    SQLSetConnectAttr( hdbc, SQL_FB_REQUEUE_EVENTS, (SQLPOINTER)NULL, 0 );
+    /* This does not block, but as a sample program there is nothing
+     * else for us to do, so we will take a nap
+     */
+    Sleep(1000);
+  }
+}
+----
