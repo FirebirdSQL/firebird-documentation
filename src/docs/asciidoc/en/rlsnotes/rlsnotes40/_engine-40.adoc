@@ -8,7 +8,7 @@ Firebird 4 creates databases with the on-disk structure numbered 13 -- "`ODS 13`
 The remote interface protocol number is 16.
 
 [[rnfb40-engine-maxpagesize]]
-== Extended Maximum Page Size
+== Maximum Page Size Increased To 32KB
 Dmitry Yemanov
 
 Tracker ticket http://tracker.firebirdsql.org/browse/CORE-2192[CORE-2192]
@@ -68,7 +68,7 @@ Subsequently, the time zone can be changed to a given time zone using a  `SET TI
 A time zone is a string, either a time zone region (for example, 'America/Sao_Paulo') or a displacement from GMT in hours:minutes (for example, '-03:00').
 
 A time/timestamp with time zone is considered equal to another time/timestamp with time zone if their conversions to UTC are equivalent.
-For example, `time '10:00 -02'` and `time '09:00 -03'` are equivalent, since both are the same as `time '12:00 GMT'`.
+For example, `time '10:00 -02:00'` and `time '09:00 -03:00'` are equivalent, since both are the same as `time '12:00 GMT'`.
 
 [IMPORTANT]
 ====
@@ -153,7 +153,7 @@ Returns:
 ----
 DATABASE_VERSION
 ================
-2017c
+2020d
 ----
 
 [[rnfb40-timezone-zone-util-transitions]]
@@ -267,14 +267,14 @@ Effectively the databases are in sync after every commit, which could have an im
 Although some recent uncommitted changes may be buffered, they are not transmitted until committed.
 ====
 
-More than one synchronous replication can be configured, if necessary.
+More than one synchronous replica can be configured, if necessary.
 
 [[rnfb40-replication-modes-asynch]]
 ==== Asynchronous Mode
 
 In asynchronous replication, changes are written into local journal files that are transferred over the wire and applied to the replica database.
 The impact on performance is much lower, but imposes a delay -- [term]_replication lag_ -- while changes wait to be applied to the replica database;
-i.e. the replica database is always "`catching up`" to the master database.
+i.e. the replica database is always "`catching up`" the master database.
 
 [[rnfb40-replication-access-modes]]
 === Access Modes
@@ -287,7 +287,7 @@ Modifications are limited to the replication process only.
 NOTE: Global temporary tables can be modified, as they are not replicated. 
 
 * A read-write replica allows execution of any query.
-In this access mode, potential conflicts must be resolved by users.
+In this access mode, potential conflicts must be resolved by users or database administrators.
 
 [[rnfb40-replication-journalling]]
 === Journaling
@@ -384,10 +384,10 @@ This is done using the following DDL statements:
 [source]
 ----
 -- to replicate all tables (including the ones created later)
-ALTER DATABASE ADD ALL TO PUBLICATION 
+ALTER DATABASE INCLUDE ALL TO PUBLICATION 
 
 -- to replicate specific tables
-ALTER DATABASE ADD TABLE T1, T2, T3 TO PUBLICATION
+ALTER DATABASE INCLUDE TABLE T1, T2, T3 TO PUBLICATION
 ----
 
 Tables may later be excluded from the replication set:
@@ -395,10 +395,10 @@ Tables may later be excluded from the replication set:
 [source]
 ----
 -- to disable replication of all tables (including the ones created later)
-ALTER DATABASE DROP ALL FROM PUBLICATION 
+ALTER DATABASE EXCLUDE ALL FROM PUBLICATION 
 
 -- to disable replication of specific tables
-ALTER DATABASE DROP TABLE T1, T2, T3 FROM PUBLICATION
+ALTER DATABASE EXCLUDE TABLE T1, T2, T3 FROM PUBLICATION
 ----
 
 Tables enabled for replication inside the database can be additionally filtered using two settings in `replication.conf`: `include_filter` and `exclude_filter`.
@@ -445,7 +445,7 @@ database = /data/mydb.fdb
 {
     log_directory = /dblogs/mydb/
     log_archive_directory = /shiplogs/mydb/
-    log_archive_command = "test ! -f $\(archpathname\) && cp $(logpathname) $(archpathname)"
+    log_archive_command = "test ! -f $(archpathname) && cp $(logpathname) $(archpathname)"
 }
 ----
 
@@ -519,12 +519,12 @@ To take into effect changes applied to replica-side settings, the Firebird serve
 [float]
 ===== Task 1 -- Make the initial replica
 
-In this Beta release, any physical copying method can be used to create an initial replica of the primary database:
+Any physical copying method can be used to create an initial replica of the primary database:
 
 * File-level copy while the Firebird server is shut down
 * `ALTER DATABASE BEGIN BACKUP` + file-level copy + `ALTER DATABASE END BACKUP`
 * `nbackup -l` + file-level copy + `nbackup -n`
-* `nbackup -b 0`
+* `nbackup -b 0` + `nbackup -f -seq`
 
 [float]
 ===== Task 2 -- Activate the _replica_ access mode
@@ -685,7 +685,7 @@ Configures the number of seconds a connection should stay available after it has
 
 [[rnfb40-engine-timeouts]]
 == Timeouts at Two levels
-Vladyslav Khorsun
+Vlad Khorsun
 
 Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5488[CORE-5488]
 
@@ -906,7 +906,7 @@ Whenever a statement times out and is cancelled, the next user API call returns 
 [[rnfb40-stmnt-timeout-notes]]
 ===== Notes about Statement Timeouts
 
-. A client application could wait longer than the time than set by the timeout value if the engine needs to undo a large number of actions as a result of the statement cancellation
+. A client application could wait longer than the time set by the timeout value if the engine needs to undo a large number of actions as a result of the statement cancellation
 . When the engine runs an `EXECUTE STATEMENT` statement, it passes the remainder of the currently active timeout to the new statement.
 If the external (remote) engine does not support statement timeouts, the local engine silently ignores any corresponding error.
 . When engine acquires some lock from the lock manager, it tries to lower the value of the lock timeout using the remainder of the currently active statement timeout, if possible.
@@ -990,15 +990,16 @@ It contains the current value of the statement execution timeout that was set at
 
 In `MON$ATTACHMENTS`:
 
+[horizontal]
 `MON$STATEMENT_TIMEOUT`:: Connection level statement timeout
 
 In `MON$STATEMENTS`:
 
+[horizontal]
 `MON$STATEMENT_TIMEOUT`:: Statement level statement timeout
 `MON$STATEMENT_TIMER`:: Timeout timer expiration time
 
-`MON$STATEMENT_TIMEOUT` contains timeout value set at connection or statement level, in milliseconds.
-Zero, if timeout is not set.
+`MON$STATEMENT_TIMEOUT` contains timeout value set at connection or statement level, in milliseconds. Zero, if timeout is not set.
 
 `MON$STATEMENT_TIMER` contains `NULL` if no timeout was set or if a timer is not running.
 
@@ -1017,7 +1018,7 @@ After statement execution, the timer is automatically reset to zero.
 
 [[rnfb40-engine-trans-commit-order]]
 == Commit Order for Capturing the Database Snapshot
-Nickolay  Samofatov; Roman Simakov; Vladyslav Khorsun
+Nickolay Samofatov; Roman Simakov; Vlad Khorsun
 
 Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5953[CORE-5953]
 
@@ -1143,34 +1144,34 @@ Nested statements (triggers, nested stored procedures and functions, dynamic sta
 [[rnfb40-engine-read-consistency]]
 ===== New Isolation Sub-Level for READ COMMITTED
 
-A new sub-level for transactions in READ COMMITTED isolation is introduced: READ COMMITTED READ CONSISTENCY.
+A new sub-level for transactions in _READ COMMITTED_ isolation is introduced: _READ COMMITTED READ CONSISTENCY_.
 
-The existing sub-levels for READ COMMITTED isolation, RECORD VERSION and NO RECORD VERSION, are still supported and operate as before (without using statement-level snapshots), but could be regarded as "`legacy`" in future Firebird versions.
+The existing sub-levels for _READ COMMITTED_ isolation, namely _RECORD VERSION_ and _NO RECORD VERSION_, are still supported and operate as before (without using statement-level snapshots), but they are now deprecated and may be removed in future Firebird versions.
 
-In summary, the three variants for transactions in READ COMMITTED isolation are now: 
+In summary, the three variants for transactions in _READ COMMITTED_ isolation are now: 
 
-* READ COMMITTED READ CONSISTENCY
-* READ COMMITTED NO RECORD VERSION
-* READ COMMITTED RECORD VERSION
+* `READ COMMITTED READ CONSISTENCY`
+* `READ COMMITTED NO RECORD VERSION`
+* `READ COMMITTED RECORD VERSION`
 
 [[rnfb40-engine-read-consistency-conflicts]]
 ===== Handling of Update Conflicts
 
-When a statement executes in a READ COMMITTED READ CONSISTENCY transaction, its database view is retained in a fashion similar to a SNAPSHOT transaction.
+When a statement executes in a _READ COMMITTED READ CONSISTENCY_ transaction, its database view is retained in a fashion similar to a _SNAPSHOT_ transaction.
 This makes it pointless to wait for the concurrent transaction to commit, in the hope of being able to read the newly-committed record version.
-So, when a READ COMMITTED READ CONSISTENCY transaction reads data, it behaves similarly to READ COMMITTED RECORD VERSION transaction: walks the back versions chain looking for a record version visible to the current snapshot. 
+So, when a _READ COMMITTED READ CONSISTENCY_ transaction reads data, it behaves similarly to _READ COMMITTED RECORD VERSION_ transaction: walks the back versions chain looking for a record version visible to the current snapshot. 
 
-When an update conflict occurs, the behaviour of a READ COMMITTED READ CONSISTENCY transaction is different to that of one in READ COMMITTED RECORD VERSION.
+When an update conflict occurs, the behaviour of a _READ COMMITTED READ CONSISTENCY_ transaction is different to that of one in _READ COMMITTED RECORD VERSION_.
 The following actions are performed: 
 
-. Transaction isolation mode is temporarily switched to READ COMMITTED NO RECORD VERSION.
+. Transaction isolation mode is temporarily switched to _READ COMMITTED NO RECORD VERSION_.
 . A write lock is taken for the conflicting record.
 . Remaining records of the current `UPDATE`/`DELETE` cursor are processed and they are write-locked too.
 . Once the cursor is fetched, all modifications performed since the top-level statement was started are undone, already taken write locks for every updated/deleted/locked record are preserved, all inserted records are removed.
-. Transaction isolation mode is restored to READ COMMITTED READ CONSISTENCY, new statement-level snapshot is created and the top-level statement is restarted.
+. Transaction isolation mode is restored to _READ COMMITTED READ CONSISTENCY_, new statement-level snapshot is created and the top-level statement is restarted.
 
 This algorithm ensures that already updated records remain locked after restart, they are visible to the new snapshot, and could be updated again with no further conflicts.
-Also, due to READ CONSISTENCY nature, the modified record set remains consistent.
+Also, due to _READ CONSISTENCY_ nature, the modified record set remains consistent.
 
 .Notes
 [NOTE]
@@ -1179,7 +1180,7 @@ Also, due to READ CONSISTENCY nature, the modified record set remains consistent
 * If `UPDATE`/`DELETE` statement is positioned on some explicit cursor (using the `WHERE CURRENT OF` clause), then the step (3) above is skipped, i.e. remaining cursor records are not fetched and write-locked.
 * If the top-level statement is selectable and update conflict happens after one or more records were returned to the client side, then an update conflict error is reported as usual and restart is not initiated.
 * Restart does not happen for statements executed inside autonomous blocks (`IN AUTONOMOUS TRANSACTION DO ...`).
-* After 10 unsuccessful attempts the restart algorithm is aborted, all write locks are released, transaction isolation mode is restored to READ COMMITTED READ CONSISTENCY and an update conflict error is raised.
+* After 10 unsuccessful attempts the restart algorithm is aborted, all write locks are released, transaction isolation mode is restored to _READ COMMITTED READ CONSISTENCY_ and an update conflict error is raised.
 * Any error not handled at step (3) above aborts the restart algorithm and statement execution continues normally.
 * `UPDATE`/`DELETE` triggers fire multiple times for the same record if the statement execution was restarted and record is updated/deleted again.
 * Statement restart is usually fully transparent to client applications and no special actions should be taken by developers to handle it in any way.
@@ -1198,10 +1199,10 @@ Beware that such code could be executed more than once if update conflict happen
 [[rnfb40-engine-read-committed-read-only]]
 ===== Read Committed Read-Only Transactions
 
-In the existing implementation, READ COMMITTED transactions in READ ONLY mode are marked as committed when the transaction starts.
+In the existing implementation, _READ COMMITTED_ transactions in _READ ONLY_ mode are marked as committed when the transaction starts.
 This provides a benefit in that record versions in such transactions are never "`interesting`", thus not inhibiting the regular garbage collection and not delaying the advance of the OST marker.
 
-READ CONSISTENCY READ ONLY transactions are still started as pre-committed, but in order to avoid the regular garbage collection breaking future statement-level snapshots, it delays the advance of the OST marker in the same way as it happens for SNAPSHOT transactions.
+_READ CONSISTENCY READ ONLY_ transactions are still started as pre-committed, but in order to avoid the regular garbage collection breaking future statement-level snapshots, it delays the advance of the OST marker in the same way as it happens for _SNAPSHOT_ transactions.
 
 [NOTE]
 ====
@@ -1211,7 +1212,7 @@ This delays only the _regular_ (traditional) garbage collection, the _intermedia
 [[rnfb40-engine-read-consistency-syntax]]
 ===== Syntax and Configuration
 
-Support for the new READ COMMITTED READ CONSISTENCY isolation level is found in SQL syntax, in the API and in configuration settings.
+Support for the new _READ COMMITTED READ CONSISTENCY_ isolation level is found in SQL syntax, in the API and in configuration settings.
 
 Where `SET TRANSACTION` is available in SQL, the new isolation sub-level is set as follows:
 
@@ -1220,15 +1221,15 @@ Where `SET TRANSACTION` is available in SQL, the new isolation sub-level is set 
 SET TRANSACTION READ COMMITTED READ CONSISTENCY
 ----
 
-To start a READ COMMITTED READ CONSISTENCY transaction via the ISC API, use the new constant `isc_tpb_read_consistency` in the Transaction Parameter Buffer.
+To start a _READ COMMITTED READ CONSISTENCY_ transaction via the ISC API, use the new constant `isc_tpb_read_consistency` in the Transaction Parameter Buffer.
 
-Starting with Firebird 4, usage of the legacy READ COMMITTED modes (RECORD VERSION and NO RECORD VERSION) is discouraged and READ CONSISTENCY mode is recommended to be used instead.
-For now, existing applications can be tested with the new READ COMMITTED READ CONSISTENCY isolation level by setting the new configuration parameter <<rnfb40-config-readconsistency,ReadConsistency>> described in the Configuration Additions and Changes chapter.
+Starting with Firebird 4, usage of the legacy _READ COMMITTED_ modes (_RECORD VERSION_ and _NO RECORD VERSION_) is discouraged and _READ CONSISTENCY_ mode is recommended to be used instead.
+For now, existing applications can be tested with the new _READ COMMITTED READ CONSISTENCY_ isolation level by setting the new configuration parameter <<rnfb40-config-readconsistency,ReadConsistency>> described in the Configuration Additions and Changes chapter.
 
 [IMPORTANT]
 ====
-Please pay attention that the `ReadConsistency` configuration setting is enabled by default, thus forcing all READ COMMITTED transactions to be executed in the READ CONSISTENCY mode.
-Consider disabling this setting if the legacy behaviour of READ COMMITTED transactions must be preserved.
+Please pay attention that the `ReadConsistency` configuration setting is enabled by default, thus forcing all _READ COMMITTED_ transactions to be executed in the _READ CONSISTENCY_ mode.
+Consider disabling this setting if the legacy behaviour of _READ COMMITTED_ transactions must be preserved.
 ====
 
 [[rnfb40-engine-commit-order-gc]]
@@ -1313,3 +1314,22 @@ Richard Jones
 Tracker ticket http://tracker.firebirdsql.org/browse/CORE-5779[CORE-5779]
 
 A patch was introduced to compile Firebird 4.0 on the RISC v.64 platform.
+
+[[rnfb40-config-table]]
+== Virtual table RDB$CONFIG
+Vlad Khorsun
+
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-3708[CORE-3708]
+
+A virtual table enumerating configuration settings actual for the current database.
+Columns: 
+
+[horizontal]
+`RDB$CONFIG_ID` type `INTEGER`:: Unique row identifier, no special meaning
+`RDB$CONFIG_NAME` type `VARCHAR(63)`:: Setting name (e.g. "TempCacheLimit")
+`RDB$CONFIG_VALUE` type `VARCHAR(255)`:: Actual value of setting
+`RDB$CONFIG_DEFAULT` type `VARCHAR(255)`:: Default value of setting (defined in the Firebird code)
+`RDB$CONFIG_IS_SET` type `BOOLEAN`:: TRUE if value was set by user, FALSE otherwise
+`RDB$CONFIG_SOURCE` type `VARCHAR(255)`:: Name of configuration file (relative to the Firebird root directory) where this setting was taken from, or special value "DPB" if the setting was specified by the client application via API
+
+Table RDB$CONFIG is populated from in-memory structures upon request and its instance is preserved for the SQL query lifetime. For security reasons, access to this table is allowed to SYSDBA/OWNER only. Non-privileged users see no rows in this table (and no error is raised).

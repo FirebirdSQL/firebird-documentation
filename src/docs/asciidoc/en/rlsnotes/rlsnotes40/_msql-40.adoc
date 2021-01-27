@@ -110,7 +110,9 @@ In order to reuse a session, all its user context variables and contents of temp
 
 This statement is executed the following way: 
 
-* Error _isc_ses_reset_err_ is raised if any transaction remains active in the current session, except for two-phase-commit transactions in the prepared state.
+* Error _isc_ses_reset_err_ is raised if any transaction remains active in the current session, except of current transaction and two-phase-commit transactions in the prepared state.
+* System variable `RESETTING` is set to TRUE.
+* `ON DISCONNECT` database triggers are fired, if present and allowed for current connection.
 * The current transaction (the one executing `ALTER SESSION RESET`), if present, is rolled back.
 A warning is reported if this transaction had modified some data in tables before resetting the session.
 * `DECFLOAT` parameters (`TRAP` and `ROUND`) are reset to the initial values defined using DPB at connection time, or otherwise the system default
@@ -118,10 +120,22 @@ A warning is reported if this transaction had modified some data in tables befor
 * Context variables defined for the 'USER_SESSION' namespace are removed.
 * Global temporary tables defined as `ON COMMIT PRESERVE ROWS` are truncated (their contents is cleared).
 * Current role is restored to the initial value defined using DPB at connection time, the security classes cache is cleared (if role was changed).
+* The session time zone is reset to the initial value defined using DPB at connection time, or otherwise the system default.
+* The bind configuration is reset to the initial value defined using DPB at connection time, or otherwise the database or system default.
+* In general, configuration values should revert to values configured using DPB at connection time, or otherwise the database or system default.
+* `ON CONNECT` database triggers are fired, if present and allowed for current connection.
 * A new transaction is implicitly started with the same parameters as the transaction that was rolled back (if it was present).
-* The session time zone is reset to the initial value defined using DPB at connection time, or otherwise the system default
-* The bind configuration is reset to the initial value defined using DPB at connection time, or otherwise the database or system default
-* In general, configuration values should revert to values configured using DPB at connection time, or otherwise the database or system default
+* System variable `RESETTING` is set to FALSE.
+
+Note, `CURRENT_USER` and `CURRENT_CONNECTION` will not be changed.
+
+New system variable `RESETTING` is introduced to detect cases when a database trigger is fired due to session reset. It is available in triggers only and can be used in any place when a boolean predicate is allowed. Its value is TRUE if session reset is in progress and FALSE otherwise. `RESETTING` is a reserved word now. 
+
+=== Errors handling
+
+Any error raised by `ON DISCONNECT` triggers aborts session reset and leaves the session state unchanged. Such errors are reported using primary error code _isc_session_reset_err_ and error text "Cannot reset user session".
+
+Any error raised after `ON DISCONNECT` triggers (including the ones raised by `ON CONNECT` triggers) aborts both session reset statement execution and connection itself. Such errors are reported using primary error code _isc_session_reset_failed_ and error text "Reset of user session failed. Connection is shut down.". Subsequent operations on connection (except of detach) will fail with _isc_att_shutdown error_.
 
 [[rnfb40-msql-timezone-statements]]
 == Time Zone Management
@@ -216,13 +230,14 @@ SET BIND OF { <type-from> | TIME ZONE } TO { <type-to> | LEGACY | NATIVE | EXTEN
 This management statement makes it possible to substitute one data type with another one when performing the client-server interaction.
 In other words, _type-from_ returned by the engine is represented as _type-to_ in the client API.
 
+[NOTE]
+Only fields returned by database engine in regular messages are substituted accordingly to these rules. Variables returned as an array slice are not affected by the `SET BIND` statement.
+
 When an incomplete type definition is used (i.e. simply `CHAR` instead of `CHAR(n)`) in the _FROM_ part, the coercion is performed for all `CHAR` columns.
 The special incomplete type `TIME ZONE` stands for all types `WITH TIME ZONE` (namely `TIME` and `TIMESTAMP`).
 When an incomplete type definiton is used in the _TO_ part, the engine defines missing details about that type automatically based on source column.
 
-From the `SET BIND` point of view there is no difference between `NUMERIC` and `DECIMAL` datatypes.
-Changing binding of any `NUMERIC` does not affect the underlying integer type.
-On contrary, changing binding of the `INTEGER` datatype also affects dependent ``NUMERIC``s.
+Changing binding of any `NUMERIC` or `DECIMAL` data type does not affect the appropriate underlying integer type. On contrary, changing binding of some integer datatype also affects appropriate NUMERICs/DECIMALs.
 
 The special format `LEGACY` is used when a data type, missing in previous Firebird version, should be represented in a way, understandable by old client software (possibly with some data loss).
 The coercion rules applied in this case are shown in the table below.
@@ -240,8 +255,8 @@ The coercion rules applied in this case are shown in the table below.
 |DECFLOAT
 |DOUBLE PRECISION
 
-|NUMERIC(38)
-|NUMERIC(18)
+|INT128
+|BIGINT
 
 |TIME WITH TIME ZONE
 |TIME WITHOUT TIME ZONE
@@ -250,7 +265,7 @@ The coercion rules applied in this case are shown in the table below.
 |TIMESTAMP WITHOUT TIME ZONE
 |===
 
-Using `EXTENDED` in the _TO_ part causes the engine to use an extended form of the _FROM_ data type.
+Using `EXTENDED` in the _TO_ part causes the engine to coerce to an extended form of the _FROM_ data type.
 Currently, this works only for `TIME/TIMESTAMP WITH TIME ZONE`, they are coerced to `EXTENDED TIME/TIMESTAMP WITH TIME ZONE`.
 The `EXTENDED` type contains both the time zone name and the corresponding GMT offset, so it remains usable if the client application cannot process named time zones properly (e.g. due to the missing ICU library).
 

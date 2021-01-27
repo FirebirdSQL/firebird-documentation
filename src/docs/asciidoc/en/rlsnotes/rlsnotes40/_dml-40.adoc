@@ -88,9 +88,7 @@ In columns populated by triggers in the traditional way, the value from `DEFAULT
 [[rnfb40-dml-defaultstuff]]
 === DEFAULT vs DEFAULT VALUES
 
-Since version 2.1, Firebird has supported the `DEFAULT VALUES` clause.
-The two clauses are not the same.
-The `DEFAULT VALUES` clause is an alternative to the `VALUES` clause and can be used only when all of the columns specified in the column list have been defined with default values.
+Since version 2.1, Firebird has supported the `DEFAULT VALUES` clause. The two clauses are not the same. The `DEFAULT` clause applies to an individual column in the _VALUES_ list, while `DEFAULT VALUES` applies to the row to be inserted as a whole. A statement like `INSERT INTO sometable DEFAULT VALUES` is equivalent to `INSERT INTO sometable VALUES (DEFAULT, ...)` with as many `DEFAULT` in the _VALUES_ list as there are columns in _sometable_.
 
 [[rnfb40-dml-identity-overriding]]
 == OVERRIDING Clause for IDENTITY Columns
@@ -139,7 +137,8 @@ The pattern for Firebird 4 windowing syntax is as follows:
   PARTITION BY <expr> [, <expr> ...]
 
 <window order> ::=
-  ORDER BY <expr> [<direction>] [<nulls placement>] [, <expr> [<direction>] [<nulls placement>]] ...
+  ORDER BY <expr> [<direction>] [<nulls placement>]
+           [, <expr> [<direction>] [<nulls placement>]] ...
 
 <window frame> ::=
   {RANGE | ROWS} <window frame extent>
@@ -151,8 +150,13 @@ The pattern for Firebird 4 windowing syntax is as follows:
   {UNBOUNDED PRECEDING | <expr> PRECEDING | CURRENT ROW}
 
 <window frame between> ::=
-  BETWEEN {UNBOUNDED PRECEDING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW} AND
-          {UNBOUNDED FOLLOWING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW}
+  BETWEEN <window frame bound 1> AND <window frame bound 2>
+
+<window frame bound 1> ::=
+  {UNBOUNDED PRECEDING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW}
+
+<window frame bound 2> ::=
+  {UNBOUNDED FOLLOWING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW}
 
 <direction> ::=
   {ASC | DESC}
@@ -201,8 +205,13 @@ The following extract from the syntax pattern above explains the elements that a
   {UNBOUNDED PRECEDING | <expr> PRECEDING | CURRENT ROW}
 
 <window frame between> ::=
-  BETWEEN {UNBOUNDED PRECEDING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW} AND
-          {UNBOUNDED FOLLOWING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW}
+  BETWEEN <window frame bound 1> AND <window frame bound 2>
+
+<window frame bound 1> ::=
+  {UNBOUNDED PRECEDING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW}
+
+<window frame bound 2> ::=
+  {UNBOUNDED FOLLOWING | <expr> PRECEDING | <expr> FOLLOWING | CURRENT ROW}
 ----
 
 The frame comprises three pieces: unit, start bound and end bound.
@@ -556,7 +565,7 @@ If `LOCAL` is used, the value is converted to the session time zone.
 .Examples
 [source]
 ----
-select time '12:00 GMT' at time zone '-03' from rdb$database;
+select time '12:00 GMT' at time zone '-03:00' from rdb$database;
 select current_timestamp at time zone 'America/Sao_Paulo' from rdb$database;
 select timestamp '2018-01-01 12:00 GMT' at local from rdb$database;
 ----
@@ -824,7 +833,7 @@ select * from SOMETABLE
 	and rdb$db_key < make_dbkey('SOMETABLE', 0, 1, 5)
 ----
 
-[[rnfb4-builtin-base64]]
+[[rnfb4-dml-new-builtin-base64]]
 ==== BASE64_ENCODE() and BASE64_DECODE()
 Alex Peshkov
 
@@ -845,7 +854,7 @@ BASE64_DECODE( _base64_data_ )
 select base64_encode(public_key) from clients;
 ----
 
-[[rnfb4-builtin-hex]]
+[[rnfb4-dml-new-builtin-hex]]
 ==== HEX_ENCODE() and HEX_DECODE()
 Alex Peshkov
 
@@ -865,33 +874,30 @@ HEX_DECODE( _hex_data_ )
 select hex_encode(binary_string) from clients;
 ----
 
-[[rnfb4-builtin-crc32]]
-==== CRC32()
+[[rnfb4-dml-new-builtin-crypt-hash]]
+==== CRYPT_HASH()
 Alex Peshkov
 
-Accepts an argument than can be a field, variable or expression of any type recognised by DSQL/PSQL and returns a CRC-32 code calculated from the input data with the polynomial 0x04C11DB7.
-A constant, such as a file name passed as a string, returns the CRC for only the input.
+Accepts an argument than can be a field, variable or expression of any type recognized by DSQL/PSQL and returns a cryptographic hash calculated from the input argument using the specified algorithm.
 
 .Syntax
 [listing,subs=+quotes]
 ----
-CRC32( _any_value_ )
+CRYPT_HASH( <any value> USING <algorithm> )
+
+<algorithm> ::= { MD5 | SHA1 | SHA256 | SHA512 }
 ----
 
 .Example
 [source]
 ----
-select crc32(job_title) from job;
-
-select crc32('Firebird-4.0.0.716-Alpha1.amd64.tar.gz') from rdb$database;
+select crypt_hash(job_title using sha256) from job;
 ----
 
 [NOTE]
 ====
-Initially, CRC codes were designed as a tool to detect accidental changes to raw data when transferred over the wire or stored somewhere.
-
-It can be used as a very fast and rather efficient hash function.
-If the risk of collisions is not critical, its 32-bit integer output bestows a significant advantage over the widely-used SHA family of hashes in that it is easier to use later in various calculations if needed.
+* This function returns a VARBINARY string with the length depending on the specified algorithm.
+* MD5 and SHA1 algorithms are not recommended due to known severe issues, these algorithms are provided for backward compatibility ONLY.
 ====
 
 [[rnfb40-dml-changes-built-in-functions]]
@@ -924,30 +930,30 @@ select extract(timezone_minute from current_timestamp) from rdb$database;
 In version 4.0, `CURRENT_TIME` and `CURRENT_TIMESTAMP` are changed: they now return `TIME WITH TIME ZONE` and `TIMESTAMP WITH TIME ZONE`, with the time zone set by the session time zone.
 In previous versions, `CURRENT_TIME` and `CURRENT_TIMESTAMP` returned the respective types according to the system clock, i.e. without any time zone.
 
-To ease the transition, `LOCALTIME` and `LOCALTIMESTAMP` were added at version 3.0.4, allowing developers to adjust application code without any functional changes, before migrating to Firebird 4.
+To ease the transition, `LOCALTIME` and `LOCALTIMESTAMP` were added to versions 3.0.4 and 2.5.9, allowing developers to adjust application code without any functional changes, before migrating to Firebird 4.
 
 [IMPORTANT]
 ====
 See also <<rnfb40-compat-sql-timezone-changes,Changes in DDL and DML Due to Timezone Support>> in the <<rnfb40-compat,Compatibility>> chapter.
 ====
 
-[[rnfb40-dml-changes-functions-hash]]
+[[rnfb40-dml-functions-hash]]
 ==== HASH()
 Adriano dos Santos Fernandes
 
 Tracker ticket http://tracker.firebirdsql.org/browse/CORE-4436[CORE-4436]
 
-Returns a hash for a string using a specified algorithm.
+Returns a generic hash for the input argument using the specified algorithm.
 
 .Syntax
 [listing]
 ----
-HASH( <string> [ USING <algorithm> ] )
+HASH( <any value> [ USING <algorithm> ] )
 
-<algorithm> ::= { MD5 | SHA1 | SHA256 | SHA512 }
+<algorithm> ::= { CRC32 }
 ----
 
-The syntax with the optional `USING` clause is introduced in FB 4.0 and returns `VARBINARY` (`VARCHAR` strings in character set `OCTETS`).
+The syntax with the optional `USING` clause is introduced in FB 4.0 and returns an integer of appropriate size. CRC32 algorithm implemented by Firebird uses polynomial 0x04C11DB7.
 
 [IMPORTANT]
 ====
@@ -956,14 +962,13 @@ It uses the 64-bit variation of the non-cryptographic PJW hash function (also kn
 
 https://en.wikipedia.org/wiki/PJW_hash_function
 
-which is very fast and can be used for general purposes (hash tables, etc), but its collision quality is sub-optimal.
-Other hash functions (specified explicitly in the USING clause) should be used for more reliable hashing.
+which is very fast and can be used for general purposes (hash tables, etc), but its collision quality is sub-optimal. Other hash functions (specified explicitly in the USING clause) should be used for more reliable hashing.
 ====
 
 .Examples
 [source]
 ----
-select hash(x using sha256) from y;
+select hash(x using crc32) from y;
 --
 select hash(x) from y; -- not recommended
 ----
@@ -1033,7 +1038,7 @@ If computation of an expression index fails, the exception message will now incl
 === RETURNING {asterisk} Now Supported
 Adriano dos Santos Fernandes
 
-Tracker ticket http://tracker.firebirdsql.org/browse/CORE-3803[CORE-3808]
+Tracker ticket http://tracker.firebirdsql.org/browse/CORE-3808[CORE-3808]
 
 The engine now supports `RETURNING {asterisk}` syntax, and variants, to return a complete set of field values after committing a row that has been inserted, updated or deleted.
 The syntax and semantics of `RETURNING {asterisk}` are similar to `SELECT {asterisk}`.

@@ -20,6 +20,7 @@ System tables added in ODS13:
 `RDB$TIME_ZONES`:: Virtual table that enumerates supported time zones
 `RDB$PUBLICATIONS`:: Publications defined in the database
 `RDB$PUBLICATION_TABLES`:: Tables enabled for publication
+`RDB$CONFIG`:: Virtual table that enumerates actual contiguration settings
 
 [NOTE]
 ====
@@ -62,6 +63,22 @@ Since at least Firebird 3 they seem to be in a semi-working state at best, so th
 A visible effect is that the constant `service_mgr` is no longer required in the connection string for a service request.
 The request call will ignore anything in that field, including an empty string.
 The remote client will do the right thing just by processing the host name, such as `localhost:`,  `inet://localhost/` or `inet://localhost`.
+
+[[rnfb40-apiods-api-service-ext]]
+=== Services API Extensions
+
+==== Support for nbackup -fixup
+Alex Peshkov
+
+Added support to fixup (i.e. change the physical backup mode to _normal_) databases after file-system copy.
+
+The following action was added:
+isc_action_svc_nfix:: fixup database
+
+Samples of use of new parameter in fbsvcmgr utility (supposing login and
+password are set using some other method):
+
+`fbsvcmgr -action_nfix dbname /tmp/ecopy.fdb`
 
 [[rnfb40-apiods-api-timeouts]]
 === Timeouts for Sessions & Statements
@@ -386,7 +403,7 @@ The header contains three fields: an 8-byte BLOB ID (must be non-zero), a 4-byte
 The total BLOB size includes the enclosed BPB, i.e. the next BLOB in the stream will always be found in the BLOB-size bytes after the header, taking the alignment into account.
 
 The BPB is present if the BPB size is not zero and is placed immediately after the header.
-The BPB BLOB data goes next, its format depending upon whether the BLOB is streamed or segmented:
+The BLOB data goes next, its format depending upon whether the BLOB is streamed or segmented:
 
 * For a stream BLOB it is a plain sequence of bytes whose size is (BLOB-size - BPB-size)
 * For a segmented BLOB, things are a bit more complicated: the BLOB data is a set of segments where each segment has the format: 2-bytes for the size of the segment, aligned at `IBatch::BLOB_SEGHDR_ALIGN` boundary, followed by as many bytes as are accounted for by this 2-byte segment size
@@ -424,9 +441,7 @@ In other cases you will have to assign to `msg>>desc` the ID that is correct fro
 [[rnfb40-apiods-api-batch-isc-api]]
 ==== Batch Ops in the Legacy (ISC) API
 
-A word or two about access to batches from the ISC API: a prepared ISC statement can be executed in batch mode.
-The main support for it is present in the `Util` interface, namely in the methods `getTransactionByHandle` and `getStatementByHandle`.
-These methods enable access to the appropriate interfaces in the same way as to existing ISC handles.
+A few words about access to batches from the ISC API: a prepared ISC statement can be executed in batch mode. The main support for it is present in ISC API functions: `fb_get_transaction_interface` and `fb_get_statement_interface`. These methods enable access to the appropriate interfaces in the same way as to existing ISC handles.
 
 An example of this usage can be found in `12.batch_isc.cpp`.
 
@@ -443,20 +458,26 @@ struct ISC_TIME_TZ
     ISC_TIME utc_time;
     ISC_USHORT time_zone;
 };
-
+----
+[source]
+----
 struct ISC_TIMESTAMP_TZ
 {
     ISC_TIMESTAMP utc_timestamp;
     ISC_USHORT time_zone;
 };
-
+----
+[source]
+----
 struct ISC_TIME_TZ_EX
 {
     ISC_TIME utc_time;
     ISC_USHORT time_zone;
     ISC_SHORT ext_offset;
 };
-
+----
+[source]
+----
 struct ISC_TIMESTAMP_TZ_EX
 {
     ISC_TIMESTAMP utc_timestamp;
@@ -480,7 +501,9 @@ void decodeTimeTz(
     uint timeZoneBufferLength,
     string timeZoneBuffer
 );
-
+----
+[source]
+----
 void decodeTimeStampTz(
     Status status,
     const ISC_TIMESTAMP_TZ* timeStampTz,
@@ -494,7 +517,9 @@ void decodeTimeStampTz(
     uint timeZoneBufferLength,
     string timeZoneBuffer
 );
-
+----
+[source]
+----
 void encodeTimeTz(
     Status status,
     ISC_TIME_TZ* timeTz,
@@ -504,7 +529,9 @@ void encodeTimeTz(
     uint fractions,
     const string timeZone
 );
-
+----
+[source]
+----
 void encodeTimeStampTz(
     Status status,
     ISC_TIMESTAMP_TZ* timeStampTz,
@@ -517,7 +544,9 @@ void encodeTimeStampTz(
     uint fractions,
     const string timeZone
 );
-
+----
+[source]
+----
 void decodeTimeTzEx(
     Status status,
     const ISC_TIME_TZ_EX* timeTzEx,
@@ -528,7 +557,9 @@ void decodeTimeTzEx(
     uint timeZoneBufferLength,
     string timeZoneBuffer
 );
-
+----
+[source]
+----
 void decodeTimeStampTzEx(
     Status status,
     const ISC_TIMESTAMP_TZ_EX* timeStampTzEx,
@@ -553,20 +584,62 @@ Available methods in the `DecFloat16` interface are the following:
 
 [source]
 ----
-void toBcd(const FB_DEC16* from, int* sign, uchar* bcd, int* exp);
-void toString(Status status, const FB_DEC16* from, uint bufferLength, string buffer);
-void fromBcd(int sign, const uchar* bcd, int exp, FB_DEC16* to);
-void fromString(Status status, const string from, FB_DEC16* to);
+void toBcd(
+    const FB_DEC16* from,
+    int* sign,
+    uchar* bcd,
+    int* exp
+);
+----
+[source]
+----
+void toString(
+    Status status,
+    const FB_DEC16* from,
+    uint bufferLength,
+    string buffer
+);
+----
+[source]
+----
+void fromBcd(
+    int sign,
+    const uchar* bcd,
+    int exp,
+    FB_DEC16* to
+);
+----
+[source]
+----
+void fromString(
+    Status status,
+    const string from,
+    FB_DEC16* to
+);
 ----
 
 The `DecFloat34` interface shares the same methods, just using the `FB_DEC34` structure. 
 
-`Int128` is a helper interface for 128-bit integers (used internally as a base type for `INT128, and `NUMERIC` and `DECIMAL` data types with precision > 18), it contains the following methods:
+`Int128` is a helper interface for 128-bit integers (used internally as a base type for `INT128`, and also for `NUMERIC` and `DECIMAL` data types with precision > 18), it contains the following methods:
 
 [source]
 ----
-void toString(Status status, const FB_I128* from, int scale, uint bufferLength, string buffer);
-void fromString(Status status, int scale, const string from, FB_I128* to);
+void toString(
+    Status status,
+    const FB_I128* from,
+    int scale,
+    uint bufferLength,
+    string buffer
+);
+----
+[source]
+----
+void fromString(
+    Status status,
+    int scale,
+    const string from,
+    FB_I128* to
+);
 ----
 
 Structures used by the aforementioned interfaces are defined below:
@@ -577,12 +650,16 @@ struct FB_DEC16
 {
 	ISC_UINT64 fb_data[1];
 };
-
+----
+[source]
+----
 struct FB_DEC34
 {
 	ISC_UINT64 fb_data[2];
 };
-
+----
+[source]
+----
 struct FB_I128
 {
 	ISC_UINT64 fb_data[2];
@@ -599,7 +676,7 @@ Int128 getInt128(Status status);
 ----
 
 [[rnfb40-apiods-api-new-datatypes]]
-=== Additions to the Other Interfaces
+=== Additions to Other Interfaces
 Alex Peshkov
 
 A number of new methods have been added to the following interfaces.
@@ -612,9 +689,20 @@ void setIdleTimeout(Status status, uint timeOut);
 
 uint getStatementTimeout(Status status);
 void setStatementTimeout(Status status, uint timeOut);
+----
 
-Batch createBatch(Status status, Transaction transaction, uint stmtLength, const string sqlStmt,
-                  uint dialect, MessageMetadata inMetadata, uint parLength, const uchar* par);
+[source]
+----
+Batch createBatch(
+    Status status,
+    Transaction transaction,
+    uint stmtLength,
+    const string sqlStmt,
+    uint dialect,
+    MessageMetadata inMetadata,
+    uint parLength,
+    const uchar* par
+);
 ----
 
 .`Statement`
@@ -622,7 +710,15 @@ Batch createBatch(Status status, Transaction transaction, uint stmtLength, const
 ----
 uint getTimeout(Status status);
 void setTimeout(Status status, uint timeout);
-Batch createBatch(Status status, MessageMetadata inMetadata, uint parLength, const uchar* par);
+----
+[source]
+----
+Batch createBatch(
+    Status status,
+    MessageMetadata inMetadata,
+    uint parLength,
+    const uchar* par
+);
 ----
 
 .`ClientBlock`
@@ -653,15 +749,6 @@ void setOwner(Status status, uint index, const string owner);
 void setAlias(Status status, uint index, const string alias);
 ----
 
-.`Util`
-[source]
-----
-Transaction getTransactionByHandle(Status status, isc_tr_handle* hndlPtr);
-Statement getStatementByHandle(Status status, isc_stmt_handle* hndlPtr);
-----
-
-They can be used to get an OO API object from the corresponding ISC API handle. 
-
 .`FirebirdConf`
 [source]
 ----
@@ -673,3 +760,67 @@ uint getVersion(Status status);
 ----
 const string getDefaultSecurityDb();
 ----
+
+[[rnfb40-apiods-api-info]]
+=== Extensions to various getInfo() Methods
+
+==== Attachment::getInfo()
+
+The following actions were added:
+
+[horizontal]
+`fb_info_protocol_version`:: Version of the remote protocol used by the current connection
+`fb_info_crypt_plugin`:: Name of the used database encryption plugin
+`fb_info_wire_crypt`:: Name of the connection encryption plugin
+`fb_info_statement_timeout_db`:: Statement execution timeout set in the configuration file
+`fb_info_statement_timeout_att`:: Statement execution timeout set at the connection level
+`fb_info_ses_idle_timeout_db`:: Idle connection timeout set in the configuration file
+`fb_info_ses_idle_timeout_att`:: Idle connection timeout set at the connection level
+`fb_info_ses_idle_timeout_run`:: Actual timeout value for the current connection
+`fb_info_creation_timestamp_tz`:: Database creation timestamp (with a time zone)
+`fb_info_features`:: List of features supported by provider of the current connection
+`fb_info_next_attachment`:: Current value of the next attachment ID counter
+`fb_info_next_statement`:: Current value of the next statement ID counter
+`fb_info_db_guid`:: Database GUID (persistent until restore / fixup)
+`fb_info_db_file_id`:: Unique ID of the database file at the filesystem level
+
+Possible provider features (returned for fb_info_features) are:
+
+[horizontal]
+`fb_feature_multi_statements`:: Multiple prepared statements in single attachment
+`fb_feature_multi_transactions`:: Multiple concurrent transaction in single attachment
+`fb_feature_named_parameters`:: Query parameters can be named
+`fb_feature_session_reset`:: ALTER SESSION RESET is supported
+`fb_feature_read_consistency`:: Read Consistency transaction isolation mode is supported
+`fb_feature_statement_timeout`:: Statement timeout is supported
+`fb_feature_statement_long_life`:: Prepared statements are not dropped on transaction end
+
+==== Statement::getInfo()
+
+The following actions were added:
+
+[horizontal]
+`isc_info_sql_stmt_timeout_user`:: Timeout value of the current statement
+`isc_info_sql_stmt_timeout_run`:: Actual timeout value of the current statement
+`isc_info_sql_stmt_blob_align`:: Blob stream alignment in the Batch API
+
+==== Transaction::getInfo()
+
+The following action was added:
+
+[horizontal]
+`fb_info_tra_snapshot_number`:: Snapshot number of the current transaction
+
+[[rnfb40-apiods-isc-api]]
+=== Additions to the Legacy (ISC) API
+Alex Peshkov
+
+A few functions have been added to the ISC API.
+
+[source]
+----
+ISC_STATUS fb_get_transaction_interface(ISC_STATUS*, void*, isc_tr_handle*);
+ISC_STATUS fb_get_statement_interface(ISC_STATUS*, void*, isc_stmt_handle*);
+----
+
+They can be used to get an OO API object from the corresponding ISC API handle.
