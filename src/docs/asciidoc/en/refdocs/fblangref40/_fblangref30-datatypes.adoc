@@ -1,0 +1,1909 @@
+[[fblangref30-datatypes]]
+= Data Types and Subtypes
+
+Data of various types are used to: 
+
+* define columns in a database table in the `CREATE TABLE` statement or change columns using `ALTER TABLE`
+* declare or change a _domain_ using the `CREATE DOMAIN` or `ALTER DOMAIN` statements
+* declare local variables in stored procedures, PSQL blocks and triggers and specify parameters in stored procedures
+* indirectly specify arguments and return values when declaring external functions (UDFs -- user-defined functions)
+* provide arguments for the `CAST()` function when explicitly converting data from one type to another
+
+[[fblangref30-dtyp-tbl-dtypinfo]]
+.Overview of Data Types
+[cols="<1,<1,<1,<2", options="header",stripes="none"]
+|===
+^| Name
+^| Size
+^| Precision & Limits
+^| Description
+
+|`BIGINT`
+|64 bits
+|From -2^63^ to (2^63^ - 1)
+|The data type is available in Dialect 3 only
+
+|`BLOB`
+|Varying
+|The size of a `BLOB` segment is limited to 64K.
+The maximum size of a BLOB field is 4 GB
+|A data type of variable size for storing large amounts of data, such as images, text, digital sounds.
+The basic structural unit is a segment.
+The blob subtype defines its content
+
+|`BOOLEAN`
+|8 bits
+|false, true, unknown
+|Boolean data type
+
+|`CHAR(__n__)`, `CHARACTER(__n__)`
+|_n_ characters.
+Size in bytes depends on the encoding, the number of bytes in a character
+|from 1 to 32,767 bytes
+|A fixed-length character data type.
+When its data is displayed, trailing spaces are added to the string up to the specified length.
+Trailing spaces are not stored in the database but are restored to match the defined length when the column is displayed on the client side.
+Network traffic is reduced by not sending spaces over the LAN.
+If the number of characters is not specified, 1 is used by default.
+
+|`DATE`
+|32 bits
+|From 0001-01-01 AD to 9999-12-31 AD
+|`ISC_DATE`.
+Date only, no time element
+
+|`DECIMAL (__precision__, __scale__)`
+|Varying (16, 32 or 64 bits)
+|_precision_ = from 1 to 18, defines the least possible number of digits to store;
+_scale_ = from 0 to 18, defines the number of digits after the decimal point
+|A number with a decimal point that has _scale_ digits after the point.
+_scale_ must be less than or equal to _precision_.
+Example: `DECIMAL(10,3)` contains a number in exactly the following format: `ppppppp.sss`
+
+|`DOUBLE PRECISION`
+|64 bits
+|2.225 * 10^-308^ to 1.797 * 10^308^
+|Double-precision IEEE, ~15 digits, reliable size depends on the platform
+
+|`FLOAT`
+|32 bits
+|1.175 * 10^-38^ to 3.402 * 10^38^
+|Single-precision IEEE, ~7 digits
+
+|`INTEGER`, `INT`
+|32 bits
+|-2,147,483,648 up to 2,147,483,647
+|Signed long
+
+|`NUMERIC (__precision__, __scale__)`
+|Varying (16, 32 or 64 bits)
+|_precision_ = from 1 to 18, defines the exact number of digits to store;
+_scale_ = from 0 to 18, defines the number of digits after the decimal point
+|A number with a decimal point that has _scale_ digits after the point.
+_scale_ must be less than or equal to _precision_.
+Example: `NUMERIC(10,3)` contains a number in exactly the following format: `ppppppp.sss`
+
+|`SMALLINT`
+|16 bits
+|-32,768 to 32,767
+|Signed short (word)
+
+|`TIME`
+|32 bits
+|0:00 to 23:59:59.9999
+|`ISC_TIME`.
+Time of day.
+It cannot be used to store an interval of time
+
+|`TIMESTAMP`
+|64 bits (2 X 32 bits)
+|From start of day 0001-01-01 AD to end of day 9999-12-31 AD
+|Date and time of day
+
+|`VARCHAR(__n__)`, `CHAR VARYING`, `CHARACTER VARYING`
+|_n_ characters.
+Size in bytes depends on the encoding, the number of bytes in a character
+|from 1 to 32,765 bytes
+|Variable length string type.
+The total size of characters in bytes cannot be larger than (32KB-3), taking into account their encoding.
+The two trailing bytes store the declared length.
+There is no default size: the _n_ argument is mandatory.
+Leading and trailing spaces are stored and they are not trimmed, except for those trailing characters that are past the declared length.
+|===
+
+.Note About Dates
+[NOTE]
+====
+Bear in mind that a time series consisting of dates in past centuries is processed without taking into account the actual historical facts, as though the Gregorian calendar were applicable throughout the entire series.
+====
+
+[[fblangref30-datatypes-inttypes]]
+== Integer Data Types
+
+The `SMALLINT`, `INTEGER` and `BIGINT` data types are used for integers of various precision in Dialect 3.
+Firebird does not support an unsigned integer data type.
+
+[[fblangref30-datatypes-smallint]]
+=== `SMALLINT`
+
+The 16-bit `SMALLINT` data type is for compact data storage of integer data for which only a narrow range of possible values is required.
+Numbers of the `SMALLINT` type are within the range from -2^16^ to 2^16^ - 1, that is, from -32,768 to 32,767.
+
+.`SMALLINT` Examples
+[source]
+----
+CREATE DOMAIN DFLAG AS SMALLINT DEFAULT 0 NOT NULL
+  CHECK (VALUE=-1 OR VALUE=0 OR VALUE=1);
+
+CREATE DOMAIN RGB_VALUE AS SMALLINT;
+----
+
+[[fblangref30-datatypes-int]]
+=== `INTEGER`
+
+The `INTEGER` data type is a 32-bit integer.
+The shorthand name of the data type is `INT`.
+Numbers of the `INTEGER` type are within the range from -2^32^ to 2^32^ - 1, that is, from -2,147,483,648 to 2,147,483,647.
+
+.`INTEGER` Example
+[source]
+----
+CREATE TABLE CUSTOMER (
+  CUST_NO INTEGER NOT NULL,
+  CUSTOMER VARCHAR(25) NOT NULL,
+  CONTACT_FIRST VARCHAR(15),
+  CONTACT_LAST VARCHAR(20),
+  ...
+    PRIMARY KEY (CUST_NO) )
+----
+
+[[fblangref30-datatypes-bigint]]
+=== `BIGINT`
+
+`BIGINT` is an SQL:99-compliant 64-bit integer data type, available only in Dialect 3.
+If a client uses Dialect 1, the generator value sent by the server is reduced to a 32-bit integer (`INTEGER`).
+When Dialect 3 is used for connection, the generator value is of type `BIGINT`.
+
+Numbers of the `BIGINT` type are within the range from -2^63^ to 2^63^ - 1, or from -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807.
+
+=== Hexadecimal Format for Integer Numbers
+
+Starting from Firebird 2.5, constants of the three integer types can be specified in hexadecimal format by means of 9 to 16 hexadecimal digits for `BIGINT` or 1 to 8 digits for `INTEGER`.
+Hex representation for writing to `SMALLINT` is not explicitly supported but Firebird will transparently convert a hex number to `SMALLINT` if necessary, provided it falls within the ranges of negative and positive `SMALLINT`.
+
+The usage and numerical value ranges of hexadecimal notation are described in more detail in the discussion of <<fblangref30-commons-number-constant,number constants>> in the chapter entitled [ref]_Common Language Elements_.
+
+.Examples Using Integer Types
+[source]
+----
+CREATE TABLE WHOLELOTTARECORDS (
+  ID BIGINT NOT NULL PRIMARY KEY,
+  DESCRIPTION VARCHAR(32)
+);
+
+INSERT INTO MYBIGINTS VALUES (
+  -236453287458723,
+  328832607832,
+  22,
+  -56786237632476,
+  0X6F55A09D42,       -- 478177959234
+  0X7FFFFFFFFFFFFFFF, -- 9223372036854775807
+  0XFFFFFFFFFFFFFFFF, -- -1
+  0X80000000,         -- -2147483648, an INTEGER
+  0X080000000,        -- 2147483648, a BIGINT
+  0XFFFFFFFF,         -- -1, an INTEGER
+  0X0FFFFFFFF         -- 4294967295, a BIGINT
+);
+----
+
+The hexadecimal ``INTEGER``s in the above example are automatically cast to `BIGINT` before being inserted into the table.
+However, this happens _after_ the numerical value is determined, so `0x80000000` (8 digits) and `0x080000000` (9 digits) will be saved as different `BIGINT` values.
+
+[[fblangref30-datatypes-floattypes]]
+== Floating-Point Data Types
+
+Floating point data types are stored in an IEEE 754 binary format that comprises sign, exponent and mantissa.
+Precision is dynamic, corresponding to the physical storage format of the value, which is exactly 4 bytes for the `FLOAT` type and 8 bytes for `DOUBLE PRECISION`.
+
+Considering the peculiarities of storing floating-point numbers in a database, these data types are not recommended for storing monetary data.
+For the same reasons, columns with floating-point data are not recommended for use as keys or to have uniqueness constraints applied to them.
+
+For testing data in columns with floating-point data types, expressions should check using a range, for instance, `BETWEEN`, rather than searching for exact matches.
+
+When using these data types in expressions, extreme care is advised regarding the rounding of evaluation results.
+
+[[fblangref30-datatypes-float]]
+=== `FLOAT`
+
+The `FLOAT` data type has an approximate precision of 7 digits after the decimal point.
+To ensure the safety of storage, rely on 6 digits.
+
+[[fblangref30-datatypes-double]]
+=== `DOUBLE PRECISION`
+
+The `DOUBLE PRECISION` data type is stored with an approximate precision of 15 digits.
+
+[[fblangref30-datatypes-fixedtypes]]
+== Fixed-Point Data Types
+
+Fixed-point data types ensure the predictability of multiplication and division operations, making them the choice for storing monetary values.
+Firebird implements two fixed-point data types: `NUMERIC` and `DECIMAL`.
+According to the standard, both types limit the stored number to the declared scale (the number of digits after the decimal point).
+
+Different treatments limit precision for each type: precision for `NUMERIC` columns is exactly "`as declared`", while `DECIMAL` columns accepts numbers whose precision is at least equal to what was declared.
+
+NOTE: The behaviour of `NUMERIC` and `DECIMAL` in Firebird is like the SQL-standard `DECIMAL`;
+the precision is at least equal to what was declared.
+
+For instance, `NUMERIC(4, 2)` defines a number consisting altogether of four digits, including two digits after the decimal point;
+that is, it can have up to two digits before the point and no more than two digits after the point.
+If the number 3.1415 is written to a column with this data type definition, the value of 3.14 will be saved in the `NUMERIC(4, 2)` column.
+
+The form of declaration for fixed-point data, for instance, `NUMERIC(p, s)`, is common to both types.
+It is important to realise that the `s` argument in this template is _scale_, rather than "`a count of digits after the decimal point`".
+Understanding the mechanism for storing and retrieving fixed-point data should help to visualise why: for storage, the number is multiplied by 10^s^ (10 to the power of `s`), converting it to an integer;
+when read, the integer is converted back.
+
+The method of storing fixed-point data in the DBMS depends on several factors: declared precision, database dialect, declaration type.
+
+[[fblangref30-dtyp-tbl-realnums]]
+.Method of Physical Storage for Real Numbers
+[cols="<2,<3,<3,<3", options="header",stripes="none"]
+|===
+^| Precision
+^| Data type
+^| Dialect 1
+^| Dialect 3
+
+|1 - 4
+|`NUMERIC`
+|`SMALLINT`
+|`SMALLINT`
+
+|1 - 4
+|`DECIMAL`
+|`INTEGER`
+|`INTEGER`
+
+|5 - 9
+|`NUMERIC` or `DECIMAL`
+|`INTEGER`
+|`INTEGER`
+
+|10 - 18
+|`NUMERIC` or `DECIMAL`
+|`DOUBLE PRECISION`
+|`BIGINT`
+|===
+
+[[fblangref30-datatypes-numeric]]
+=== `NUMERIC`
+
+.Data Declaration Format
+[listing,subs=+quotes]
+----
+  NUMERIC
+| NUMERIC(_precision_)
+| NUMERIC(_precision_, _scale_)
+----
+
+[[fblangref30-datatypes-numerictbl]]
+.`NUMERIC` Type Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|precision
+|Precision, between 1 and 18.
+Defaults to 9.
+
+|scale
+|Scale, between 0 and _scale_.
+Defaults to 0.
+|===
+
+.Storage Examples
+Further to the explanation above, the DBMS will store `NUMERIC` data according the declared _precision_ and _scale_.
+Some more examples are:
+
+[listing,subs=+quotes]
+----
+NUMERIC(4) stored as      SMALLINT (exact data)
+NUMERIC(4,2)              SMALLINT (data * 10^2^)
+NUMERIC(10,4) (Dialect 1) DOUBLE PRECISION
+              (Dialect 3) BIGINT (data * 10^4^)
+----
+
+[CAUTION]
+====
+Always keep in mind that the storage format depends on the precision.
+For instance, you define the column type as `NUMERIC(2,2)` presuming that its range of values will be -0.99...0.99.
+However, the actual range of values for the column will be -327.68..327.67, which is due to storing the `NUMERIC(2,2)` data type in the `SMALLINT` format.
+In storage, the `NUMERIC(4,2)`, `NUMERIC(3,2)` and `NUMERIC(2,2)` data types are the same, in fact.
+It means that if you really want to store data in a column with the `NUMERIC(2,2)` data type and limit the range to -0.99...0.99, you will have to create a constraint for it.
+====
+
+[[fblangref30-datatypes-decimal]]
+=== `DECIMAL`
+
+.Data Declaration Format
+[listing,subs=+quotes]
+----
+  DECIMAL
+| DECIMAL(_precision_)
+| DECIMAL(_precision_, _scale_)
+----
+
+[[fblangref30-datatypes-decimaltbl]]
+.`NUMERIC` Type Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|precision
+|Precision, between 1 and 18.
+Defaults to 9.
+
+|scale
+|Scale, between 0 and _scale_.
+Defaults to 0.
+|===
+
+.Storage Examples
+The storage format in the database for `DECIMAL` is very similar to `NUMERIC`, with some differences that are easier to observe with the help of some more examples:
+
+[listing,subs=+quotes]
+----
+DECIMAL(4) stored as      INTEGER (exact data)
+DECIMAL(4,2)              INTEGER (data * 10^2^)
+DECIMAL(10,4) (Dialect 1) DOUBLE PRECISION
+              (Dialect 3) BIGINT (data * 10^4^)
+----
+
+[[fblangref30-datatypes-datetime]]
+== Data Types for Dates and Times
+
+The `DATE`, `TIME` and `TIMESTAMP` data types are used to work with data containing dates and times.
+Dialect 3 supports all the three types, while Dialect 1 has only `DATE`.
+The `DATE` type in Dialect 3 is "`date-only`", whereas the Dialect 1 `DATE` type stores both date and time-of-day, equivalent to `TIMESTAMP` in Dialect 3.
+Dialect 1 has no "`date-only`" type.
+
+[NOTE]
+====
+Dialect 1 `DATE` data can be defined alternatively as `TIMESTAMP` and this is recommended for new definitions in Dialect 1 databases.
+====
+
+.Fractions of Seconds
+If fractions of seconds are stored in date and time data types, Firebird stores them to ten-thousandths of a second.
+If a lower granularity is preferred, the fraction can be specified explicitly as thousandths, hundredths or tenths of a second in Dialect 3 databases of ODS 11 or higher.
+
+.Some useful knowledge about subseconds precision:
+[NOTE]
+====
+The time-part of a `TIME` or `TIMESTAMP` is a 4-byte WORD, with room for decimilliseconds precision and time values are stored as the number of deci-milliseconds elapsed since midnight.
+The actual precision of values stored in or read from time(stamp) functions and variables is:
+
+* `CURRENT_TIME` defaults to seconds precision and can be specified up to milliseconds precision with `CURRENT_TIME (0|1|2|3)`
+* `CURRENT_TIMESTAMP` milliseconds precision.
+Precision from seconds to milliseconds can be specified with `CURRENT_TIMESTAMP (0|1|2|3)`
+* Literal `'NOW'`: milliseconds precision
+* Functions `DATEADD()` and `DATEDIFF()` support up to milliseconds precision.
+Deci-milliseconds can be specified but they are rounded to the nearest integer before any operation is performed
+* The `EXTRACT()` function returns up to deci-milliseconds precision with the `SECOND` and `MILLISECOND` arguments
+* For _TIME and TIMESTAMP literals_, Firebird happily accepts up to deci-milliseconds precision, but truncates (not rounds) the time part to the nearest lower or equal millisecond.
+Try, for example, `SELECT TIME '14:37:54.1249' FROM rdb$database`
+* the '```{plus}```' and '```-```' operators work with deci-milliseconds precision, but only _within_ the expression.
+As soon as something is stored or even just SELECTed from `RDB$DATABASE`, it reverts to milliseconds precision
+
+Deci-milliseconds precision is rare and is not currently stored in columns or variables.
+The best assumption to make from all this is that, although Firebird stores `TIME` and the `TIMESTAMP` time-part values as the number of deci-milliseconds (10^-4^ seconds) elapsed since midnight, the actual precision could vary from seconds to milliseconds.
+====
+
+[[fblangref30-datatypes-date]]
+=== `DATE`
+
+The `DATE` data type in Dialect 3 stores only date without time.
+The available range for storing data is from January 01, 1 to December 31, 9999.
+
+Dialect 1 has no "`date-only`" type. 
+
+[TIP]
+====
+In Dialect 1, date literals without a time part, as well as `'TODAY'`, `'YESTERDAY'` and `'TOMORROW'` automatically get a zero time part.
+
+If, for some reason, it is important to you to store a Dialect 1 timestamp literal with an explicit zero time-part, the engine will accept a literal like `'2016-12-25 00:00:00.0000'`.
+However, `'2016-12-25'` would have precisely the same effect, with fewer keystrokes!
+====
+
+[[fblangref30-datatypes-time]]
+=== `TIME`
+
+The `TIME` data type is available in Dialect 3 only.
+It stores the time of day within the range from 00:00:00.0000 to 23:59:59.9999.
+
+If you need to get the time-part from `DATE` in Dialect 1, you can use the `EXTRACT` function.
+
+.Examples Using `EXTRACT()`
+[source]
+----
+EXTRACT (HOUR FROM DATE_FIELD)
+EXTRACT (MINUTE FROM DATE_FIELD)
+EXTRACT (SECOND FROM DATE_FIELD)
+----
+
+See also the <<fblangref30-scalarfuncs-extract,`EXTRACT()` function>> in the chapter entitled [ref]_Built-in Functions_.
+
+[[fblangref30-datatypes-timestamp]]
+=== `TIMESTAMP`
+
+The `TIMESTAMP` data type is available in Dialect 3 and Dialect 1.
+It comprises two 32-bit words -- a date-part and a time-part -- to form a structure that stores both date and time-of-day.
+It is the same as the `DATE` type in Dialect 1.
+
+The `EXTRACT` function works equally well with `TIMESTAMP` as with the Dialect 1 `DATE` type.
+
+[[fblangref30-datatypes-datetimeops]]
+=== Operations Using Date and Time Values
+
+The method of storing date and time values makes it possible to involve them as operands in some arithmetic operations.
+In storage, a date value or date-part of a timestamp is represented as the number of days elapsed since "`date zero`" -- November 17, 1898 -- whilst a time value or the time-part of a timestamp is represented as the number of seconds (with fractions of seconds taken into account) since midnight.
+
+An example is to subtract an earlier date, time or timestamp from a later one, resulting in an interval of time, in days and fractions of days.
+
+[[fblangref30-dtyp-tbl-dateops]]
+.Arithmetic Operations for Date and Time Data Types
+[cols="<1,^1,<1,<2", options="header",stripes="none"]
+|===
+^| Operand 1
+^| Operation
+^| Operand 2
+^| Result
+
+|`DATE`
+|`{plus}`
+|`TIME`
+|`TIMESTAMP`
+
+|`DATE`
+|`{plus}`
+|Numeric value `n`
+|`DATE` increased by _n_ whole days.
+Broken values are rounded (not floored) to the nearest integer
+
+|`TIME`
+|`{plus}`
+|`DATE`
+|`TIMESTAMP`
+
+|`TIME`
+|`{plus}`
+|Numeric value `n`
+|`TIME` increased by _n_ seconds.
+The fractional part is taken into account
+
+|`TIMESTAMP`
+|`{plus}`
+|Numeric value `n`
+|`TIMESTAMP`, where the date will advance by the number of days and part of a day represented by number _n_ -- so "```+ 2.75```" will push the date forward by 2 days and 18 hours
+
+|`DATE`
+|`-`
+|`DATE`
+|Number of days elapsed, within the range `DECIMAL(9, 0)`
+
+|`DATE`
+|`-`
+|Numeric value `n`
+|`DATE` reduced by _n_ whole days.
+Broken values are rounded (not floored) to the nearest integer
+
+|`TIME`
+|`-`
+|`TIME`
+|Number of seconds elapsed, within the range `DECIMAL(9, 4)`
+
+|`TIME`
+|`-`
+|Numeric value `n`
+|`TIME` reduced by _n_ seconds.
+The fractional part is taken into account
+
+|`TIMESTAMP`
+|`-`
+|`TIMESTAMP`
+|Number of days and part-day, within the range `DECIMAL(18, 9)`
+
+|`TIMESTAMP`
+|`-`
+|Numeric value `n`
+|`TIMESTAMP` where the date will decrease by the number of days and part of a day represented by number _n_ -- so "```- 2.25```" will decrease the date by 2 days and 6 hours
+|===
+
+.Notes
+[NOTE]
+====
+The `DATE` type is considered as `TIMESTAMP` in Dialect 1.
+====
+
+.See also
+<<fblangref30-scalarfuncs-dateadd,`DATEADD`>>, <<fblangref30-scalarfuncs-datediff,`DATEADD`>>
+
+[[fblangref30-datatypes-chartypes]]
+== Character Data Types
+
+For working with character data, Firebird has the fixed-length `CHAR` and the variable-length `VARCHAR` data types.
+The maximum size of text data stored in these data types is 32,767 bytes for `CHAR` and 32,765 bytes for `VARCHAR`.
+The maximum number of _characters_ that will fit within these limits depends on the `CHARACTER SET` being used for the data under consideration.
+The collation sequence does not affect this maximum, although it may affect the maximum size of any index that involves the column.
+
+If no character set is explicitly specified when defining a character object, the default character set specified when the database was created will be used.
+If the database does not have a default character set defined, the field gets the character set `NONE`.
+
+[[fblangref30-datatypes-chartypes-unicode]]
+=== Unicode
+
+Most current development tools support Unicode, implemented in Firebird with the character sets `UTF8` and `UNICODE_FSS`. `UTF8` comes with collations for many languages.
+`UNICODE_FSS` is more limited and is used mainly by Firebird internally for storing metadata.
+Keep in mind that one `UTF8` character occupies up to 4 bytes, thus limiting the size of `CHAR` fields to 8,191 characters (32,767/4).
+
+[NOTE]
+====
+The actual "`bytes per character`" value depends on the range the character belongs to.
+Non-accented Latin letters occupy 1 byte, Cyrillic letters from the `WIN1251` encoding occupy 2 bytes in `UTF8`, characters from other encodings may occupy up to 4 bytes.
+====
+
+The `UTF8` character set implemented in Firebird supports the latest version of the Unicode standard, thus recommending its use for international databases.
+
+[[fblangref30-datatypes-chartypes-client]]
+=== Client Character Set
+
+While working with strings, it is essential to keep the character set of the client connection in mind.
+If there is a mismatch between the character sets of the stored data and that of the client connection, the output results for string columns are automatically re-encoded, both when data are sent from the client to the server and when they are sent back from the server to the client.
+For example, if the database was created in the `WIN1251` encoding but `KOI8R` or `UTF8` is specified in the client's connection parameters, the mismatch will be transparent.
+
+[[fblangref30-datatypes-chartypes-special]]
+=== Special Character Sets
+
+.Character set `NONE`
+The character set `NONE` is a _special character set_ in Firebird.
+It can be characterized such that each byte is a part of a string, but the string is stored in the system without any clues about what constitutes any character: character encoding, collation, case, etc. are simply unknown.
+It is the responsibility of the client application to deal with the data and provide the means to interpret the string of bytes in some way that is meaningful to the application and the human user.
+
+.Character set `OCTETS`
+Data in `OCTETS` encoding are treated as bytes that may not actually be interpreted as characters.
+`OCTETS` provides a way to store binary data, which could be the results of some Firebird functions.
+The database engine has no concept of what it is meant to do with a string of bits in `OCTETS`, other than just store it and retrieve it.
+Again, the client side is responsible for validating the data, presenting them in formats that are meaningful to the application and its users and handling any exceptions arising from decoding and encoding them.
+
+[[fblangref30-datatypes-chartypes-collation]]
+=== Collation Sequence
+
+Each character set has a default collation sequence (`COLLATE`) that specifies the collation order.
+Usually, it provides nothing more than ordering based on the numeric code of the characters and a basic mapping of upper- and lower-case characters.
+If some behaviour is needed for strings that is not provided by the default collation sequence and a suitable alternative collation is supported for that character set, a `COLLATE [replaceable]``collation``` clause can be specified in the column definition.
+
+A `COLLATE __collation__` clause can be applied in other contexts besides the column definition.
+For greater-than/less-than comparison operations, it can be added in the `WHERE` clause of a `SELECT` statement.
+If output needs to be sorted in a special alphabetic sequence, or case-insensitively, and the appropriate collation exists, then a `COLLATE` clause can be included with the `ORDER BY` clause when rows are being sorted on a character field and with the `GROUP BY` clause in case of grouping operations.
+
+[[fblangref30-datatypes-chartypes-caseinsenstv]]
+==== Case-Insensitive Searching
+
+For a case-insensitive search, the `UPPER` function could be used to convert both the search argument and the searched strings to upper-case before attempting a match:
+
+[source]
+----
+…
+where upper(name) = upper(:flt_name)
+----
+
+For strings in a character set that has a case-insensitive collation available, you can simply apply the collation, to compare the search argument and the searched strings directly.
+For example, using the `WIN1251` character set, the collation `PXW_CYRL` is case-insensitive for this purpose:
+
+[source]
+----
+…
+WHERE FIRST_NAME COLLATE PXW_CYRL >= :FLT_NAME
+…
+ORDER BY NAME COLLATE PXW_CYRL
+----
+
+.See also
+<<fblangref30-commons-predcontaining,`CONTAINING`>>
+
+[[fblangref30-datatypes-chartypes-utf8collations]]
+==== `UTF8` Collation Sequences
+
+The following table shows the possible collation sequences for the `UTF8` character set.
+
+[[fblangref30-dtyp-tbl-utfcollats]]
+.Collation Sequences for Character Set UTF8
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Collation
+^| Characteristics
+
+|`UCS_BASIC`
+|Collation works according to the position of the character in the table (binary).
+Added in Firebird 2.0
+
+|`UNICODE`
+|Collation works according to the UCA algorithm (Unicode Collation Algorithm) (alphabetical).
+Added in Firebird 2.0
+
+|`UTF8`
+|The default, binary collation, identical to `UCS_BASIC`, which was added for SQL compatibility
+
+|`UNICODE_CI`
+|Case-insensitive collation, works without taking character case into account.
+Added in Firebird 2.1
+
+|`UNICODE_CI_AI`
+|Case-insensitive, accent-insensitive collation, works alphabetically without taking character case or accents into account.
+Added in Firebird 2.5
+|===
+
+.Example
+An example of collation for the UTF8 character set without taking into account the case or accentuation of characters (similar to `COLLATE PXW_CYRL`).
+
+[source]
+----
+...
+ORDER BY NAME COLLATE UNICODE_CI_AI
+----
+
+[[fblangref30-datatypes-chartypes-charindxs]]
+=== Character Indexes
+
+In Firebird earlier than version 2.0, a problem can occur with building an index for character columns that use a non-standard collation sequence: the length of an indexed field is limited to 252 bytes with no `COLLATE` specified or 84 bytes if `COLLATE` is specified.
+Multi-byte character sets and compound indexes limit the size even further.
+
+Starting from Firebird 2.0, the maximum length for an index equals one quarter of the page size, i.e.
+from 1,024 -- for page size 4,096 -- to 4,096 bytes -- for page size 16,384.
+The maximum length of an indexed string is 9 bytes less than that quarter-page limit.
+
+.Calculating Maximum Length of an Indexed String Field
+The following formula calculates the maximum length of an indexed string (in characters):
+
+[source]
+----
+max_char_length = FLOOR((page_size / 4 - 9) / N)
+----
+
+where N is the number of bytes per character in the character set. 
+
+The table below shows the maximum length of an indexed string (in characters), according to page size and character set, calculated using this formula.
+
+[[fblangref30-dtyp-tbl-charindxsz]]
+.Maximum Index Lengths by Page Size and Character Size
+[cols=">1,>1,>1,>1,>1,>1",stripes="none"]
+|===
+.2+^h| Page Size
+5+^h| Bytes per character
+
+^h|1
+^h|2
+^h|3
+^h|4
+^h|6
+
+|4,096
+|1,015
+|507
+|338
+|253
+|169
+
+|8,192
+|2,039
+|1,019
+|679
+|509
+|339
+
+|16,384
+|4,087
+|2,043
+|1,362
+|1,021
+|682
+|===
+
+[NOTE]
+====
+With case-insensitive collations ("`_CI`"), one character in the _index_ will occupy not 4, but 6 (six) bytes, so the maximum key length for a page of -- for example -- 4,096 bytes, will be 169 characters.
+====
+
+.See also
+<<fblangref30-ddl-db-create,`CREATE DATABASE`>>, <<fblangref30-datatypes-chartypes-collation,Collation sequence>>, <<fblangref30-dml-select,`SELECT`>>, <<fblangref30-dml-select-where,`WHERE`>>, <<fblangref30-dml-select-groupby,`GROUP BY`>>, <<fblangref30-dml-select-orderby,`ORDER BY`>>
+
+[[fblangref30-datatypes-chartypes-detail]]
+=== Character Types in Detail
+
+[[fblangref30-datatypes-chartypes-char]]
+==== `CHAR`
+
+`CHAR` is a fixed-length data type.
+If the entered number of characters is less than the declared length, trailing spaces will be added to the field.
+Generally, the pad character does not have to be a space: it depends on the character set.
+For example, the pad character for the `OCTETS` character set is zero.
+
+The full name of this data type is `CHARACTER`, but there is no requirement to use full names and people rarely do so.
+
+Fixed-length character data can be used to store codes whose length is standard and has a definite "`width`" in directories.
+An example of such a code is an EAN13 barcode -- 13 characters, all filled.
+
+.Declaration Syntax
+[listing,subs=+quotes]
+----
+{CHAR | CHARACTER} [(_length_)]
+  [CHARACTER SET <set>] [COLLATE <name>]
+----
+
+[NOTE]
+====
+If no _length_ is specified, it is taken to be 1.
+
+A valid _length_ is from 1 to the maximum number of characters that can be accommodated within 32,767 bytes.
+
+Formally, the `COLLATE` clause is not part of the data type declaration, and its position depends on the syntax of the statement.
+====
+
+[[fblangref30-datatypes-chartypes-varchar]]
+==== `VARCHAR`
+
+`VARCHAR` is the basic string type for storing texts of variable length, up to a maximum of 32,765 bytes.
+The stored structure is equal to the actual size of the data plus 2 bytes where the length of the data is recorded.
+
+All characters that are sent from the client application to the database are considered meaningful, including the leading and trailing spaces.
+However, trailing spaces are not stored: they will be restored upon retrieval, up to the recorded length of the string.
+
+The full name of this type is `CHARACTER VARYING`.
+Another variant of the name is written as `CHAR VARYING`.
+
+.Syntax
+[listing,subs=+quotes]
+----
+{VARCHAR | {CHAR | CHARACTER} VARYING} (_length_)
+  [CHARACTER SET <set>] [COLLATE <name>]
+----
+
+[NOTE]
+====
+Formally, the `COLLATE` clause is not part of the data type declaration, and its position depends on the syntax of the statement.
+====
+
+[[fblangref30-datatypes-chartypes-nchar]]
+==== `NCHAR`
+
+`NCHAR` is a fixed-length character data type with the `ISO8859_1` character set predefined.
+In all other respects it is the same as `CHAR`.
+
+.Syntax
+[listing,subs=+quotes]
+----
+{NCHAR | NATIONAL {CHAR | CHARACTER}} [(_length_)]
+----
+
+[NOTE]
+====
+If no _length_ is specified, it is taken to be 1.
+====
+
+A similar data type is available for the variable-length string type: `NATIONAL {CHAR | CHARACTER} VARYING`.
+
+[[fblangref30-datatypes-booleantypes]]
+== Boolean Data Type
+
+Firebird 3.0 introduced a fully-fledged Boolean data type.
+
+[[fblangref30-datatypes-boolean]]
+=== `BOOLEAN`
+
+The SQL:2008 compliant `BOOLEAN` data type (8 bits) comprises the distinct truth values `TRUE` and `FALSE`.
+Unless prohibited by a `NOT NULL` constraint, the `BOOLEAN` data type also supports the truth value `UNKNOWN` as the null value.
+The specification does not make a distinction between the `NULL` value of this data type and the truth value `UNKNOWN` that is the result of an SQL predicate, search condition, or Boolean value expression: they may be used interchangeably to mean exactly the same thing.
+
+As with many programming languages, the SQL `BOOLEAN` values can be tested with implicit truth values.
+For example, `field1 OR field2` and `NOT field1` are valid expressions.
+
+[[fblangref30-datatypes-boolean-is]]
+==== The IS Operator
+
+Predicates can use the operator <<fblangref30-commons-isnotboolean,Boolean `IS [NOT]`>> for matching.
+For example, `field1 IS FALSE`, or `field1 IS NOT TRUE`.
+
+[NOTE]
+====
+* Equivalence operators ("```=```", "```!=```", "```<>```" and so on) are valid in all comparisons.
+====
+
+[[fblangref30-datatypes-boolean-examples]]
+==== `BOOLEAN` Examples
+
+. Inserting and selecting
++
+[source]
+----
+CREATE TABLE TBOOL (ID INT, BVAL BOOLEAN);
+COMMIT;
+
+INSERT INTO TBOOL VALUES (1, TRUE);
+INSERT INTO TBOOL VALUES (2, 2 = 4);
+INSERT INTO TBOOL VALUES (3, NULL = 1);
+COMMIT;
+
+SELECT * FROM TBOOL;
+          ID    BVAL
+============ =======
+           1 <true>
+           2 <false>
+           3 <null>
+----
+. Test for `TRUE` value
++
+[source]
+----
+SELECT * FROM TBOOL WHERE BVAL;
+          ID    BVAL
+============ =======
+           1 <true>
+----
+. Test for `FALSE` value
++
+[source]
+----
+SELECT * FROM TBOOL WHERE BVAL IS FALSE;
+          ID    BVAL
+============ =======
+           2 <false>
+----
+. Test for `UNKNOWN` value
++
+[source]
+----
+SELECT * FROM TBOOL WHERE BVAL IS UNKNOWN;
+          ID    BVAL
+============ =======
+           3 <null>
+----
+. Boolean values in `SELECT` list
++
+[source]
+----
+SELECT ID, BVAL, BVAL AND ID < 2
+  FROM TBOOL;
+          ID    BVAL
+============ ======= =======
+           1 <true>  <true>
+           2 <false> <false>
+           3 <null>  <false>
+----
+. PSQL declaration with start value
++
+[source]
+----
+DECLARE VARIABLE VAR1 BOOLEAN = TRUE;
+----
+. Valid syntax, but as with a comparison with `NULL`, will never return any record
+[source]
+----
+SELECT * FROM TBOOL WHERE BVAL = UNKNOWN;
+SELECT * FROM TBOOL WHERE BVAL <> UNKNOWN;
+----
+
+[[fblangref30-datatypes-boolean-othertypes]]
+===== Use of Boolean against other data types
+
+Although `BOOLEAN` is not inherently convertible to any other datatype, from version 3.0.1 the strings `'true'` and `'false'` (case-insensitive) will be implicitly cast to `BOOLEAN` in value expressions, e.g.
+
+[source]
+----
+if (true > 'false') then ...
+----
+
+`'false'` is converted to `BOOLEAN`.
+Any attempt to use the Boolean operators `AND`, `NOT`, `OR` and `IS` will fail.
+`NOT 'False'`, for example, is invalid.
+
+A `BOOLEAN` can be explicitly converted to and from string with `CAST`.
+`UNKNOWN` is not available for any form of casting.
+
+.Other Notes
+[NOTE]
+====
+* The type is represented in the API with the `FB_BOOLEAN` type and `FB_TRUE` and `FB_FALSE` constants.
+* The value `TRUE` is greater than the value `FALSE`.
+====
+
+[[fblangref30-datatypes-bnrytypes]]
+== Binary Data Types
+
+``BLOB``s (Binary Large Objects) are complex structures used to store text and binary data of an undefined length, often very large.
+
+.Syntax
+[listing]
+----
+BLOB [SUB_TYPE <subtype>]
+  [SEGMENT SIZE <segment size>]
+  [CHARACTER SET <character set>]
+  [COLLATE <collation name>]
+----
+
+.Shortened syntax
+[listing]
+----
+BLOB (<segment size>)
+BLOB (<segment size>, <subtype>)
+BLOB (, <subtype>)
+----
+
+[NOTE]
+====
+Formally, the `COLLATE` clause is not part of the data type declaration, and its position depends on the syntax of the statement.
+====
+
+[[fblangref30-datatypes-seg-size]]
+.Segment Size
+[sidebar]
+Specifying the BLOB segment size is throwback to times past, when applications for working with BLOB data were written in C (Embedded SQL) with the help of the _gpre_ pre-compiler.
+Nowadays, it is effectively irrelevant.
+The segment size for BLOB data is determined by the client side and is usually larger than the data page size, in any case.
+
+[[fblangref30-datatypes-bnrytypes-sub]]
+=== `BLOB` Subtypes
+
+The optional `SUB_TYPE` parameter specifies the nature of data written to the column.
+Firebird provides two pre-defined subtypes for storing user data:
+
+Subtype 0: `BINARY`::
+If a subtype is not specified, the specification is assumed to be for untyped data and the default `SUB_TYPE 0` is applied.
+The alias for subtype zero is `BINARY`.
+This is the subtype to specify when the data are any form of binary file or stream: images, audio, word-processor files, PDFs and so on.
+
+Subtype 1: `TEXT`::
+Subtype 1 has an alias, `TEXT`, which can be used in declarations and definitions.
+For instance, `BLOB SUB_TYPE TEXT`.
+It is a specialized subtype used to store plain text data that is too large to fit into a string type.
+A `CHARACTER SET` may be specified, if the field is to store text with a different encoding to that specified for the database.
+From Firebird 2.0, a `COLLATE` clause is also supported.
++
+Specifying a `CHARACTER SET` without `SUB_TYPE` implies `SUB_TYPE TEXT`.
+
+.Custom Subtypes
+It is also possible to add custom data subtypes, for which the range of enumeration from -1 to -32,768 is reserved.
+Custom subtypes enumerated with positive numbers are not allowed, as the Firebird engine uses the numbers from 2-upward for some internal subtypes in metadata.
+
+[[fblangref30-datatypes-bnrytypes-more]]
+=== `BLOB` Specifics
+
+.Size
+The maximum size of a `BLOB` field is limited to 4GB, regardless of whether the server is 32-bit or 64-bit.
+(The internal structures related to ``BLOB``s maintain their own 4-byte counters.)
+For a page size of 4 KB (4096 bytes) the maximum size is lower -- slightly less than 2GB.
+
+.Operations and Expressions
+Text BLOBs of any length and any character set -- including multi-byte -- can be operands for practically any statement or internal functions.
+The following operators are supported completely:
+
+[%autowidth,cols="2*",frame=none,grid=none,stripes=none]
+|===
+|=
+|(assignment)
+|=, <>, <, <=, >, >=
+|(comparison)
+|`{vbar}{vbar}`
+|(concatenation)
+|`BETWEEN`,
+|`IS [NOT] DISTINCT FROM`,
+|`IN`,
+|`ANY` {vbar} `SOME`,
+|`ALL`
+|{nbsp}
+|===
+
+Partial support:
+
+* An error occurs with these if the search argument is larger than or equal to 32 KB: 
++
+[%autowidth,cols="2*",frame=none,grid=none,stripes=none]
+|===
+|`STARTING [WITH]`,
+|`LIKE`,
+|`CONTAINING`
+|{nbsp}
+|===
+* Aggregation clauses work not on the contents of the field itself, but on the BLOB ID. Aside from that, there are some quirks:
++
+[%autowidth,cols="2*",frame=none,grid=none,stripes=none]
+|===
+|`SELECT DISTINCT`
+|returns several NULL values by mistake if they are present
+|`ORDER BY`
+|--
+|`GROUP BY`
+|concatenates the same strings if they are adjacent to each other, but does not do it if they are remote from each other
+|===
+
+.`BLOB` Storage
+* By default, a regular record is created for each BLOB and it is stored on a data page that is allocated for it.
+If the entire `BLOB` fits onto this page, it is called a _level 0 BLOB_.
+The number of this special record is stored in the table record and occupies 8 bytes.
+* If a `BLOB` does not fit onto one data page, its contents are put onto separate pages allocated exclusively to it (blob pages), while the numbers of these pages are stored into the `BLOB` record.
+This is a _level 1 BLOB_.
+* If the array of page numbers containing the `BLOB` data does not fit onto a data page, the array is put on separate blob pages, while the numbers of these pages are put into the `BLOB` record.
+This is a _level 2 BLOB_.
+* Levels higher than 2 are not supported.
+
+.See also
+<<fblangref30-ddl-filter,`FILTER`>>, <<fblangref30-ddl-filter-declare,`DECLARE FILTER`>>
+
+[[fblangref30-datatypes-array]]
+=== `ARRAY` Type
+
+The support of arrays in the Firebird DBMS is a departure from the traditional relational model.
+Supporting arrays in the DBMS could make it easier to solve some data-processing tasks involving large sets of similar data.
+
+Arrays in Firebird are stored in `BLOB` of a specialized type.
+Arrays can be one-dimensional and multi-dimensional and of any data type except `BLOB` and `ARRAY`.
+
+.Example
+[source]
+----
+CREATE TABLE SAMPLE_ARR (
+  ID INTEGER NOT NULL PRIMARY KEY,
+  ARR_INT INTEGER [4]
+);
+----
+
+This example will create a table with a field of the array type consisting of four integers.
+The subscripts of this array are from 1 to 4.
+
+[[fblangref30-datatypes-array-bounds]]
+==== Specifying Explicit Boundaries for Dimensions
+
+By default, dimensions are 1-based -- subscripts are numbered from 1.
+To specify explicit upper and lower bounds of the subscript values, use the following syntax:
+
+[listing]
+----
+'[' <lower>:<upper> ']'
+----
+
+[[fblangref30-datatypes-array-adddim]]
+==== Adding More Dimensions
+
+A new dimension is added using a comma in the syntax.
+In this example we create a table with a two-dimensional array, with the lower bound of subscripts in both dimensions starting from zero:
+
+[source]
+----
+CREATE TABLE SAMPLE_ARR2 (
+  ID INTEGER NOT NULL PRIMARY KEY,
+  ARR_INT INTEGER [0:3, 0:3]
+);
+----
+
+The DBMS does not offer much in the way of language or tools for working with the contents of arrays.
+The database [path]`employee.fdb`, found in the [path]`../examples/empbuild` directory of any Firebird distribution package, contains a sample stored procedure showing some simple work with arrays:
+
+==== PSQL Source for `SHOW_LANGS`, a procedure involving an array
+
+[source]
+----
+CREATE OR ALTER PROCEDURE SHOW_LANGS (
+  CODE VARCHAR(5),
+  GRADE SMALLINT,
+  CTY VARCHAR(15))
+RETURNS (LANGUAGES VARCHAR(15))
+AS
+  DECLARE VARIABLE I INTEGER;
+BEGIN
+  I = 1;
+  WHILE (I <= 5) DO
+  BEGIN
+    SELECT LANGUAGE_REQ[:I]
+    FROM JOB
+    WHERE (JOB_CODE = :CODE)
+      AND (JOB_GRADE = :GRADE)
+      AND (JOB_COUNTRY = :CTY)
+      AND (LANGUAGE_REQ IS NOT NULL))
+    INTO :LANGUAGES;
+
+    IF (LANGUAGES = '') THEN
+    /* PRINTS 'NULL' INSTEAD OF BLANKS */
+      LANGUAGES = 'NULL';
+    I = I +1;
+    SUSPEND;
+  END
+END
+----
+
+If the features described are enough for your tasks, you might consider using arrays in your projects.
+Currently, no improvements are planned to enhance support for arrays in Firebird.
+
+[[fblangref30-datatypes-special]]
+== Special Data Types
+
+"`Special`" data types ...
+
+[[fblangref30-datatypes-special-sqlnull]]
+=== `SQL_NULL` Data Type
+
+The `SQL_NULL` type holds no data, but only a state: `NULL` or `NOT NULL`.
+It is not available as a data type for declaring table fields, PSQL variables or parameter descriptions.
+It was added to support the use of untyped parameters in expressions involving the `IS NULL` predicate.
+
+An evaluation problem occurs when optional filters are used to write queries of the following type:
+
+[source]
+----
+WHERE col1 = :param1 OR :param1 IS NULL
+----
+
+After processing, at the API level, the query will look like this:
+
+[source]
+----
+WHERE col1 = ? OR ? IS NULL
+----
+
+This is a case where the developer writes an SQL query and considers `:param1` as though it were a _variable_ that he can refer to twice.
+However, at the API level, the query contains two separate and independent __parameters_.
+The server cannot determine the type of the second parameter since it comes in association with `IS NULL`.
+
+The `SQL_NULL` data type solves this problem.
+Whenever the engine encounters an "```? IS NULL```" predicate in a query, it assigns the `SQL_NULL` type to the parameter, which will indicate that parameter is only about "`nullness`" and the data type or the value need not be addressed.
+
+The following example demonstrates its use in practice.
+It assumes two named parameters -- say, `:size` and ``:colour`` -- which might, for example, get values from on-screen text fields or drop-down lists.
+Each named parameter corresponds with two positional parameters in the query.
+
+[source]
+----
+SELECT
+  SH.SIZE, SH.COLOUR, SH.PRICE
+FROM SHIRTS SH
+WHERE (SH.SIZE = ? OR ? IS NULL)
+  AND (SH.COLOUR = ? OR ? IS NULL)
+----
+
+Explaining what happens here assumes the reader is familiar with the Firebird API and the passing of parameters in XSQLVAR structures -- what happens under the surface will not be of interest to those who are not writing drivers or applications that communicate using the "`naked`" API.
+
+The application passes the parameterized query to the server in the usual positional `?`-form.
+Pairs of "`identical`" parameters cannot be merged into one so, for two optional filters, for example, four positional parameters are needed: one for each `?` in our example.
+
+After the call to `isc_dsql_describe_bind()`, the SQLTYPE of the second and fourth parameters will be set to `SQL_NULL`.
+Firebird has no knowledge of their special relation with the first and third parameters: that responsibility lies entirely on the application side.
+
+Once the values for size and colour have been set (or left unset) by the user and the query is about to be executed, each pair of ``XSQLVAR``s must be filled as follows:
+
+User has supplied a value::
+First parameter (value compare): set `{asterisk}sqldata` to the supplied value and `{asterisk}sqlind` to `0` (for `NOT NULL`)
++
+Second parameter (`NULL` test): set `sqldata` to `null` (null pointer, not SQL `NULL`) and `{asterisk}sqlind` to `0` (for `NOT NULL`)
+
+User has left the field blank::
+Both parameters: set `sqldata` to `null` (null pointer, not SQL `NULL`) and `{asterisk}sqlind` to `-1` (indicating `NULL`)
+
+In other words: The value compare parameter is always set as usual.
+The `SQL_NULL` parameter is set the same, except that `sqldata` remains `null` at all times.
+
+[[fblangref30-datatypes-conversion]]
+== Conversion of Data Types
+
+When composing an expression or specifying an operation, the aim should be to use compatible data types for the operands.
+When a need arises to use a mixture of data types, it should prompt you to look for a way to convert incompatible operands before subjecting them to the operation.
+The ability to convert data may well be an issue if you are working with Dialect 1 data.
+
+[[fblangref30-datatypes-convert-explicit]]
+=== Explicit Data Type Conversion
+
+The `CAST` function enables explicit conversion between many pairs of data types.
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+CAST (<expression> AS <target_type>)
+
+<target_type> ::= <domain_or_non_array_type> | <array_datatype>
+
+<domain_or_non_array_type> ::=
+  !! See <<fblangref30-datatypes-syntax-scalar-syntax,Scalar Data Types Syntax>> !!
+
+<array_datatype> ::=
+  !! See <<fblangref30-datatypes-syntax-array,Array Data Types Syntax>> !!
+----
+
+See also <<fblangref30-scalarfuncs-cast,`CAST()`>> in Chapter _Built-in Scalar Functions_.
+
+[[fblangref30-datatypes-convert-domain]]
+==== Casting to a Domain
+
+When you cast to a domain, any constraints declared for it are taken into account, i.e., `NOT NULL` or `CHECK` constraints.
+If the _value_ does not pass the check, the cast will fail.
+
+If `TYPE OF` is additionally specified -- casting to its base type -- any domain constraints are ignored during the cast.
+If `TYPE OF` is used with a character type (`CHAR/VARCHAR`), the character set and collation are retained.
+
+[[fblangref30-datatypes-convert-typeof]]
+==== Casting to `TYPE OF COLUMN`
+
+When operands are cast to the type of a column, the specified column may be from a table or a view.
+
+Only the type of the column itself is used.
+For character types, the cast includes the character set, but not the collation.
+The constraints and default values of the source column are not applied.
+
+.Example
+[source]
+----
+CREATE TABLE TTT (
+  S VARCHAR (40)
+  CHARACTER SET UTF8 COLLATE UNICODE_CI_AI
+);
+COMMIT;
+
+SELECT
+  CAST ('I have many friends' AS TYPE OF COLUMN TTT.S)
+FROM RDB$DATABASE;
+----
+
+[[fblangref30-datatypes-convert-conversions]]
+==== Conversions Possible for the `CAST` Function
+
+[[fblangref30-dtyp-tbl-conversions]]
+.Conversions with CAST
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| From Data Type
+<| To Data Type
+
+|Numeric types
+|Numeric types, `[VAR]CHAR`, `BLOB`
+
+|`[VAR]CHAR`
+|`[VAR]CHAR`, `BLOB`, Numeric types, `DATE`, `TIME`, `TIMESTAMP`, `BOOLEAN`
+
+|`BLOB`
+|`[VAR]CHAR`, `BLOB`, Numeric types, `DATE`, `TIME`, `TIMESTAMP`, `BOOLEAN`
+
+|`DATE`, `TIME`
+|`[VAR]CHAR`, `BLOB`, `TIMESTAMP`
+
+|`TIMESTAMP`
+|`[VAR]CHAR`, `BLOB`, `DATE`, `TIME`
+
+|`BOOLEAN`
+|`BOOLEAN`, `[VAR]CHAR`, `BLOB`
+|===
+
+To convert string data types to the `BOOLEAN` type, the value must be (case-insensitive) `'true'` or `'false'`, or `NULL`.
+
+[IMPORTANT]
+====
+Keep in mind that partial information loss is possible.
+For instance, when you cast the `TIMESTAMP` data type to the `DATE` data type, the time-part is lost.
+====
+
+[[fblangref30-datatypes-convert-literalformats]]
+==== Literal Formats
+
+To cast string data types to the `DATE`, `TIME` or `TIMESTAMP` data types, you need the string argument to be one of the predefined date and time literals (see xref:fblangref30-dtyp-tbl-keydesc[xrefstyle="short"]) or a representation of the date in one of the allowed _date-time literal_ formats:
+
+[listing,subs=+quotes]
+----
+<timestamp_format> ::=
+    { [__YYYY__<p>]__MM__<p>__DD__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]
+    | __MM__<p>__DD__[<p>__YYYY__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]]
+    | __DD__<p>__MM__[<p>__YYYY__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]]
+    | __MM__<p>__DD__[<p>__YY__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]]
+    | __DD__<p>__MM__[<p>__YY__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]]
+    | NOW
+    | TODAY
+    | TOMORROW
+    | YESTERDAY }
+
+<date_format> ::=
+    { [__YYYY__<p>]__MM__<p>__DD__
+    | __MM__<p>__DD__[<p>__YYYY__]
+    | __DD__<p>__MM__[<p>__YYYY__]
+    | __MM__<p>__DD__[<p>__YY__]
+    | __DD__<p>__MM__[<p>__YY__]
+    | TODAY
+    | TOMORROW
+    | YESTERDAY }
+
+<time_format> :=
+    { __HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]
+    | NOW }
+
+<p> ::= whitespace | . | : | , | - | /
+----
+
+[[fblangref30-dtyp-tbl-keydesc]]
+.Date and Time Literal Format Arguments
+[cols="<2,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Description
+
+|timestamp_format
+|Format of timestamp literal
+
+|date_literal
+|Format of date literal
+
+|time_literal
+|Format of time literal
+
+|YYYY
+|Four-digit year
+
+|YY
+|Two-digit year
+
+|MM
+|Month.
+It may contain 1 or 2 digits (1-12 or 01-12).
+You can also specify the three-letter shorthand name or the full name of a month in English.
+Case-insensitive
+
+|DD
+|Day.
+It may contain 1 or 2 digits (1-31 or 01-31)
+
+|HH
+|Hour.
+It may contain 1 or 2 digits (0-23 or 00-23)
+
+|mm
+|Minutes.
+It may contain 1 or 2 digits (0-59 or 00-59)
+
+|SS
+|Seconds.
+It may contain 1 or 2 digits (0-59 or 00-59)
+
+|NNNN
+|Ten-thousandths of a second.
+It may contain from 1 to 4 digits (0-9999)
+
+|p
+|A separator, any of permitted characters.
+Leading and trailing spaces are ignored
+|===
+
+[[fblangref30-dtyp-tbl-predliterals]]
+.Literals with Predefined Values of Date and Time
+[cols="<2,<3,<3,<2",stripes="none"]
+|===
+.2+^h|Literal
+.2+^h|Description
+2+^h|Data Type
+
+^h|Dialect 1
+^h|Dialect 3
+
+|`'NOW'`
+|Current date and time
+|`DATE`
+|`TIMESTAMP`
+
+|`'TODAY'`
+|Current date
+|`DATE` with zero time
+|`DATE`
+
+|`'TOMORROW'`
+|Current date + 1 (day)
+|`DATE` with zero time
+|`DATE`
+
+|`'YESTERDAY'`
+|Current date - 1 (day)
+|`DATE` with zero time
+|`DATE`
+|===
+
+[IMPORTANT]
+====
+Use of the complete specification of the year in the four-digit form -- `YYYY` -- is strongly recommended, to avoid confusion in date calculations and aggregations.
+====
+
+.Sample Date Literal Interpretations
+[source]
+----
+select
+  cast('04.12.2014' as date) as d1, -- DD.MM.YYYY
+  cast('04 12 2014' as date) as d2, -- MM DD YYYY
+  cast('4-12-2014' as date) as d3,  -- MM-DD-YYYY
+  cast('04/12/2014' as date) as d4, -- MM/DD/YYYY
+  cast('04,12,2014' as date) as d5, -- MM,DD,YYYY
+  cast('04.12.14' as date) as d6,   -- DD.MM.YY
+  -- DD.MM with current year
+  cast('04.12' as date) as d7,
+  -- MM/DD with current year
+  cast('04/12' as date) as d8,
+  cast('2014/12/04' as date) as d9, -- YYYY/MM/DD
+  cast('2014 12 04' as date) as d10, -- YYYY MM DD
+  cast('2014.12.04' as date) as d11, -- YYYY.MM.DD
+  cast('2014-12-04' as date) as d12, -- YYYY-MM-DD
+  cast('4 Jan 2014' as date) as d13, -- DD MM YYYY
+  cast('2014 Jan 4' as date) as dt14, -- YYYY MM DD
+  cast('Jan 4, 2014' as date) as dt15, -- MM DD, YYYY
+  cast('11:37' as time) as t1, -- HH:mm
+  cast('11:37:12' as time) as t2, -- HH:mm:ss
+  cast('11:31:12.1234' as time) as t3, -- HH:mm:ss.nnnn
+  cast('11.37.12' as time) as t4, -- HH.mm.ss
+  -- DD.MM.YYYY HH:mm
+  cast('04.12.2014 11:37' as timestamp) as dt1,
+  -- MM/DD/YYYY HH:mm:ss
+  cast('04/12/2014 11:37:12' as timestamp) as dt2,
+  -- DD.MM.YYYY HH:mm:ss.nnnn
+  cast('04.12.2014 11:31:12.1234' as timestamp) as dt3,
+  -- MM/DD/YYYY HH.mm.ss
+  cast('04/12/2014 11.37.12' as timestamp) as dt4
+from rdb$database
+----
+
+[[fblangref30-datatypes-convert-shortcasts]]
+==== Shorthand Casts for Date and Time Data Types
+
+Firebird allows the use of a shorthand "`C-style`" type syntax for casts from string to the types `DATE`, `TIME` and `TIMESTAMP`.
+The SQL standard calls these datetime literals.
+
+.Syntax
+[listing,subs=+quotes]
+----
+<data_type> '__date_literal_string__'
+----
+
+.Example
+[source]
+----
+-- 1
+  UPDATE PEOPLE
+  SET AGECAT = 'SENIOR'
+  WHERE BIRTHDATE < DATE '1-Jan-1943';
+-- 2
+  INSERT INTO APPOINTMENTS
+  (EMPLOYEE_ID, CLIENT_ID, APP_DATE, APP_TIME)
+  VALUES (973, 8804, DATE 'today' + 2, TIME '16:00');
+-- 3
+  NEW.LASTMOD = TIMESTAMP 'now';
+----
+
+[NOTE]
+====
+These shorthand expressions are evaluated directly during parsing, as though the statement were already prepared for execution.
+Thus, even if the query is run several times, the value of, for instance, `timestamp 'now'` remains the same no matter how much time passes.
+
+If you need the time to be evaluated at each execution, use the full `CAST` syntax.
+An example of using such an expression in a trigger:
+
+[source]
+----
+NEW.CHANGE_DATE = CAST('now' AS TIMESTAMP);
+----
+
+Firebird 4 will no longer allow these implicit datetime values like `'now'`, `'today'`, etc in these shorthand casts.
+It is advisable to switch to using the full `CAST` expression for implicit values.
+====
+
+[[fblangref30-datatypes-convert-implicit]]
+=== Implicit Data Type Conversion
+
+Implicit data conversion is not possible in Dialect 3 -- the `CAST` function is almost always required to avoid data type clashes.
+
+In Dialect 1, in many expressions, one type is implicitly cast to another without the need to use the CAST function.
+For instance, the following statement in Dialect 1 is valid:
+
+[source]
+----
+UPDATE ATABLE
+  SET ADATE = '25.12.2016' + 1
+----
+
+and the date literal  will be cast to the date type implicitly.
+
+In Dialect 3, this statement will throw error 35544569, "`Dynamic SQL Error: expression evaluation not supported, Strings cannot be added or subtracted in dialect 3`" -- a cast will be needed:
+
+[source]
+----
+UPDATE ATABLE
+  SET ADATE = CAST ('25.12.2016' AS DATE) + 1
+----
+
+or, with the short cast:
+
+[source]
+----
+UPDATE ATABLE
+  SET ADATE = DATE '25.12.2016' + 1
+----
+
+In Dialect 1, mixing integer data and numeric strings is usually possible because the parser will try to cast the string implicitly.
+For example,
+
+[source]
+----
+2 + '1'
+----
+
+will be executed correctly.
+
+In Dialect 3, an expression like this will raise an error, so you will need to write it as a `CAST` expression:
+
+[source]
+----
+2 + CAST('1' AS SMALLINT)
+----
+
+The exception to the rule is during _string concatenation_.
+
+[[fblangref30-datatypes-convert-implicit-concat]]
+==== Implicit Conversion During String Concatenation
+
+When multiple data elements are being concatenated, all non-string data will undergo implicit conversion to string, if possible.
+
+.Example
+[source]
+----
+SELECT 30||' days hath September, April, June and November' CONCAT$
+  FROM RDB$DATABASE;
+
+CONCAT$
+------------------------------------------------
+30 days hath September, April, June and November
+----
+
+[[fblangref30-datatypes-custom]]
+== Custom Data Types -- Domains
+
+In Firebird, the concept of a "`user-defined data type`" is implemented in the form of the _domain_.
+Creating a domain does not truly create a new data type, of course.
+A domain provides the means to encapsulate an existing data type with a set of attributes and make this "`capsule`" available for multiple usage across the whole database.
+If several tables need columns defined with identical or nearly identical attributes, a domain makes sense.
+
+Domain usage is not limited to column definitions for tables and views.
+Domains can be used to declare input and output parameters and variables in PSQL code.
+
+[[fblangref30-datatypes-domainattribs]]
+=== Domain Attributes
+
+A domain definition contains required and optional attributes.
+The _data type_ is a required attribute.
+Optional attributes include: 
+
+* a default value
+* to allow or forbid `NULL`
+* `CHECK` constraints
+* character set (for character data types and text BLOB fields)
+* collation (for character data types)
+
+.Sample domain definition
+[source]
+----
+CREATE DOMAIN BOOL3 AS SMALLINT
+  CHECK (VALUE IS NULL OR VALUE IN (0, 1));
+----
+
+.See also
+<<fblangref30-datatypes-convert-typeof,Explicit Data Type Conversion>> for the description of differences in the data conversion mechanism when domains are specified for the `TYPE OF` and `TYPE OF COLUMN` modifiers.
+
+[[fblangref30-datatypes-domainoverride]]
+=== Domain Override
+
+While defining a column using a domain, it is possible to override some of the attributes inherited from the domain.
+Table 3.9 summarises the rules for domain override.
+
+[[fblangref30-dtyp-tbl-domoverride]]
+.Rules for Overriding Domain Attributes in Column Definition
+[cols="<2,<1,<3", options="header",stripes="none"]
+|===
+^| Attribute
+^| Override?
+^| Comments
+
+|Data type
+|No
+|{nbsp}
+
+|Default value
+|Yes
+|{nbsp}
+
+|Text character set
+|Yes
+|It can be also used to restore the default database values for the column
+
+|Text collation sequence
+|Yes
+|{nbsp}
+
+|`CHECK` constraints
+|Yes
+|To add new conditions to the check, you can use the corresponding `CHECK` clauses in the CREATE and ALTER statements at the table level.
+
+|`NOT NULL`
+|No
+|Often it is better to leave domain nullable in its definition and decide whether to make it `NOT NULL` when using the domain to define columns.
+|===
+
+[[fblangref30-datatypes-domaincreate]]
+=== Creating and Administering Domains
+
+A domain is created with the DDL statement `CREATE DOMAIN`.
+
+.Short Syntax
+[listing,subs=+quotes]
+----
+CREATE DOMAIN _name_ [AS] <type>
+  [DEFAULT {<const> | <literal> | NULL | <context_var>}]
+  [NOT NULL] [CHECK (<condition>)]
+  [COLLATE <collation>]
+----
+
+.See also
+<<fblangref30-ddl-domn-create,`CREATE DOMAIN`>> in the Data Definition Language (DDL) section.
+
+[[fblangref30-datatypes-domainalter]]
+==== Altering a Domain
+
+To change the attributes of a domain, use the DDL statement `ALTER DOMAIN`.
+With this statement you can:
+
+* rename the domain
+* change the data type
+* drop the current default value
+* set a new default value
+* drop the `NOT NULL` constraint
+* set the `NOT NULL` constraint
+* drop an existing `CHECK` constraint
+* add a new `CHECK` constraint
+
+.Short Syntax
+[listing,subs=+quotes]
+----
+ALTER DOMAIN _name_
+  [{TO _new_name_}]
+  [{SET DEFAULT { <literal> | NULL | <context_var> } |
+    DROP DEFAULT}]
+  [{SET | DROP} NOT NULL ]
+  [{ADD [CONSTRAINT] CHECK (<dom_condition>) |
+    DROP CONSTRAINT}]
+  [{TYPE <datatype>}]
+----
+
+.Example
+[source]
+----
+ALTER DOMAIN STORE_GRP SET DEFAULT -1;
+----
+
+When changing a domain, its dependencies must be taken into account: whether there are table columns, any variables, input and/or output parameters with the type of this domain declared in the PSQL code.
+If you change domains in haste, without carefully checking them, your code may stop working!
+
+[IMPORTANT]
+====
+When you convert data types in a domain, you must not perform any conversions that may result in data loss.
+Also, for example, if you convert `VARCHAR` to `INTEGER`, check carefully that all data using this domain can be successfully converted.
+====
+
+.See also
+<<fblangref30-ddl-domn-alter,`ALTER DOMAIN`>> in the Data Definition Language (DDL) section.
+
+[[fblangref30-datatypes-domaindrop]]
+==== Deleting (Dropping) a Domain
+
+The DDL statement `DROP DOMAIN` deletes a domain from the database, provided it is not in use by any other database objects.
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP DOMAIN _name_
+----
+
+[IMPORTANT]
+====
+Any user connected to the database can delete a domain.
+====
+
+.Example
+[source]
+----
+DROP DOMAIN Test_Domain
+----
+
+.See also
+<<fblangref30-ddl-domn-drop,`DROP DOMAIN`>> in the Data Definition Language (DDL) section.
+
+[[fblangref30-datatypes-syntax]]
+== Data Type Declaration Syntax
+
+This section documents the syntax of declaring data types.
+Data type declaration most commonly occurs in <<fblangref30-ddl,DDL statements>>, but also in <<fblangref30-datatypes-convert-explicit,`CAST`>> and <<fblangref30-dml-execblock,`EXECUTE BLOCK`>>.
+
+The syntax documented below is referenced from other parts of this language reference.
+
+[[fblangref30-datatypes-syntax-scalar]]
+=== Scalar Data Types Syntax
+
+The scalar data types are simple data types that hold a single value.
+For reasons of organisation, the syntax of BLOB types are defined separately in <<fblangref30-datatypes-syntax-blob>>.
+
+[[fblangref30-datatypes-syntax-scalar-syntax]]
+.Scalar Data Types Syntax
+[listing,subs=+quotes]
+----
+<domain_or_non_array_type> ::=
+    <scalar_datatype>
+  | <blob_datatype>
+  | [TYPE OF] _domain_
+  | TYPE OF COLUMN _rel_._col_
+
+<scalar_datatype> ::=
+    SMALLINT | INT[EGER] | BIGINT
+  | FLOAT | DOUBLE PRECISION
+  | BOOLEAN
+  | DATE | TIME | TIMESTAMP
+  | {DECIMAL | NUMERIC} [(_precision_ [, _scale_])]
+  | {VARCHAR | {CHAR | CHARACTER} VARYING} (_length_)
+    [CHARACTER SET _charset_]
+  | {CHAR | CHARACTER} [(_length_)] [CHARACTER SET _charset_]
+  | {NCHAR | NATIONAL {CHARACTER | CHAR}} VARYING (_length_)
+  | {NCHAR | NATIONAL {CHARACTER | CHAR}} [(_length_)]
+----
+
+[[fblangref30-datatypes-tbl-scalar-syntax]]
+.Arguments for the Scalar Data Types Syntax
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Description
+
+|domain
+|Domain (only non-array domains)
+
+|rel
+|Name of a table or view
+
+|col
+|Name of a column in a table or view (only columns of a non-array type)
+
+|precision
+|Numeric precision in decimal digits.
+From 1 to 18
+
+|scale
+|Scale, or number of decimals.
+From 0 to 18.
+It must be less than or equal to _precision_
+
+|_length_
+|The maximum length of a string, in characters
+
+|charset
+|Character set
+
+|domain_or_non_array_type
+|Non-array types that can be used in PSQL code and casts
+|===
+
+[[fblangref30-datatypes-syntax-scalar-domns]]
+==== Use of Domains in Declarations
+
+A domain name can be specified as the type of a PSQL parameter or local variable.
+The parameter or variable will inherit all domain attributes.
+If a default value is specified for the parameter or variable, it overrides the default value specified in the domain definition.
+
+If the `TYPE OF` clause is added before the domain name, only the data type of the domain is used: any of the other attributes of the domain -- `NOT NULL` constraint, `CHECK` constraints, default value -- are neither checked nor used.
+However, if the domain is of a text type, its character set and collation sequence are always used.
+
+[[fblangref30-ddl-func-paramscoltype]]
+==== Use of Column Type in Declarations
+
+Input and output parameters or local variables can also be declared using the data type of columns in existing tables and views.
+The `TYPE OF COLUMN` clause is used for that, specifying __relationname__.__columnname__ as its argument.
+
+When `TYPE OF COLUMN` is used, the parameter or variable inherits only the data type and -- for string types -- the character set and collation sequence.
+The constraints and default value of the column are ignored.
+
+[[fblangref30-datatypes-syntax-blob]]
+=== BLOB Data Types Syntax
+
+The BLOB data types hold binary, character or custom format data of unspecified size.
+For more information, see <<fblangref30-datatypes-bnrytypes>>.
+
+[[fblangref30-datatypes-syntax-blob-syntax]]
+.BLOB Data Types Syntax
+[listing,subs=+quotes]
+----
+<blob_datatype> ::=
+    BLOB [SUB_TYPE {_subtype_num_ | _subtype_name_}]
+    [SEGMENT SIZE _seglen_] [CHARACTER SET _charset_]
+  | BLOB [(_seglen_ [, _subtype_num_])]
+----
+
+[[fblangref30-datatypes-tbl-blob-syntax]]
+.Arguments for the Blob Data Types Syntax
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Description
+
+|charset
+|Character set (ignored for sub-types other than `TEXT`/`1`)
+
+|subtype_num
+|`BLOB` subtype number
+
+|subtype_name
+|`BLOB` subtype mnemonic name;
+this can be `TEXT`, `BINARY`, or one of the (other) standard or custom names defined in `RDB$TYPES` for `RDB$FIELD_NAME = 'RDB$FIELD_SUB_TYPE'`.
+
+|seglen
+|Segment size, cannot be greater than 65,535, defaults to 80 when not specified.
+See also <<fblangref30-datatypes-seg-size>>
+|===
+
+[[fblangref30-datatypes-syntax-array]]
+=== Array Data Types Syntax
+
+The array data types hold multiple scalar values in a single or multi-dimensional array.
+For more information, see <<fblangref30-datatypes-array>>
+
+[[fblangref30-datatypes-syntax-array-syntax]]
+.Array Data Types Syntax
+[listing,subs="+quotes,attributes"]
+----
+<array_datatype> ::=
+    {SMALLINT | INT[EGER] | BIGINT} <array_dim>
+  | {FLOAT | DOUBLE PRECISION} <array_dim>
+  | BOOLEAN <array_dim>
+  | {DATE | TIME | TIMESTAMP} <array_dim>
+  | {DECIMAL | NUMERIC} [(_precision_ [, _scale_])] <array_dim>
+  | {VARCHAR | {CHAR | CHARACTER} VARYING} (_length_)
+    <array_dim> [CHARACTER SET _charset_]
+  | {CHAR | CHARACTER} [(_length_)] <array_dim>
+    [CHARACTER SET _charset_]
+  | {NCHAR | NATIONAL {CHARACTER | CHAR}} VARYING (_length_)
+    <array_dim>
+  | {NCHAR | NATIONAL {CHARACTER | CHAR}}
+    [(_length_)] <array_dim>
+
+<array_dim> ::= '[' [_m_:{endsb}__n__ [,[_m_:{endsb}__n__ ...] ']'
+----
+
+[[fblangref30-datatypes-tbl-array-syntax]]
+.Arguments for the Array Data Types Syntax
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Description
+
+|array_dim
+|Array dimensions
+
+|precision
+|Numeric precision in decimal digits.
+From 1 to 18
+
+|scale
+|Scale, or number of decimals.
+From 0 to 18.
+It must be less than or equal to _precision_
+
+|_length_
+|The maximum length of a string, in characters;
+optional for fixed-width character types, defaults to 1
+
+|charset
+|Character set
+
+|m, n
+|Integer numbers defining the index range of an array dimension
+|===
