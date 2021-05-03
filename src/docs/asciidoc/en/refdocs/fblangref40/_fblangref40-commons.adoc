@@ -42,9 +42,13 @@ The `EXISTS`, `SINGULAR`, `ALL`, `ANY` and `SOME` predicates can be used only wi
 Constant or Literal::
 Numbers, or string literals enclosed in apostrophes, Boolean values `TRUE`, `FALSE` and `UNKOWN`, `NULL`
 
-Date/time literal::
+Datetime literal::
 An expression, similar to a string literal enclosed in apostrophes, that can be interpreted as a date, time or timestamp value.
-Date literals can be predefined literals (`'TODAY'`, `'NOW'`, etc.) or strings of characters and numerals, such as `'25.12.2016 15:30:35'`, that can be resolved as date and/or time strings.
+Datetime literals can be strings of characters and numerals, such as `TIMESTAMP '25.12.2016 15:30:35'`, that can be resolved as datetime value, also used for string literals that can be cast to a datetime type.
+
+Datetime mnemonics::
+A string literal with a description of a desired datetime value that can be cast to a datetime type.
+For example `'TODAY'`, `'NOW'`.
 
 Context variable::
 An internally-defined <<fblangref40-contextvars,context variable>>
@@ -73,12 +77,15 @@ Bracket pairs `(...)` used to group expressions.
 Operations inside the parentheses are performed before operations outside them.
 When nested parentheses are used, the most deeply nested expressions are evaluated first and then the evaluations move outward through the levels of nesting.
 
-COLLATE clause::
+`COLLATE` clause::
 Clause applied to CHAR and VARCHAR types to specify the character-set-specific collation sequence to use in string comparisons
 
 `NEXT VALUE FOR __sequence__`::
 Expression for obtaining the next value of a specified generator (sequence).
 The internal `GEN_ID()` function does the same.
+
+`AT` expression::
+Expression to change the time zone of a datetime.
 
 [[fblangref40-commons-constants]]
 === Literals (Constants)
@@ -281,6 +288,153 @@ It is possible to write to a negative `SMALLINT` in hex, using a 4-byte hex numb
 
 A Boolean literal is one of `TRUE`, `FALSE` or `UNKNOWN`.
 
+[[fblangref40-commons-datetime-literal]]
+==== Datetime Literals
+
+Formally, the SQL standard defines datetime literals as a prefix `DATE`, `TIME` and `TIMESTAMP` followed by a string literal with a datetime format.
+Historically, Firebird documentation has referred to these datetime literals as `"shorthand casts"`.
+
+In Firebird 4, the use of <<fblangref40-dtyp-tbl-datetimemnemonics,datetime mnemonics>> in datetime literals (e.g. `DATE 'TODAY'`) is no longer allowed.
+
+[CAUTION]
+====
+The format of datetime literals and strings in Firebird 4 is more strict compared to earlier Firebird versions.
+====
+
+
+[[fblangref40-commons-datetime-literal-syntax]]
+.Datetime Literal Syntax
+[listing,subs="+quotes,attributes"]
+----
+<datetime_literal> ::=
+    DATE '<date_format>'
+  | TIME { '<time_format>' | '<time_tz_format>' }
+  | TIMESTAMP { '<timestamp_format>' | '<timestamp_tz_format>' }
+----
+
+// TODO Firebird 4 made syntax more strict, verify (some changes already made)
+[[fblangref40-commons-datetime-format-syntax]]
+.Datetime Format Syntax
+[listing,subs="+quotes,attributes"]
+----
+<date_format> ::=
+      [__YYYY__<p>{endsb}__MM__<p>__DD__
+    | __MM__<p>__DD__[<p>{ __YYYY__ | __YY__ }]
+    | __DD__<p>__MM__[<p>{ __YYYY__ | __YY__ }]
+
+<time_format> ::= __HH__[:__mm__[:__SS__[<f>__NNNN__]]]
+
+<timestamp_format> ::= <date_format> [<space> <time_format>]
+
+<time_zone> ::=
+    { + | - }__HH__:__MM__
+  | __time zone name (e.g. Europe/Berlin)__
+
+<time_tz_format> ::= <time_format> [<space>] <time_zone>
+
+<timestamp_tz_format> ::= <timestamp_format> [<space>] <time_zone>
+
+<p> ::= whitespace | . | - | /
+<f> ::= : | .
+----
+
+[[fblangref40-commons-tbl-datetime-literal]]
+.Date and Time Literal Format Arguments
+[cols="<2,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Description
+
+|datetime_literal
+|Datetime literal
+
+|date_format
+|Format of date
+
+|time_format
+|Format of time
+
+|timestamp_format
+|Format of timestamp
+
+|time_zone
+|Format of time zone
+
+|time_tz_format
+|Format of time with time zone
+
+|timestamp_tz_format
+|Format of timestamp with time zone
+
+|YYYY
+|Four-digit year
+
+|YY
+|Two-digit year
+
+|MM
+|Month
+It may contain 1 or 2 digits (1-12 or 01-12).
+You can also specify the three-letter shorthand name or the full name of a month in English.
+Case-insensitive
+
+|DD
+|Day.
+It may contain 1 or 2 digits (1-31 or 01-31)
+
+|HH
+|Hour.
+It may contain 1 or 2 digits (0-23 or 00-23)
+
+|mm
+|Minutes.
+It may contain 1 or 2 digits (0-59 or 00-59)
+
+|SS
+|Seconds.
+It may contain 1 or 2 digits (0-59 or 00-59)
+
+|NNNN
+|Ten-thousandths of a second.
+It may contain from 1 to 4 digits (0-9999)
+
+|p
+|A date separator, any of permitted characters.
+Leading and trailing spaces are ignored.
+The choice of separator in a date decides whether the parser reads `__MM__<p>__DD__` or `__DD__<p>__MM__`.
+
+|f
+|Fractional seconds separator
+|===
+
+[IMPORTANT]
+====
+Use of the complete specification of the year in the four-digit form -- `YYYY` -- is strongly recommended, to avoid confusion in date calculations and aggregations.
+====
+
+.Example
+[source]
+----
+-- 1
+  UPDATE PEOPLE
+  SET AGECAT = 'SENIOR'
+  WHERE BIRTHDATE < DATE '1-Jan-1943';
+-- 2
+  INSERT INTO APPOINTMENTS
+  (EMPLOYEE_ID, CLIENT_ID, APP_DATE, APP_TIME)
+  VALUES (973, 8804, DATE '1-Jan-2021' + 2, TIME '16:00');
+-- 3
+  NEW.LASTMOD = TIMESTAMP '1-Jan-2021 16:00';
+----
+
+[TIP]
+====
+Although the Firebird datetime syntax is very flexible, to avoid ambiguity we recommend using the ISO-8601 order (year-month-day), '```-```' as the date separator, 4 digits for year, 2 digits for month, day, minute and second, and '```.```' as second.fractions separator.
+This format is also the only one defined in the SQL standard.
+
+In short, use `TIMESTAMP '2021-05-03 04:05:00.1 +02:00'`, not `TIMESTAMP '3.5.21 4:5:0:1 +2:0'`.
+====
+
 [[fblangref40-commons-sqloperators]]
 === SQL Operators
 
@@ -473,7 +627,7 @@ IF (SALARY > 1400) THEN
 IF (A < B OR (A > C AND A > D) AND NOT (C = D)) THEN …
 ----
 
-[[fblangref40-commons-conditional-nxtvlufor]]
+[[fblangref40-commons-nxtvlufor]]
 ==== `NEXT VALUE FOR`
 
 .Available in
@@ -504,6 +658,33 @@ NEW.CUST_ID = NEXT VALUE FOR CUSTSEQ;
 
 .See also
 <<fblangref40-ddl-sequence,SEQUENCE (GENERATOR)>>, <<fblangref40-scalarfuncs-gen-id,`GEN_ID()`>>
+
+[[fblangref40-commons-at]]
+==== `AT` Time Zone Expression
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+<at expr> ::= <expr> AT { TIME ZONE <time zone string> | LOCAL }
+----
+
+The `AT` expression expresses a datetime value in a different time zone, while keeping the same UTC instant.
+
+`AT` translates a time/timestamp value to its corresponding value in another time zone.
+If `LOCAL` is used, the value is converted to the session time zone.
+
+When _expr_ is a `WITHOUT TIME ZONE` type, _expr_ is first converted to a `WITH TIME ZONE` in the session time zone and then transformed to the specified time zone.
+
+.Examples
+[source]
+----
+select time '12:00 GMT' at time zone '-03:00' from rdb$database;
+select current_timestamp at time zone 'America/Sao_Paulo' from rdb$database;
+select timestamp '2018-01-01 12:00 GMT' at local from rdb$database;
+----
 
 [[fblangref40-commons-conditional]]
 === Conditional Expressions

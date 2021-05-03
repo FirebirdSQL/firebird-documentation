@@ -49,8 +49,7 @@ If the number of characters is not specified, 1 is used by default.
 |`DATE`
 |32 bits
 |From 0001-01-01 AD to 9999-12-31 AD
-|`ISC_DATE`.
-Date only, no time element
+|Date only, no time element
 
 |`DECIMAL (__precision__, __scale__)`
 |Varying (16, 32 or 64 bits)
@@ -88,17 +87,27 @@ Example: `NUMERIC(10,3)` contains a number in exactly the following format: `ppp
 |-32,768 to 32,767
 |Signed short (word)
 
-|`TIME`
-|32 bits
+|`TIME [WITHOUT TIME ZONE]`
+|4 bytes
 |0:00 to 23:59:59.9999
-|`ISC_TIME`.
-Time of day.
+|Time of day.
 It cannot be used to store an interval of time
 
-|`TIMESTAMP`
-|64 bits (2 X 32 bits)
+|`TIME WITH TIME ZONE`
+|6 bytes
+|0:00 to 23:59:59.9999
+|Time of day with either a time zone offset or named zone
+It cannot be used to store an interval of time
+
+|`TIMESTAMP [WITHOUT TIME ZONE]`
+|8 bytes
 |From start of day 0001-01-01 AD to end of day 9999-12-31 AD
 |Date and time of day
+
+|`TIMESTAMP WITH TIME ZONE`
+|10 bytes
+|From start of day 0001-01-01 AD to end of day 9999-12-31 AD
+|Date and time of day with either a time zone offset or named zone
 
 |`VARCHAR(__n__)`, `CHAR VARYING`, `CHARACTER VARYING`
 |_n_ characters.
@@ -366,7 +375,17 @@ DECIMAL(10,4) (Dialect 1) DOUBLE PRECISION
 == Data Types for Dates and Times
 
 The `DATE`, `TIME` and `TIMESTAMP` data types are used to work with data containing dates and times.
-Dialect 3 supports all the three types, while Dialect 1 has only `DATE`.
+
+Firebird 4 introduces time zone support, using the types `TIME WITH TIME ZONE` and `TIMESTAMP WITH TIME ZONE`.
+In this language reference, we'll use `TIME` and `TIMESTAMP` to refer both to the specific types without time zone -- `TIME [WITHOUT TIME ZONE]` and `TIMESTAMP [WITHOUT TIME ZONE]` -- and aspects of both the without time zone and with time zone types, which one we mean is usually clear from the context.
+
+[IMPORTANT]
+====
+The data types `TIME WITHOUT TIME ZONE`, `TIMESTAMP WITHOUT TIME ZONE` and `DATE` are defined to use the _session time zone_ when converting from or to a `TIME WITH TIME ZONE` or `TIMESTAMP WITH TIME ZONE`.
+`TIME` and `TIMESTAMP` are synonymous to their respective `WITHOUT TIME ZONE` data types.
+====
+
+Dialect 3 supports all the five types, while Dialect 1 has only `DATE`.
 The `DATE` type in Dialect 3 is "`date-only`", whereas the Dialect 1 `DATE` type stores both date and time-of-day, equivalent to `TIMESTAMP` in Dialect 3.
 Dialect 1 has no "`date-only`" type.
 
@@ -377,32 +396,49 @@ Dialect 1 `DATE` data can be defined alternatively as `TIMESTAMP` and this is re
 
 .Fractions of Seconds
 If fractions of seconds are stored in date and time data types, Firebird stores them to ten-thousandths of a second.
-If a lower granularity is preferred, the fraction can be specified explicitly as thousandths, hundredths or tenths of a second in Dialect 3 databases of ODS 11 or higher.
+If a lower granularity is preferred, the fraction can be specified explicitly as thousandths, hundredths or tenths of a second, or second, in Dialect 3 databases of ODS 11 or higher.
 
-.Some useful knowledge about subseconds precision:
+.Some Useful Knowledge about Subseconds Precision
 [NOTE]
 ====
-The time-part of a `TIME` or `TIMESTAMP` is a 4-byte WORD, with room for decimilliseconds precision and time values are stored as the number of deci-milliseconds elapsed since midnight.
+The time-part of a `TIME` or `TIMESTAMP` is a 4-byte WORD, with room for deci-milliseconds (or 100 microseconds) precision and time values are stored as the number of deci-milliseconds elapsed since midnight.
 The actual precision of values stored in or read from time(stamp) functions and variables is:
 
-* `CURRENT_TIME` defaults to seconds precision and can be specified up to milliseconds precision with `CURRENT_TIME (0|1|2|3)`
-* `CURRENT_TIMESTAMP` milliseconds precision.
-Precision from seconds to milliseconds can be specified with `CURRENT_TIMESTAMP (0|1|2|3)`
-* Literal `'NOW'`: milliseconds precision
+* `CURRENT_TIME` and `LOCALTIME` default to seconds precision and can be specified up to milliseconds precision with `CURRENT_TIME (0|1|2|3)` or `LOCALTIME (0|1|2|3)`
+* `CURRENT_TIMESTAMP` and `LOCALTIMESTAMP` default to milliseconds precision.
+Precision from seconds to milliseconds can be specified with `CURRENT_TIMESTAMP (0|1|2|3)` or `LOCALTIMESTAMP (0|1|2|3)`
+* Literal `'NOW'` defaults to milliseconds precision
 * Functions `DATEADD()` and `DATEDIFF()` support up to milliseconds precision.
-Deci-milliseconds can be specified but they are rounded to the nearest integer before any operation is performed
+// TODO Is this still correct?
+Deci-milliseconds can be specified, but they are rounded to the nearest integer before any operation is performed
 * The `EXTRACT()` function returns up to deci-milliseconds precision with the `SECOND` and `MILLISECOND` arguments
-* For _TIME and TIMESTAMP literals_, Firebird happily accepts up to deci-milliseconds precision, but truncates (not rounds) the time part to the nearest lower or equal millisecond.
-Try, for example, `SELECT TIME '14:37:54.1249' FROM rdb$database`
-* the '```{plus}```' and '```-```' operators work with deci-milliseconds precision, but only _within_ the expression.
-As soon as something is stored or even just SELECTed from `RDB$DATABASE`, it reverts to milliseconds precision
+* the '```{plus}```' and '```-```' operators work with deci-milliseconds precision.
 
-Deci-milliseconds precision is rare and is not currently stored in columns or variables.
+Deci-milliseconds precision is rare and is not supported by all drivers and access components.
 The best assumption to make from all this is that, although Firebird stores `TIME` and the `TIMESTAMP` time-part values as the number of deci-milliseconds (10^-4^ seconds) elapsed since midnight, the actual precision could vary from seconds to milliseconds.
 ====
 
+[aside]
+.Storage of Time Zone Types
+****
+The time zone types are stored as values at UTC (offset 0), using the structure of `TIME` or `TIMESTAMP` {plus} two extra bytes for time zone information (either an offset in minutes, or the id of a named time zone).
+Storing as UTC allows Firebird to index and compare two values in different time zones.
+
+Storing at UTC has some caveats:
+
+- When you use named zones, and the time zone rules for that zone change, the UTC time stays the same, but the local time in the named zone may change.
+- For `TIME WITH TIME ZONE`, calculating a time zone offset for a named zone to get the local time in the zone applies the rules valid at the 1st of January 2020 to ensure a stable value.
+This may result in unexpected or confusing results.
+****
+
 [[fblangref40-datatypes-date]]
 === `DATE`
+
+.Syntax
+[listing]
+----
+DATE
+----
 
 The `DATE` data type in Dialect 3 stores only date without time.
 The available range for storing data is from January 01, 1 to December 31, 9999.
@@ -411,7 +447,7 @@ Dialect 1 has no "`date-only`" type.
 
 [TIP]
 ====
-In Dialect 1, date literals without a time part, as well as `'TODAY'`, `'YESTERDAY'` and `'TOMORROW'` automatically get a zero time part.
+In Dialect 1, date literals without a time part, as well as casts of date mnemonics `'TODAY'`, `'YESTERDAY'` and `'TOMORROW'` automatically get a zero time part.
 
 If, for some reason, it is important to you to store a Dialect 1 timestamp literal with an explicit zero time-part, the engine will accept a literal like `'2016-12-25 00:00:00.0000'`.
 However, `'2016-12-25'` would have precisely the same effect, with fewer keystrokes!
@@ -419,6 +455,14 @@ However, `'2016-12-25'` would have precisely the same effect, with fewer keystro
 
 [[fblangref40-datatypes-time]]
 === `TIME`
+
+.Syntax
+[listing]
+----
+TIME [{ WITHOUT | WITH } TIME ZONE]
+----
+
+For a bare `TIME`, `WITHOUT TIME ZONE` is assumed.
 
 The `TIME` data type is available in Dialect 3 only.
 It stores the time of day within the range from 00:00:00.0000 to 23:59:59.9999.
@@ -435,14 +479,78 @@ EXTRACT (SECOND FROM DATE_FIELD)
 
 See also the <<fblangref40-scalarfuncs-extract,`EXTRACT()` function>> in the chapter entitled [ref]_Built-in Functions_.
 
+[[fblangref40-datatypes-time-notz]]
+==== `TIME [WITHOUT TIME ZONE]`
+
+The `TIME` (or synonym `TIME WITHOUT TIME ZONE`) represents a time without time zone information.
+
+[[fblangref40-datatypes-time-tz]]
+==== `TIME WITH TIME ZONE`
+
+The `TIME WITH TIME ZONE` represents a time with time zone information (either an offset or a named zone).
+
+// TODO Add more details about time, formats, conversions (unless they better fit elsewhere)
+
+Firebird uses the ICU implementation of the IANA Time Zone Database for named zones.
+
+.Examples Using `EXTRACT()`
+[source]
+----
+EXTRACT (TIMEZONE_HOUR FROM TIME_TZ_FIELD)
+EXTRACT (TIMEZONE_MINUTE FROM TIME_TZ_FIELD)
+----
+
 [[fblangref40-datatypes-timestamp]]
 === `TIMESTAMP`
+
+.Syntax
+[listing]
+----
+TIMESTAMP [{ WITHOUT | WITH } TIME ZONE]
+----
+
+For a bare `TIMESTAMP`, `WITHOUT TIME ZONE` is assumed.
 
 The `TIMESTAMP` data type is available in Dialect 3 and Dialect 1.
 It comprises two 32-bit words -- a date-part and a time-part -- to form a structure that stores both date and time-of-day.
 It is the same as the `DATE` type in Dialect 1.
 
 The `EXTRACT` function works equally well with `TIMESTAMP` as with the Dialect 1 `DATE` type.
+
+[[fblangref40-datatypes-timestamp-notz]]
+==== `TIMESTAMP [WITHOUT TIME ZONE]`
+
+The `TIMESTAMP` (or synonym `TIMESTAMP WITHOUT TIME ZONE`) represents a time and date without time zone information.
+
+[[fblangref40-datatypes-timestamp-tz]]
+==== `TIMESTAMP WITH TIME ZONE`
+
+The `TIMESTAMP WITH TIME ZONE` represents a time with time zone information (either an offset or a named zone).
+
+// TODO Add more details about time, formats, conversions (unless they better fit elsewhere)
+
+[[fblangref40-datatypes-session-tz]]
+=== Session Time Zone
+
+As the name implies, the session time zone, can be different for each database attachment.
+It can be set explicitly in the DPB or SPB with the item `isc_dpb_session_time_zone`;
+otherwise, by default, it uses the same time zone as the operating system of the Firebird server process.
+This default can be overridden in `firebird.conf`, setting `DefaultTimeZone`.
+
+Subsequently, the time zone can be changed to a given time zone using a <<fblangref40-management-settimezone,`SET TIME ZONE`>> statement or reset to its original value with `SET TIME ZONE LOCAL`.
+
+[[fblangref40-datatypes-tz-format]]
+=== Time Zone Format
+
+A time zone is specified as a string, either a time zone region (for example, ``'America/Sao_Paulo'``) or a displacement from GMT in hours:minutes (for example, ``'-03:00'``).
+
+A time/timestamp with time zone is considered equal to another time/timestamp with time zone if their conversions to UTC are equivalent.
+For example, `time '10:00 -02:00'` and `time '09:00 -03:00'` are equivalent, since both are the same as `time '12:00 GMT'`.
+
+[IMPORTANT]
+====
+The same equivalence applies in `UNIQUE` constraints and for sorting purposes.
+====
 
 [[fblangref40-datatypes-datetimeops]]
 === Operations Using Date and Time Values
@@ -468,6 +576,11 @@ An example is to subtract an earlier date, time or timestamp from a later one, r
 
 |`DATE`
 |`{plus}`
+|`TIME WITH TIME ZONE`
+|`TIMESTAMP WITH TIME ZONE`
+
+|`DATE`
+|`{plus}`
 |Numeric value `n`
 |`DATE` increased by _n_ whole days.
 Broken values are rounded (not floored) to the nearest integer
@@ -477,16 +590,32 @@ Broken values are rounded (not floored) to the nearest integer
 |`DATE`
 |`TIMESTAMP`
 
+|`TIME WITH TIME ZONE`
+|`{plus}`
+|`DATE`
+|`TIMESTAMP WITH TIME ZONE`
+
 |`TIME`
 |`{plus}`
 |Numeric value `n`
 |`TIME` increased by _n_ seconds.
 The fractional part is taken into account
 
+|`TIME WITH TIME ZONE`
+|`{plus}`
+|Numeric value `n`
+|`TIME WITH TIME ZONE` increased by _n_ seconds.
+The fractional part is taken into account
+
 |`TIMESTAMP`
 |`{plus}`
 |Numeric value `n`
 |`TIMESTAMP`, where the date will advance by the number of days and part of a day represented by number _n_ -- so "```+ 2.75```" will push the date forward by 2 days and 18 hours
+
+|`TIMESTAMP WITH TIME ZONE`
+|`{plus}`
+|Numeric value `n`
+|`TIMESTAMP WITH TIME ZONE`, where the date will advance by the number of days and part of a day represented by number _n_ -- so "```+ 2.75```" will push the date forward by 2 days and 18 hours
 
 |`DATE`
 |`-`
@@ -506,6 +635,18 @@ Broken values are rounded (not floored) to the nearest integer
 
 |`TIME`
 |`-`
+|`TIME WITH TIME ZONE`
+|The without time zone value is converted to WITH TIME ZONE in the current session time zone.
+Number of seconds elapsed between the UTC values, within the range `DECIMAL(9, 4)`.
+Also applies when swapping types.
+
+|`TIME WITH TIME ZONE`
+|`-`
+|`TIME WITH TIME ZONE`
+|Number of seconds elapsed between the UTC values, within the range `DECIMAL(9, 4)`
+
+|`TIME`
+|`-`
 |Numeric value `n`
 |`TIME` reduced by _n_ seconds.
 The fractional part is taken into account
@@ -517,6 +658,18 @@ The fractional part is taken into account
 
 |`TIMESTAMP`
 |`-`
+|`TIMESTAMP WITH TIME ZONE`
+|The without time zone value is converted to WITH TIME ZONE in the current session time zone.
+Number of days and part-day between UTC values, within the range `DECIMAL(18, 9)`.
+Also applies when swapping types.
+
+|`TIMESTAMP WITH TIME ZONE`
+|`-`
+|`TIMESTAMP WITH TIME ZONE`
+|Number of days and part-day between UTC values, within the range `DECIMAL(18, 9)`
+
+|`TIMESTAMP`
+|`-`
 |Numeric value `n`
 |`TIMESTAMP` where the date will decrease by the number of days and part of a day represented by number _n_ -- so "```- 2.25```" will decrease the date by 2 days and 6 hours
 |===
@@ -525,6 +678,118 @@ The fractional part is taken into account
 [NOTE]
 ====
 The `DATE` type is considered as `TIMESTAMP` in Dialect 1.
+====
+
+// TODO Better title, move elsewhere?
+[[fblangref40-datatypes-tz-extras]]
+=== Supplemental Time Zone Features
+
+Firebird 4 provides a number of features to discover time zone information.
+
+[[fblangref40-datatypes-time-zones-tbl]]
+=== Virtual table `RDB$TIME_ZONES`
+
+A virtual table listing time zones supported in the engine.
+
+See also <<fblangref-appx04-timezones,`RDB$TIME_ZONES`>> in _System Tables_.
+
+[[fblangref40-datatypes-time-zone-util-pkg]]
+=== Package `RDB$TIME_ZONE_UTIL`
+
+A package of time zone utility functions and procedures:
+
+[[fblangref40-datatypes-time-zone-util-version]]
+==== Function `DATABASE_VERSION`
+
+`RDB$TIME_ZONE_UTIL.DATABASE_VERSION` returns the version of the time zone database as a `VARCHAR(10) CHARACTER SET ASCII`.
+
+.Example
+[source]
+----
+select rdb$time_zone_util.database_version() from rdb$database;
+----
+
+Returns:
+
+[source]
+----
+DATABASE_VERSION
+================
+2021a
+----
+
+[[fblangref40-datatypes-timezone-zone-util-transitions]]
+==== Procedure TRANSITIONS
+
+`RDB$TIME_ZONE_UTIL.TRANSITIONS` returns the set of rules between the start and end timestamps for a named time zone.
+
+The input parameters are:
+
+* `RDB$TIME_ZONE_NAME` type `CHAR(63)`
+* `RDB$FROM_TIMESTAMP` type `TIMESTAMP WITH TIME ZONE`
+* `RDB$TO_TIMESTAMP` type `TIMESTAMP WITH TIME ZONE`
+
+Output parameters:
+
+`RDB$START_TIMESTAMP`::
+type `TIMESTAMP WITH TIME ZONE` -- The start timestamp of the transition
+
+`RDB$END_TIMESTAMP`::
+type `TIMESTAMP WITH TIME ZONE` -- The end timestamp of the transition
+
+`RDB$ZONE_OFFSET`::
+type `SMALLINT` -- The zone's offset, in minutes
+
+`RDB$DST_OFFSET`::
+type `SMALLINT` -- The zone's DST offset, in minutes
+
+`RDB$EFFECTIVE_OFFSET`::
+type `SMALLINT` -- Effective offset (`ZONE_OFFSET` + `DST_OFFSET`)
+
+.Example
+[source]
+----
+select *
+  from rdb$time_zone_util.transitions(
+    'America/Sao_Paulo',
+    timestamp '2017-01-01',
+    timestamp '2019-01-01');
+----
+
+Returns (`RDB$` prefix left off for brevity):
+
+[listing]
+----
+             START_TIMESTAMP                END_TIMESTAMP ZONE_OFFSET DST_OFFSET EFFECTIVE_OFFSET
+============================ ============================ =========== ========== ================
+2016-10-16 03:00:00.0000 GMT 2017-02-19 01:59:59.9999 GMT       -180        60             -120
+2017-02-19 02:00:00.0000 GMT 2017-10-15 02:59:59.9999 GMT       -180         0             -180
+2017-10-15 03:00:00.0000 GMT 2018-02-18 01:59:59.9999 GMT       -180        60             -120
+2018-02-18 02:00:00.0000 GMT 2018-10-21 02:59:59.9999 GMT       -180         0             -180
+2018-10-21 03:00:00.0000 GMT 2019-02-17 01:59:59.9999 GMT       -180        60             -120
+----
+
+[[fblangref40-datatypes-tz-dbupdate]]
+==== Updating the Time Zone Database
+// TODO This doesn't really belong in a Language Reference; keep it or delete it?
+
+Time zones are often changed: of course, when it happens, it is desirable to update the time zone database as soon as possible.
+
+Firebird stores `WITH TIME ZONE` values translated to UTC time.
+Suppose a value is created with one time zone database and a later update of that database changes the information in the range of our stored value.
+When that value is read, it will be returned as different to the value that was stored initially.
+
+Firebird uses the https://www.iana.org/time-zones[IANA time zone database] through the ICU library.
+The ICU library presented in the Firebird kit (Windows), or installed in a POSIX operating system, can sometimes have an outdated time zone database.
+
+An updated database can be found on https://github.com/FirebirdSQL/firebird/tree/master/extern/icu/tzdata[this page on the FirebirdSQL GitHub].
+Filename `le.zip` stands for little-endian and is the necessary file for most computer architectures (Intel/AMD compatible x86 or x64), while `be.zip` stands for big-endian architectures and is necessary mostly for RISC computer architectures.
+The content of the zip file must be extracted in the `/tzdata` sub-directory of the Firebird installation, overwriting existing `*.res` files belonging to the database.
+
+[NOTE]
+====
+`/tzdata` is the default directory where Firebird looks for the time zone database.
+It can be overridden with the `ICU_TIMEZONE_FILES_DIR` environment variable.
 ====
 
 .See also
@@ -1297,129 +1562,36 @@ Keep in mind that partial information loss is possible.
 For instance, when you cast the `TIMESTAMP` data type to the `DATE` data type, the time-part is lost.
 ====
 
-[[fblangref40-datatypes-convert-literalformats]]
-==== Literal Formats
+[[fblangref40-datatypes-convert-datetimeformats]]
+==== Datetime Formats
 
-To cast string data types to the `DATE`, `TIME` or `TIMESTAMP` data types, you need the string argument to be one of the predefined date and time literals (see xref:fblangref40-dtyp-tbl-keydesc[xrefstyle="short"]) or a representation of the date in one of the allowed _date-time literal_ formats:
+To cast string data types to the `DATE`, `TIME` or `TIMESTAMP` data types, you need the string argument to be one of the predefined datetime mnemonics (see xref:fblangref40-dtyp-tbl-datetimemnemonics[xrefstyle="short"]) or a representation of the date in one of the allowed _datetime_ formats (see <<fblangref40-commons-datetime-format-syntax,Datetime Format Syntax>>),
 
-[listing,subs=+quotes]
-----
-<timestamp_format> ::=
-    { [__YYYY__<p>]__MM__<p>__DD__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]
-    | __MM__<p>__DD__[<p>__YYYY__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]]
-    | __DD__<p>__MM__[<p>__YYYY__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]]
-    | __MM__<p>__DD__[<p>__YY__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]]
-    | __DD__<p>__MM__[<p>__YY__[<p>__HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]]]
-    | NOW
-    | TODAY
-    | TOMORROW
-    | YESTERDAY }
-
-<date_format> ::=
-    { [__YYYY__<p>]__MM__<p>__DD__
-    | __MM__<p>__DD__[<p>__YYYY__]
-    | __DD__<p>__MM__[<p>__YYYY__]
-    | __MM__<p>__DD__[<p>__YY__]
-    | __DD__<p>__MM__[<p>__YY__]
-    | TODAY
-    | TOMORROW
-    | YESTERDAY }
-
-<time_format> :=
-    { __HH__[<p>__mm__[<p>__SS__[<p>__NNNN__]]]
-    | NOW }
-
-<p> ::= whitespace | . | : | , | - | /
-----
-
-[[fblangref40-dtyp-tbl-keydesc]]
-.Date and Time Literal Format Arguments
-[cols="<2,<3", options="header",stripes="none"]
+[[fblangref40-dtyp-tbl-datetimemnemonics]]
+.Predefined Datetime Mnemonics
+[cols="<2,<3",stripes="none"]
 |===
-^| Argument
-^| Description
-
-|timestamp_format
-|Format of timestamp literal
-
-|date_literal
-|Format of date literal
-
-|time_literal
-|Format of time literal
-
-|YYYY
-|Four-digit year
-
-|YY
-|Two-digit year
-
-|MM
-|Month.
-It may contain 1 or 2 digits (1-12 or 01-12).
-You can also specify the three-letter shorthand name or the full name of a month in English.
-Case-insensitive
-
-|DD
-|Day.
-It may contain 1 or 2 digits (1-31 or 01-31)
-
-|HH
-|Hour.
-It may contain 1 or 2 digits (0-23 or 00-23)
-
-|mm
-|Minutes.
-It may contain 1 or 2 digits (0-59 or 00-59)
-
-|SS
-|Seconds.
-It may contain 1 or 2 digits (0-59 or 00-59)
-
-|NNNN
-|Ten-thousandths of a second.
-It may contain from 1 to 4 digits (0-9999)
-
-|p
-|A separator, any of permitted characters.
-Leading and trailing spaces are ignored
-|===
-
-[[fblangref40-dtyp-tbl-predliterals]]
-.Literals with Predefined Values of Date and Time
-[cols="<2,<3,<3,<2",stripes="none"]
-|===
-.2+^h|Literal
-.2+^h|Description
-2+^h|Data Type
-
-^h|Dialect 1
-^h|Dialect 3
+.^h|Literal
+.^h|Description
 
 |`'NOW'`
 |Current date and time
-|`DATE`
-|`TIMESTAMP`
 
 |`'TODAY'`
 |Current date
-|`DATE` with zero time
-|`DATE`
 
 |`'TOMORROW'`
 |Current date + 1 (day)
-|`DATE` with zero time
-|`DATE`
 
 |`'YESTERDAY'`
 |Current date - 1 (day)
-|`DATE` with zero time
-|`DATE`
 |===
 
-[IMPORTANT]
+[NOTE]
 ====
-Use of the complete specification of the year in the four-digit form -- `YYYY` -- is strongly recommended, to avoid confusion in date calculations and aggregations.
+Casting the date mnemonics `'TODAY'`, `'TOMORROW'` or `'YESTERDAY'` to a `TIMESTAMP WITH TIME ZONE` will produce a value at 00:00:00 UTC rebased to the session time zone.
+
+For example `cast('TODAY' as timestamp with time zone)` on 2021-05-02 20:00 - 2021-05-03 19:59 New York (or 2021-05-03 00:00 - 2021-05-03 23:59 UTC) with session time zone America/New_York will produce a value `TIMESTAMP '2021-05-02 20:00:00.0000 America/New_York'`, while `cast('TODAY' as date)` or `CURRENT_DATE` will produce either `DATE '2021-05-02'` or `DATE '2021-05-03'` depending on the actual date.
 ====
 
 .Sample Date Literal Interpretations
@@ -1430,36 +1602,36 @@ select
   cast('04 12 2014' as date) as d2, -- MM DD YYYY
   cast('4-12-2014' as date) as d3,  -- MM-DD-YYYY
   cast('04/12/2014' as date) as d4, -- MM/DD/YYYY
-  cast('04,12,2014' as date) as d5, -- MM,DD,YYYY
-  cast('04.12.14' as date) as d6,   -- DD.MM.YY
+  cast('04.12.14' as date) as d5,   -- DD.MM.YY
   -- DD.MM with current year
-  cast('04.12' as date) as d7,
+  cast('04.12' as date) as d6,
   -- MM/DD with current year
-  cast('04/12' as date) as d8,
-  cast('2014/12/04' as date) as d9, -- YYYY/MM/DD
-  cast('2014 12 04' as date) as d10, -- YYYY MM DD
-  cast('2014.12.04' as date) as d11, -- YYYY.MM.DD
-  cast('2014-12-04' as date) as d12, -- YYYY-MM-DD
-  cast('4 Jan 2014' as date) as d13, -- DD MM YYYY
-  cast('2014 Jan 4' as date) as dt14, -- YYYY MM DD
-  cast('Jan 4, 2014' as date) as dt15, -- MM DD, YYYY
+  cast('04/12' as date) as d7,
+  cast('2014/12/04' as date) as d8, -- YYYY/MM/DD
+  cast('2014 12 04' as date) as d9, -- YYYY MM DD
+  cast('2014.12.04' as date) as d10, -- YYYY.MM.DD
+  cast('2014-12-04' as date) as d11, -- YYYY-MM-DD
+  cast('4 Jan 2014' as date) as d12, -- DD MM YYYY
+  cast('2014 Jan 4' as date) as dt13, -- YYYY MM DD
+  cast('Jan 4 2014' as date) as dt14, -- MM DD YYYY
   cast('11:37' as time) as t1, -- HH:mm
   cast('11:37:12' as time) as t2, -- HH:mm:ss
   cast('11:31:12.1234' as time) as t3, -- HH:mm:ss.nnnn
-  cast('11.37.12' as time) as t4, -- HH.mm.ss
   -- DD.MM.YYYY HH:mm
   cast('04.12.2014 11:37' as timestamp) as dt1,
   -- MM/DD/YYYY HH:mm:ss
   cast('04/12/2014 11:37:12' as timestamp) as dt2,
   -- DD.MM.YYYY HH:mm:ss.nnnn
   cast('04.12.2014 11:31:12.1234' as timestamp) as dt3,
-  -- MM/DD/YYYY HH.mm.ss
-  cast('04/12/2014 11.37.12' as timestamp) as dt4
+  cast('now' as timestamp) as m1,
+  cast('today' as date) as m2,
+  cast('yesterday' as date) as m3,
+  cast('tomorrow' as date) as m4
 from rdb$database
 ----
 
 [[fblangref40-datatypes-convert-shortcasts]]
-==== Shorthand Casts for Date and Time Data Types
+==== Shorthand Casts for Datetime Data Types
 
 Firebird allows the use of a shorthand "`C-style`" type syntax for casts from string to the types `DATE`, `TIME` and `TIMESTAMP`.
 The SQL standard calls these datetime literals.
@@ -1467,39 +1639,23 @@ The SQL standard calls these datetime literals.
 .Syntax
 [listing,subs=+quotes]
 ----
-<data_type> '__date_literal_string__'
+<data_type> '__date_format_string__'
 ----
 
-.Example
-[source]
-----
--- 1
-  UPDATE PEOPLE
-  SET AGECAT = 'SENIOR'
-  WHERE BIRTHDATE < DATE '1-Jan-1943';
--- 2
-  INSERT INTO APPOINTMENTS
-  (EMPLOYEE_ID, CLIENT_ID, APP_DATE, APP_TIME)
-  VALUES (973, 8804, DATE 'today' + 2, TIME '16:00');
--- 3
-  NEW.LASTMOD = TIMESTAMP 'now';
-----
+See also <<fblangref40-commons-datetime-literal,Datetime Literals>>.
 
 [NOTE]
 ====
-These shorthand expressions are evaluated directly during parsing, as though the statement were already prepared for execution.
-Thus, even if the query is run several times, the value of, for instance, `timestamp 'now'` remains the same no matter how much time passes.
+These literal expressions are evaluated directly during parsing, as though the statement were already prepared for execution.
+As this produced unexpected or confusing results when using the datetime mnemonics like `'NOW'`, especially in PSQL code, the datetime mnemonics are no longer allowed in datetime literals since Firebird 4.
 
-If you need the time to be evaluated at each execution, use the full `CAST` syntax.
+To use datetime mnemonics, use the full `CAST` syntax.
 An example of using such an expression in a trigger:
 
 [source]
 ----
 NEW.CHANGE_DATE = CAST('now' AS TIMESTAMP);
 ----
-
-Firebird 4 will no longer allow these implicit datetime values like `'now'`, `'today'`, etc in these shorthand casts.
-It is advisable to switch to using the full `CAST` expression for implicit values.
 ====
 
 [[fblangref40-datatypes-convert-implicit]]
@@ -1516,7 +1672,7 @@ UPDATE ATABLE
   SET ADATE = '25.12.2016' + 1
 ----
 
-and the date literal  will be cast to the date type implicitly.
+The date literal will be cast to the date type implicitly.
 
 In Dialect 3, this statement will throw error 35544569, "`Dynamic SQL Error: expression evaluation not supported, Strings cannot be added or subtracted in dialect 3`" -- a cast will be needed:
 
@@ -1526,7 +1682,7 @@ UPDATE ATABLE
   SET ADATE = CAST ('25.12.2016' AS DATE) + 1
 ----
 
-or, with the short cast:
+Or, with a datetime literal:
 
 [source]
 ----
