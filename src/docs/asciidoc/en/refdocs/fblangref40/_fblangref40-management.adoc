@@ -11,7 +11,134 @@ Those commands are not part of Firebird's SQL lexicon.
 For information on __isql__s `SET` commands, see https://www.firebirdsql.org/file/documentation/html/en/firebirddocs/isql/firebird-isql.html#isql-set[_Isql_ Set Commands] in _Firebird Interactive SQL Utility_.
 ====
 
+Management statements can run anywhere DSQL can run but, typically, the developer will want to run a management statement in a database trigger.
+In past releases, management statements were treated in PSQL like DDL, precluding them from running directly inside a PSQL module.
+From Firebird 4 forward, a pre-determined set of them can be used directly in PSQL modules without the need to wrap them in an `EXECUTE STATEMENT` block.
+// TODO Section needs to be added to PSQL chapter
+// For more details of the current set, see _Allow Management Statements in PSQL Blocks_ in the PSQL chapter.
+
 Most of the management statements affect the current connection (attachment, or "`session`") only, and do not require any authorization over and above the login privileges of the current user without elevated privileges.
+
+Some management statements operate beyond the scope of the current session.
+Examples are the `ALTER DATABASE {BEGIN | END} BACKUP` statements to control _nBackup_, or the `ALTER EXTERNAL CONNECTIONS POOL` statements introduced in Firebird 4 to manage connection pooling.
+A new set of _system privileges,_ analogous with SQL privileges granted for database objects, is provided to enable the required authority to run a specific management statement in this category.
+
+[NOTE]
+====
+Some statements of this class use the verb `ALTER`, although management statements should not be confused with DDL `ALTER` statements that modify database objects like tables, views, procedures, roles, et al.
+
+Although some <<fblangref40-ddl-db-alter,`ALTER DATABASE`>> clauses (`BEGIN BACKUP`) can be considered as management statements, they are documented in the _DDL_ chapter.
+====
+
+[[fblangref40-management-extpool]]
+== Connections Pool Management
+
+Management statements to manage the external connections pool.
+
+[[fblangref40-management-extpool-alter]]
+=== `ALTER EXTERNAL CONNECTIONS POOL`
+
+.Used for
+Managing the external connections pool
+
+.Available in
+DSQL
+// TODO PSQL?
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER EXTERNAL CONNECTIONS POOL
+  { CLEAR ALL
+  | CLEAR OLDEST
+  | SET LIFETIME _lifetime_ <time-unit>
+  | SET SIZE _size_ }
+
+<time-unit> ::= SECOND | MINUTE | HOUR
+----
+
+[[fblangref40-ddl-tbl-extpoolalt]]
+.`ALTER EXTERNAL CONNECTIONS POOL` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|lifetime
+|Maximum lifetime of a connection in the pool.
+Minimum values is `1 SECOND`, maximum is `24 HOUR`.
+
+|size
+|Maximum size of the connection pool.
+Range 0 - 1000.
+Setting to `0` disables the external connections pool.
+
+|===
+
+When prepared it is described like a DDL statement but its effect is immediate -- it is executed immediately and completely, without waiting for transaction commit.
+
+The statements can be issued from any connection, and changes are applied to the in-memory instance of the pool in the current Firebird process.
+If the process is a Classic one, a change submitted there does not affect other Classic processes.
+
+Changes made with `ALTER EXTERNAL CONNECTIONS POOL` are not persistent: after a restart, Firebird will use the pool settings configured in `firebird.conf` by `ExtConnPoolSize` and `ExtConnPoolLifeTime`.
+
+[[fblangref40-management-extpool-alter-cls]]
+==== Clauses of `ALTER EXTERNAL CONNECTIONS POOL`
+
+`CLEAR ALL`::
+Closes all idle connections and disassociates currently active connections so they are immediately closed when unused.
+
+`CLEAR OLDEST`::
+Closes expired connections
+
+`SET LIFETIME`::
+Configures the maximum lifetime of an idle connection in the pool.
+The default value (in seconds) is set using the parameter `ExtConnPoolLifetime` in `firebird.conf`.
+
+`SET SIZE`::
+Configures the maximum number of idle connections in the pool.
+The default value is set using the parameter `ExtConnPoolSize` in `firebird.conf`.
+
+[[fblangref40-management-extpool-how]]
+==== How the Connection Pool Works
+
+Every successful connection is associated with a pool, which maintains two lists -- one for idle connections and one for active connections.
+When a connection in the "`active`" list has no active requests and no active transactions, it is assumed to be "`unused`".
+A reset of the unused connection is attempted using an `ALTER SESSION RESET` statement and,
+
+* if the reset succeeds (no errors occur) the connection is moved into the "`idle`" list;
+* if the reset fails, the connection is closed;
+* if the pool has reached its maximum size, the oldest idle connection is closed.
+* When the _lifetime_ of an idle connection expires, it is deleted from the pool and closed.
+
+[[fblangref40-management-extpool-new-conn]]
+===== New Connections
+
+When the engine is asked to create a new external connection, the pool first looks for a candidate in the "`idle`" list.
+The search, which is case-sensitive, involves four parameters:
+
+. connection string
+. username
+. password
+. role
+
+If suitable connection is found, it is tested to check that it is still alive.
+
+* If it fails the check, it is deleted, and the search is repeated, without reporting any error to the client
+* Otherwise, the live connection is moved from the "`idle`" list to the "`active`" list and returned to the caller
+* If there are multiple suitable connections, the most recently used one is chosen
+* If there is no suitable connection, a new one is created and added to the "`active`" list.
+
+[[fblangref40-management-extpool-alter-who]]
+==== Who Can Alter the External Connections Pool
+
+The `ALTER EXTERNAL CONNECTIONS POOL` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* Users with the `MODIFY_EXT_CONN_POOL` privilege
+
+.See also
+<<fblangref40-scalarfuncs-get-context,`RDB$GET_CONTEXT`>>
 
 [[fblangref40-management-role]]
 == Changing the Current Role
