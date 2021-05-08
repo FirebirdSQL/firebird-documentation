@@ -268,6 +268,290 @@ ROLE1
 .See also
 <<fblangref40-management-role-set>>, <<fblangref40-security-mapping,Mapping of Users to Objects>>
 
+[[fblangref40-management-timeouts]]
+== Session Timeouts
+
+Statements for management of timeouts of the current connection.
+
+[[fblangref40-management-setsessionidle]]
+=== `SET SESSION IDLE TIMEOUT`
+
+.Used for
+Changing the session idle timeout
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET SESSION IDLE TIMEOUT _value_ [<time-unit>]
+
+<time-unit> ::= MINUTE | HOUR | SECOND
+----
+
+.`SET SESSION IDLE TIMEOUT` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|value
+|The timeout duration expressed in _time-unit_.
+A value of `0` defers to connection idle timeout configured for the database.
+
+|time-unit
+|Time unit of the timeout.
+Defaults to `MINUTE`.
+|===
+
+The `SET SESSION IDLE TIMEOUT` sets an idle timeout at connection level and takes effect immediately.
+The statement can run outside transaction control (without an active transaction).
+
+Setting a _value_ larger than configured for the database is allowed, but is effectively ignored, see also _<<fblangref40-management-session-timeout-effective>>_.
+
+The current timeout set for the session can be retrieved through <<fblangref40-scalarfuncs-get-context,`RDB$GET_CONTEXT`>>, namespace `SYSTEM` and variable `SESSION_IDLE_TIMEOUT`.
+Information is also available from `MON$ATTACHMENTS`:
+
+`MON$IDLE_TIMEOUT`::
+Connection-level idle timeout in seconds;
+`0` if timeout is not set.
+
+`MON$IDLE_TIMER`::
+Idle timer expiration time;
+contains `NULL` if an idle timeout was not set, or if a timer is not running.
+
+Both `RDB$GET_CONTEXT('SYSTEM', 'SESSION_IDLE_TIMEOUT')` and `MON$ATTACHMENTS.MON$IDLE_TIMEOUT` report the idle timeout configured for the connection;
+they do not report the effective idle timeout.
+
+// TODO Link to ALTER SESSION RESET
+The session idle timeout is reset when `ALTER SESSION RESET` is executed.
+
+[[fblangref40-management-session-timeouts]]
+==== Idle Session Timeouts
+
+An idle session timeout allows a use connection to close automatically after a specified period of inactivity.
+A database administrator can use it to enforce closure of old connections that have become inactive, to reduce unnecessary consumption of resources.
+It can also be used by application and tools developers as an alternative to writing their own modules for controlling connection lifetime.
+
+By default, the idle timeout is not enabled.
+No minimum or maximum limit is imposed, but a reasonably large period -- such as a few hours -- is recommended.
+
+[[fblangref40-management-session-timeouts-how]]
+===== How the Idle Session Timeout Works
+
+* When the user API call leaves the engine (returns to the calling connection) a special idle timer associated with the current connection is started
+* When another user API call from that connection enters the engine, the idle timer is stopped and reset to zero
+* If the maximum idle time is exceeded, the engine immediately closes the connection in the same way as with asynchronous connection cancellation:
++
+** all active statements and cursors are closed
+** all active transactions are rolled back
+** The network connection remains open at this point, allowing the client application to get the exact error code on the next API call.
+The network connection will be closed on the server side, after an error is reported or in due course as a result of a network timeout from a client-side disconnection.
+
+[NOTE]
+====
+Whenever a connection is cancelled, the next user API call returns the error `isc_att_shutdown` with a secondary error specifying the exact reason.
+Now, we have
+
+`isc_att_shut_idle`:: Idle timeout expired
+
+in addition to
+
+`isc_att_shut_killed`:: Killed by database administrator
+`isc_att_shut_db_down`:: Database is shut down
+`isc_att_shut_engine`:: Engine is shut down
+====
+
+[[fblangref40-management-session-timeouts-setting]]
+===== Setting the Idle Session Timeout
+
+[NOTE]
+====
+The idle timer will not start if the timeout period is set to zero.
+====
+
+An idle session timeout can be set:
+
+* At database level, the database administrator can set the configuration parameter `ConnectionIdleTimeout`, an integer value **in minutes**.
+The default value of zero means no timeout is set.
+It is configurable per-database, so it may be set globally in `firebird.conf` and overridden for individual databases in `databases.conf` as required.
++
+The scope of this method is all user connections, except system connections (garbage collector, cache writer, etc.).
+* at connection level, the idle session timeout is supported by both the `SET SESSION IDLE TIMEOUT` statement and the API (`setIdleTimeout`).
+The scope of this method is specific to the supplied connection (attachment).
+Its value in the API is **in seconds**.
+In the SQL syntax it can be hours, minutes or seconds.
+Scope for this method is the connection to which it is applied.
+
+[NOTE]
+====
+For more information about the API calls, consult the _Firebird 4.0 Release Notes_.
+====
+
+[[fblangref40-management-session-timeout-effective]]
+===== Determining the Timeout that is In Effect
+
+The effective idle timeout value is determined whenever a user API call leaves the engine, checking first at connection level and then at database level.
+A connection-level timeout can override the value of a database-level setting, as long as the period of time for the connection-level setting is no longer than any non-zero timeout that is applicable at database level.
+
+[IMPORTANT]
+====
+Take note of the difference between the time units at each level.
+At database level, in the configuration files, the unit for `SessionTimeout` is minutes.
+In SQL, the default unit is minutes but can be expressed in hours or seconds explicitly.
+At the API level, the unit is seconds.
+
+Absolute precision is not guaranteed in any case, especially when the system load is high, but timeouts are guaranteed not to expire earlier than the moment specified.
+====
+
+[[fblangref40-management-setstatementtimeout]]
+=== `SET STATEMENT TIMEOUT`
+
+.Used for
+Changing the statement timeout for a connection
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET STATEMENT TIMEOUT _value_ [<time-unit>]
+
+<time-unit> ::= SECOND | MILLISECOND | MINUTE | HOUR
+----
+
+.`SET STATEMENT TIMEOUT` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|value
+|The timeout duration expressed in _time-unit_.
+A value of `0` defers to statement timeout configured for the database.
+
+|time-unit
+|Time unit of the timeout.
+Defaults to `SECOND`.
+|===
+
+The `SET SESSION IDLE TIMEOUT` sets an idle timeout at connection level and takes effect immediately.
+The statement can run outside transaction control (without an active transaction).
+
+Setting a _value_ larger than configured for the database is allowed, but is effectively ignored, see also _<<fblangref40-management-stmnt-timeout-effective>>_.
+
+The current statement timeout set for the session can be retrieved through <<fblangref40-scalarfuncs-get-context,`RDB$GET_CONTEXT`>>, namespace `SYSTEM` and variable `STATEMENT_TIMEOUT`. Information is also available from `MON$ATTACHMENTS`:
+
+`MON$STATEMENT_TIMEOUT`::
+Connection-level statement timeout in milliseconds;
+`0` if timeout is not set.
+
+In `MON$STATEMENTS`:
+
+`MON$STATEMENT_TIMEOUT`::
+Statement-level statement timeout in milliseconds;
+`0` if timeout is not set.
+
+`MON$STATEMENT_TIMER`::
+Timeout timer expiration time;
+contains `NULL` if an idle timeout was not set, or if a timer is not running.
+
+Both `RDB$GET_CONTEXT('SYSTEM', 'SESSION_IDLE_TIMEOUT')` and `MON$ATTACHMENTS.MON$IDLE_TIMEOUT` report the idle timeout configured for the connection, and `MON$STATEMENTS$STATEMENT_TIMEOUT` for the statement;
+they do not report the effective statement timeout.
+
+// TODO Link to ALTER SESSION RESET
+The statement timeout is reset when `ALTER SESSION RESET` is executed.
+
+[[fblangref40-management-stmnt-timeouts]]
+==== Statement Timeouts
+
+The statement timeout feature allows execution of a statement to be stopped automatically when it has been running longer than a given timeout period.
+It gives the database administrator an instrument for limiting excessive resource consumption from heavy queries.
+
+Statement timeouts can also be useful to application developers when creating and debugging complex queries without advance knowledge of execution time.
+Testers and others could find them handy for detecting long-running queries and establishing finite run times for test suites.
+
+[[fblangref40-management-stmt-timeouts-how]]
+===== How the Statement Timeout Works
+
+When the statement starts execution, or a cursor is opened, the engine starts a special timer.
+It is stopped when the statement completes execution, or the last record has been fetched by the cursor.
+
+[NOTE]
+====
+A fetch does not reset this timer.
+====
+
+When the timeout point is reached:
+
+* if statement execution is active, it stops at closest possible moment
+* if statement is not active currently (between fetches, for example), it is marked as cancelled, and the next fetch will actually break execution and return an error
+
+.Statement types excluded from timeouts
+[NOTE]
+====
+Statement timeouts are not applicable to some types of statement and will simply be ignored:
+
+* All DDL statements
+* All internal queries issued by the engine itself
+====
+
+[[fblangref40-management-stmnt-timeouts-setting]]
+===== Setting a Statement Timeout
+
+[NOTE]
+====
+The timer will not start if the timeout period is set to zero.
+====
+
+A statement timeout can be set:
+
+* at database level, by the database administrator, by setting the configuration parameter `StatementTimeout` in `firebird.conf` or `databases.conf`.
+`StatementTimeout` is an integer representing the number of seconds after which statement execution will be cancelled automatically by the engine.
+Zero means no timeout is set.
+A non-zero setting will affect all statements in all connections.
+* at connection level, using `SET STATEMENT TIMEOUT` or the API for setting a statement timeout (`setStatementTimeout`).
+A connection-level setting (via SQL or the API) affects all statements for the given connection;
+units for the timeout period at this level can be specified to any granularity from hours to milliseconds.
+* at statement level, using the API, in milliseconds
+
+[[fblangref40-management-stmnt-timeout-effective]]
+===== Determining the Statement Timeout that is In Effect
+
+The statement timeout value that is in effect is determined whenever a statement starts executing, or a cursor is opened.
+In searching out the timeout in effect, the engine goes up through the levels, from statement through to database and/or global levels until it finds a non-zero value.
+If the value in effect turns out to be zero then no statement timer is running and no timeout applies.
+
+A statement-level or connection-level timeout can override the value of a database-level setting, as long as the period of time for the lower-level setting is no longer than any non-zero timeout that is applicable at database level.
+
+[IMPORTANT]
+====
+Take note of the difference between the time units at each level.
+At database level, in the conf file, the unit for `StatementTimeout` is seconds.
+In SQL, the default unit is seconds but can be expressed in hours, minutes or milliseconds explicitly.
+At the API level, the unit is milliseconds.
+
+Absolute precision is not guaranteed in any case, especially when the system load is high, but timeouts are guaranteed not to expire earlier than the moment specified.
+====
+
+Whenever a statement times out and is cancelled, the next user API call returns the error `isc_cancelled` with a secondary error specifying the exact reason, viz.,
+
+`isc_cfg_stmt_timeout`:: Config level timeout expired
+`isc_att_stmt_timeout`:: Attachment level timeout expired
+`isc_req_stmt_timeout`:: Statement level timeout expired
+
+[NOTE]
+.Notes about Statement Timeouts
+====
+. A client application could wait longer than the time set by the timeout value if the engine needs to undo a large number of actions as a result of the statement cancellation
+. When the engine runs an `EXECUTE STATEMENT` statement, it passes the remainder of the currently active timeout to the new statement.
+If the external (remote) engine does not support statement timeouts, the local engine silently ignores any corresponding error.
+. When the engine acquires some lock from the lock manager, it tries to lower the value of the lock timeout using the remainder of the currently active statement timeout, if possible.
+Due to lock manager internals, any statement timeout remainder will be rounded up to whole seconds.
+====
+
 [[fblangref40-management-session-tz]]
 == Time Zone Management
 
@@ -277,7 +561,7 @@ Statements for management of time zone features of the current connections.
 === `SET TIME ZONE`
 
 .Used for
-Changing the session time zone.
+Changing the session time zone
 
 .Available in
 DSQL, PSQL
@@ -291,6 +575,7 @@ SET TIME ZONE { _time_zone_string_ | LOCAL }
 Changes the session time zone to the specified time zone.
 Specifying `LOCAL` will revert to initial session time zone of the session (either the default or as specified through connection property `isc_dpb_session_time_zone`).
 
+// TODO Add link to ALTER SESSION RESET
 Executing `ALTER SESSION RESET` has the same effect on the session time zone as `SET TIME ZONE LOCAL`, but will also reset other session properties.
 
 [[fblangref40-management-settimezone-exmpl]]
@@ -303,4 +588,3 @@ set time zone 'America/Sao_Paulo';
 set time zone local;
 ----
 
-// TODO Add link to ALTER SESSION RESET
