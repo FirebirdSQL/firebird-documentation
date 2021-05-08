@@ -84,17 +84,23 @@ GRANT <privileges>
 .Syntax (granting roles)
 [listing,subs=+quotes]
 ----
-GRANT <role_granted>
+GRANT <role_granted_list>
   TO <role_grantee_list>
   [WITH ADMIN OPTION]
   [{GRANTED BY | AS} [USER] _grantor_]
 
-<role_granted> ::= _role_name_ [, _role_name_ ...]
+<role_granted_list> ::=
+  <role_granted> [, <role_granted ...]
+
+<role_granted> ::= [DEFAULT] _role_name_
 
 <role_grantee_list> ::=
   <role_grantee> [, <role_grantee> ...]
 
-<role_grantee> ::= [USER] _username_
+<role_grantee> ::=
+    _user_or_role_name_
+  | USER _username_
+  | ROLE _role_name_
 ----
 
 [[fblangref40-security-tbl-grant]]
@@ -149,11 +155,14 @@ If the `USER` keyword is absent, it can also be a role.
 
 |sys_privilege
 |A system privilege
+
+|user_or_role_name
+|Name of a user or role
 |===
 
 The `GRANT` statement grants one or more privileges on database objects to users, roles, or other database objects.
 
-A regular, authenticated user has no privileges on any database object until they are explicitly granted, either to that individual user or to all users bundled as the user `PUBLIC`.
+A regular, authenticated user has no privileges on any database object until they are explicitly granted to that individual user, to a role granted to the user as a default role, or to all users bundled as the user `PUBLIC`.
 When an object is created, only its creator (the owner) and <<fblangref40-security-administrators,administrators>> have privileges to it, and can grant privileges to other users, roles, or objects.
 
 Different sets of privileges apply to different types of metadata objects.
@@ -193,21 +202,53 @@ This is not a bug: SQL permissions are concerned with controlling data access fo
 ==== Packaging Privileges in a `ROLE` Object
 
 A role is a "`container`" object that can be used to package a collection of privileges.
-Use of the role is then granted to each user that requires those privileges.
-A role can also be granted to a list of users.
+Use of the role is then granted to each user or role that requires those privileges.
+A role can also be granted to a list of users or roles.
 
 The role must exist before privileges can be granted to it.
 See <<fblangref40-security-role-create,`CREATE ROLE`>> for the syntax and rules.
 The role is maintained by granting privileges to it and, when required, revoking privileges from it.
-When a role is dropped (see <<fblangref40-security-role-drop,`DROP ROLE`>>), all users lose the privileges acquired through the role.
+When a role is dropped  -- see <<fblangref40-security-role-drop,`DROP ROLE`>> -- all users lose the privileges acquired through the role.
 Any privileges that were granted additionally to an affected user by way of a different grant statement are retained.
 
-A user that is granted a role must supply that role with his login credentials in order to exercise the associated privileges.
-Any other privileges granted to the user are not affected by logging in with a role.
+Unless the role is granted as a default role, a user that is granted a role must explicitly specify that role, either with their login credentials or activating it using `SET ROLE`, in order to exercise the associated privileges.
+Any other privileges granted to the user or received through default roles are not affected by explicitly specifying a role.
 
-More than one role can be granted to the same user but logging in with multiple roles simultaneously is not supported.
+More than one role can be granted to the same user.
+Although only one role can be explicitly specified, multiple roles can be active for a user, either as default roles, or as roles granted to the current role.
 
-A role can be granted only to a user.
+A role can be granted to a user or to another role.
+
+[[fblangref40-security-grant-role-cumul]]
+==== Cumulative Roles
+
+The ability to grant roles to other roles and default roles results in so-called cumulative roles.
+Multiple roles can be active for a user, and the user receives the cumulative privileges of all those roles.
+
+When a role is explicitly specified on connect or using <<fblangref40-management-role-set,`SET ROLE`>>, the user will assume all privileges granted to that role, including those privileges granted to the secondary roles (including roles granted on that secondary role, etc).
+Or in other words, when the primary role is explicitly specified, the secondary roles are also activated.
+The function <<fblangref40-scalarfuncs-roleinuse,`RDB$ROLE_IN_USE`>> can be used to check if a role is currently active.
+
+See also <<fblangref40-security-grant-role-default>> for the effects of `DEFAULT` with cumulative roles, and <<fblangref40-security-grant-withadminoption>> for effects on granting.
+
+[[fblangref40-security-grant-role-default]]
+==== Default Roles
+
+A role can be granted as a _default_ role by prefixing the role with `DEFAULT` in the `GRANT` statement.
+Granting roles as a default role to users simplifies management of privileges, as this makes it possible to group privileges on a role and granting that group of privileges to a user without requiring the user to explicitly specify the role.
+Users can receive multiple default roles, granting them all privileges of those default roles.
+
+The effects of a default role depend on whether the role is granted to a user or to another role:
+
+* When a role is granted to a user as a default role, the role will be activated automatically, and its privileges will be applied to the user without the need to explicitly specify the role.
++
+Roles that are active by default are not returned from <<fblangref40-contextvars-current-role,`CURRENT_ROLE`>>, but the function <<fblangref40-scalarfuncs-roleinuse,`RDB$ROLE_IN_USE`>> can be used to check if a role is currently active.
+
+* When a role is granted to another role as a default role, the rights of that role will only be automatically applied to the user if the primary role is granted as a default role to the user, otherwise the primary role needs to be specified explicitly (in other words, it behaves the same as when the secondary role was granted without the `DEFAULT` clause).
++
+For a string of granted roles, all roles need to be granted as a default role for them to be applied automatically.
+That is, for `GRANT DEFAULT ROLEA TO ROLE ROLEB`, `GRANT ROLEB TO ROLE ROLEC`, `GRANT DEFAULT ROLEC TO USER USER1` only `ROLEC` is active by default for `USER1`.
+To assume the privileges of `ROLEA` and `ROLEB`, `ROLEC` needs to be explicitly specified, or `ROLEB` needs to be granted `DEFAULT` to `ROLEC`.
 
 [[fblangref40-security-grant-public]]
 ==== The User `PUBLIC`
@@ -530,13 +571,16 @@ One or more roles can be assigned to one or more users, including the <<fblangre
 [[fblangref40-security-grant-withadminoption]]
 ==== The `WITH ADMIN OPTION` Clause
 
-The optional `WITH ADMIN OPTION` clause allows the users specified in the user list to grant the role(s) specified to other users.
+The optional `WITH ADMIN OPTION` clause allows the users specified in the user list to grant the role(s) specified to other users or roles.
 
 [CAUTION]
 ====
 It is possible to assign this option to `PUBLIC`.
 Do not do this!
 ====
+
+For cumulative roles, a user can only exercise the `WITH ADMIN OPTION` of a secondary role if all intermediate roles are also granted `WITH ADMIN OPTION`.
+That is, `GRANT ROLEA TO ROLE ROLEB WITH ADMIN OPTION`, `GRANT ROLEB TO ROLE ROLEC`, `GRANT ROLEC TO USER USER1 WITH ADMIN OPTION` only allows `USER1` to grant `ROLEC` to other users or roles, while using `GRANT ROLEB TO ROLE ROLEC WITH ADMIN OPTION` allows `USER1` to grant `ROLEA`, `ROLEB` and `ROLEC` to other users.
 
 [[fblangref40-security-grant-assignroles-exmpl]]
 ==== Examples of Role Assignment
@@ -554,6 +598,21 @@ GRANT DIRECTOR, MANAGER
 ----
 GRANT MANAGER
   TO USER ALEX WITH ADMIN OPTION;
+----
++
+. Assigning the `DIRECTOR` role to user `ALEX` as a default role:
++
+[source]
+----
+GRANT DEFAULT DIRECTOR
+  TO USER ALEX;
+----
+. Assigning the `MANAGER` role to role `DIRECTOR`:
++
+[source]
+----
+GRANT MANAGER
+  TO ROLE DIRECTOR;
 ----
 
 .See also
