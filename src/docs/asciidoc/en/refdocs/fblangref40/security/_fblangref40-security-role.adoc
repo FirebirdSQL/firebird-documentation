@@ -24,6 +24,28 @@ DSQL, ESQL
 [listing,subs=+quotes]
 ----
 CREATE ROLE _rolename_
+  [SET SYSTEM PRIVILEGES TO <sys_privileges>]
+
+<sys_privileges> ::=
+  <sys_privilege> [, <sys_privilege> ...]
+
+<sys_privilege> ::=
+    USER_MANAGEMENT | READ_RAW_PAGES
+  | CREATE_USER_TYPES | USE_NBACKUP_UTILITY
+  | CHANGE_SHUTDOWN_MODE | TRACE_ANY_ATTACHMENT
+  | MONITOR_ANY_ATTACHMENT | ACCESS_SHUTDOWN_DATABASE
+  | CREATE_DATABASE | DROP_DATABASE
+  | USE_GBAK_UTILITY | USE_GSTAT_UTILITY
+  | USE_GFIX_UTILITY | IGNORE_DB_TRIGGERS
+  | CHANGE_HEADER_SETTINGS
+  | SELECT_ANY_OBJECT_IN_DATABASE
+  | ACCESS_ANY_OBJECT_IN_DATABASE
+  | MODIFY_ANY_OBJECT_IN_DATABASE
+  | CHANGE_MAPPING_RULES | USE_GRANTED_BY_CLAUSE
+  | GRANT_REVOKE_ON_ANY_OBJECT
+  | GRANT_REVOKE_ANY_DDL_RIGHT
+  | CREATE_PRIVILEGED_ROLES | GET_DBCRYPT_INFO
+  | MODIFY_EXT_CONN_POOL | REPLICATE_INTO_DATABASE
 ----
 
 [[fblangref40-security-tbl-createrole]]
@@ -36,6 +58,9 @@ CREATE ROLE _rolename_
 |rolename
 |Role name.
 The maximum length is 31 characters
+
+|sys_privilege
+|System privilege to grant
 |===
 
 The statement `CREATE ROLE` creates a new role object, to which one or more privileges can be granted subsequently.
@@ -53,12 +78,13 @@ The system will not prevent the creation of a role whose name clashes with an ex
 The `CREATE ROLE` statement can be executed by:
 
 * <<fblangref40-security-administrators,Administrators>>
-* Users with the `CREATE ROLE` privilege
+* Users with the `CREATE ROLE` privilege, with the following caveats
+** Setting system privileges also requires the system privilege `CREATE_PRIVILEGED_ROLES`
 
 The user executing the `CREATE ROLE` statement becomes the owner of the role.
 
 [[fblangref40-security-role-create-exmpl]]
-=== `CREATE ROLE` Example
+=== `CREATE ROLE` Examples
 
 .Creating a role named `SELLERS`
 [source]
@@ -66,23 +92,35 @@ The user executing the `CREATE ROLE` statement becomes the owner of the role.
 CREATE ROLE SELLERS;
 ----
 
+.Creating a role `SELECT_ALL` with the system privilege to select from any selectable object
+[source]
+----
+CREATE ROLE SELECT_ALL
+  SET SYSTEM PRIVILEGES TO SELECT_ANY_OBJECT_IN_DATABASE;
+----
+
 .See also
-<<fblangref40-security-role-drop>>, <<fblangref40-security-grant,`GRANT`>>, <<fblangref40-security-revoke,`REVOKE`>>
+<<fblangref40-security-alterrole>>, <<fblangref40-security-role-drop>>, <<fblangref40-security-grant,`GRANT`>>, <<fblangref40-security-revoke,`REVOKE`>>, <<fblangref40-security-sys-privs,Fine-grained System Privileges>>
 
 [[fblangref40-security-alterrole]]
 == `ALTER ROLE`
 
 .Used for
-Altering a role (enabling or disabling auto-admin mapping)
+Altering a role
 
 .Available in
 DSQL
 
 .Syntax
-[listing,subs=+quotes]
+[listing,subs="+quotes,macros"]
 ----
 ALTER ROLE _rolename_
-  {SET | DROP} AUTO ADMIN MAPPING
+ { SET SYSTEM PRIVILEGES TO <sys_privileges>
+ | DROP SYSTEM PRIVILEGES
+ | {SET | DROP} AUTO ADMIN MAPPING }
+
+<sys_privileges> ::=
+  !! See <<fblangref40-security-role-create>> !!
 ----
 
 [[fblangref40-security-tbl-alterrole]]
@@ -95,15 +133,19 @@ ALTER ROLE _rolename_
 |rolename
 |Role name;
 specifying anything other than `RDB$ADMIN` will fail
+
+|sys_privilege
+|System privilege to grant
 |===
 
-`ALTER ROLE` has no place in the create-alter-drop paradigm for database objects since a role has no attributes that can be modified.
-Its actual effect is to alter an attribute of the database: Firebird uses it to enable and disable the capability for Windows Administrators to assume <<fblangref40-security-administrators,administrator privileges>> automatically when logging in.
+`ALTER ROLE` can be used to grant or revoke system privileges from a role, or enable and disable the capability for Windows Administrators to assume <<fblangref40-security-administrators,administrator privileges>> automatically when logging in.
 
-This capability can affect only one role: the system-generated role `RDB$ADMIN` that exists in every database of ODS 11.2 or higher.
-Several factors are involved in enabling this feature.
+This last capability can affect only one role: the system-generated role `RDB$ADMIN` that exists in every database of ODS 11.2 or higher.
 
-For details, see <<fblangref40-security-autoadminmapping,`AUTO ADMIN MAPPING`>>.
+For details on auto admin mapping, see <<fblangref40-security-autoadminmapping,`AUTO ADMIN MAPPING`>>.
+
+It is not possible to selectively grant or revoke system privileges.
+Only the privileges listed in the `SET SYSTEM PRIVILEGES` clause will be available to the role after commit, and `DROP SYSTEM PRIVILEGES` will remove all system privileges from this role.
 
 [[fblangref40-security-role-alterpriv]]
 === Who Can Alter a Role
@@ -111,11 +153,29 @@ For details, see <<fblangref40-security-autoadminmapping,`AUTO ADMIN MAPPING`>>.
 The `ALTER ROLE` statement can be executed by:
 
 * <<fblangref40-security-administrators,Administrators>>
+* Users with the `ALTER ANY ROLE` privilege, with the following caveats
+** Setting or dropping system privileges also requires the system privilege `CREATE_PRIVILEGED_ROLES`
+** Setting or dropping auto admin mapping also requires the system privilege `CHANGE_MAPPING_RULES`
 
-[NOTE]
-====
-Although an `ALTER ANY ROLE` DDL privilege exists, it does not apply because creating or dropping mappings requires administrator privileges.
-====
+[[fblangref40-security-alterrole-exmpl]]
+=== `ALTER ROLE` Examples
+
+.Drop all system privileges from a role named `SELECT_ALL`
+[source]
+----
+ALTER ROLE SELLERS
+  DROP SYSTEM PRIVILEGES;
+----
+
+.Grant a role `SELECT_ALL` the system privilege to select from any selectable object
+[source]
+----
+ALTER ROLE SELECT_ALL
+  SET SYSTEM PRIVILEGES TO SELECT_ANY_OBJECT_IN_DATABASE;
+----
+
+.See also
+<<fblangref40-security-role-create>>, <<fblangref40-security-grant,`GRANT`>>, <<fblangref40-security-revoke,`REVOKE`>>, <<fblangref40-security-sys-privs,Fine-grained System Privileges>>
 
 [[fblangref40-security-role-drop]]
 == `DROP ROLE`
