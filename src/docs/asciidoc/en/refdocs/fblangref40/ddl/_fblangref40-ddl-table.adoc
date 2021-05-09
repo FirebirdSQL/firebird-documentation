@@ -28,7 +28,7 @@ DSQL, ESQL
 CREATE [GLOBAL TEMPORARY] TABLE _tablename_
   [EXTERNAL [FILE] '_filespec_']
   (<col_def> [, {<col_def> | <tconstraint>} ...])
-  [ON COMMIT {DELETE | PRESERVE} ROWS]
+  [{<table_attrs> | <gtt_table_attrs>}]
 
 <col_def> ::=
     <regular_col_def>
@@ -125,6 +125,18 @@ CREATE [GLOBAL TEMPORARY] TABLE _tablename_
 
 <domain_or_non_array_type> ::=
   !! See <<fblangref40-datatypes-syntax-scalar-syntax,Scalar Data Types Syntax>> !!
+
+<table_attrs> ::= <table_attr> [<table_attr> ...]
+
+<table_attr> ::= <sql_security>
+
+<sql_security> ::= SQL SECURITY {INVOKER | DEFINER}
+
+<gtt_table_attrs> ::= <gtt_table_attr> [gtt_table_attr> ...]
+
+<gtt_table_attr> ::=
+    <sql_security>
+  | ON COMMIT {DELETE | PRESERVE} ROWS
 ----
 
 [[fblangref40-ddl-tbl-createtbl]]
@@ -146,6 +158,15 @@ Full file name and path, enclosed in single quotes, correct for the local file s
 |Name (identifier) for a column in the table.
 May consist of up to 31 characters and must be unique in the table.
 
+|tconstraint
+|Table constraint
+
+|table_attrs
+|Attributes of a normal table
+
+|gtt_table_attrs
+|Attributes of a global temporary table
+
 |datatype
 |SQL data type
 
@@ -157,9 +178,6 @@ May consist of up to 31 characters and must be unique in the table.
 
 |col_constraint
 |Column constraint
-
-|tconstraint
-|Table constraint
 
 |constr_name
 |The name (identifier) of a constraint.
@@ -512,12 +530,19 @@ CREATE TABLE PLACES (
 ----
 
 [[fblangref40-ddl-tbl-constraints-notnull]]
-==== `NOT NULL` constraint
+==== `NOT NULL` Constraint
 
 In Firebird, columns are nullable by default.
 The `NOT NULL` constraint specifies that the column cannot take `NULL` in place of a value.
 
 A `NOT NULL` constraint can only be defined as a column constraint, not as a table constraint.
+
+[[fblangref40-ddl-tbl-sql-security]]
+=== `SQL SECURITY` Clause
+
+The `SQL SECURITY` clause specifies the security context for executing functions referenced in calculated columns, and check constraints, and the default context used for triggers fired for this table.
+
+See also _<<fblangref40-security-sql-security,SQL Security>>_ in chapter _Security_.
 
 [[fblangref40-ddl-tbl-createpriv]]
 === Who Can Create a Table
@@ -626,6 +651,49 @@ CREATE TABLE SALARY_HISTORY (
     (OLD_SALARY + OLD_SALARY * PERCENT_CHANGE / 100)
 );
 ----
+. With `DEFINER` set for table `t`, user `US` needs only the `SELECT` privilege on `t`.
+If it were set for `INVOKER`, the user would also need the `EXECUTE` privilege on function `f`.
++
+[source]
+----
+set term ^;
+create function f() returns int
+as
+begin
+    return 3;
+end^
+set term ;^
+create table t (i integer, c computed by (i + f())) SQL SECURITY DEFINER;
+insert into t values (2);
+grant select on table t to user us;
+
+commit;
+
+connect 'localhost:/tmp/7.fdb' user us password 'pas';
+select * from t;
+----
+. With `DEFINER` set for table `tr`, user `US` needs only the `INSERT` privilege on `tr`.
+If it were set for `INVOKER`, either the user or the trigger would also need the `INSERT` privilege on table `t`.
+The result would be the same if `SQL SECURITY DEFINER` were specified for trigger `tr_ins`:
++
+[source]
+----
+create table tr (i integer) SQL SECURITY DEFINER;
+create table t (i integer);
+set term ^;
+create trigger tr_ins for tr after insert
+as
+begin
+  insert into t values (NEW.i);
+end^
+set term ;^
+grant insert on table tr to user us;
+
+commit;
+
+connect 'localhost:/tmp/29.fdb' user us password 'pas';
+insert into tr values(2);
+----
 
 [[fblangref40-ddl-tbl-gtt]]
 === Global Temporary Tables (GTT)
@@ -641,7 +709,13 @@ The metadata of a GTT can be modified or removed using `ALTER TABLE` and `DROP T
 ----
 CREATE GLOBAL TEMPORARY TABLE _tablename_
   (<column_def> [, {<column_def> | <table_constraint>} ...])
-  [ON COMMIT {DELETE | PRESERVE} ROWS]
+  [<gtt_table_attrs>]
+
+<gtt_table_attrs> ::= <gtt_table_attr> [gtt_table_attr> ...]
+
+<gtt_table_attr> ::=
+    <sql_security>
+  | ON COMMIT {DELETE | PRESERVE} ROWS
 ----
 
 .Syntax notes
@@ -851,6 +925,8 @@ ALTER TABLE _tablename_
   | DROP _colname_
   | DROP CONSTRAINT _constr_name_
   | ALTER [COLUMN] _colname_ <col_mod>
+  | ALTER SQL SECURITY {INVOKER | DEFINER}
+  | DROP SQL SECURITY
 
 <col_def> ::=
     <regular_col_def>
@@ -1100,6 +1176,16 @@ the first value generated after a restart is 1 (one) higher than the configured 
 See also <<fblangref40-ddl-tbl-identity>>.
 ====
 
+[[fblangref40-ddl-tbl-atlrsqlsec]]
+=== Changing SQL Security
+
+Using the `ALTER SQL SECURITY` or `DROP SQL SECURITY` clauses, it is possible to change or drop the SQL Security property of a table.
+
+[NOTE]
+====
+If the SQL Security property is changed for a table, triggers that do not have an explicit SQL Security property will not see the effect of the change until the next time the trigger is loaded into the metadata cache.
+====
+
 [[fblangref40-ddl-tbl-altrtblnogo]]
 === Attributes that Cannot Be Altered
 
@@ -1239,7 +1325,7 @@ DSQL
 RECREATE [GLOBAL TEMPORARY] TABLE _tablename_
   [EXTERNAL [FILE] '_filespec_']
   (<col_def> [, {<col_def> | <tconstraint>} ...])
-  [ON COMMIT {DELETE | PRESERVE} ROWS]
+  [{<table_attrs> | <gtt_table_attrs>}]
 ----
 
 See the <<fblangref40-ddl-tbl-create,`CREATE TABLE` section>> for the full syntax of `CREATE TABLE` and descriptions of defining tables, columns and constraints.

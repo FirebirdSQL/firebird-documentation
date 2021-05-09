@@ -28,10 +28,7 @@ CREATE TRIGGER _trigname_
   | <relation_trigger_sql2003>
   | <database_trigger>
   | <ddl_trigger> }
-  <module-body>
-
-<module-body> ::=
-  !! See <<fblangref40-psql-elements-body-syntax,Syntax of Module Body>> !!
+  {<psql_trigger> | <external-module-body>}
 
 <relation_trigger_legacy> ::=
   FOR {_tablename_ | _viewname_}
@@ -84,6 +81,16 @@ CREATE TRIGGER _trigname_
   | {CREATE | ALTER | DROP} PACKAGE
   | {CREATE | DROP} PACKAGE BODY
   | {CREATE | ALTER | DROP} MAPPING
+
+<psql_trigger> ::=
+  [SQL SECURITY {INVOKER | DEFINER}]
+  <psql-module-body>
+
+<psql-module-body> ::=
+  !! See <<fblangref40-psql-elements-body-syntax,Syntax of Module Body>> !!
+
+<external-module-body> ::=
+  !! See <<fblangref40-psql-elements-body-syntax,Syntax of Module Body>> !!
 ----
 
 [[fblangref40-ddl-trgr-createtrigger]]
@@ -163,6 +170,20 @@ DML -- or "`relation`" -- triggers are executed at the row (record) level, every
 A trigger can be either `ACTIVE` or `INACTIVE`.
 Only active triggers are executed.
 Triggers are created `ACTIVE` by default.
+
+[[fblangref40-ddl-trgr-sqlsec]]
+=== SQL Security
+
+The `SQL SECURITY` clause specifies the security context for executing other routines or inserting into other tables.
+
+By default, a trigger applies the SQL Security property defined on its table, but it can be overridden by specifying it explicitly.
+
+[NOTE]
+====
+If the SQL Security property is changed for the table, triggers that do not have an explicit SQL Security property will not see the effect of the change until the next time the trigger is loaded into the metadata cache.
+====
+
+See also _<<fblangref40-security-sql-security,SQL Security>>_ in chapter _Security_.
 
 [[fblangref40-ddl-trgr-relntrigger-who]]
 ==== Who Can Create a DML Trigger?
@@ -272,6 +293,48 @@ BEGIN
             WHEN DELETING  THEN 'DELETE'
           END);
 END
+----
+. With `DEFINER` set for trigger `tr_ins`, user `US` needs only the `INSERT` privilege on `tr`.
+If it were set for `INVOKER`, either the user or the trigger would also need the `INSERT` privilege on table `t`.
++
+[source]
+----
+create table tr (i integer);
+create table t (i integer);
+set term ^;
+create trigger tr_ins for tr after insert SQL SECURITY DEFINER
+as
+begin
+  insert into t values (NEW.i);
+end^
+set term ;^
+grant insert on table tr to user us;
+
+commit;
+
+connect 'localhost:/tmp/29.fdb' user us password 'pas';
+insert into tr values(2);
+----
++
+The result would be the same if `SQL SECURITY DEFINER` were specified for table `TR`:
++
+[source]
+----
+create table tr (i integer) SQL SECURITY DEFINER;
+create table t (i integer);
+set term ^;
+create trigger tr_ins for tr after insert
+as
+begin
+  insert into t values (NEW.i);
+end^
+set term ;^
+grant insert on table tr to user us;
+
+commit;
+
+connect 'localhost:/tmp/29.fdb' user us password 'pas';
+insert into tr values(2);
 ----
 
 [[fblangref40-ddl-trgr-dbtrigger]]
@@ -653,7 +716,15 @@ ALTER TRIGGER _trigname_
   [ACTIVE | INACTIVE]
   [{BEFORE | AFTER} <mutation_list>]
   [POSITION _number_]
-  [<module-body>]
+  {<psql_trigger> | <external-module-body>}
+
+<psql_trigger> ::=
+  [<sql_security>]
+  [<psql-module-body>]
+
+<sql_security> ::=
+    SQL SECURITY {INVOKER | DEFINER}
+  | DROP SQL SECURITY
 
 !! See syntax of <<fblangref40-ddl-proc-create-syntax,`CREATE TRIGGER`>> for further rules !!
 ----
@@ -768,7 +839,7 @@ CREATE OR ALTER TRIGGER _trigname_
   | <relation_trigger_sql2003>
   | <database_trigger>
   | <ddl_trigger> }
-  <module-body>
+  {<psql_trigger> | <external-module-body>}
 
 !! See syntax of <<fblangref40-ddl-proc-create-syntax,`CREATE TRIGGER`>> for further rules !!
 ----
@@ -865,7 +936,7 @@ RECREATE TRIGGER _trigname_
   | <relation_trigger_sql2003>
   | <database_trigger>
   | <ddl_trigger> }
-  <module-body>
+  {<psql_trigger> | <external-module-body>}
 
 !! See syntax of <<fblangref40-ddl-proc-create-syntax,`CREATE TRIGGER`>> for further rules !!
 ----
