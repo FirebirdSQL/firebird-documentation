@@ -30,6 +30,231 @@ Some statements of this class use the verb `ALTER`, although management statemen
 Although some <<fblangref40-ddl-db-alter,`ALTER DATABASE`>> clauses (`BEGIN BACKUP`) can be considered as management statements, they are documented in the _DDL_ chapter.
 ====
 
+[[fblangref40-management-datatypes]]
+== Data Type Behaviour
+
+[[fblangref40-management-setbind]]
+=== `SET BIND` (Data Type Coercion Rules)
+
+.Used for
+Configuring data type coercion rules
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+macros]
+----
+SET BIND OF <type_from> TO <type_to>
+
+<type_from> ::=
+    <scalar_datatype>
+  | <blob_datatype>
+  | TIME ZONE
+  | VARCHAR | {CHARACTER | CHAR} VARYING
+
+<type_to> ::=
+    <scalar_datatype>
+  | <blob_datatype>
+  | VARCHAR | {CHARACTER | CHAR} VARYING
+  | LEGACY | NATIVE | EXTENDED
+  | EXTENDED TIME WITH TIME ZONE
+  | EXTENDED TIMESTAMP WITH TIME ZONE
+
+<scalar_datatype> ::=
+  !! See <<fblangref40-datatypes-syntax-scalar,Scalar Data Types Syntax>> !!
+
+<blob_datatype> ::=
+  !! See <<fblangref40-datatypes-syntax-blob,BLOB Data Types Syntax>> !!
+----
+
+`SET BIND` configures data type coercion rules for the current session.
+This statement makes it possible to substitute one data type with another when performing client-server interactions.
+In other words, _type_from_ returned by the engine is represented as _type_to_ in the client API.
+
+[NOTE]
+====
+Only fields returned by the database engine in regular messages are substituted according to these rules.
+Variables returned as an array slice are not affected by the `SET BIND` statement.
+====
+
+When an incomplete type definition is used (i.e. simply `CHAR` instead of `CHAR(n)`) in _from_type_, the coercion is performed for all `CHAR` columns.
+The special incomplete type `TIME ZONE` stands for `TIME WITH TIME ZONE` and `TIMESTAMP WITH TIME ZONE`.
+When an incomplete type definition is used in _to_type_, the engine defines missing details about that type automatically based on source column.
+
+Changing the binding of any `NUMERIC` or `DECIMAL` data type does not affect the underlying integer type.
+In contrast, changing the binding of an integer data type also affects appropriate NUMERICs/DECIMALs (e.g. `SET BIND OF INT128 TO DOUBLE PRECISION` will also map `NUMERIC` and `DECIMAL` with precision greater than 19 as these types use `INT128` as their underlying type).
+
+The special type `LEGACY` is used when a data type, missing in previous Firebird version, should be represented in a way, understandable by old client software (possibly with some data loss).
+The coercion rules applied in this case are shown in the table below.
+
+[[fblangref40-management-legacy-coercion-rules]]
+.Native to `LEGACY` coercion rules
+[cols="1,1", options="header",stripes="none"]
+|===
+| Native data type
+| Legacy data type
+
+|BOOLEAN
+|CHAR(5)
+
+|DECFLOAT
+|DOUBLE PRECISION
+
+|INT128
+|BIGINT
+
+|TIME WITH TIME ZONE
+|TIME WITHOUT TIME ZONE
+
+|TIMESTAMP WITH TIME ZONE
+|TIMESTAMP WITHOUT TIME ZONE
+|===
+
+Using `EXTENDED` for _type_to_ causes the engine to coerce to an extended form of the _type_from_ data type.
+Currently, this works only for `TIME/TIMESTAMP WITH TIME ZONE`, they are coerced to `EXTENDED TIME/TIMESTAMP WITH TIME ZONE`.
+The `EXTENDED` type contains both the time zone name, and the corresponding GMT offset, so it remains usable if the client application cannot process named time zones properly (e.g. due to the missing ICU library).
+
+Setting a binding to `NATIVE` resets the existing coercion rule for this data type and returns it in its native format.
+
+The initial bind rules of a connection be configured through the DPB by providing a semi-colon separated list of `<type_from> TO <type_to>` options as the string value of _isc_dpb_set_bind_.
+
+Execution of <<fblangref40-management-session-reset-alter>> will revert to the binding rules configured through the DPB, or otherwise the system default.
+
+[TIP]
+====
+It is also possible to configure a default set of data type coercion rules for all clients through the `DataTypeCompatibility` configuration option, either as a global configuration in `firebird.conf` or per database in `databases.conf`.
+
+`DataTypeCompatibility` currently has two possible values: `3.0` and `2.5`.
+The `3.0` option maps data types introduced after Firebird 3.0 -- in particular `DECIMAL`/`NUMERIC` with precision 19 or higher, `DECFLOAT`, `TIME`/`TIMESTAMP` WITH TIME ZONE -- to data types supported in Firebird 3.0.
+The `2.5` option also converts the `BOOLEAN` data type.
+
+See the <<fblangref40-management-legacy-coercion-rules>> for details.
+This setting allows legacy client applications to work with Firebird 4.0 without recompiling or otherwise adjusting them to understand the new data types.
+====
+
+[[fblangref40-management-setbind-exmpl]]
+==== `SET BIND` Examples
+
+[source]
+----
+-- native
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+                 123.45
+
+-- double
+SET BIND OF DECFLOAT TO DOUBLE PRECISION;
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+      123.4500000000000
+
+-- still double
+SET BIND OF DECFLOAT(34) TO CHAR;
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+      123.4500000000000
+
+-- text
+SELECT CAST('123.45' AS DECFLOAT(34)) FROM RDB$DATABASE;
+
+CAST
+==========================================
+123.45
+----
+
+In the case of missing ICU on the client side:
+
+[source]
+----
+SELECT CURRENT_TIMESTAMP FROM RDB$DATABASE;
+
+                                        CURRENT_TIMESTAMP
+=========================================================
+2020-02-21 16:26:48.0230 GMT*
+
+SET BIND OF TIME ZONE TO EXTENDED;
+SELECT CURRENT_TIMESTAMP FROM RDB$DATABASE;
+
+                                        CURRENT_TIMESTAMP
+=========================================================
+2020-02-21 19:26:55.6820 +03:00
+----
+
+[[fblangref40-management-setdecfloat]]
+=== `SET DECFLOAT`
+
+.Used for
+Configuring `DECFLOAT` rounding and error behaviour
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+SET DECFLOAT
+  { ROUND <round_mode>
+  | TRAPS TO [<trap_opt> [, <trap_opt> ...]] }
+
+<round_mode> ::=
+    CEILING | UP | HALF_UP | HALF_EVEN
+  | HALF_DOWN | DOWN | FLOOR | REROUND
+
+<trap_opt> ::=
+    DIVISON_BY_ZERO | INEXACT | INVALID_OPERATION
+  | OVERFLOW | UNDERFLOW
+----
+
+`SET DECFLOAT` configures the rounding and error behaviour of operations on `DECFLOAT` types in the current session.
+
+[[fblangref40-management-setdecfl-rnd]]
+=== `SET DECFLOAT ROUND`
+
+`SET DECFLOAT ROUND` changes the rounding behaviour of operations on `DECFLOAT`.
+The default rounding mode is `HALF_UP`.
+The initial configuration of a connection can also be specified using the DPB tag `isc_dpb_decfloat_round` with the desired _round_mode_ as string value.
+
+The valid rounding modes are:
+
+[horizontal]
+`CEILING`:: towards +infinity
+`UP`:: away from 0
+`HALF_UP`:: to nearest, if equidistant, then up (default)
+`HALF_EVEN`:: to nearest, if equidistant, ensure last digit in the result will be even
+`HALF_DOWN`:: to nearest, if equidistant, then down
+`DOWN`:: towards 0
+`FLOOR`:: towards -infinity
+`REROUND`:: up if digit to be rounded is 0 or 5, down in other cases
+
+Execution of <<fblangref40-management-session-reset-alter>> will revert to the value configured through the DPB, or otherwise the system default.
+
+[[fblangref40-management-setdecfl-traps]]
+=== `SET DECFLOAT TRAPS`
+
+`SET DECFLOAT TRAPS` changes the error behaviour of operations on `DECFLOAT`.
+The default traps are `DIVISION_BY_ZERO,INVALID_OPERATION,OVERFLOW`;
+this default matches the behaviour specified in the SQL:2016 standard for `DECFLOAT`.
+This statement controls whether certain exceptional conditions result in an error ("`trap`") or alternative handling (for example, an underflow returns `0` when not set, or an overflow returns an infinity).
+The initial configuration of a connection can also be specified using the DPB tag `isc_dpb_decfloat_traps` with the desired comma-separated _trap_opt_ values as a string value.
+
+Valid trap options (exceptional conditions) are:
+
+[horizontal]
+`Division_by_zero`:: (set by default)
+`Inexact`:: --
+`Invalid_operation`:: (set by default)
+`Overflow`:: (set by default)
+`Underflow`:: --
+
+Execution of <<fblangref40-management-session-reset-alter>> will revert to the value configured through the DPB, or otherwise the system default.
+
 [[fblangref40-management-extpool]]
 == Connections Pool Management
 
