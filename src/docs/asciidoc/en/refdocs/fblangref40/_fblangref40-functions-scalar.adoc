@@ -3702,12 +3702,13 @@ A plain `AVG(Weight)` would include the -1 weights, thus skewing the result.
 DSQL, PSQL
 
 .Result type
+// TODO See https://github.com/FirebirdSQL/firebird/issues/6797
 `VARCHAR` or `BLOB`
 
 .Syntax
 [listing,subs=+quotes]
 ----
-DECRYPT( _encrypted_input_
+DECRYPT ( _encrypted_input_
   USING <algorithm> [MODE <mode>]
   KEY _key_
   [IV _iv_] [<ctr_type>] [CTR_LENGTH _ctr_length_]
@@ -3770,8 +3771,8 @@ Default is `0`.
 
 [NOTE]
 ====
-* Sizes of data strings (like _encrypted_input_, _key_ and _iv_) must meet the requirements of the select algorithm and mode.
-* Function returns `BLOB SUB_TYPE BINARY` when the first argument is a `BLOB`, and `VARCHAR CHARACTER SET NONE` for all other text and binary types.
+* Sizes of data strings (like _encrypted_input_, _key_ and _iv_) must meet the requirements of the selected algorithm and mode.
+* This function returns `BLOB SUB_TYPE BINARY` when the first argument is a `BLOB`, and `VARCHAR CHARACTER SET NONE` for all other text and binary types.
 // TODO This last thing might be a bug, see https://github.com/FirebirdSQL/firebird/issues/6797
 * The ins and outs of the various algorithms are considered beyond the scope of this language reference.
 We recommend searching the internet for further details on the algorithms.
@@ -3788,6 +3789,9 @@ select decrypt(secret_field using aes mode ofb key '0123456701234567' iv init_ve
   from secure_table;
 ----
 
+.See also
+<<fblangref40-scalarfuncs-encrypt>>, <<fblangref40-scalarfuncs-rsadecrypt>>
+
 [[fblangref40-scalarfuncs-encrypt]]
 === `ENCRYPT`
 
@@ -3800,7 +3804,7 @@ DSQL, PSQL
 .Syntax
 [listing,subs="+quotes,macros"]
 ----
-ENCRYPT( _input_
+ENCRYPT ( _input_
   USING <algorithm> [MODE <mode>]
   KEY _key_
   [IV _iv_] [<ctr_type>] [CTR_LENGTH _ctr_length_]
@@ -3826,8 +3830,8 @@ ENCRYPT( _input_
 
 [NOTE]
 ====
-* Sizes of data strings (like _key_ and _iv_) must meet the requirements of the select algorithm and mode.
-* Function returns `BLOB SUB_TYPE BINARY` when the first argument is a `BLOB`, and `VARBINARY` for all other text and binary types.
+* Sizes of data strings (like _key_ and _iv_) must meet the requirements of the selected algorithm and mode.
+* This function returns `BLOB SUB_TYPE BINARY` when the first argument is a `BLOB`, and `VARBINARY` for all other text and binary types.
 * The ins and outs of the various algorithms are considered beyond the scope of this language reference.
 We recommend searching the internet for further details on the algorithms.
 ====
@@ -3840,6 +3844,366 @@ We recommend searching the internet for further details on the algorithms.
 select encrypt('897897' using sober128 key 'AbcdAbcdAbcdAbcd' iv '01234567')
   from rdb$database;
 ----
+
+.See also
+<<fblangref40-scalarfuncs-decrypt>>, <<fblangref40-scalarfuncs-rsaencrypt>>
+
+[[fblangref40-scalarfuncs-rsadecrypt]]
+=== `RSA_DECRYPT`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+// TODO See https://github.com/FirebirdSQL/firebird/issues/6797
+`VARCHAR`
+
+.Syntax
+[listing,subs=+quotes]
+----
+RSA_DECRYPT (_encrypted_input_ KEY _private_key_
+  [LPARAM _tag_string_] [HASH <hash>])
+
+<hash> ::= MD5 | SHA1 | SHA256 | SHA512
+----
+
+[[fblangref40-scalarfuncs-tbl-rsadecrypt]]
+.`RSA_DECRYPT` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|encrypted_input
+|Input data to decrypt
+
+|private_key
+|Private key to apply, PKCS#1 format
+
+|tag_string
+|An additional system-specific tag to identify which system encrypted the message;
+default is `NULL`.
+If the tag does not match what was used during encryption, `RSA_DECRYPT` will not decrypt the data.
+
+|hash
+|The hash used for OAEP padding;
+default is `SHA256`.
+|===
+
+`RSA_DECRYPT` decrypts _encrypted_input_ using the RSA private key and then OAEP de-pads the resulting data.
+
+[[fblangref40-scalarfuncs-rsadecrypt-exmpl]]
+==== `RSA_DECRYPT` Examples
+
+[TIP]
+====
+Run the examples of the <<fblangref40-scalarfuncs-rsaprivate-exmpl,`RSA_PRIVATE`>> and <<fblangref40-scalarfuncs-rsapublic-exmpl,`RSA_PUBLIC`>>, <<fblangref40-scalarfuncs-rsaencrypt-exmpl,`RSA_ENCRYPT`>> functions first.
+====
+
+[source]
+----
+select rsa_decrypt(rdb$get_context('USER_SESSION', 'msg')
+  key rdb$get_context('USER_SESSION', 'private_key')) from rdb$database;
+----
+
+.See also
+<<fblangref40-scalarfuncs-rsaencrypt>>, <<fblangref40-scalarfuncs-rsaprivate>>, <<fblangref40-scalarfuncs-decrypt>>
+
+[[fblangref40-scalarfuncs-rsaencrypt]]
+=== `RSA_ENCRYPT`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`VARBINARY`
+
+.Syntax
+[listing,subs=+quotes]
+----
+RSA_ENCRYPT (_input_ KEY _public_key_
+  [LPARAM _tag_string_] [HASH <hash>])
+
+<hash> ::= MD5 | SHA1 | SHA256 | SHA512
+----
+
+[[fblangref40-scalarfuncs-tbl-rsaencrypt]]
+.`RSA_ENCRYPT` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|input
+|Input data to encrypt
+
+|public_key
+|Public key to apply, PKCS#1 format
+
+|tag_string
+|An additional system-specific tag to identify which system encrypted the message;
+default is `NULL`.
+
+|hash
+|The hash used for OAEP padding;
+default is `SHA256`.
+|===
+
+`RSA_ENCRYPT` pads _input_ using the https://en.wikipedia.org/wiki/Optimal_asymmetric_encryption_padding[OAEP padding scheme^] and then encrypts it using the specified RSA public key.
+This function is normally used to encrypt short symmetric keys which are then used in block ciphers to encrypt a message.
+
+[[fblangref40-scalarfuncs-rsaencrypt-exmpl]]
+==== `RSA_ENCRYPT` Examples
+
+[TIP]
+====
+Run the examples of the <<fblangref40-scalarfuncs-rsaprivate-exmpl,`RSA_PRIVATE`>> and <<fblangref40-scalarfuncs-rsapublic-exmpl,`RSA_PUBLIC`>> functions first.
+====
+
+[source]
+----
+select rdb$set_context('USER_SESSION', 'msg', rsa_encrypt('Some message'
+  key rdb$get_context('USER_SESSION', 'public_key'))) from rdb$database;
+----
+
+.See also
+<<fblangref40-scalarfuncs-rsadecrypt>>, <<fblangref40-scalarfuncs-rsapublic>>, <<fblangref40-scalarfuncs-encrypt>>
+
+[[fblangref40-scalarfuncs-rsaprivate]]
+=== `RSA_PRIVATE`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`VARBINARY`
+
+.Syntax
+[listing,subs=+quotes]
+----
+RSA_PRIVATE (_key_length_)
+----
+
+[[fblangref40-scalarfuncs-tbl-rsaprivate]]
+.`RSA_PRIVATE` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|key_length
+|Key length in bytes;
+minimum 4, maximum 1024.
+A size of 256 bytes (2048 bits) or larger is recommended.
+|===
+
+`RSA_PRIVATE` generates an RSA private key of the specified length (in bytes) in PKCS#1 format.
+
+[NOTE]
+====
+The larger the length specified, the longer it takes for the function to generate a private key.
+====
+
+[[fblangref40-scalarfuncs-rsaprivate-exmpl]]
+==== `RSA_PRIVATE` Examples
+
+[source]
+----
+select rdb$set_context('USER_SESSION', 'private_key', rsa_private(256))
+  from rdb$database;
+----
+
+[WARNING]
+====
+Putting private keys in the context variables is not secure.
+SYSDBA and users with the role `RDB$ADMIN` or the system privilege `MONITOR_ANY_ATTACHMENT` can see all context variables from all attachments.
+====
+
+.See also
+<<fblangref40-scalarfuncs-rsapublic>>, <<fblangref40-scalarfuncs-rsadecrypt>>
+
+[[fblangref40-scalarfuncs-rsapublic]]
+=== `RSA_PUBLIC`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`VARBINARY`
+
+.Syntax
+[listing,subs=+quotes]
+----
+RSA_PUBLIC (_private_key_)
+----
+
+[[fblangref40-scalarfuncs-tbl-rsapublic]]
+.`RSA_PUBLIC` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|private_key
+|RSA private key in PKCS#1 format
+|===
+
+`RSA_PUBLIC` returns the RSA public key in PKCS#1 format for the provided RSA private key (also PKCS#1 format).
+
+[[fblangref40-scalarfuncs-rsapublic-exmpl]]
+==== `RSA_PUBLIC` Examples
+
+[TIP]
+====
+Run the example of the <<fblangref40-scalarfuncs-rsaprivate-exmpl,`RSA_PRIVATE`>> function first.
+====
+
+[source]
+----
+select rdb$set_context('USER_SESSION', 'public_key',
+  rsa_public(rdb$get_context('USER_SESSION', 'private_key'))) from rdb$database;
+----
+
+.See also
+<<fblangref40-scalarfuncs-rsaprivate>>, <<fblangref40-scalarfuncs-rsaencrypt>>
+
+[[fblangref40-scalarfuncs-rsasign]]
+=== `RSA_SIGN`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`VARBINARY`
+
+.Syntax
+[listing,subs=+quotes]
+----
+RSA_SIGN (_message_ KEY _private_key_
+  [HASH <hash>] [SALT_LENGTH _salt_length_]
+
+<hash> ::= MD5 | SHA1 | SHA256 | SHA512
+----
+
+[[fblangref40-scalarfuncs-tbl-rsasign]]
+.`RSA_SIGN` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|input
+|Input to sign
+
+|private_key
+|RSA private key in PKCS#1 format
+
+|hash
+|Hash to use for the message digest;
+default is `SHA256`.
+
+|salt_length
+|Length of the desired salt in bytes;
+default is 8;
+minimum 1, maximum 32.
+The recommended value is between 8 and 16.
+|===
+
+`RSA_SIGN` performs PSS encoding of the _input_ to be signed, and signs using the RSA private key.
+
+.PSS encoding
+****
+Probabilistic Signature Scheme (PSS) is a cryptographic signature scheme specifically developed to allow modern methods of security analysis to prove that its security directly relates to that of the RSA problem.
+There is no such proof for the traditional PKCS#1 v1.5 scheme.
+****
+
+[[fblangref40-scalarfuncs-rsasign-exmpl]]
+==== `RSA_SIGN` Examples
+
+[TIP]
+====
+Run the example of the <<fblangref40-scalarfuncs-rsaprivate-exmpl,`RSA_PRIVATE`>> function first.
+====
+
+// TODO Usage of crypt_hash in example does not make much sense to me, remove?
+[source]
+----
+select rdb$set_context('USER_SESSION', 'msg',
+  rsa_sign(crypt_hash('Test message' using sha256)
+    key rdb$get_context('USER_SESSION', 'private_key'))) from rdb$database;
+----
+
+.See also
+<<fblangref40-scalarfuncs-rsaverify>>, <<fblangref40-scalarfuncs-rsaprivate>>
+
+[[fblangref40-scalarfuncs-rsaverify]]
+=== `RSA_VERIFY`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`BOOLEAN`
+
+.Syntax
+[listing,subs=+quotes]
+----
+RSA_VERIFY (_input_ SIGNATURE _signature_
+  KEY _public_key_
+  [HASH <hash>] [SALT_LENGTH _salt_length_])
+
+<hash> ::= MD5 | SHA1 | SHA256 | SHA512
+----
+
+[[fblangref40-scalarfuncs-tbl-rsaverify]]
+.`RSA_VERIFY` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|input
+|Input to verify
+
+|signature
+|Expected signature of _input_ generated by `RSA_SIGN`
+
+|public_key
+|RSA public key in PKCS#1 format matching the private key used to sign
+
+|hash
+|Hash to use for the message digest;
+default is `SHA256`.
+Value must match the hash used in `RSA_SIGN`
+
+|salt_length
+|Length of the salt in bytes;
+default is 8;
+minimum 1, maximum 32.
+Value must match the length used in `RSA_SIGN`.
+|===
+
+`RSA_SIGN` performs PSS encoding of the _input_ to be verified, and verifies the digital signature using the provided RSA public key.
+
+[[fblangref40-scalarfuncs-rsaverify-exmpl]]
+==== `RSA_VERIFY` Examples
+
+[TIP]
+====
+Run the examples of the <<fblangref40-scalarfuncs-rsaprivate-exmpl,`RSA_PRIVATE`>>, <<fblangref40-scalarfuncs-rsapublic-exmpl,`RSA_PUBLIC`>> and <<fblangref40-scalarfuncs-rsasign-exmpl,`RSA_SIGN`>> functions first.
+====
+
+// TODO Usage of crypt_hash in example does not make much sense to me, remove?
+[source]
+----
+select rsa_verify(crypt_hash('Test message' using sha256)
+    signature rdb$get_context('USER_SESSION', 'msg')
+    key rdb$get_context('USER_SESSION', 'public_key'))
+  from rdb$database
+----
+
+.See also
+<<fblangref40-scalarfuncs-rsasign>>, <<rnfb4-builtin-crypto-rsa-public>>
 
 [[fblangref40-scalarfuncs-other]]
 == Other Functions
@@ -3858,7 +4222,7 @@ DSQL, PSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-RDB$GET_TRANSACTION_CN(_transaction_id_)
+RDB$GET_TRANSACTION_CN (_transaction_id_)
 ----
 
 [[fblangref40-scalarfuncs-tbl-gettransactioncn]]
@@ -3911,7 +4275,7 @@ DSQL, PSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-RDB$ROLE_IN_USE(_role_name_)
+RDB$ROLE_IN_USE (_role_name_)
 ----
 
 [[fblangref40-scalarfuncs-tbl-roleinuse]]
@@ -3955,7 +4319,7 @@ DSQL, PSQL
 .Syntax
 [listing,subs="+quotes,macros"]
 ----
-RDB$SYSTEM_PRIVILEGE(<sys_privilege>)
+RDB$SYSTEM_PRIVILEGE (<sys_privilege>)
 
 <sys_privilege> ::=
   !! See <<fblangref40-security-role-create,`CREATE ROLE`>> !!
