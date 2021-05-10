@@ -588,3 +588,63 @@ set time zone 'America/Sao_Paulo';
 set time zone local;
 ----
 
+[[fblangref40-management-session-reset]]
+== Reset Session State
+
+[[fblangref40-management-session-reset-alter]]
+=== `ALTER SESSION RESET`
+
+.Used for
+Resetting session state to its initial values
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+ALTER SESSION RESET
+----
+
+`ALTER SESSION RESET` resets the current user session to its initial state.
+It can be useful for reusing the connection by a client application (for example, by a client-side connection pool).
+When this statement is executed, all user context variables are cleared, contents of global temporary tables are cleared, and all session-level settings are reset to their initial values.
+
+It is possible to execute `ALTER SESSION RESET` without a transaction.
+
+Execution of `ALTER SESSION RESET` performs the following steps:
+
+* Error _isc_ses_reset_err_ (`335545206`) is raised if any transaction is active in the current session other than the current transaction(the one executing `ALTER SESSION RESET`) and two-phase transactions in the prepared state.
+* System variable <<fblangref40-contextvars-resetting,`RESETTING`>> is set to TRUE.
+* `ON DISCONNECT` database triggers are fired, if present and if database triggers are not disabled for the current connection.
+* The current transaction (the one executing `ALTER SESSION RESET`), if present, is rolled back.
+A warning is reported if this transaction modified data before resetting the session.
+* Session configuration is reset to their initial values.
+This includes, but is not limited to:
+** `DECFLOAT` parameters (`TRAP` and `ROUND`) and reset to the initial values defined using the DPB at connect time, or otherwise the system default.
+** Session and statement timeouts are reset to zero.
+** The current role is restored to the initial value defined using DPB at connect time, and -- if the role changed -- the security classes cache is cleared.
+** The session time zone is reset to the initial value defined using the DPB at connect time, or otherwise the system default.
+** The bind configuration is reset to the initial value defined using the DPB at connect time, or otherwise the database or system default.
+** In general, configuration values should revert to the values configured using DPB at connect time, or otherwise the database or system default.
+* Context variables defined for the `USER_SESSION` namespace are removed.
+* Global temporary tables defined as `ON COMMIT PRESERVE ROWS` are truncated (their contents is cleared).
+* `ON CONNECT` database triggers are fired, if present and if database triggers are not disabled for the current connection.
+* A new transaction is implicitly started with the same parameters as the transaction that was rolled back (if there was a transaction)
+* System variable `RESETTING` is set to FALSE.
+
+[NOTE]
+====
+* The context variables `CURRENT_USER` and `CURRENT_CONNECTION` will not be changed.
+* As _isql_ starts multiple transactions for a single connection, `ALTER SESSION RESET` cannot be executed in _isql_.
+====
+
+[[fblangref40-management-session-reset-err]]
+==== Error Handling
+
+Any error raised by `ON DISCONNECT` triggers aborts the session reset and leave the session state unchanged.
+Such errors are reported using primary error code _isc_session_reset_err_ (`335545206`) and error text _"Cannot reset user session"_.
+
+Any error raised after `ON DISCONNECT` triggers (including the ones raised by `ON CONNECT` triggers) aborts both the session reset and the connection itself.
+Such errors are reported using primary error code _isc_ses_reset_failed_ (`335545272`) and error text _"Reset of user session failed. Connection is shut down."_.
+Subsequent operations on the connection (except detach) will fail with error _isc_att_shutdown_ (`335544856`).
