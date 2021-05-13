@@ -24,6 +24,14 @@ Data of various types are used to:
 |Signed 64-bit integer.
 This data type is available in Dialect 3 only
 
+|`BINARY(__n__)`
+|_n_ bytes
+|from 1 to 32,767 bytes
+|A fixed-length binary data type;
+synonym for `CHAR(__n__) CHARACTER SET OCTETS`
+Values shorter than the declared length are padded with NUL up to the declared length.
+If the number of characters is not specified, 1 is used by default.
+
 |`BLOB`
 |Varying
 |The size of a `BLOB` segment is limited to 64K.
@@ -42,9 +50,7 @@ The blob subtype defines its content
 Size in bytes depends on the encoding, the number of bytes in a character
 |from 1 to 32,767 bytes
 |A fixed-length character data type.
-When its data is displayed, trailing spaces are added to the string up to the specified length.
-Trailing spaces are not stored in the database but are restored to match the defined length when the column is displayed on the client side.
-Network traffic is reduced by not sending spaces over the LAN.
+Values shorter than the declared length are padded with spaces (NUL for character set OCTETS) up to the declared length.
 If the number of characters is not specified, 1 is used by default.
 
 |`DATE`
@@ -131,13 +137,23 @@ It cannot be used to store an interval of time.
 |From start of day 0001-01-01 AD to end of day 9999-12-31 AD
 |Date and time of day with either a time zone offset or named zone.
 
-|`VARCHAR(__n__)`, `CHAR VARYING`, `CHARACTER VARYING`
+|`VARBINARY(__n__), `BINARY VARYING(__n__)
+|_n_ bytes
+|from 1 to 32,765 bytes
+|Variable length string type;
+synonym for `VARCHAR(__n__) CHARACTER SET OCTETS`.
+The total size cannot be larger than (32KB-3).
+The two leading bytes store the declared length.
+There is no default size: the _n_ argument is mandatory.
+Leading and trailing NUL characters are stored, and they are not trimmed, except for those trailing characters that are past the declared length.
+
+|`VARCHAR(__n__)`, `CHAR VARYING(__n__)`, `CHARACTER VARYING(__n__)`
 |_n_ characters.
 Size in bytes depends on the encoding, the number of bytes in a character
 |from 1 to 32,765 bytes
 |Variable length string type.
 The total size of characters in bytes cannot be larger than (32KB-3), taking into account their encoding.
-The two trailing bytes store the declared length.
+The two leading bytes store the declared length.
 There is no default size: the _n_ argument is mandatory.
 Leading and trailing spaces are stored, and they are not trimmed, except for those trailing characters that are past the declared length.
 |===
@@ -1112,6 +1128,7 @@ Data in `OCTETS` encoding are treated as bytes that may not actually be interpre
 `OCTETS` provides a way to store binary data, which could be the results of some Firebird functions.
 The database engine has no concept of what it is meant to do with a string of bits in `OCTETS`, other than just store it and retrieve it.
 Again, the client side is responsible for validating the data, presenting them in formats that are meaningful to the application and its users and handling any exceptions arising from decoding and encoding them.
+Since Firebird 4.0 `CHAR` and `VARCHAR` with character set `OCTETS` have synonyms `BINARY` and `VARBINARY`.
 
 [[fblangref40-datatypes-chartypes-collation]]
 === Collation Sequence
@@ -1267,70 +1284,171 @@ With case-insensitive collations ("`_CI`"), one character in the _index_ will oc
 [[fblangref40-datatypes-chartypes-detail]]
 === Character Types in Detail
 
+[[fblangref40-datatypes-chartypes-binary]]
+==== `BINARY`
+
+.Data Type Declaration Format
+[listing,subs=+quotes]
+----
+BINARY [(_length_)]
+----
+
+[[fblangref40-datatypes-binarytbl]]
+.`BINARY` Type Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|length
+|Length in bytes between 1 and 32,767;
+defaults to `1`.
+|===
+
+`BINARY` is a fixed-length data type, and is an SQL standard-compliant alias for `CHAR(__length__) CHARACTER SET OCTETS`.
+Values shorter than the declared length are padded with NUL up to the declared length.
+
+[NOTE]
+====
+Some tools may report the type as `CHAR CHARACTER SET OCTETS` instead of `BINARY`.
+====
+
+.See also
+<<fblangref40-datatypes-chartypes-char>>, <<fblangref40-datatypes-chartypes-varbinary>>
+
 [[fblangref40-datatypes-chartypes-char]]
 ==== `CHAR`
 
-`CHAR` is a fixed-length data type.
-If the entered number of characters is less than the declared length, trailing spaces will be added to the field.
-Generally, the pad character does not have to be a space: it depends on the character set.
-For example, the pad character for the `OCTETS` character set is zero.
-
-The full name of this data type is `CHARACTER`, but there is no requirement to use full names and people rarely do so.
-
-Fixed-length character data can be used to store codes whose length is standard and has a definite "`width`" in directories.
-An example of such a code is an EAN13 barcode -- 13 characters, all filled.
-
-.Declaration Syntax
+.Data Type Declaration Format
 [listing,subs=+quotes]
 ----
 {CHAR | CHARACTER} [(_length_)]
   [CHARACTER SET <set>] [COLLATE <name>]
 ----
 
-[NOTE]
-====
-If no _length_ is specified, it is taken to be 1.
+[[fblangref40-datatypes-chartbl]]
+.`CHAR` Type Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
 
+|length
+|Length in characters, defaults to `1`.
 A valid _length_ is from 1 to the maximum number of characters that can be accommodated within 32,767 bytes.
 
-Formally, the `COLLATE` clause is not part of the data type declaration, and its position depends on the syntax of the statement.
+|_set_
+|Character set name
+
+|name
+|Collation name
+|===
+
+`CHAR` is a fixed-length data type.
+Values shorter than the declared length are padded with spaces up to the declared length.
+Generally, the pad character does not have to be a space: it depends on the character set.
+For example, the pad character for the `OCTETS` character set is NUL.
+
+The full name of this data type is `CHARACTER`, but there is no requirement to use full names and people rarely do so.
+
+Fixed-length character data can be used to store codes whose length is standard and has a definite "`width`" in directories.
+An example of such a code is an EAN13 barcode -- 13 characters, all filled.
+
+[NOTE]
 ====
+* Since Firebird 4.0, `CHAR CHARACTER SET OCTETS` has the alias `BINARY`
+* Formally, the `COLLATE` clause is not part of the data type declaration, and its position depends on the syntax of the statement.
+====
+
+.See also
+<<fblangref40-datatypes-chartypes-binary>>, <<fblangref40-datatypes-chartypes-varchar>>
+
+[[fblangref40-datatypes-chartypes-varbinary]]
+==== `VARBINARY`
+
+.Data Type Declaration Format
+[listing,subs=+quotes]
+----
+{VARBINARY | BINARY VARYING} (_length_)
+----
+
+[[fblangref40-datatypes-varbinarytbl]]
+.`VARBINARY` Type Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|length
+|Length in bytes between 1 and 32,765
+|===
+
+`VARBINARY` is variable length binary type, and is an SQL standard-compliant alias for `VARCHAR(__length__) CHARACTER SET OCTETS`.
+
+[NOTE]
+====
+Some tools may report the type as `VARCHAR CHARACTER SET OCTETS` instead of `VARBINARY`.
+====
+
+.See also
+<<fblangref40-datatypes-chartypes-varchar>>, <<fblangref40-datatypes-chartypes-binary>>
 
 [[fblangref40-datatypes-chartypes-varchar]]
 ==== `VARCHAR`
 
-`VARCHAR` is the basic string type for storing texts of variable length, up to a maximum of 32,765 bytes.
-The stored structure is equal to the actual size of the data plus 2 bytes where the length of the data is recorded.
-
-All characters that are sent from the client application to the database are considered meaningful, including the leading and trailing spaces.
-However, trailing spaces are not stored: they will be restored upon retrieval, up to the recorded length of the string.
-
-The full name of this type is `CHARACTER VARYING`.
-Another variant of the name is written as `CHAR VARYING`.
-
-.Syntax
+.Data Type Declaration Format
 [listing,subs=+quotes]
 ----
 {VARCHAR | {CHAR | CHARACTER} VARYING} (_length_)
   [CHARACTER SET <set>] [COLLATE <name>]
 ----
 
+[[fblangref40-datatypes-varchartbl]]
+.`VARCHAR` Type Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|length
+|Length in characters.
+A valid _length_ is from 1 to the maximum number of characters that can be accommodated within 32,765 bytes.
+
+|_set_
+|Character set name
+
+|name
+|Collation name
+|===
+
+`VARCHAR` is the basic string type for storing texts of variable length, up to a maximum of 32,765 bytes.
+The stored structure is equal to the actual size of the data plus 2 bytes where the length of the data is recorded.
+
+All characters that are sent from the client application to the database are considered meaningful, including the leading and trailing spaces.
+
+The full name of this type is `CHARACTER VARYING`.
+Another variant of the name is written as `CHAR VARYING`.
+
 [NOTE]
 ====
-Formally, the `COLLATE` clause is not part of the data type declaration, and its position depends on the syntax of the statement.
+* Since Firebird 4.0, `VARCHAR CHARACTER SET OCTETS` has the alias `VARBINARY`
+* Formally, the `COLLATE` clause is not part of the data type declaration, and its position depends on the syntax of the statement.
 ====
+
+.See also
+<<fblangref40-datatypes-chartypes-varbinary>>, <<fblangref40-datatypes-chartypes-char>>
 
 [[fblangref40-datatypes-chartypes-nchar]]
 ==== `NCHAR`
 
-`NCHAR` is a fixed-length character data type with the `ISO8859_1` character set predefined.
-In all other respects it is the same as `CHAR`.
-
-.Syntax
+.Data Type Declaration Format
 [listing,subs=+quotes]
 ----
 {NCHAR | NATIONAL {CHAR | CHARACTER}} [(_length_)]
 ----
+
+`NCHAR` is a fixed-length character data type with the `ISO8859_1` character set predefined.
+In all other respects it is the same as `CHAR`.
 
 [NOTE]
 ====
@@ -1338,6 +1456,9 @@ If no _length_ is specified, it is taken to be 1.
 ====
 
 A similar data type is available for the variable-length string type: `NATIONAL {CHAR | CHARACTER} VARYING`.
+
+.See also
+<<fblangref40-datatypes-chartypes-char>>, <<fblangref40-datatypes-chartypes-varchar>>
 
 [[fblangref40-datatypes-booleantypes]]
 == Boolean Data Type
@@ -1347,9 +1468,15 @@ Firebird 3.0 introduced a fully-fledged Boolean data type.
 [[fblangref40-datatypes-boolean]]
 === `BOOLEAN`
 
+.Data Type Declaration Format
+[listing]
+----
+BOOLEAN
+----
+
 The SQL:2008 compliant `BOOLEAN` data type (8 bits) comprises the distinct truth values `TRUE` and `FALSE`.
 Unless prohibited by a `NOT NULL` constraint, the `BOOLEAN` data type also supports the truth value `UNKNOWN` as the null value.
-The specification does not make a distinction between the `NULL` value of this data type and the truth value `UNKNOWN` that is the result of an SQL predicate, search condition, or Boolean value expression: they may be used interchangeably to mean exactly the same thing.
+The specification does not make a distinction between the `NULL` value of this data type, and the truth value `UNKNOWN` that is the result of an SQL predicate, search condition, or Boolean value expression: they may be used interchangeably to mean exactly the same thing.
 
 As with many programming languages, the SQL `BOOLEAN` values can be tested with implicit truth values.
 For example, `field1 OR field2` and `NOT field1` are valid expressions.
@@ -2193,6 +2320,8 @@ For reasons of organisation, the syntax of BLOB types are defined separately in 
   | {CHAR | CHARACTER} [(_length_)] [CHARACTER SET _charset_]
   | {NCHAR | NATIONAL {CHARACTER | CHAR}} VARYING (_length_)
   | {NCHAR | NATIONAL {CHARACTER | CHAR}} [(_length_)]
+  | BINARY [(_length_)]
+  | {VARBINARY | BINARY VARYING} (_length_)
 ----
 
 [[fblangref40-datatypes-tbl-scalar-syntax]]
@@ -2231,7 +2360,8 @@ From 0 to 38.
 It must be less than or equal to _precision_
 
 |_length_
-|The maximum length of a string, in characters
+|The maximum length of a string, in characters, or -- for `BINARY` and `VARBINARY` -- bytes;
+optional for fixed-width character types, defaults to 1
 
 |charset
 |Character set
@@ -2322,6 +2452,8 @@ For more information, see <<fblangref40-datatypes-array>>
     <array_dim>
   | {NCHAR | NATIONAL {CHARACTER | CHAR}}
     [(_length_)] <array_dim>
+  | BINARY [(_length_)] <array_dim>
+  | {VARBINARY | BINARY VARYING} (_length_) <array_dim>
 
 <array_dim> ::= '[' [_m_:{endsb}__n__ [,[_m_:{endsb}__n__ ...] ']'
 ----
@@ -2356,7 +2488,7 @@ From 0 to 18.
 It must be less than or equal to _precision_
 
 |_length_
-|The maximum length of a string, in characters;
+|The maximum length of a string, in characters, or -- for `BINARY` and `VARBINARY` -- bytes;
 optional for fixed-width character types, defaults to 1
 
 |charset
