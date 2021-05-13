@@ -233,7 +233,12 @@ However, this happens _after_ the numerical value is determined, so `0x80000000`
 [[fblangref40-datatypes-floattypes]]
 == Floating-Point Data Types
 
-Floating point data types are stored in an IEEE 754 binary format that comprises sign, exponent and mantissa.
+Firebird supports two types of floating-point data types: approximate or binary floating-point data types (`FLOAT` and `DOUBLE PRECISION`), and decimal floating-point types (`DECFLOAT`).
+
+[[fblangref40-datatypes-floattypes-approx]]
+=== Approximate Floating-Point Data Types
+
+Approximate floating-point data types are stored in an IEEE 754 binary format that comprises sign, exponent and mantissa.
 Precision is dynamic, corresponding to the physical storage format of the value, which is exactly 4 bytes for the `FLOAT` type and 8 bytes for `DOUBLE PRECISION`.
 
 Considering the peculiarities of storing floating-point numbers in a database, these data types are not recommended for storing monetary data.
@@ -244,15 +249,151 @@ For testing data in columns with floating-point data types, expressions should c
 When using these data types in expressions, extreme care is advised regarding the rounding of evaluation results.
 
 [[fblangref40-datatypes-float]]
-=== `FLOAT`
+==== `FLOAT`
 
 The `FLOAT` data type has an approximate precision of 7 digits after the decimal point.
 To ensure the safety of storage, rely on 6 digits.
 
 [[fblangref40-datatypes-double]]
-=== `DOUBLE PRECISION`
+==== `DOUBLE PRECISION`
 
 The `DOUBLE PRECISION` data type is stored with an approximate precision of 15 digits.
+
+[[fblangref40-datatypes-floattypes-dec]]
+=== Decimal Floating-Point Types
+
+Decimal floating-point are stored in an IEEE 754 decimal format that comprises sign, exponent and coefficient.
+Contrary to the approximate floating-point data types, precision is either 16 or 34 decimal digits.
+
+[[fblangref40-datatypes-decfloat]]
+==== `DECFLOAT`
+
+.Data Type Declaration Format
+[listing,subs=+quotes]
+----
+  DECFLOAT [(_precision_)]
+----
+
+[[fblangref40-datatypes-decfloattbl]]
+.`DECFLOAT` Type Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|precision
+|Precision in decimal digits, either 16 or 34.
+Default is 34.
+|===
+
+`DECFLOAT` is a SQL:2016 standard-complient numeric type that stores floating-point number precisely (decimal floating-point type), unlike `FLOAT` or `DOUBLE PRECISION` that provide a binary approximation of the purported precision.
+
+The type is stored and transmitted as IEEE 754 standard types `Decimal64` (`DECFLOAT(16)`) or `Decimal128` (`DECFLOAT(34)`).
+
+All intermediate calculations are performed with 34-digit values.
+
+.16-digit and 34-digit
+****
+The "`16`" and "`34`" refer to the maximum precision in Base-10 digits.
+See https://en/wikipedia.org/wiki/iEEE_754#Basic_and_interchange_formats[https://en/wikipedia.org/wiki/iEEE_754#Basic_and_interchange_formats^] for a comprehensive table.
+****
+
+.Range of Values
+[cols="<2,<1,<1,<1,<1,<1", options="header",stripes="none"]
+|===
+|Type
+|Maximum precision
+|Minimum Exponent
+|Maximum Exponent
+|Smallest value
+|Largest value
+
+|`DECFLOAT(16)`
+|16
+|-383
+|+384
+|1E-398
+|9.9..9E+384
+
+|`DECFLOAT(34)`
+|34
+|-6143
+|+6144
+|1E-6176
+|9.9..9E+6144
+|===
+
+Observe that although the smallest exponent for `DECFLOAT(16)` is -383, the smallest value has an exponent of -398, but 15 fewer digits.
+And similar for `DECFLOAT(34)`, smallest exponent is -6143, but the smalles value has an exponent of -6176, but 33 fewer digits.
+The reason is that precision was "`sacrificed`" to be able to store a smaller value.
+
+This is a result of how the value is stored: as a decimal value of 16 or 34 digits and an exponent.
+For example `1.234567890123456e-383` is actually stored as coefficient `1234567890123456` and exponent `-398`, while `1E-398` is stored as coefficient `1`, exponent `-398`.
+
+[[fblangref40-datatypes-decfloat-ctrl]]
+===== Behaviour of `DECFLOAT` Operations
+
+The behaviour of `DECFLOAT` operations in a session, specifically rounding and error behaviour, can be configured using the <<fblangref40-management-setdecfloat,`SET DECFLOAT`>> management statement.
+
+[[fblangref40-datatypes-decfloat-lit]]
+===== Length of `DECFLOAT` Literals
+
+It is possible to express `DECFLOAT(34)` values in approximate numeric literals, but only for values with a mantissa of 20 or more digits, or an absolute exponent larger than 308.
+Scientific notation literals with fewer digits or a smaller absolute exponent are `DOUBLE PRECISION` literals.
+
+Alternatively, use a string literal and explicitly cast to the desired `DECFLOAT` type.
+
+[NOTE]
+====
+In current Firebird 4 versions (at least 4.0.0), exact numeric literals with 30 or more digits also result in `DECFLOAT(34)` values.
+
+This is probably a bug as values with 38 / 39 digits would more logically be `INT128` or high-precision numeric value;
+this might change in future Firebird releases (including Firebird 4.0 point releases).
+====
+
+The length of `DECFLOAT` literals cannot exceed 1024 characters.
+Scientific notation is required for greater values.
+For example, `0.0<1020 zeroes>11` cannot be used as a literal, the equivalent in scientific notation, `1.1E-1022` is valid.
+Similarly, `10<1022 zeroes>0` can be presented as `1.0E1024`.
+
+[[fblangref40-datatypes-decfloat-funcs]]
+===== `DECFLOAT` and Functions
+
+[float]
+===== Use with Standard Functions
+
+A number of standard scalar functions can be used with expressions and values of the `DECFLOAT` type.
+They are:
+
+[cols="5*m", frame="none", grid="none", stripes="none"]
+|===
+| ABS
+| CEILING
+| EXP
+| FLOOR
+| LN
+| LOG
+| LOG10
+| POWER
+| SIGN
+| SQRT
+|===
+
+The aggregate functions `SUM`, `AVG`, `MAX` and `MIN` work with `DECFLOAT` data, as do all the statistics aggregates (including but not limited to `STDDEV` or `CORR`).
+
+[float]
+===== Special Functions for `DECFLOAT`
+
+Firebird supports four functions, designed to support `DECFLOAT` data specifically:
+
+// TODO add links
+`COMPARE_DECFLOAT`:: compares two `DECFLOAT` values to be equal, different or unordered
+`NORMALIZE_DECFLOAT`:: takes a single `DECFLOAT` argument and returns it in its simplest form
+`QUANTIZE`:: takes two `DECFLOAT` arguments and returns the first argument scaled using the second value as a pattern
+`TOTALORDER`:: performs an exact comparison on two `DECFLOAT` values
+
+// TODO add more specific link
+Detailed descriptions are available in the _Built-in Scalar Functions_ chapter.
 
 [[fblangref40-datatypes-fixedtypes]]
 == Fixed-Point Data Types
@@ -310,7 +451,7 @@ The method of storing fixed-point data in the DBMS depends on several factors: d
 [[fblangref40-datatypes-numeric]]
 === `NUMERIC`
 
-.Data Declaration Format
+.Data Type Declaration Format
 [listing,subs=+quotes]
 ----
   NUMERIC
@@ -358,7 +499,7 @@ It means that if you really want to store data in a column with the `NUMERIC(2,2
 [[fblangref40-datatypes-decimal]]
 === `DECIMAL`
 
-.Data Declaration Format
+.Data Type Declaration Format
 [listing,subs=+quotes]
 ----
   DECIMAL
