@@ -5,41 +5,66 @@ According to the SQL specification, window functions (also known as analytical f
 The rows of aggregated data are mixed with the query result set.
 
 The window functions are used with the `OVER` clause.
-They may appear only in the `SELECT` list or the `ORDER BY` clause of a query.
+They may appear only in the `SELECT` list, or the `ORDER BY` clause of a query.
 
-Besides the `OVER` clause, Firebird window functions may be partitioned and ordered.
+Firebird window functions may be partitioned and ordered.
 
 .Syntax
-[listing]
+[listing,subs=+quotes]
 ----
-<window-function> ::=
-  <window-function-name> ([<expr> [, <expr> ...]]) OVER <window-specification>
+<window_function> ::=
+  <window_function_name> ([<expr> [, <expr> ...]])
+  OVER <window_name_or_spec>
 
-<window-function-name> ::=
-    <aggregate-function>
-  | <ranking-function>
-  | <navigational-function>
+<window_name_or_spec> ::=
+  <window_specification> | _existing_window_name_
 
-<ranking-function> ::=
-  RANK | DENSE_RANK | ROW_NUMBER
+<window_function_name> ::=
+    <aggregate_function>
+  | <ranking_function>
+  | <navigational_function>
 
-<navigational-function>
+<ranking_function> ::=
+    RANK | DENSE_RANK | PERCENT_RANK | ROW_NUMBER
+  | CUME_DIST | NTILE
+
+<navigational_function>
   LEAD | LAG | FIRST_VALUE | LAST_VALUE | NTH_VALUE
 
-<window-specification> ::=
-  ( [ <window-partition> ] [ <window-order> ] )
+<window_specification> ::=
+  ( [_existing_window_name_] [<window_partition>]
+    [<window_order>] [<window_frame>] )
 
-<window-partition> ::=
+<window_partition> ::=
   [PARTITION BY <expr> [, <expr> ...]]
 
-<window-order> ::=
+<window_order> ::=
   [ORDER BY
-    <expr> [<direction>] [<nulls placement>]
-    [, <expr> [<direction>] [<nulls placement>] ...]
+    <expr> [<direction>] [<nulls_placement>]
+    [, <expr> [<direction>] [<nulls_placement>] ...]
 
 <direction> ::= {ASC | DESC}
 
-<nulls placement> ::= NULLS {FIRST | LAST}
+<nulls_placement> ::= NULLS {FIRST | LAST}
+
+<window_frame> ::= {RANGE | ROWS} <window_frame_extent>
+
+<window_frame_extent> ::=
+  <window_frame_start> | <window_frame_between>
+
+<window_frame_start> ::=
+  UNBOUNDED PRECEDING | <expr> PRECEDING | CURRENT ROW
+
+<window_frame_between> ::=
+  BETWEEN <window_frame_bound_1> AND <window_frame_bound_2>
+
+<window_frame_bound_1> ::=
+    UNBOUNDED PRECEDING | <expr> PRECEDING | CURRENT ROW
+  | <expr> FOLLOWING
+
+<window_frame_bound_2> ::=
+    <expr> PRECEDING | CURRENT ROW | <expr> FOLLOWING
+  | UNBOUNDED FOLLOWING
 ----
 
 [[fblangref40-windowfuncs-tbl]]
@@ -56,14 +81,17 @@ Window functions are not allowed as an expression.
 
 |aggregate_function
 |An <<#fblangref40-aggfuncs,aggregate function>> used as a window function
+
+|existing_window_name
+|A named window defined using the <<fblangref40-dml-select-window,`WINDOW` clause>> of the current query specification.
 |===
 
 [[fblangref40-windowfuncs-aggfuncs]]
 == Aggregate Functions as Window Functions
 
-All <<#fblangref40-aggfuncs,aggregate functions>> can be used as window functions, by adding the `OVER` clause.
+All <<#fblangref40-aggfuncs,aggregate functions>> -- including `FILTER` clause -- can be used as window functions, by adding the `OVER` clause.
 
-Imagine a table `EMPLOYEE` with columns `ID`, `NAME` and `SALARY`, and the need to show each employee with his respective salary and the percentage of his salary over the payroll.
+Imagine a table `EMPLOYEE` with columns `ID`, `NAME` and `SALARY`, and the need to show each employee with their respective salary and the percentage of their salary over the payroll.
 
 A normal query could achieve this, as follows:
 
@@ -152,8 +180,8 @@ The `ORDER BY` sub-clause can be used with or without partitions.
 The `ORDER BY` clause within `OVER` specifies the order in which the window function will process rows.
 This order does not have to be the same as the order rows appear in the output.
 
-There is an important concept associated with window functions: for each row there is a set of rows in its partition called the _window frame_.
-By default, when specifying `ORDER BY`, the frame consists of all lines from the beginning of the partition to the current row and rows equal to the current `ORDER BY` expression.
+There is an important concept associated with window functions: for each row there is a set of rows in its partition called the <<fblangref40-windowfuncs-frame,_window frame_>>.
+By default, when specifying `ORDER BY`, the frame consists of all rows from the beginning of the partition to the current row and rows equal to the current `ORDER BY` expression.
 Without `ORDER BY`, the default frame consists of all rows in the partition.
 
 As a result, for standard aggregate functions, the `ORDER BY` clause produces partial aggregation results as rows are processed.
@@ -183,7 +211,7 @@ id  salary  cumul_salary
 
 Then `cumul_salary` returns the partial/accumulated (or running) aggregation (of the `SUM` function).
 It may appear strange that 37.00 is repeated for the ids 1 and 5, but that is how it should work.
-The `ORDER BY` keys are grouped together and the aggregation is computed once (but summing the two 10.00).
+The `ORDER BY` keys are grouped together, and the aggregation is computed once (but summing the two 10.00).
 To avoid this, you can add the `ID` field to the end of the `ORDER BY` clause.
 
 It's possible to use multiple windows with different orders, and `ORDER BY` parts like `ASC`/`DESC` and `NULLS FIRST/LAST`.
@@ -192,16 +220,157 @@ With a partition, `ORDER BY` works the same way, but at each partition boundary 
 
 All aggregation functions can use `ORDER BY`, except for `LIST()`.
 
+[[fblangref40-windowfuncs-frame]]
+=== Window Frames
+
+A _window frame_ specifies which rows to consider for the current row when evaluating the window function.
+
+The frame comprises three pieces: unit, start bound, and end bound.
+The unit can be `RANGE` or `ROWS`, which defines how the bounds will work.
+
+The bounds are:
+
+[none]
+* `<expr> PRECEDING`
+* `<expr> FOLLOWING`
+* `CURRENT ROW`
+
+// separator to start new list
+
+* With `RANGE`, the `ORDER BY` should specify exactly one expression, and that expression should be of a numeric, date, time, or timestamp type.
+For `<expr> PRECEDING`, _expr_ is subtracted from the `ORDER BY` expression, and for `<expr> FOLLOWING`, _expr_ is added.
+For `CURRENT ROW`, the expression is used as-is.
++
+All rows inside the current partition that are between the bounds are considered part of the resulting window frame.
+
+* With `ROWS`, `ORDER BY` expressions are not limited by number or type.
+For this unit, `<expr> PRECEDING` and `<expr FOLLOWING` relate to the row position within the current partition, and not the values of the ordering keys.
+
+Both `UNBOUNDED PRECEDING` and `UNBOUNDED FOLLOWING` work identical with `RANGE` and `ROWS`.
+`UNBOUNDED PRECEDING` start at the first row of the current partition, and `UNBOUNDED FOLLOWING` the last row of the current partition.
+
+The frame syntax with `<window_frame_start> specifies the start-frame, with the end-frame being `CURRENT ROW`.
+
+Some window functions discard frames:
+
+* `ROW_NUMBER`, `LAG` and `LEAD` always work as `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+* `DENSE_RANK`, `RANK`, `PERCENT_RANK` and `CUME_DIST` always work as `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+* `FIRST_VALUE`, `LAST_VALUE` and `NTH_VALUE` respect frames, but the `RANGE` unit behaviour is identical to `ROWS`.
+
+[float]
+===== Example Using Frame
+
+When the `ORDER BY` clause is used, but a frame clause is omitted, the default considers the partition up to the current row.
+When combined with `SUM`, this results in a running total:
+
+[source]
+----
+select
+  id,
+  salary,
+  sum(salary) over (order by salary) sum_salary
+from employee
+order by salary;
+----
+
+Result:
+
+[source]
+----
+| id | salary | sum_salary |
+|---:|-------:|-----------:|
+|  3 |   8.00 |       8.00 |
+|  4 |   9.00 |      17.00 |
+|  1 |  10.00 |      37.00 |
+|  5 |  10.00 |      37.00 |
+|  2 |  12.00 |      49.00 |
+----
+
+On the other hand, if we apply a frame for the entire partition, we get the total for the entire partition.
+
+[source]
+----
+select
+  id,
+  salary,
+  sum(salary) over (
+    order by salary
+    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+  ) sum_salary
+from employee
+order by salary;
+----
+
+Result:
+
+[source]
+----
+| id | salary | sum_salary |
+|---:|-------:|-----------:|
+|  3 |   8.00 |      49.00 |
+|  4 |   9.00 |      49.00 |
+|  1 |  10.00 |      49.00 |
+|  5 |  10.00 |      49.00 |
+|  2 |  12.00 |      49.00 |
+----
+
+This example is just to demonstrate how this works;
+the result of this specific example would be simpler to produce with just `sum(salary) over()`.
+
+We can use a range frame to compute the count of employees with salaries between (an employee's salary - 1) and (their salary + 1) with this query:
+
+[source]
+----
+select
+  id,
+  salary,
+  count(*) over (
+    order by salary
+    RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING
+  ) range_count
+from employee
+order by salary;
+----
+
+Result:
+
+[source]
+----
+| id | salary | range_count |
+|---:|-------:|------------:|
+|  3 |   8.00 |           2 |
+|  4 |   9.00 |           4 |
+|  1 |  10.00 |           3 |
+|  5 |  10.00 |           3 |
+|  2 |  12.00 |           1 |
+----
+
+[[fblangref40-windowfuncs-named-windows]]
+=== Named Windows
+
+The <<fblangref40-dml-select-window,`WINDOW` clause>> can be used to explicitly name a window, for example to avoid repetitive or confusing expression.
+
+A named window can be used
+
+[loweralpha]
+. in the `OVER` clause to reference a window definition, e.g. `OVER _window_name_`
+. as a base window of another named or inline (`OVER`) window, if it is not a window with a frame (`ROWS` or `RANGE` clauses)
++
+[NOTE]
+====
+A window with a base windows cannot have `PARTITION BY`, nor override the ordering (`ORDER BY`) of a base window.
+====
+
 [[fblangref40-windowfuncs-rankfuncs]]
 == Ranking Functions
 
 The ranking functions compute the ordinal rank of a row within the window partition.
 
-These functions can be used with or without partioning and ordering.
+These functions can be used with or without partitioning and ordering.
 However, using them without ordering almost never makes sense.
 
 The ranking functions can be used to create different type of incremental counters.
-Consider `SUM(1) OVER (ORDER BY SALARY)` as an example of what they can do, each of them in a different way.
+Consider `SUM(1) OVER (ORDER BY SALARY)` as an example of what they can do, each of them differently.
 Following is an example query, also comparing with the `SUM` behavior.
 
 [source]
@@ -233,6 +402,53 @@ The difference between `DENSE_RANK` and `RANK` is that there is a gap related to
 `DENSE_RANK` continues assigning sequential numbers after the duplicate salary.
 On the other hand, `ROW_NUMBER` always assigns sequential numbers, even when there are duplicate values.
 
+[[fblangref40-windowfuncs-cume-dist]]
+=== `CUME_DIST`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`DOUBLE PRECISION`
+
+.Syntax
+[listing]
+----
+CUME_DIST () OVER <window_name_or_spec>
+----
+
+The distribution function `CUME_DIST` computes the relative rank of a row within a window partition.
+`CUME_DIST` is calculated as the number of rows preceding or peer of the current row divided by the number of rows in the partition.
+
+In other words, `CUME_DIST() OVER <window_name_or_spec>` is equivalent to `COUNT({asterisk}) OVER <window_name_or_spec> / COUNT(*) OVER()`
+
+[[fblangref40-windowfuncs-cume-dist-exmpl]]
+==== `CUME_DIST` Examples
+
+[source]
+----
+select
+  id,
+  salary,
+  cume_dist() over (order by salary)
+from employee
+order by salary;
+----
+
+.Result
+[listing]
+----
+id salary cume_dist
+- ------- ---------
+3    8.00       0.2
+4    9.00       0.4
+1   10.00       0.8
+5   10.00       0.8
+2   12.00         1
+----
+
+.See also <<fblangref40-windowfuncs-rank>>, <<fblangref40-windowfuncs-perc-rank>>
+
 [[fblangref40-windowfuncs-dense-rank]]
 === `DENSE_RANK`
 
@@ -245,11 +461,11 @@ DSQL, PSQL
 .Syntax
 [listing]
 ----
-DENSE_RANK () OVER <window-specification>
+DENSE_RANK () OVER <window_name_or_spec>
 ----
 
 Returns the rank of rows in a partition of a result set without ranking gaps.
-Rows with the same _window-order_ values get the same rank within the partition _window-partition_, if specified.
+Rows with the same _window_order_ values get the same rank within the partition _window_partition_, if specified.
 The dense rank of a row is equal to the number of different rank values in the partition preceding the current row, plus one.
 
 [[fblangref40-windowfuncs-dense-rank-exmpl]]
@@ -279,6 +495,54 @@ id salary dense_rank
 
 .See also <<fblangref40-windowfuncs-rank>>, <<fblangref40-windowfuncs-row-number>>
 
+[[fblangref40-windowfuncs-perc-rank]]
+=== `PERCENT_RANK`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`DOUBLE PRECISION`
+
+.Syntax
+[listing]
+----
+PERCENT_RANK () OVER <window_name_or_spec>
+----
+
+The distribution function `PERCENT_RANK` computes the relative rank of a row within a window partition.
+`PERCENT_RANK` is calculated as the <<fblangref40-windowfuncs-rank>> minus 1 of the current row divided by the number of rows in the partition minus 1.
+
+In other words, `PERCENT_RANK() OVER <window_name_or_spec>` is equivalent to `(RANK() OVER <window_name_or_spec> - 1) / CAST(COUNT({asterisk}) OVER() - 1 AS DOUBLE PRECISION)`
+
+[[fblangref40-windowfuncs-perc-rank-exmpl]]
+==== `PERCENT_RANK` Examples
+
+[source]
+----
+select
+  id,
+  salary,
+  rank() over (order by salary),
+  percent_rank() over (order by salary)
+from employee
+order by salary;
+----
+
+.Result
+[listing]
+----
+id salary rank percent_rank
+- ------- ---- ------------
+3    8.00    1            0
+4    9.00    2         0.25
+1   10.00    3          0.5
+5   10.00    3          0.5
+2   12.00    5            1
+----
+
+.See also <<fblangref40-windowfuncs-rank>>, <<fblangref40-windowfuncs-cume-dist>>
+
 [[fblangref40-windowfuncs-rank]]
 === `RANK`
 
@@ -291,7 +555,7 @@ DSQL, PSQL
 .Syntax
 [listing]
 ----
-RANK () OVER <window-specification>
+RANK () OVER <window_name_or_spec>
 ----
 
 Returns the rank of each row in a partition of the result set.
@@ -338,7 +602,7 @@ DSQL, PSQL
 .Syntax
 [listing]
 ----
-ROW_NUMBER () OVER <window-specification>
+ROW_NUMBER () OVER <window_name_or_spec>
 ----
 
 Returns the sequential row number in the partition of the result set, where `1` is the first row in each of the partitions.
@@ -380,17 +644,15 @@ The navigational functions get the simple (non-aggregated) value of an expressio
 [IMPORTANT]
 ====
 `FIRST_VALUE`, `LAST_VALUE` and `NTH_VALUE` also operate on a window frame.
-Currently, Firebird always applies a frame from the first to the current row of the partition, not to the last.
-This is equivalent to using the SQL standard syntax (currently not supported by Firebird):
+For navigational functions, Firebird applies a default frame from the first to the current row of the partition, not to the last.
+In other words, it behaves as if the following frame is specified:
 
 [source]
 ----
-ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 ----
 
 This is likely to produce strange or unexpected results for `NTH_VALUE` and especially `LAST_VALUE`.
-
-Firebird 4 will introduce support for specifying the window frame.
 ====
 
 [float]
@@ -434,7 +696,7 @@ The same as type as _expr_
 .Syntax
 [listing]
 ----
-FIRST_VALUE ( <expr> ) OVER <window-specification>
+FIRST_VALUE ( <expr> ) OVER <window_name_or_spec>
 ----
 
 [[fblangref40-windowfuncs-tbl-first-value]]
@@ -468,7 +730,7 @@ The same as type as _expr_
 [listing]
 ----
 LAG ( <expr> [, <offset [, <default>]])
-  OVER <window-specification>
+  OVER <window_name_or_spec>
 ----
 
 [[fblangref40-windowfuncs-tbl-lag]]
@@ -497,12 +759,6 @@ Default is `NULL`.
 The `LAG` function provides access to the row in the current partition with a given _offset_ before the current row.
 
 If _offset_ points outside the current partition, _default_ will be returned, or `NULL` if no default was specified.
-
-[NOTE]
-====
-_offset_ can be a parameter, but explicit casting to `INTEGER` or `BIGINT` is currently required (eg `LAG(somecolumn, cast(? as bigint))`).
-See http://tracker.firebirdsql.org/browse/CORE-6421[CORE-6421]
-====
 
 [[fblangref40-windowfuncs-lag-exmpl]]
 ==== `LAG` Examples
@@ -551,7 +807,7 @@ The same as type as _expr_
 .Syntax
 [source]
 ----
-LAST_VALUE ( <expr> ) OVER <window-specification>
+LAST_VALUE ( <expr> ) OVER <window_name_or_spec>
 ----
 
 [[fblangref40-windowfuncs-tbl-last-value]]
@@ -569,6 +825,8 @@ Aggregate functions are not allowed as an expression.
 
 Returns the last value from the current partition.
 
+See also <<fblangref40-windowfuncs-navfuncs-frame-note,note on frame for navigational functions>>.
+
 .See also
 <<fblangref40-windowfuncs-first-value>>, <<fblangref40-windowfuncs-nth-value>>
 
@@ -585,7 +843,7 @@ The same as type as _expr_
 [listing]
 ----
 LEAD ( <expr> [, <offset [, <default>]])
-  OVER <window-specification>
+  OVER <window_name_or_spec>
 ----
 
 [[fblangref40-windowfuncs-tbl-lead]]
@@ -615,12 +873,6 @@ The `LEAD` function provides access to the row in the current partition with a g
 
 If _offset_ points outside the current partition, _default_ will be returned, or `NULL` if no default was specified.
 
-[NOTE]
-====
-_offset_ can be a parameter, but explicit casting to `INTEGER` or `BIGINT` is currently required (eg `LEAD(somecolumn, cast(? as bigint))`).
-See http://tracker.firebirdsql.org/browse/CORE-6421[CORE-6421]
-====
-
 .See also
 <<fblangref40-windowfuncs-lag>>
 
@@ -638,7 +890,7 @@ The same as type as _expr_
 ----
 NTH_VALUE ( <expr>, <offset> )
   [FROM {FIRST | LAST}]
-  OVER <window-specification>
+  OVER <window_name_or_spec>
 ----
 
 [[fblangref40-windowfuncs-tbl-nth-value]]
@@ -654,19 +906,13 @@ May contain a table column, constant, variable, expression, scalar function.
 Aggregate functions are not allowed as an expression.
 
 |offset
-|The offset in rows from the start (`FROM FIRST`) or the last (`FROM LAST`) to get the value identified by _expr_.
+|The offset in rows from the start (`FROM FIRST`), or the last (`FROM LAST`) to get the value identified by _expr_.
 _offset_ can be a column, subquery or other expression that results in a positive integer value, or another type that can be implicitly converted to `BIGINT`.
 `offset` cannot be zero or negative.
 |===
 
 The `NTH_VALUE` function returns the __N__th value starting from the first (`FROM FIRST`) or the last (`FROM LAST`) row of the current frame, see also <<fblangref40-windowfuncs-navfuncs-frame-note,note on frame for navigational functions>>.
 Offset `1` with `FROM FIRST` is equivalent to `FIRST_VALUE`, and offset `1` with `FROM LAST` is equivalent to `LAST_VALUE`.
-
-[NOTE]
-====
-_offset_ can be a parameter, but explicit casting to `INTEGER` or `BIGINT` is currently required (eg `LEAD(somecolumn, cast(? as bigint))`).
-See http://tracker.firebirdsql.org/browse/CORE-6421[CORE-6421]
-====
 
 .See also
 <<fblangref40-windowfuncs-first-value>>, <<fblangref40-windowfuncs-last-value>>
