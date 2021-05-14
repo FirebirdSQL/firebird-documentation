@@ -1823,8 +1823,9 @@ PSQL
 
 <param_values> ::= <named_values> | <positional_values>
 
-<named_values> ::= _paramname_ := <value_expr>
-   [, _paramname_ := <value_expr> ...]
+<named_values> ::= <named_value> [, <named_value> ...]
+
+<named_value> ::= [EXCESS] _paramname_ := <value_expr>
 
 <positional_values> ::= <value_expr> [, <value_expr> ...]
 
@@ -1900,6 +1901,10 @@ Each parameter must be assigned a value.
 ===== Special Rules for Parameterized Statements
 
 . Named and positional parameters cannot be mixed in one query
+. Each parameter must be used in the statement text.
++
+To relax this rule, named parameters can be prefixed with the keyword `EXCESS` to indicate that the parameter may be absent from the statement text.
+This option is useful for dynamically generated statements that conditionally include or exclude certain parameters.
 . If the statement has parameters, they must be enclosed in parentheses when `EXECUTE STATEMENT` is called, regardless of whether they come directly as strings, as variable names or as expressions
 . Each named parameter must be prefixed by a colon ('```:```') in the statement string itself, but not when the parameter is assigned a value
 . Positional parameters must be assigned their values in the same order as they appear in the query text
@@ -1910,8 +1915,8 @@ Each parameter must be assigned a value.
 [[fblangref40-psql-execstmt-wparms-exmpl]]
 ===== Examples of `EXECUTE STATEMENT` with parameters
 
-With named parameters:
-
+. With named parameters:
++
 [source]
 ----
 ...
@@ -1950,8 +1955,8 @@ BEGIN
       ...
 ----
 
-The same code with positional parameters:
-
+. The same code with positional parameters:
++
 [source]
 ----
 DECLARE license_num VARCHAR (15);
@@ -1986,6 +1991,37 @@ BEGIN
       ON EXTERNAL connect_string
       INTO license_num;
       ...
+----
+
+. Use of `EXCESS` to allow named parameters to be unused (note: this is a `FOR EXECUTE STATEMENT`):
+
+[source]
+----
+CREATE PROCEDURE P_EXCESS (A_ID INT, A_TRAN INT = NULL, A_CONN INT = NULL)
+  RETURNS (ID INT, TRAN INT, CONN INT)
+AS
+DECLARE S VARCHAR(255);
+DECLARE W VARCHAR(255) = '';
+BEGIN
+  S = 'SELECT * FROM TTT WHERE ID = :ID';
+
+  IF (A_TRAN IS NOT NULL)
+  THEN W = W || ' AND TRAN = :a';
+
+  IF (A_CONN IS NOT NULL)
+  THEN W = W || ' AND CONN = :b';
+
+  IF (W <> '')
+  THEN S = S || W;
+
+  -- could raise error if TRAN or CONN is null
+  -- FOR EXECUTE STATEMENT (:S) (a := :A_TRAN, b := A_CONN, id := A_ID)
+
+  -- OK in all cases
+  FOR EXECUTE STATEMENT (:S) (EXCESS a := :A_TRAN, EXCESS b := A_CONN, id := A_ID)
+    INTO :ID, :TRAN, :CONN
+      DO SUSPEND;
+END
 ----
 
 [[fblangref40-psql-execstmt-wautonomous]]
