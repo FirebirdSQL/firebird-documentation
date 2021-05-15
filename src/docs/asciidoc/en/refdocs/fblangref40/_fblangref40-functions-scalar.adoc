@@ -1320,7 +1320,7 @@ If you are used to the behaviour of the https://www.firebirdsql.org/file/documen
 <<fblangref40-scalarfuncs-ceil>>, <<fblangref40-scalarfuncs-floor>>, <<fblangref40-scalarfuncs-round>>
 
 [[fblangref40-functions-string]]
-== String Functions
+== String and Binary Functions
 
 [[fblangref40-scalarfuncs-ascii-char]]
 === `ASCII_CHAR()`
@@ -1395,6 +1395,124 @@ Returns the ASCII code of the character passed in.
 * If the first character of the argument string is multi-byte, an error is raised.
 (A bug in Firebird 2.1 - 2.1.3 and 2.5.0 causes an error to be raised if _any_ character in the string is multi-byte.
 This is fixed in versions 2.1.4 and 2.5.1.)
+
+[[fblangref40-scalarfuncs-base64decode]]
+=== `BASE64_DECODE()`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`VARBINARY` or `BLOB`
+
+.Syntax
+[listing,subs=+quotes]
+----
+BASE64_DECODE (_base64_data_)
+----
+
+[[fblangref40-scalarfuncs-tbl-base64decode]]
+.`BASE64_DECODE` Function Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|base64_data
+|Base64 encoded data, padded with `=` to multiples of 4
+|===
+
+`BASE64_DECODE` decodes a string with base64-encoded data, and returns the decoded value as `VARBINARY` or `BLOB` as appropriate for the input.
+If the length of the type of _base64_data_ is not a multiple of 4, an error is raised at prepare time.
+If the length of the value of _base64_data_ is not a multiple of 4, an error is raised at execution time.
+
+When the input is not `BLOB`, the length of the resulting type is calculated as `__type_length__ * 3 / 4`, where _type_length_ is the maximum length in bytes of the input type (should be characters, see note).
+
+[[fblangref40-scalarfuncs-base64decode-issues]]
+.Length Issue with `BASE64_DECODE` and `HEX_DECODE`
+[NOTE]
+====
+The `BASE64_ENCODE` and `HEX_ENCODE` functions have a bug with the length of its return type:
+
+* When the input type is a `VARCHAR` with a multi-byte character set, the resulting type is larger than necessary (4 times too wide for UTF8).
+For example a `VARCHAR(4) CHARACTER SET UTF8` results in a `VARBINARY(8)` for `HEX_DECODE` and `VARBINARY(24)` for `BASE64_DECODE`, instead of `VARBINARY(2)`.
+See also https://github.com/FirebirdSQL/firebird/issues/6814[firebird#6814^]
+====
+
+[[fblangref40-scalarfuncs-base64decode-exmpl]]
+=== Example of `BASE64_DECODE`
+
+[source]
+----
+select cast(base64_decode('VGVzdCBiYXNlNjQ=') as varchar(12))
+from rdb$database;
+
+CAST
+============
+Test base64
+----
+
+.See also
+<<fblangref40-scalarfuncs-base64encode>>, <<fblangref40-scalarfuncs-hexdecode>>
+
+[[fblangref40-scalarfuncs-base64encode]]
+=== `BASE64_ENCODE()`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`VARCHAR CHARACTER SET ASCII` or `BLOB SUB_TYPE TEXT CHARACTER SET ASCII`
+
+.Syntax
+[listing,subs=+quotes]
+----
+BASE64_ENCODE (_binary_data_)
+----
+
+[[fblangref40-scalarfuncs-tbl-base64encode]]
+.`BASE64_ENCODE` Function Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|binary_data
+|Binary data (or otherwise convertible to binary) to encode
+|===
+
+`BASE64_ENCODE` encodes _binary_data_ with base64, and returns the encoded value as a `VARCHAR CHARACTER SET ASCII` or `BLOB SUB_TYPE TEXT CHARACTER SET ASCII` as appropriate for the input.
+The returned value is padded with '```=```' so its length is a multiple of 4.
+
+When the input is not `BLOB`, the length of the resulting type is calculated as `__type_length__ * 4 / 3` rounded up to a multiple of four, where _type_length_ is the maximum length in bytes of the input type.
+
+[[fblangref40-scalarfuncs-base64encode-issues]]
+.Length Issues with `BASE64_ENCODE` and `HEX_ENCODE`
+[NOTE]
+====
+The `BASE64_ENCODE` and `HEX_ENCODE` functions have two bugs with the length of its return type:
+
+* If the input type exceeds 24,573 bytes (`BASE64_ENCODE`) or 16,382 bytes (`HEX_ENCODE`), the return type `VARCHAR` is defined with a length exceeding the maximum length of 32,765 for `VARCHAR`, see https://github.com/FirebirdSQL/firebird/issues/6812[firebird#6812^]
++
+The workaround is to cast the input, or the function result, explicitly to `BLOB`.
+* If the input type is `VARCHAR` or `VARBINARY`, the _type_length_ used to calculate the length of the result type is off by 2 bytes (too many), see https://github.com/FirebirdSQL/firebird/issues/6813[firebird#6813^]
+====
+
+[[fblangref40-scalarfuncs-base64encode-exmpl]]
+=== Example of `BASE64_ENCODE`
+
+[source]
+----
+select base64_encode('Test base64')
+from rdb$database;
+
+BASE64_ENCODE
+================
+VGVzdCBiYXNlNjQ=
+----
+
+.See also
+<<fblangref40-scalarfuncs-base64decode>>, <<fblangref40-scalarfuncs-hexencode>>
 
 [[fblangref40-scalarfuncs-bit-length]]
 === `BIT_LENGTH()`
@@ -1547,6 +1665,102 @@ HASH (_string_)
 
 Returns a hash value for the input string.
 This function fully supports text ``BLOB``s of any length and character set.
+
+[[fblangref40-scalarfuncs-hexdecode]]
+=== `HEX_DECODE()`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`VARBINARY` or `BLOB`
+
+.Syntax
+[listing,subs=+quotes]
+----
+HEX_DECODE (_hex_data_)
+----
+
+[[fblangref40-scalarfuncs-tbl-hexdecode]]
+.`HEX_DECODE` Function Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|hex_data
+|Hex encoded data
+|===
+
+`HEX_DECODE` decodes a string with hex-encoded data, and returns the decoded value as `VARBINARY` or `BLOB` as appropriate for the input.
+If the length of the type of _hex_data_ is not a multiple of 2, an error is raised at prepare time.
+If the length of the value of _hex_data_ is not a multiple of 2, an error is raised at execution time.
+
+When the input is not `BLOB`, the length of the resulting type is calculated as `__type_length__ / 2`, where _type_length_ is the maximum length in bytes of the input type (should be characters, see <<fblangref40-scalarfuncs-base64decode-issues>>).
+
+[[fblangref40-scalarfuncs-hexdecode-exmpl]]
+=== Example of `HEX_DECODE`
+
+[source]
+----
+select cast(hex_decode('48657861646563696D616C') as varchar(12))
+from rdb$database;
+
+CAST
+============
+Hexadecimal
+----
+
+.See also
+<<fblangref40-scalarfuncs-hexencode>>, <<fblangref40-scalarfuncs-base64decode>>
+
+[[fblangref40-scalarfuncs-hexencode]]
+=== `HEX_ENCODE()`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`VARCHAR CHARACTER SET ASCII` or `BLOB SUB_TYPE TEXT CHARACTER SET ASCII`
+
+.Syntax
+[listing,subs=+quotes]
+----
+HEX_ENCODE (_binary_data_)
+----
+
+[[fblangref40-scalarfuncs-tbl-hexencode]]
+.`HEX_ENCODE` Function Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|binary_data
+|Binary data (or otherwise convertible to binary) to encode
+|===
+
+`HEX_ENCODE` encodes _binary_data_ with hex, and returns the encoded value as a `VARCHAR CHARACTER SET ASCII` or `BLOB SUB_TYPE TEXT CHARACTER SET ASCII` as appropriate for the input.
+
+When the input is not `BLOB`, the length of the resulting type is calculated as `__type_length__ * 2`, where _type_length_ is the maximum length in bytes of the input type.
+
+See also <<fblangref40-scalarfuncs-base64encode-issues>>.
+
+[[fblangref40-scalarfuncs-hexencode-exmpl]]
+=== Example of `HEX_ENCODE`
+
+[source]
+----
+select hex_encode('Hexadecimal')
+from rdb$database;
+
+HEX_ENCODE
+======================
+48657861646563696D616C
+----
+
+.See also
+<<fblangref40-scalarfuncs-hexdecode>>, <<fblangref40-scalarfuncs-base64encode>>
 
 [[fblangref40-scalarfuncs-left]]
 === `LEFT()`
