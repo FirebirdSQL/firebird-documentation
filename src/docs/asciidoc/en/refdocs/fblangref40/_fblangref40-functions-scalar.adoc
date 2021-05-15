@@ -3789,6 +3789,205 @@ A plain `AVG(Weight)` would include the -1 weights, thus skewing the result.
 .See also
 <<fblangref40-scalarfuncs-coalesce>>, <<fblangref40-scalarfuncs-decode>>, <<fblangref40-scalarfuncs-iif>>, <<fblangref40-commons-conditional-case,`CASE`>>
 
+[[fblangref40-scalarfuncs-decfloat]]
+== Special Functions for `DECFLOAT`
+
+[[fblangref40-scalarfuncs-comparedecfloat]]
+=== `COMPARE_DECFLOAT`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`SMALLINT`
+
+.Syntax
+[listings,subs=+quotes]
+----
+COMPARE_DECFLOAT (_decfloat1_, _decfloat2_)
+----
+
+[[fblangref40-scalarfuncs-tbl-comparedecfloat]]
+.`COMPARE_DECFLOAT` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|decfloat__n__
+|Value or expression of type `DECFLOAT`, or cast-compatible with `DECFLOAT`
+|===
+
+`COMPARE_DECFLOAT` compares two `DECFLOAT` values to be equal, different or unordered.
+The result is a `SMALLINT` value, as follows:
+
+[horizontal]
+`0`:: Values are equal
+`1`:: First value is less than second
+`2`:: First value is greater than second
+`3`:: Values are unordered, i.e. one or both is `NaN`/`sNaN`
+
+Unlike the comparison operators ('```<```', '```=```', '```>```', etc.), comparison is exact: `COMPARE_DECFLOAT(2.17, 2.170)` returns `2` not `0`.
+
+.See also
+<<fblangref40-scalarfuncs-totalorder>>
+
+[[fblangref40-scalarfuncs-normalizedecfloat]]
+=== `NORMALIZE_DECFLOAT`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`DECFLOAT`
+
+.Syntax
+[listing,subs=+quotes]
+----
+NORMALIZE_DECFLOAT (_decfloat_value_)
+----
+
+[[fblangref40-scalarfuncs-tbl-normalizedecfloat]]
+.`NORMALIZE_DECFLOAT` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|decfloat_value
+|Value or expression of type `DECFLOAT`, or cast-compatible with `DECFLOAT`
+|===
+
+`NORMALIZE_DECFLOAT` takes a single `DECFLOAT` argument and returns it in its simplest form.
+That means that for any non-zero value, trailing zeroes are removed with appropriate correction of the exponent.
+
+[[fblangref40-scalarfuncs-normalizedecfloat-exmpl]]
+==== Examples of `NORMALIZE_DECFLOAT`
+
+[source]
+----
+-- will return 12
+select normalize_decfloat(12.00)
+from rdb$database;
+
+-- will return 1.2E+2
+select normalize_decfloat(120)
+from rdb$database;
+----
+
+[[fblangref40-scalarfuncs-quantize]]
+=== `QUANTIZE`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+
+.Syntax
+[listing,subs=+quotes]
+----
+QUANTIZE (_decfloat_value_, _exp_value_)
+----
+
+[[fblangref40-scalarfuncs-tbl-quantize]]
+.`QUANTIZE` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|decfloat_value
+|Value or expression to quantize;
+needs to be of type `DECFLOAT`, or cast-compatible with `DECFLOAT`
+
+|exp_value
+|Value or expression to use for its exponent;
+needs to be of type `DECFLOAT`, or cast-compatible with `DECFLOAT`
+|===
+
+`QUANTIZE` returns a `DECFLOAT` value that is equal in value and sign (except for rounding) to _decfloat_value_, and that has an exponent equal to the exponent of _exp_value_.
+The type of the return value is `DECFLOAT(16)` if both arguments are `DECFLOAT(16)`, otherwise the result type is `DECFLOAT(34)`.
+
+[NOTE]
+====
+The target exponent is the exponent used in the `Decimal64` or `Decimal128` storage format of `DECFLOAT` of _exp_value_.
+This is not necessarily the same as the exponent displayed in tools like _isql_.
+For example, the value `1.23E+2` is coefficient `123` and exponent `0`, while `1.2` is coefficient `12` and exponent `-1`.
+====
+
+If the exponent of _decfloat_value_ is greater than the one of _exp_value_, the coefficient of _decfloat_value_ is multiplied by a power of ten, and its exponent decreased, if the exponent is smaller, then its coefficient is rounded using the current decfloat rounding mode, and its exponent is increased.
+
+When it is not possible to achieve the target exponent because the coefficient would exceed the target precision (16 or 34 decimal digits), either a "`__Decfloat float invalid operation__`" error is raised or `NaN` is returned (depending on the current decfloat traps configuration).
+
+There are almost no restrictions on the _exp_value_.
+However, in almost all usages, `NaN`/`sNaN`/`Infinity` will produce an exception (unless allowed by the current decfloat traps configuration), `NULL` will make the function return `NULL`, and so on.
+
+[[fblangref40-scalarfuncs-quantize-exmpl]]
+==== Examples of `QUANTIZE`
+
+[source]
+----
+select v, pic, quantize(v, pic) from examples;
+
+     V    PIC QUANTIZE
+====== ====== ========
+  3.16  0.001    3.160
+  3.16   0.01     3.16
+  3.16    0.1      3.2
+  3.16      1        3
+  3.16   1E+1     0E+1
+  -0.1      1       -0
+     0   1E+5     0E+5
+   316    0.1    316.0
+   316      1      316
+   316   1E+1   3.2E+2
+   316   1E+2     3E+2
+----
+
+[[fblangref40-scalarfuncs-totalorder]]
+=== `TOTALORDER`
+
+.Available in
+DSQL, PSQL
+
+.Result type
+`SMALLINT`
+
+.Syntax
+[listing,subs=+quotes]
+----
+TOTALORDER (_decfloat1_, _decfloat2_)
+----
+
+[[fblangref40-scalarfuncs-tbl-totalorder]]
+.`TOTALORDER` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|decfloat__n__
+|Value or expression of type `DECFLOAT`, or cast-compatible with `DECFLOAT`
+|===
+
+`TOTALORDER` compares two `DECFLOAT` values including any special values.
+The comparison is exact, and returns a `SMALLINT`, one of:
+
+[horizontal]
+`-1`:: First value is less than second
+`0`:: Values are equal
+`1`:: First value is greater than second.
+
+For `TOTALORDER` comparisons, `DECFLOAT` values are ordered as follows:
+
+[listing]
+----
+-NaN < -sNaN < -INF < -0.1 < -0.10 < -0 < 0 < 0.10 < 0.1 < INF < sNaN < NaN
+----
+
+.See also
+<<fblangref40-scalarfuncs-comparedecfloat>>
+
 [[fblangref40-scalarfuncs-crypto]]
 == Cryptographic Functions
 
