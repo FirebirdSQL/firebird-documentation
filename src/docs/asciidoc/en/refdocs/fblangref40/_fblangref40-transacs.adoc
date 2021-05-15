@@ -44,10 +44,7 @@ SET TRANSACTION
 <tr_option> ::=
      READ {ONLY | WRITE}
    | [NO] WAIT
-   | [ISOLATION LEVEL]
-       { SNAPSHOT [TABLE [STABILITY]]
-       | READ {UNCOMMITED | COMMITTED }
-         [<read-commited-opt>] }
+   | [ISOLATION LEVEL] <isolation_level>
    | NO AUTO UNDO
    | RESTART REQUESTS
    | AUTO COMMIT
@@ -55,6 +52,11 @@ SET TRANSACTION
    | LOCK TIMEOUT _seconds_
    | RESERVING <tables>
    | USING <dbhandles>
+
+<isolation_level> ::=
+    SNAPSHOT [AT NUMBER _snapshot_number_]
+  | SNAPSHOT TABLE [STABILITY]
+  | READ {UNCOMMITED | COMMITTED} [<read-commited-opt>]
 
 <read-commited-opt> ::=
   [NO] RECORD_VERSION | READ CONSISTENCY
@@ -86,6 +88,9 @@ Each option should be specified at most once, some options are mutually exclusiv
 |The time in seconds for the statement to wait in case a conflict occurs.
 Has to be greater than or equal to `0`.
 
+|snapshot_number
+|Snapshot number to use for this transaction
+
 |tables
 |The list of tables to reserve
 
@@ -100,7 +105,7 @@ Available only in ESQL
 |The name of the table to reserve
 
 |dbhandle
-|The handle of the database the database can access.
+|The handle of the database the transaction can access.
 Available only in ESQL
 |===
 
@@ -242,6 +247,31 @@ The `SNAPSHOT` isolation level is also known as "`__concurrency__`".
 ====
 Changes made by autonomous transactions are not seen in the context of the `SNAPSHOT` transaction that launched it.
 ====
+
+[float]
+====== Sharing Snapshot Transactions
+
+Using `SNAPSHOT AT NUMBER _snaphot_number_`, a `SNAPSHOT` transaction can be started sharing the snapshot of another transaction.
+With this feature it's possible to create parallel processes (using different attachments) reading consistent data from a database.
+For example, a backup process may create multiple threads reading data from the database in parallel.
+Or a web service may dispatch distributed sub-services doing some processing in parallel.
+
+Alternatively, this feature can also be used via the API, using Transaction Parameter Buffer item `isc_tpb_at_snapshot_number`.
+
+The _snapshot_number_ from an active transaction can be obtained with `RDB$GET_CONTEXT('SYSTEM', 'SNAPSHOT_NUMBER')` in SQL or using the transaction information API call with `fb_info_tra_snapshot_number` information tag.
+The _snapshot_number_ passed to the new transaction must be a snapshot of a currently active transaction.
+
+[NOTE]
+====
+To share a stable view between transactions, the other transaction also needs to have isolation level `SNAPSHOT`.
+With `READ COMMITTED`, the snapshot number will move forward
+====
+
+.Example
+[source]
+----
+SET TRANSACTION SNAPSHOT AT NUMBER 12345;
+----
 
 [[fblangref40-transacs-settransac-snapshottbl]]
 ====== `SNAPSHOT TABLE STABILITY` Isolation Level
