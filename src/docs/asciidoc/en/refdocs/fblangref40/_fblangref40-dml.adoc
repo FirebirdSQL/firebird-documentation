@@ -192,25 +192,26 @@ Alternatively, `{asterisk}` ("`select star`" or "`select all`") can be used to s
 ----
 SELECT
   [...]
-  [{DISTINCT | ALL}] <output-column> [, <output-column> ...]
+  [{DISTINCT | ALL}] <select_list>
   [...]
   FROM ...
 
-<output-column> ::=
-  { [<qualifier>.]*
-  | <value-expression> [COLLATE _collation_] [[AS] _alias_] }
+<select_list> ::= * | <output_column> [, <output_column> ...]
 
-<value-expression> ::=
-  { [<qualifier>.{endsb}__table-column__
-  | [<qualifier>.{endsb}__view-column__
-  | [<qualifier>.{endsb}__selectable-SP-outparm__
+<output_column> ::=
+    <qualifier>.*
+  | <value_expression> [COLLATE _collation_] [[AS] _alias_]
+
+<value_expression> ::=
+    [<qualifier>.{endsb}__col_name__
+  | [<qualifier>.{endsb}__selectable_SP_outparm__
   | <literal>
   | <context-variable>
   | <function-call>
   | <single-value-subselect>
   | <CASE-construct>
   | _any other expression returning a single_
-    _value of a Firebird data type or NULL_ }
+    _value of a Firebird data type or NULL_
 
 <qualifier> ::= _a relation name or alias_
 
@@ -246,17 +247,14 @@ or an alias for it
 |alias
 |Column or field alias
 
-|table-column
-|Name of a table column
+|col_name
+|Name of a table or view column
 
-|view-column
-|Name of a view column
-
-|selectable-SP-outparm
+|selectable_SP_outparm
 |Declared name of an output parameter of a selectable stored procedure
 
-|constant
-|A constant
+|literal
+|A literal
 
 |context-variable
 |Context variable
@@ -269,10 +267,6 @@ or an alias for it
 
 |CASE-construct
 |CASE construct setting conditions for a return value
-
-|other-single-value-expr
-|Any other expression returning a single value of a Firebird data type;
-or NULL
 |===
 
 It is always valid to qualify a column name (or "```{asterisk}```") with the name or alias of the table, view or selectable SP to which it belongs, followed by a dot ('```.```').
@@ -3843,7 +3837,7 @@ INSERT INTO _target_
   | [(<column_list>)] [<override_opt>] <value_source> }
   [RETURNING <returning_list> [INTO <variables>]]
 
-<column_list> ::= _colname_ [, _colname_ ...]
+<column_list> ::= _col_name_ [, _col_name_ ...]
 
 <override_opt> ::=
   OVERRIDING {USER | SYSTEM} VALUE
@@ -3852,12 +3846,23 @@ INSERT INTO _target_
 
 <value_list> ::= <ins_value> [, <ins_value> ...]
 
-<ins_value> :: = <value> | DEFAULT
+<ins_value> :: = <value_expression> | DEFAULT
 
-<returning_list> ::=
-  <ret_value> [[AS] _ret_alias_] [, <ret_value> [[AS] _ret_alias_] ...]
+<returning_list> ::= * | <output_column> [, <output_column]
 
-<ret_value> ::= { _colname_ | _target_._colname_ | <value> }
+<output_column> ::=
+    _target_.*
+  | <return_expression> [COLLATE _collation_] [[AS] _alias_]
+
+<return_expression> ::=
+    <value_expression>
+  | [_target_.{endsb}__col_name__
+
+<value_expression> ::=
+    <literal>
+  | <context-variable>
+  | _any other expression returning a single_
+    _value of a Firebird data type or NULL_
 
 <variables> ::= [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
 ----
@@ -3872,14 +3877,20 @@ INSERT INTO _target_
 |target
 |The name of the table or view to which a new row, or batch of rows, should be added
 
-|colname
-|Column in the table or view
+|col_name
+|Name of a table or view column
 
-|value
+|value_expression
 |An expression whose value is used for inserting into the table or for returning
 
-|ret_value
+|return_expression
 |The expression to be returned in the `RETURNING` clause
+
+|literal
+|A literal
+
+|context-variable
+|Context variable
 
 |varname
 |Name of a PSQL local variable
@@ -3911,7 +3922,7 @@ Those columns should be excluded from both the _column_list_ and the `VALUES` li
 The `VALUES` list must provide a value for every column in the column list, in the same order and of the correct type.
 The column list need not specify every column in the target but, if the column list is absent, the engine requires a value for every column in the table or view (computed columns excluded).
 
-The value `DEFAULT` allows a column to be specified in the column list, but instructs Firebird to use the default value (either `NULL` or the value specified in the `DEFAULT` clause of the column definition.
+The value `DEFAULT` allows a column to be specified in the column list, but instructs Firebird to use the default value (either `NULL` or the value specified in the `DEFAULT` clause of the column definition).
 For identity columns, specifying `DEFAULT` will generate the identity value.
 It is possible to include calculated columns in the column list and specifying `DEFAULT` as the column value.
 
@@ -4040,6 +4051,9 @@ An `INSERT` statement adding _at most one row_ may optionally include a `RETURNI
 The clause, if present, need not contain all of the insert columns and may also contain other columns or expressions.
 The returned values reflect any changes that may have been made in `BEFORE INSERT` triggers.
 
+The syntax of the _returning_list_ is similar to the column list of a `SELECT` clause.
+It is possible to reference all columns using `{asterisk}` or `__table_name__.{asterisk}`.
+
 The optional `INTO` sub-clause is only valid in PSQL.
 
 .Multiple ``INSERT``s
@@ -4053,19 +4067,18 @@ This behaviour may change in future Firebird versions.
 .Examples
 [source]
 ----
-INSERT INTO Scholars (
-  firstname,
-  lastname,
-  address,
-  phone,
-  email)
-VALUES (
-  'Henry',
-  'Higgins',
-  '27A Wimpole Street',
-  '3231212',
-  NULL)
+INSERT INTO Scholars (firstname, lastname, address,
+  phone, email)
+VALUES ('Henry', 'Higgins', '27A Wimpole Street',
+  '3231212', NULL)
 RETURNING lastname, fullname, id;
+
+INSERT INTO Scholars (firstname, lastname, address,
+  phone, email)
+VALUES (
+  'Henry', 'Higgins', '27A Wimpole Street',
+  '3231212', NULL)
+RETURNING *;
 
 INSERT INTO Dumbbells (firstname, lastname, iq)
   SELECT fname, lname, iq
@@ -4075,12 +4088,14 @@ FROM Friends
 INTO :id, :fname, :iq;
 ----
 
-.Notes
+[NOTE]
+====
 * `RETURNING` is supported for `VALUES` and `DEFAULT VALUES` inserts, and singleton `SELECT` inserts.
 * In DSQL, a statement with a `RETURNING` clause _always_ returns exactly one row.
 If no record was actually inserted, the fields in this row are all `NULL`.
 This behaviour may change in a later version of Firebird.
 In PSQL, if no row was inserted, nothing is returned, and the target variables keep their existing values.
+====
 
 [[fblangref40-dml-insert-blobs]]
 === Inserting into `BLOB` columns
@@ -4111,24 +4126,32 @@ DSQL, ESQL, PSQL
 [listing,subs="+quotes,attributes"]
 ----
 UPDATE _target_ [[AS] _alias_]
-  SET _col_ = <upd_value> [, _col_ = <upd_value> ...]
+  SET _col_name_ = <upd_value> [, _col_name_ = <upd_value> ...]
   [WHERE {<search-conditions> | CURRENT OF _cursorname_}]
   [PLAN <plan_items>]
   [ORDER BY <sort_items>]
   [ROWS _m_ [TO _n_]]
   [RETURNING <returning_list> [INTO <variables>]]
 
-<upd_value> ::= <value> | DEFAULT
+<upd_value> ::= <value_expression> | DEFAULT
 
-<returning_list> ::=
-  <ret_value> [[AS] _ret_alias_] [, <ret_value> [[AS] _ret_alias_] ...]
+<returning_list> ::= * | <output_column> [, <output_column]
 
-<ret_value> ::=
-    _colname_
-  | _table_or_alias_._colname_
-  | NEW._colname_
-  | OLD._colname_
-  | <value>
+<output_column> ::=
+    _target_.* | NEW.* | OLD.*
+  | <return_expression> [COLLATE _collation_] [[AS] _alias_]
+
+<return_expression> ::=
+    <value_expression>
+  | [_target_.{endsb}__col_name__
+  | NEW._col_name_
+  | OLD._col_name_
+
+<value_expression> ::=
+    <literal>
+  | <context-variable>
+  | _any other expression returning a single_
+    _value of a Firebird data type or NULL_
 
 <variables> ::= [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
 ----
@@ -4146,10 +4169,10 @@ UPDATE _target_ [[AS] _alias_]
 |alias
 |Alias for the table or view
 
-|col
+|col_name
 |Name or alias of a column in the table or view
 
-|value
+|value_expression
 |Expression for the new value for a column that is to be updated in the table or view by the statement, or a value to be returned
 
 |search-conditions
@@ -4167,8 +4190,14 @@ UPDATE _target_ [[AS] _alias_]
 |m, n
 |Integer expressions for limiting the number of rows to be updated
 
-|ret_value
+|return_expression
 |A value to be returned in the `RETURNING` clause
+
+|literal
+|A literal
+
+|context-variable
+|Context variable
 
 |varname
 |Name of a PSQL local variable
@@ -4358,7 +4387,10 @@ It can include literals or expressions not associated with columns, if there is 
 When the `RETURNING` set contains data from the current row, the returned values report changes made in the `BEFORE UPDATE` triggers, but not those made in `AFTER UPDATE` triggers.
 
 The context variables `OLD.__fieldname__` and `NEW.__fieldname__` can be used as column names.
-If `OLD.` or `NEW.` is not specified, the column values returned are the `NEW.` ones.
+If `OLD.` or `NEW.` is not specified, or if the table name (_target_) is specified instead the column values returned are the `NEW.` ones.
+
+The syntax of the _returning_list_ is similar to the column list of a `SELECT` clause.
+It is possible to reference all columns using `{asterisk}`, or `__table_name__.{asterisk}`, `NEW.{asterisk}` and/or `OLD.{asterisk}`.
 
 In DSQL, a statement with `RETURNING` always returns a single row.
 Attempts to execute an `UPDATE ... RETURNING ...` that affects multiple rows will result in the error "`multiple rows in singleton select`".
@@ -4419,9 +4451,9 @@ UPDATE OR INSERT INTO
   [<override_opt>]
   VALUES (<value_list>)
   [MATCHING (<column_list>)]
-  [RETURNING <values> [INTO <variables>]]
+  [RETURNING <returning_list> [INTO <variables>]]
 
-<column_list> ::= _colname_  [, _colname_ ...]
+<column_list> ::= _col_name_  [, _col_name_ ...]
 
 <override_opt> ::=
   OVERRIDING {USER | SYSTEM} VALUE
@@ -4430,13 +4462,23 @@ UPDATE OR INSERT INTO
 
 <ins_value> ::= <value> | DEFAULT
 
-<returning_list> ::= <ret_value> [, <ret_value> ...]
+<returning_list> ::= * | <output_column> [, <output_column]
 
-<ret_value> ::=
-    _colname_
-  | NEW.__colname__
-  | OLD.__colname__
-  | <value>
+<output_column> ::=
+    _target_.* | NEW.* | OLD.*
+  | <return_expression> [COLLATE _collation_] [[AS] _alias_]
+
+<return_expression> ::=
+    <value_expression>
+  | [_target_.{endsb}__col_name__
+  | NEW._col_name_
+  | OLD._col_name_
+
+<value_expression> ::=
+    <literal>
+  | <context-variable>
+  | _any other expression returning a single_
+    _value of a Firebird data type or NULL_
 
 <variables> ::= [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
 ----
@@ -4451,13 +4493,13 @@ UPDATE OR INSERT INTO
 |target
 |The name of the table or view where the record(s) is to be updated or a new record inserted
 
-|colname
+|col_name
 |Name of a column in the table or view
 
-|value
+|value_expression
 |An expression whose value is to be used for inserting or updating the table, or returning a value
 
-|ret_value
+|return_expression
 |An expression returned in the RETURNING clause
 
 |varname
@@ -4487,6 +4529,9 @@ The optional `RETURNING` clause, if present, need not contain all the columns me
 The returned values reflect any changes that may have been made in `BEFORE` triggers, but not those in `AFTER` triggers. `OLD.__fieldname__` and `NEW.__fieldname__` may both be used in the list of columns to return;
 for field names not preceded by either of these, the new value is returned.
 
+The syntax of the _returning_list_ is similar to the column list of a `SELECT` clause.
+It is possible to reference all columns using `{asterisk}`, or `__table_name__.{asterisk}`, `NEW.{asterisk}` and/or `OLD.{asterisk}`.
+
 In DSQL, a statement with a `RETURNING` clause _always_ returns exactly one row.
 If a `RETURNING` clause is present and more than one matching record is found, an error "`multiple rows in singleton select`" is raised.
 This behaviour may change in a later version of Firebird.
@@ -4505,6 +4550,11 @@ UPDATE OR INSERT INTO Cows (Name, Number, Location)
   VALUES ('Suzy Creamcheese', 3278823, 'Green Pastures')
   MATCHING (Number)
   RETURNING rec_id into :id;
+
+UPDATE OR INSERT INTO Cows (Name, Number, Location)
+  VALUES ('Suzy Creamcheese', 3278823, 'Green Pastures')
+  MATCHING (Number)
+  RETURNING old.*, new.*;
 ----
 
 [[fblangref40-dml-delete]]
@@ -4527,11 +4577,21 @@ DELETE
   [ROWS _m_ [TO _n_]]
   [RETURNING <returning_list> [INTO <variables>]]
 
-<returning_list> ::=
-  <ret_value> [[AS] _ret_alias_] [, <ret_value> [[AS] _ret_alias_] ...]
+<returning_list> ::= * | <output_column> [, <output_column]
 
-<ret_value> ::=
-  { _colname_ | _target_or_alias_._colname_ | <value> }
+<output_column> ::=
+    _target_.*
+  | <return_expression> [COLLATE _collation_] [[AS] _alias_]
+
+<return_expression> ::=
+    <value_expression>
+  | [_target_.{endsb}__col_name__
+
+<value_expression> ::=
+    <literal>
+  | <context-variable>
+  | _any other expression returning a single_
+    _value of a Firebird data type or NULL_
 
 <variables> ::=
   [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
@@ -4565,10 +4625,10 @@ DELETE
 |m, n
 |Integer expressions for limiting the number of rows being deleted
 
-|ret_value
+|return_expression
 |An expression to be returned in the `RETURNING` clause
 
-|value
+|value_expression
 |An expression whose value is used for returning
 
 |varname
@@ -4734,7 +4794,10 @@ DELETE FROM popgroups
 === `RETURNING`
 
 A `DELETE` statement removing _at most one row_ may optionally include a `RETURNING` clause in order to return values from the deleted row.
-The clause, if present, need not contain all the relation's columns and may also contain other columns or expressions. 
+The clause, if present, need not contain all the relation's columns and may also contain other columns or expressions.
+
+The syntax of the _returning_list_ is similar to the column list of a `SELECT` clause.
+It is possible to reference all columns using `{asterisk}`, or `__table_name__.{asterisk}`.
 
 [NOTE]
 ====
@@ -4754,6 +4817,10 @@ This behaviour may change in future Firebird versions
 DELETE FROM Scholars
   WHERE firstname = 'Henry' and lastname = 'Higgins'
   RETURNING lastname, fullname, id;
+
+DELETE FROM Scholars
+  WHERE firstname = 'Henry' and lastname = 'Higgins'
+  RETURNING *;
 
 DELETE FROM Dumbbells
   ORDER BY iq DESC
@@ -4796,7 +4863,7 @@ MERGE INTO _target_ [[AS] _target_alias_]
 <source> ::= _tablename_ | (<select_stmt>)
 
 <assignment_list ::=
-  _colname_ = <m_value> [, <colname> = <m_value> ...]]
+  _col_name_ = <m_value> [, <col_name> = <m_value> ...]]
 
 <override_opt> ::=
   OVERRIDING {USER | SYSTEM} VALUE
@@ -4805,17 +4872,25 @@ MERGE INTO _target_ [[AS] _target_alias_]
 
 <value_list> ::= <m_value> [, <m_value> ...]
 
-<m_value> ::= <value> | DEFAULT
+<m_value> ::= <value_expression> | DEFAULT
 
-<returning_list> ::=
-  <ret_value> [[AS] _ret_alias_] [, <ret_value> [[AS] _ret_alias_] ...]
+<returning_list> ::= * | <output_column> [, <output_column]
 
-<ret_value> ::=
-    _colname_
-  | _table_or_alias_._colname_
-  | NEW._colname_
-  | OLD._colname_
-  | <value>
+<output_column> ::=
+    _target_.* | NEW.* | OLD.*
+  | <return_expression> [COLLATE _collation_] [[AS] _alias_]
+
+<return_expression> ::=
+    <value_expression>
+  | [_target_.{endsb}__col_name__
+  | NEW._col_name_
+  | OLD._col_name_
+
+<value_expression> ::=
+    <literal>
+  | <context-variable>
+  | _any other expression returning a single_
+    _value of a Firebird data type or NULL_
 
 <variables> ::=
   [:{endsb}__varname__ [, [:{endsb}__varname__ ...]
@@ -4853,14 +4928,14 @@ It can be a table, a view, a stored procedure or a derived table
 |select_stmt
 |Select statement of the derived table
 
-|colname
+|col_name
 |Name of a column in the target relation
 
-|value
+|value_expression
 |The value assigned to a column in the target table.
 This expression may be a literal value, a PSQL variable, a column from the source, or a compatible context variable
 
-|ret_value
+|return_expression
 |The expression to be returned in the `RETURNING` clause
 Can be a column reference to source or target, or a column reference of the `NEW` or `OLD` context of the target, or a value.
 
@@ -4923,7 +4998,10 @@ The restriction that `RETURNING` can only be used with a statement that affects 
 
 Column names can be qualified by the `OLD` or `NEW` prefix to define exactly what value to return: before or after modification. The returned values include the changes made by `BEFORE` triggers.
 
-For the `UPDATE` or `INSERT` action, unqualified column names or those qualified by the target table name or alias will behave as if qualified by `NEW`, while for the `DELETE` action as if qualified by `OLD`.
+The syntax of the _returning_list_ is similar to the column list of a `SELECT` clause.
+It is possible to reference all columns using `{asterisk}`, or `__table_name__.{asterisk}`, `NEW.{asterisk}` and/or `OLD.{asterisk}`.
+
+For the `UPDATE` or `INSERT` action, unqualified column names, or those qualified by the target table name or alias will behave as if qualified by `NEW`, while for the `DELETE` action as if qualified by `OLD`.
 
 The following example modifies the previous example to affect one line, and adds a `RETURNING` clause to return the old and new quantity of goods, and the difference between those values.
 
