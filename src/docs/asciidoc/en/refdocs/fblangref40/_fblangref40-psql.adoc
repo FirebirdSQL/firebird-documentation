@@ -58,7 +58,7 @@ The module body is either a PSQL module body, or an external module body.
 
 [[fblangref40-psql-elements-body-syntax]]
 .Syntax of a Module Body
-[listing,subs=+quotes]
+[listing,subs="+quotes,macros"]
 ----
 <module-body> ::=
   <psql-module-body> | <external-module-body>
@@ -84,6 +84,14 @@ The module body is either a PSQL module body, or an external module body.
 
 <extname> ::=
   '<module-name>!<routine-name>[!<misc-info>]'
+
+<declare-var> ::= !! See <<fblangref40-psql-declare-variable,DECLARE VARIABLE>> !!
+
+<declare-cursor> ::= !! See <<fblangref40-psql-declare-cursor, DECLARE .. CURSOR>> !!
+
+<declare-subfunc> ::= !! See <<fblangref40-psql-declfunc,DECLARE FUNCTION>> !!
+
+<declare-subproc>> ::= !! See <<fblangref40-psql-declproc,DECLARE PROCEDURE>> !!
 ----
 
 [[fblangref40-psql-elements-tbl-body]]
@@ -108,10 +116,10 @@ For example, `RETURN <value>;` is only valid in functions.
 |Named cursor declaration
 
 |declare-subfunc
-|Sub-function declaration
+|Sub-function declaration or forward declaration
 
 |declare-subproc
-|Sub-procedure declaration
+|Sub-procedure declaration or forward declaration
 
 |extname
 |String identifying the external procedure
@@ -1023,10 +1031,16 @@ PSQL
 .Syntax
 [listing,subs="+quotes,macros"]
 ----
-DECLARE FUNCTION _subfuncname_ [ ( [ <in_params> ] ) ]
+<declare-subfunc> ::= <subfunc-forward> | <subfunc-def>
+
+<subfunc-forward> ::= <subfunc-header>;
+
+<subfunc-def> ::= <subfunc-header> <psql-module-body>
+
+<subfunc-header>  ::=
+  DECLARE FUNCTION _subfuncname_ [ ( [ <in_params> ] ) ]
   RETURNS <domain_or_non_array_type> [COLLATE _collation_]
   [DETERMINISTIC]
-  <psql-module-body>
 
 <in_params> ::=
   !! See <<fblangref40-ddl-func-create-syntax,`CREATE FUNCTION` Syntax>> !!
@@ -1057,13 +1071,15 @@ A sub-function is only visible to the PSQL module that defined the sub-function.
 
 Sub-functions have a number of restrictions:
 
-* A sub-function cannot be nested in another sub-routine.
-Sub-routines are only supported in top-level PSQL modules (stored procedures, stored functions, triggers and anonymous PSQL blocks).
+* A sub-function cannot be nested in another subroutine.
+Subroutines are only supported in top-level PSQL modules (stored procedures, stored functions, triggers and anonymous PSQL blocks).
 This restriction is not enforced by the syntax, but attempts to create nested sub-functions will raise an error "`__feature is not supported__`" with detail message "`__nested sub function__`".
-* Currently, the sub-function has no direct access to use variables, cursors and other routines (including itself) from its parent module.
-This may change in a future Firebird version.
-** As a result of this restriction, a sub-function cannot call itself recursively;
-attempts to call it will yield error "`__Function unknown: **subfuncname**__`".
+* Currently, the sub-function has no direct access to use variables and cursors from its parent module.
+However, it can access other routines from its parent modules, including recursive calls to itself.
+In some cases a forward declaration of the routine may be necessary.
+
+A sub-function can be forward declared to resolve mutual dependencies between subroutine, and must be followed by its actual definition.
+When a sub-function is forward declared and has parameters with default values, the default values should only be specified in the forward declaration, and should not be repeated in _subfunc_def_.
 
 [NOTE]
 ====
@@ -1080,7 +1096,8 @@ The `END` of its main `BEGIN ... END` block is considered its terminator.
 [[fblangref40-psql-declfunc-exmpl]]
 ==== Examples of Sub-Functions
 
-.Subfunction within a stored function
+. Subfunction within a stored function
++
 [source]
 ----
 CREATE OR ALTER FUNCTION FUNC1 (n1 INTEGER, n2 INTEGER)
@@ -1098,6 +1115,34 @@ BEGIN
 END
 ----
 
+. Recursive function call
++
+[source]
+----
+execute block returns (i integer, o integer)
+as
+    -- Recursive function without forward declaration.
+    declare function fibonacci(n integer) returns integer
+    as
+    begin
+      if (n = 0 or n = 1) then
+       return n;
+     else
+       return fibonacci(n - 1) + fibonacci(n - 2);
+    end
+begin
+  i = 0;
+
+  while (i < 10)
+  do
+  begin
+    o = fibonacci(i);
+    suspend;
+    i = i + 1;
+  end
+end
+----
+
 .See also
 <<fblangref40-psql-declproc>>, <<fblangref40-ddl-func-create,`CREATE FUNCTION`>>
 
@@ -1113,9 +1158,15 @@ PSQL
 .Syntax
 [listing,subs="+quotes,macros"]
 ----
+<declare-subproc> ::= <subproc-forward> | <subproc-def>
+
+<subproc-forward> ::= <subproc-header>;
+
+<subproc-def> ::= <subproc-header> <psql-module-body>
+
+<subproc-header>  ::=
 DECLARE _subprocname_ [ ( [ <in_params> ] ) ]
   [RETURNS (<out_params>)]
-  <psq-module-body>
 
 <in_params> ::=
   !! See <<fblangref40-ddl-proc-create-syntax,`CREATE PROCEDURE` Syntax>> !!
@@ -1146,13 +1197,15 @@ A sub-procedure is only visible to the PSQL module that defined the sub-procedur
 
 Sub-procedures have a number of restrictions:
 
-* A sub-procedure cannot be nested in another sub-routine.
-Sub-routines are only supported in top-level PSQL modules (stored procedures, stored functions, triggers and anonymous PSQL blocks).
+* A sub-procedure cannot be nested in another subroutine.
+Subroutines are only supported in top-level PSQL modules (stored procedures, stored functions, triggers and anonymous PSQL blocks).
 This restriction is not enforced by the syntax, but attempts to create nested sub-procedures will raise an error "`__feature is not supported__`" with detail message "`__nested sub procedure__`".
-* Currently, the sub-procedure has no direct access to use variables, cursors and other routines (including itself) from its parent module.
-This may change in a future Firebird version.
-** As a result of this restriction, a sub-procedure cannot call itself recursively;
-attempts to call it will yield error "`__Function unknown: **subprocname**__`".
+* Currently, the sub-procedure has no direct access to use variables and cursors from its parent module.
+It can access other routines from its parent modules.
+In some cases a forward declaration may be necessary.
+
+A sub-procedure can be forward declared to resolve mutual dependencies between subroutines, and must be followed by its actual definition.
+When a sub-procedure is forward declared and has parameters with default values, the default values should only be specified in the forward declaration, and should not be repeated in _subproc_def_.
 
 [NOTE]
 ====
@@ -1169,13 +1222,14 @@ The `END` of its main `BEGIN ... END` block is considered its terminator.
 [[fblangref40-psql-subrpoc-exmpl]]
 ==== Examples of Sub-Procedures
 
-.Subroutines in `EXECUTE BLOCK`
+. Subroutines in `EXECUTE BLOCK`
++
 [source]
 ----
 EXECUTE BLOCK
   RETURNS (name VARCHAR(63))
 AS
--- Sub-procedure returning a list of tables
+  -- Sub-procedure returning a list of tables
   DECLARE PROCEDURE get_tables
     RETURNS (table_name VARCHAR(63))
   AS
@@ -1186,7 +1240,7 @@ AS
       INTO table_name
     DO SUSPEND;
   END
--- Sub-procedure returning a list of views
+  -- Sub-procedure returning a list of views
   DECLARE PROCEDURE get_views
     RETURNS (view_name VARCHAR(63))
   AS
@@ -1206,6 +1260,36 @@ BEGIN
     INTO name
   DO SUSPEND;
 END
+----
+
+. With forward declaration and parameter with default value
++
+[source]
+----
+execute block returns (o integer)
+as
+    -- Forward declaration of P1.
+    declare procedure p1(i integer = 1) returns (o integer);
+
+    -- Forward declaration of P2.
+    declare procedure p2(i integer) returns (o integer);
+
+    -- Implementation of P1 should not re-declare parameter default value.
+    declare procedure p1(i integer) returns (o integer)
+    as
+    begin
+        execute procedure p2(i) returning_values o;
+    end
+
+    declare procedure p2(i integer) returns (o integer)
+    as
+    begin
+        o = i;
+    end
+begin
+    execute procedure p1 returning_values o;
+    suspend;
+end
 ----
 
 .See also
