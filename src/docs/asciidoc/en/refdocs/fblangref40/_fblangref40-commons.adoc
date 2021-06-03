@@ -105,7 +105,8 @@ the maximum character count will be determined by the number of bytes used to en
 * Double quotes are _NOT VALID_ for quoting strings.
 The SQL standard reserves double quotes for a different purpose: quoting identifiers.
 * If a literal apostrophe is required within a string constant, it is "`escaped`" by prefixing it with another apostrophe.
-For example, `'Mother O''Reilly's home-made hooch'`.
+For example, `++'Mother O''Reilly''s home-made hooch'++`.
+Or use the alternative quote literal: `++q'{Mother O'Reilly's home-made hooch}'++`
 * Care should be taken with the string length if the value is to be written to a `CHAR` or `VARCHAR` column.
 The maximum length for a `CHAR` or VARCHAR` literal is 32,765 bytes.
 ====
@@ -213,22 +214,26 @@ For example, 0.0000234 can be expressed as `2.34e-5`.
 
 The format of the literal decides the type (`<d>` for a decimal digit, `<h>` for a hexadecimal digit):
 
-[cols="3m,2", frame="all", options="header", stripes="none"]
+[cols="m,", frame="all", options="header", stripes="none"]
 |===
 | Format
 | Type
 
 | <d>[<d> ...]
-| `INTEGER` or `BIGINT` (depends on if value fits in the type)
+| `INTEGER`, `BIGINT`, `INT128` or `DECFLOAT(34)` (depends on if value fits in the type).
+`DECFLOAT(34)` is used for values that do not fit in `INT128`.
 
 | 0{x{vbar}X} <h><h>[<h><h> ...]
 | `INTEGER` for 1-4 <h><h> pairs or `BIGINT` for 5-8 pairs
 
 | <d>[<d> ...] "." [<d> ...]
-| `NUMERIC(18, __n__)` where _n_ depends on the number of digits after the decimal point
+| `NUMERIC(18, __n__)`, `NUMERIC(38, __n__)` or `DECFLOAT(34)` where _n_ depends on the number of digits after the decimal point, and precision on the total number of digits.
+
+For backwards compatibility, some values of 19 digits are mapped to `NUMERIC(18,2)`.
+`DECFLOAT(34)` is used when the unscaled value does not fit in `INT128`.
 
 | <d>[<d> ...]["." [<d> ...]] E <d>[<d> ...]
-| `DOUBLE PRECISION`
+| `DOUBLE PRECISION` or `DECFLOAT(34)`, where `DECFLOAT` is used only if number of digits is 20 or higher, or the absolute exponent is 309 or greater.
 |===
 
 [[fblangref40-commons-hexnumbers]]
@@ -640,13 +645,16 @@ NEXT VALUE FOR _sequence-name_
 
 `NEXT VALUE FOR` returns the next value of a sequence.
 `SEQUENCE` is the SQL-standard term for what is historically called a _generator_ in Firebird and its ancestor, InterBase.
-The `NEXT VALUE FOR` operator is equivalent to the legacy `GEN_ID (..., 1)` function, and is the recommended syntax for retrieving the next sequence value.
+The `NEXT VALUE FOR` operator is equivalent to the legacy `GEN_ID (..., _increment_)` function with _increment_ the increment stored in the metadata of the sequence.
+It is the recommended syntax for retrieving the next sequence value.
 
 [NOTE]
 ====
-Unlike `GEN_ID (..., 1)`, the `NEXT VALUE FOR` variant does not take any parameters and thus, provides no way to retrieve the _current value_ of a sequence, nor to step the next value by more than 1.
+Unlike the `GEN_ID` function, the `NEXT VALUE FOR` expression does not take any parameters and thus, provides no way to retrieve the _current value_ of a sequence, nor to step the next value by a different value than the _increment_ configured for the sequence.
 `GEN_ID (..., <step value>)` is still needed for these tasks.
 A _step value_ of 0 returns the current sequence value.
+
+The _increment_ of a sequence can be configured with the `INCREMENT` clause of <<fblangref40-ddl-sequence-create,`CREATE SEQUENCE`>> or <<fblangref40-ddl-sequence-alter,`ALTER SEQUENCE`>>.
 ====
 
 .Example
@@ -1085,7 +1093,7 @@ If the tested value matches the pattern, taking into account wildcard symbols, t
 ====== Using the `ESCAPE` Character Option
 
 If the search string contains either of the wildcard symbols, the `ESCAPE` clause can be used to specify an escape character.
-The escape character must precede the '```%```' or '```++_++```'} symbol in the search string, to indicate that the symbol is to be interpreted as a literal character.
+The escape character must precede the '```%```' or '```++_++```' symbol in the search string, to indicate that the symbol is to be interpreted as a literal character.
 
 ====== Examples using `LIKE`
 
