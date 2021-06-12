@@ -1,7 +1,7 @@
 [[isql]]
 = Firebird Interactive SQL Utility
 Kamala Vadlamani; Paul Vinkenoog; Norman Dunbar; Mark Rotteveel
-0.9-SNAPSHOT, 12 June 2021
+0.9, 12 June 2021
 :doctype: book
 :sectnums:
 :sectanchors:
@@ -231,9 +231,9 @@ The `TMP` setting on a client can be used to control where these script files wi
 To begin an `isql` session, enter the command line options and the name of the database in the Linux /Unix shell or Windows command console.
 For example:
 
-[listing,subs=+quotes]
+[listing,subs="+quotes,macros,attributes"]
 ----
-isql [__options__] [__database_name_or_alias__]
+isql [__options__] [<<#isql-connect-connection-string-syntax,<database_name{gt}>>]
 ----
 
 [NOTE]
@@ -353,12 +353,14 @@ Users can use this database to experiment with Firebird.
 Note that on some POSIX systems, the example database may not be located in the location given above.
 Each Linux distribution, for example, may have decided to relocate some files.
 
-[listing,subs=+quotes]
+[listing,subs="+quotes,macros,attributes"]
 ----
-CONNECT _database_name_ [USER _username_] [PASSWORD _password_] [ROLE _role_name_];
+CONNECT <<#isql-connect-connection-string-syntax,<database_name{gt}>>
+  [USER _username_] [PASSWORD _password_] [ROLE _role_name_];
 ----
 
 If any of the parameters to the connect command contains spaces, you must wrap that parameter in single or double quotes.
+Since Firebird 3.0, usernames enclosed in double quotes ('```"```') are case-sensitive, just like other delimited identifiers in Firebird.
 
 If username or password are not supplied, then the current values in the `ISC_USER` and `ISC_PASSWORD` environment variables are used instead.
 There is no environment variable to preset the required role.
@@ -395,8 +397,89 @@ SQL> CONNECT 'cosmos:C:\DATABASES\FIREBIRD\MY_EMPLOYEE.FDB'
 Firebird is slash agnostic and automatically converts either type of slash to suit the relevant operating system.
 ====
 
+[[isql-connect-connection-string]]
+=== Connection Strings
+
+The Firebird client library -- and by extension, `isql` -- supports a variety of connection strings.
+
+[[isql-connect-connection-string-syntax]]
+.Connection String Syntax
+[listing,subs="+quotes,attributes"]
+----
+<database_name> ::= [_server_spec_]{_filepath_ | _db_alias_}
+
+<server_spec> ::=
+    _host_[/{_port_ | _service_}]:
+  | {backslash}{backslash}__host__\
+  | <protocol>://[_host_[:{_port_ | _service_}]/]
+
+<protocol> ::= inet | inet4 | inet6 | wnet | xnet
+----
+
+All Firebird versions support the first two connection strings.
+Firebird 3.0 and later also support the third form.
+Support for the `wnet` and `xnet` protocols is only available on Windows.
+
+The actual supported connection strings depends on the Firebird client library in use (`fbclient.dll`/`libfbclient.so`).
+
+The _service_ refers to a service definition in the `services` file of your operating system (Windows: `%WINDIR%\System32\drivers\etc\services`, Linux: `/etc/services`).
+Historically, for Firebird it is `gds-db` or `gds_db` with value `3050/tcp`, however Windows and Linux do not include either entry by default.
+
+[[isql-connect-connection-string-url]]
+==== URL-like Syntax
+
+Firebird 3.0 introduced a unified URL-like syntax for the remote server specification.
+In this syntax, the first part specifies the name of the protocol, then a host name or IP address, port number, and path of the primary database file, or an alias.
+
+The following values can be specified as the protocol:
+
+INET:: TCP/IP (first tries to connect using the IPv6 protocol, if it fails, then IPv4)
+INET4:: TCP/IP v4
+INET6:: TCP/IP v6
+WNET:: NetBEUI or Named Pipes Protocol
+XNET:: local protocol (does not include a host, port and service name)
+
+[listing,subs=+quotes]
+----
+<protocol>://[_host_[:{_port_ | _service_}]/]{_filepath_ | _db_alias_}
+----
+
+The standard text form of an IPv6 address uses the colon character to separate groups of digits (upto 8 groups of digits).
+In the connection string, the IPv6 address must be enclosed in square brackets, to resolve the ambiguity with the use of the colon as the separator between the host IP address and database path.
+For example:
+
+[listing]
+----
+connect '[2014:1234::5]:test';
+connect '[2014:1234::5]/3049:/srv/firebird/test.fdb';
+----
+
+[NOTE]
+====
+For consistency, square brackets can be optionally used around an IPv4 address or domain name.
+====
+
+[[isql-connect-connection-string-legacy]]
+==== Legacy Connection Strings
+
+Firebird also has two "`legacy`" connection strings supported by all Firebird versions.
+
+If you use the TCP/IP protocol to create a database, the primary file specification should look like this:
+
+[listing,subs=+quotes]
+----
+_host_[/{_port_|_service_}]:{_filepath_ | _db_alias_}
+----
+
+If you use the Named Pipes protocol to create a database on a Windows server, the primary file specification should look like this:
+
+[listing,subs="+quotes,attributes"]
+----
+{backslash}{backslash}__host__\{_filepath_ | _db_alias_}
+----
+
 [[isql-connect-alias]]
-=== Using Database Aliases
+==== Using Database Aliases
 
 In the examples above, we have been using the full path to the database file.
 This has a disadvantage in that all clients will be able to determine exactly where the database is to be found, or, may cause problems when the database has to be moved.
@@ -404,7 +487,7 @@ To alleviate these problems, database aliases can be used.
 
 Once Firebird has been installed, a file named `databases.conf` (Firebird 3.0 and higher) or `aliases.conf` (Firebird 2.5 and earlier) can be found in the main installation folder.
 By adding an entry to this folder, the full path to the database can be simplified to an alias.
-This makes connecting easier, hides the actual database path from inquisitive users and allows the database to be moved around as necessary without having to change all the clients to allow them to connect to the database at the new location.
+This makes connecting easier, hides the actual database path from inquisitive users, and allows the database to be moved around as necessary without having to change all the clients to allow them to connect to the database at the new location.
 
 To create an alias for the database currently known as `/databases/firebird/MY_EMPLOYEE.FDB` on the cosmos Linux server, we need to add the following to the `aliases.conf` file on the cosmos server.
 By default, this will be in the folder `/opt/firebird`.
@@ -417,10 +500,11 @@ my_employee = /databases/firebird/MY_EMPLOYEE.FDB
 
 There should be no quotes around the path to the database file.
 
-Regardless of where the database file is currently located, or if it has its physical filename renamed, etc, all the local users will refer to the database simply as _my_employee_.
+Regardless of the current location of the database file, or if it has its physical filename renamed, etc, all the local users will refer to the database simply as _my_employee_.
 Remote users will refer to this database as _cosmos:my_employee_.
-The following example shows an `isql` session being connected locally to the database using the alias rather than a full path:
+The following example shows an `isql` session connecting locally to the database using the alias rather than a full path:
 
+[listing]
 ----
 $ /opt/firebird/bin/isql my_employee
 Database:  test, User: sysdba
@@ -428,8 +512,9 @@ Database:  test, User: sysdba
 SQL>
 ----
 
-Alternatively, a remote connection would be made as follows, specifying the server name and the database alias together:
+Alternatively, a remote connection would be made as follows, specifying the server name and database alias together:
 
+[listing]
 ----
 $ isql cosmos:my_employee
 Database:  cosmos:my_employee
@@ -437,7 +522,7 @@ Database:  cosmos:my_employee
 SQL>
 ----
 
-Because the alias is defined on the server where the database resides, the remote client needs to supply the server name and the alias (as defined on that server) in order to make a connection.
+Because the alias is defined on the server where the database resides, the remote client needs to supply the server name and alias (as defined on that server) in order to connect.
 
 Using the `CONNECT` command in an existing `isql` session is equally simple using aliases:
 
@@ -478,10 +563,14 @@ SQL>CREATE DATABASE 'C:\test\monkey.fdb' page_size 8192
 CON>user SYSDBA password 'masterkey';
 ----
 
+For the full syntax of `CREATE DATABASE`, refer to the Language Reference of your Firebird version.
+For example, the https://www.firebirdsql.org/file/documentation/html/en/refdocs/fblangref40/firebird-40-language-reference.html#fblangref40-ddl-db-create[Firebird 4.0 Language Reference section on `CREATE DATABASE`].
+
 [NOTE]
 ====
 In the `CREATE DATABASE` statement it is _mandatory_ to place quote characters (single or double) around path and password.
 In Firebird 2.5 and earlier, it is also required to do this for usernames.
+Since Firebird 3.0, usernames enclosed in double quotes ('```"```') are case-sensitive, just like other delimited identifiers in Firebird.
 
 When running Classic Server on Linux, if the database is not started with a host name, the database file will be created with the Linux login name as the owner.
 This may cause access rights to others who may want to connect at a later stage.
@@ -3183,7 +3272,9 @@ a| * Added missing Firebird 3.0 and 4.0 features (`SET MAXROWS`, `SET EXPLAIN`, 
 |0.9
 |12 Jun 2021
 |MR
-|Fixed wrong scope of `SET NAMES` (https://github.com/FirebirdSQL/firebird-documentation/issues/153[firebird-documentation#153])
+a|* Fixed wrong scope of `SET NAMES` (https://github.com/FirebirdSQL/firebird-documentation/issues/153[firebird-documentation#153])
+* Documented connection strings (https://github.com/FirebirdSQL/firebird-documentation/issues/110[firebird-documentation#110])
+* Add link to Firebird 4.0 Language Reference for `CREATE DATABASE` syntax
 |===
 
 :sectnums:
