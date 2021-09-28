@@ -24,6 +24,9 @@ NOTE: Creating chunked output is experimental.
     component-numbers-inherit=true `
     persistent-toc=true `
     resource-base-uri=../../../ `
+    lists-of-examples=false `
+    lists-of-figures=false `
+    lists-of-tables=false `
     --resources:/output `
     -- `
     "-xsl:/input/custom.xsl"      
