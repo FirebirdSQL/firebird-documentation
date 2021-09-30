@@ -11,6 +11,14 @@
 
   <xsl:import href="https://cdn.docbook.org/release/xsltng/current/xslt/docbook.xsl"/>
 
+  <xsl:param name="css-links" select="'css/firebird.css css/firebird-screen.css'"/>
+  <xsl:param name="persistent-toc-css" select="'css/firebird-toc.css'"/>
+  <xsl:param name="persistent-toc" select="'true'"/>
+  <xsl:param name="component-numbers-inherit" as="xs:string" select="'true'"/>
+  <xsl:param name="lists-of-figures" as="xs:string" select="'false'"/>
+  <xsl:param name="lists-of-tables" as="xs:string" select="'false'"/>
+  <xsl:param name="lists-of-examples" as="xs:string" select="'false'"/>
+
   <!-- Ensure filenames are derived from id -->
   <xsl:template match="db:chapter|db:section|db:appendix|db:part" mode="m:chunk-filename">
     <xsl:sequence select="f:generate-id(.)"/>

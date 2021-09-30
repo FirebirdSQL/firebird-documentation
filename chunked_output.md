@@ -21,12 +21,7 @@ NOTE: Creating chunked output is experimental.
     /input/en/refdocs/fblangref40/firebird-40-language-reference.xml `
     chunk-output-base-uri=/output/en/refdocs/fblangref40/ `
     chunk=firebird-40-language-reference.html `
-    component-numbers-inherit=true `
-    persistent-toc=true `
     resource-base-uri=../../../ `
-    lists-of-examples=false `
-    lists-of-figures=false `
-    lists-of-tables=false `
     --resources:/output `
     -- `
     "-xsl:/input/custom.xsl"      
