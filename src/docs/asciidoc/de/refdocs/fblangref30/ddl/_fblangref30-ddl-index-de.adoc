@@ -1,0 +1,462 @@
+[[fblangref30-ddl-index-de]]
+= `INDEX`
+
+Ein Index ist ein Datenbankobjekt, das zum schnelleren Abrufen von Daten aus einer Tabelle oder zum schnelleren Sortieren in einer Abfrage verwendet wird.
+Indizes werden auch verwendet, um die referenziellen Integritätsbedingungen `PRIMARY KEY`, `FOREIGN KEY` und `UNIQUE` zu erzwingen.
+
+In diesem Abschnitt wird beschrieben, wie Sie Indizes erstellen, aktivieren und deaktivieren, löschen und Statistiken dazu sammeln (Selektivität neu berechnen).
+
+[[fblangref30-ddl-idx-create-de]]
+== `CREATE INDEX`
+
+.Verwendet für
+Erstellen eines Index für eine Tabelle
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE [UNIQUE] [ASC[ENDING] | DESC[ENDING]]
+  INDEX _indexname_ ON _tablename_
+  {(_col_ [, _col_ …]) | COMPUTED BY (<expression>)}
+----
+
+[[fblangref30-ddl-idx-createidx-de]]
+.`CREATE INDEX`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|indexname
+|Indexname.
+Es kann aus bis zu 31 Zeichen bestehen
+
+|tablename
+|Der Name der Tabelle, für die der Index erstellt werden soll
+
+|col
+|Name einer Spalte in der Tabelle.
+Spalten der Typen `BLOB` und `ARRAY` sowie berechnete Felder können nicht in einem Index verwendet werden
+
+|expression
+|Der Ausdruck, der die Werte für einen berechneten Index berechnet, auch als "`Ausdrucksindex`" bekannt
+|===
+
+Die `CREATE INDEX`-Anweisung erstellt einen Index für eine Tabelle, mit dem das Suchen, Sortieren und Gruppieren beschleunigt werden kann.
+Indizes werden beim Definieren von Constraints wie Primärschlüssel-, Fremdschlüssel- oder Unique-Constraints automatisch erstellt.
+
+Ein Index kann auf dem Inhalt von Spalten jedes Datentyps mit Ausnahme von 'BLOB' und Arrays erstellt werden.
+Der Name (Bezeichner) eines Index muss unter allen Indexnamen eindeutig sein.
+
+.Schlüsselindizes
+[NOTE]
+====
+Wenn einer Tabelle oder Spalte ein Primärschlüssel, Fremdschlüssel oder eine eindeutige Einschränkung hinzugefügt wird, wird automatisch ein Index mit demselben Namen ohne ausdrückliche Anweisung des Designers erstellt.
+Der Index `PK_COUNTRY` wird beispielsweise automatisch erstellt, wenn Sie die folgende Anweisung ausführen und festschreiben:
+
+[source]
+----
+ALTER TABLE COUNTRY ADD CONSTRAINT PK_COUNTRY
+  PRIMARY KEY (ID);
+----
+====
+
+[[fblangref30-ddl-idx-createidx-who-de]]
+=== Wer kann einen Index erstellen?
+
+Die `CREATE INDEX`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref30-security-administrators-de,Administratoren>>
+* Der Besitzer der Tabelle
+* Benutzer mit dem `ALTER ANY TABLE`-Privileg
+
+[[fblangref30-ddl-idx-uq-de]]
+=== Eindeutige Indizes
+
+Die Angabe des Schlüsselworts `UNIQUE` in der Anweisung zur Indexerstellung erstellt einen Index, in dem die Eindeutigkeit in der gesamten Tabelle erzwungen wird.
+Der Index wird als „eindeutiger Index“ bezeichnet.
+Ein eindeutiger Index ist keine Einschränkung.
+
+Eindeutige Indizes dürfen keine doppelten Schlüsselwerte (oder doppelte Schlüsselwertkombinationen im Fall von _zusammengesetzten_ oder mehrspaltigen oder mehrsegmentigen) Indizes enthalten.
+Doppelte ``NULL``s sind gemäß dem SQL:99-Standard sowohl in Einzelsegment- als auch in Mehrfachsegment-Indizes erlaubt.
+
+[[fblangref30-ddl-idx-drctn-de]]
+=== Indexrichtung
+
+Alle Indizes in Firebird sind unidirektional.
+Ein Index kann vom niedrigsten Wert zum höchsten (aufsteigende Reihenfolge) oder vom höchsten zum niedrigsten Wert (absteigende Reihenfolge) aufgebaut werden. Die Schlüsselwörter `ASC[ENDING]` und `DESC[ENDING]` werden verwendet, um die Richtung des Index anzugeben.
+Die Standardindexreihenfolge ist `ASC[ENDING]`.
+Es ist durchaus zulässig, sowohl einen aufsteigenden als auch einen absteigenden Index für dieselbe Spalte oder denselben Schlüsselsatz zu definieren.
+
+[TIP]
+====
+Ein absteigender Index kann für eine Spalte nützlich sein, die nach den hohen Werten (""neuest", Maximum usw.) gesucht wird.
+====
+
+[NOTE]
+====
+Firebird verwendet B-tree-Indizes, die bidirektional sind.
+Aufgrund technischer Einschränkungen verwendet Firebird jedoch einen Index nur in eine Richtung.
+
+Siehe auch https://www.ibphoenix.com/resources/documents/design/doc_20[Firebird für den Datenbankexperten: Episode 3 – Auf Datenträgerkonsistenz]
+====
+
+[[fblangref30-ddl-idx-exprssn-de]]
+=== Berechnete (Ausdrucks-)Indizes
+
+Beim Erstellen eines Index können Sie die `COMPUTED BY`-Klausel verwenden, um einen Ausdruck anstelle einer oder mehrerer Spalten anzugeben.
+Berechnete Indizes werden in Abfragen verwendet, bei denen die Bedingung in einer `WHERE`-, `ORDER BY`- oder `GROUP BY`-Klausel genau mit dem Ausdruck in der Indexdefinition übereinstimmt.
+Der Ausdruck in einem berechneten Index kann mehrere Spalten in der Tabelle umfassen.
+
+[HINWEIS]
+====
+Sie können tatsächlich einen berechneten Index für ein berechnetes Feld erstellen, aber ein solcher Index wird niemals verwendet.
+====
+
+[[fblangref30-ddl-idx-limits-de]]
+=== Beschränkungen für Indizes
+
+Für Indizes gelten bestimmte Grenzen.
+
+Die maximale Länge eines Schlüssels in einem Index ist auf ¼ der Seitengröße begrenzt.
+
+[[fblangref30-ddl-idx-maxno-de]]
+==== Maximale Indizes pro Tabelle
+
+Die Anzahl der Indizes, die für jede Tabelle untergebracht werden können, ist begrenzt.
+Das tatsächliche Maximum für eine bestimmte Tabelle hängt von der Seitengröße und der Anzahl der Spalten in den Indizes ab.
+
+[[fblangref30-ddl-idx-idxpertbl-de]]
+.Maximale Indizes pro Tabelle
+[%autowidth,cols=">1,>1,>1,>1",stripes="none"]
+|===
+.2+^h|Seitengröße (Page size)
+3+^h|Anzahl der Indizes abhängig von der Spaltenanzahl
+
+^h|Einspaltig
+^h|Zweispaltig
+^h|Dreispaltig
+
+|4096
+|203
+|145
+|113
+
+|8192
+|408
+|291
+|227
+
+|16384
+|818
+|584
+|454
+|===
+
+[[fblangref30-ddl-idx-maxstrnglgth-de]]
+==== Zeichenindexbeschränkungen
+
+Die maximale Länge der indizierten Zeichenfolge beträgt 9 Byte weniger als die maximale Schlüssellänge.
+Die maximale Länge der indexierbaren Zeichenfolge hängt von der Seitengröße und dem Zeichensatz ab.
+
+[[fblangref30-ddl-idx-idxstrnglgth-de]]
+.Maximale indexierbare (VAR)CHAR-Länge
+[%autowidth,cols=">1,>1,>1,>1,>1", stripes="none"]
+|===
+.2+^h|Seitengröße (Page size)
+4+^h|Maximale Länge der indizierbaren Zeichenfolge nach Zeichensatztyp
+
+^h|1 Byte/Zeichen
+^h|2 Bytes/Zeichen
+^h|3 Bytes/Zeichen
+^h|4 Bytes/Zeichen
+
+|4096
+|1015
+|507
+|338
+|253
+
+|8192
+|2039
+|1019
+|679
+|509
+
+|16384
+|4087
+|2043
+|1362
+|1021
+|===
+
+[[fblangref30-ddl-idx-crtidxexmpls-de]]
+=== Beispiele für die Verwendung von `CREATE INDEX`
+
+. Erstellen eines Index für die Spalte `UPDATER_ID` in der Tabelle `SALARY_HISTORY`
++
+[source]
+----
+CREATE INDEX IDX_UPDATER
+  ON SALARY_HISTORY (UPDATER_ID);
+----
+. Erstellen eines Index mit in absteigender Reihenfolge sortierten Schlüsseln für die Spalte `CHANGE_DATE` in der Tabelle `SALARY_HISTORY`
++
+[source]
+----
+CREATE DESCENDING INDEX IDX_CHANGE
+  ON SALARY_HISTORY (CHANGE_DATE);
+----
+. Erstellen eines Multi-Segment-Index für die Spalten `ORDER_STATUS`, `PAID` in der Tabelle `SALES`
++
+[source]
+----
+CREATE INDEX IDX_SALESTAT
+  ON SALES (ORDER_STATUS, PAID);
+----
+. Erstellen eines Index, der keine doppelten Werte für die Spalte `NAME` in der Tabelle `COUNTRY` zulässt
++
+[source]
+----
+CREATE UNIQUE INDEX UNQ_COUNTRY_NAME
+  ON COUNTRY (NAME);
+----
+. Erstellen eines berechneten Index für die Tabelle `PERSONS`
++
+[source]
+----
+CREATE INDEX IDX_NAME_UPPER ON PERSONS
+  COMPUTED BY (UPPER (NAME));
+----
++
+Ein Index wie dieser kann für eine Suche ohne Beachtung der Groß-/Kleinschreibung verwendet werden:
++
+[source]
+----
+SELECT *
+FROM PERSONS
+WHERE UPPER(NAME) STARTING WITH UPPER('Iv');
+----
+
+.Siehe auch
+<<fblangref30-ddl-idx-altridx-de>>, <<fblangref30-ddl-idx-dropidx-de>>
+
+[[fblangref30-ddl-idx-altridx-de]]
+== `ALTER INDEX`
+
+.Verwendet für
+Aktivieren oder Deaktivieren eines Indexes;
+Neuerstellung eines Index
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER INDEX _indexname_ {ACTIVE | INACTIVE}
+----
+
+[[fblangref30-ddl-idx-alteridx-de]]
+.`ALTER INDEX`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|indexname
+|Indexname
+|===
+
+Die `ALTER INDEX`-Anweisung aktiviert oder deaktiviert einen Index.
+Diese Anweisung bietet keine Möglichkeit, irgendwelche Attribute des Indexes zu ändern.
+
+`INAKTIV`::
+Mit der Option `INACTIVE` wird der Index vom aktiven in den inaktiven Zustand geschaltet.
+Die Wirkung ist ähnlich wie bei der `DROP INDEX`-Anweisung, außer dass die Indexdefinition in der Datenbank verbleibt.
+Das Ändern eines Einschränkungsindex in den inaktiven Zustand ist nicht zulässig.
++
+Ein aktiver Index kann deaktiviert werden, wenn keine Abfragen mit diesem Index vorbereitet sind;
+andernfalls wird ein Fehler "`object in use`" zurückgegeben.
++
+Die Aktivierung eines inaktiven Index ist ebenfalls sicher.
+Wenn jedoch aktive Transaktionen vorhanden sind, die die Tabelle ändern, schlägt die Transaktion mit der Anweisung `ALTER INDEX` fehl, wenn sie das Attribut `NOWAIT` besitzt.
+Wenn sich die Transaktion im `WAIT`-Modus befindet, wartet sie auf den Abschluss gleichzeitiger Transaktionen.
++
+Auf der anderen Seite der Medaille, wenn unser `ALTER INDEX` erfolgreich ist und beginnt, den Index bei `COMMIT` neu aufzubauen, werden andere Transaktionen, die diese Tabelle ändern, fehlschlagen oder warten, entsprechend ihren `WAIT`/`NO WAIT`-Attributen.
+Genauso verhält es sich mit `CREATE INDEX`.
++
+.Wofür ist es nützlich?
+[NOTE]
+====
+Es kann sinnvoll sein, einen Index in den inaktiven Zustand zu versetzen, während ein großer Satz von Datensätzen in der Tabelle, die den Index besitzt, eingefügt, aktualisiert oder gelöscht wird.
+====
+
+`AKTIV`::
+Mit der Option 'ACTIVE' wird der Index, wenn er sich im inaktiven Zustand befindet, in den aktiven Zustand geschaltet und das System baut den Index neu auf.
++
+.Wofür ist es nützlich?
+[NOTE]
+====
+Auch wenn der Index _active_ ist, wenn `ALTER INDEX ... ACTIVE` ausgeführt wird, wird der Index neu aufgebaut.
+Das Neuerstellen von Indizes kann ein nützliches Stück Haushaltsführung sein, um gelegentlich die Indizes einer großen Tabelle in einer Datenbank zu verwalten, die häufig eingefügt, aktualisiert oder gelöscht wird, aber selten wiederhergestellt wird.
+====
+
+[[fblangref30-ddl-idx-altridx-who-de]]
+=== Wer kann einen Index ändern?
+
+Die `ALTER INDEX`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref30-security-administrators-de,Administratoren>>
+* Der Besitzer der Tabelle
+* Benutzer mit dem `ALTER ANY TABLE`-Privileg
+
+[[fblangref30-ddl-idx-altrcnstrntidx-de]]
+=== Verwendung von `ALTER INDEX` für einen Einschränkungsindex
+
+Das Ändern des Index eines `PRIMARY KEY`, `FOREIGN KEY` oder `UNIQUE` Constraints in `INACTIVE` ist nicht erlaubt.
+`ALTER INDEX ... ACTIVE` funktioniert jedoch bei Constraint-Indizes genauso gut wie bei anderen, als Werkzeug zum Neuaufbau von Indizes.
+
+[[fblangref30-ddl-idx-altridx-example-de]]
+=== ALTER INDEX-Beispiele
+
+. Deaktivieren des `IDX_UPDATER`-Index
++
+[source]
+----
+ALTER INDEX IDX_UPDATER INACTIVE;
+----
+. Den `IDX_UPDATER`-Index zurück in den aktiven Zustand schalten und neu aufbauen
++
+[source]
+----
+ALTER INDEX IDX_UPDATER ACTIVE;
+----
+
+.Siehe auch
+<<fblangref30-ddl-idx-create-de>>, <<fblangref30-ddl-idx-dropidx-de>>, <<fblangref30-ddl-idx-setsttstcs-de>>
+
+[[fblangref30-ddl-idx-dropidx-de]]
+== `DROP INDEX`
+
+.Verwendet für
+Einen Index löschen (löschen)
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP INDEX _indexname_
+----
+
+[[fblangref30-ddl-idx-dropidx-tbl-de]]
+.`DROP INDEX`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|indexname
+|Indexname
+|===
+
+Die `DROP INDEX`-Anweisung löscht (löscht) den benannten Index aus der Datenbank.
+
+[NOTE]
+====
+Ein Einschränkungsindex kann nicht mit `DROP INDEX` gelöscht werden.
+Constraint-Indizes werden während der Ausführung des Befehls `ALTER TABLE ... DROP CONSTRAINT ...` gelöscht.
+====
+
+[[fblangref30-ddl-idx-dropidx-who-de]]
+=== Wer kann einen Index löschen?
+
+Die `DROP INDEX`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref30-security-administrators-de,Administratoren>>
+* Der Besitzer der Tabelle
+* Benutzer mit dem `ALTER ANY TABLE`-Privileg
+
+[[fblangref30-ddl-idx-dropidx-example-de]]
+=== DROP INDEX-Beispiel
+
+.Löschen des `IDX_UPDATER`-Index
+[source]
+----
+DROP INDEX IDX_UPDATER;
+----
+
+.Siehe auch
+<<fblangref30-ddl-idx-create-de>>, <<fblangref30-ddl-idx-altridx-de>>
+
+[[fblangref30-ddl-idx-setsttstcs-de]]
+== `SET STATISTICS`
+
+.Verwendet für
+Neuberechnung der Selektivität eines Index
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET STATISTICS INDEX _indexname_
+----
+
+[[fblangref30-ddl-idx-setsttstcs-tbl-de]]
+.`SET STATISTICS`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|indexname
+|Indexname
+|===
+
+Die Anweisung `SET STATISTICS` berechnet die Selektivität des angegebenen Index neu.
+
+[[fblangref30-ddl-idx-setsttstcs-who-de]]
+=== Wer kann Indexstatistiken aktualisieren?
+
+Die Anweisung `SET STATISTICS` kann ausgeführt werden durch:
+
+* <<fblangref30-security-administrators-de,Administratoren>>
+* Der Besitzer der Tabelle
+* Benutzer mit dem `ALTER ANY TABLE`-Privileg
+
+[[fblangref30-ddl-idx-selectivity-de]]
+=== Indexselektivität
+
+Die Selektivität eines Index ergibt sich aus der Auswertung der Anzahl der Zeilen, die bei einer Suche nach jedem Indexwert ausgewählt werden können.
+Ein eindeutiger Index hat die maximale Selektivität, da es unmöglich ist, mehr als eine Zeile für jeden Wert eines Indexschlüssels auszuwählen, wenn dieser verwendet wird.
+Die Selektivität eines Index auf dem neuesten Stand zu halten ist wichtig für die Auswahl des Optimierers bei der Suche nach dem optimalsten Abfrageplan.
+
+Indexstatistiken in Firebird werden als Reaktion auf große Mengen von Einfügungen, Aktualisierungen oder Löschungen nicht automatisch neu berechnet.
+Es kann von Vorteil sein, die Selektivität eines Index nach solchen Operationen neu zu berechnen, da die Selektivität dazu neigt, veraltet zu werden.
+
+[NOTE]
+====
+Die Anweisungen `CREATE INDEX` und `ALTER INDEX ACTIVE` speichern beide Indexstatistiken, die vollständig dem Inhalt des neu erstellten Index entsprechen.
+====
+
+Es kann unter gleichzeitiger Last ohne Beschädigungsrisiko ausgeführt werden.
+Beachten Sie jedoch, dass die neu berechneten Statistiken bei gleichzeitiger Belastung veraltet sein können, sobald `SET STATISTICS` beendet ist.
+
+[[fblangref30-ddl-idx-setsttstcs-example-de]]
+=== Beispiel für die Verwendung von SET STATISTICS
+
+.Neuberechnung der Selektivität des Indexes `IDX_UPDATER`
+[source]
+----
+SET STATISTICS INDEX IDX_UPDATER;
+----
+
+.Siehe auch
+<<fblangref30-ddl-idx-create-de>>, <<fblangref30-ddl-idx-altridx-de>>

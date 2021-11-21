@@ -1,0 +1,463 @@
+[[fblangref30-ddl-view-de]]
+= `VIEW`
+
+Eine Ansicht (View) ist eine virtuelle Tabelle, die eigentlich eine gespeicherte und benannte `SELECT`-Abfrage zum Abrufen von Daten beliebiger Komplexität ist.
+Daten können aus einer oder mehreren Tabellen, aus anderen Ansichten und auch aus auswählbaren gespeicherten Prozeduren abgerufen werden.
+
+Im Gegensatz zu regulären Tabellen in relationalen Datenbanken ist eine Ansicht kein unabhängiger Datensatz, der in der Datenbank gespeichert ist.
+Das Ergebnis wird bei Auswahl der Ansicht dynamisch als Datensatz erstellt.
+
+Die Metadaten einer View stehen dem Prozess zur Verfügung, der den Binärcode für Stored Procedures und Trigger generiert, als wären es konkrete Tabellen, die persistente Daten speichern.
+
+[[fblangref30-ddl-view-create-de]]
+== `CREATE VIEW`
+
+.Verwendet für
+Erstellen einer Ansicht
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE VIEW _viewname_ [<full_column_list>]
+  AS <select_statement>
+  [WITH CHECK OPTION]
+
+<full_column_list> ::= (_colname_ [, _colname_ ...])
+----
+
+[[fblangref30-ddl-view-createview-tbl-de]]
+.`CREATE VIEW`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|viewname
+|Name der Ansicht (View), maximal 31 Zeichen
+
+|select_statement
+|SELECT-Anweisung
+
+|full_column_list
+|Die Liste der Spalten in der Ansicht
+
+|colname
+|Spaltennamen anzeigen.
+Doppelte Spaltennamen sind nicht zulässig.
+|===
+
+Die Anweisung `CREATE VIEW` erstellt eine neue Ansicht.
+Der Bezeichner (Name) einer Ansicht muss unter den Namen aller Ansichten, Tabellen und gespeicherten Prozeduren in der Datenbank eindeutig sein.
+
+Auf den Namen der neuen Ansicht kann die Liste der Spaltennamen folgen, die beim Aufrufen der Ansicht an den Aufrufer zurückgegeben werden sollen.
+Namen in der Liste müssen sich nicht auf die Namen der Spalten in den Basistabellen beziehen, von denen sie abgeleitet sind.
+
+Wenn die Ansichtsspaltenliste weggelassen wird, verwendet das System die Spaltennamen und/oder Aliase aus der `SELECT`-Anweisung.
+Wenn doppelte Namen oder ausdrucksabgeleitete Spalten ohne Alias das Abrufen einer gültigen Liste unmöglich machen, schlägt die Erstellung der Ansicht mit einem Fehler fehl.
+
+Die Anzahl der Spalten in der Liste der View muss genau mit der Anzahl der Spalten in der Auswahlliste der zugrunde liegenden SELECT-Anweisung in der View-Definition übereinstimmen.
+
+.Zusätzliche Punkte
+[NOTE]
+====
+* Wenn die vollständige Liste der Spalten angegeben ist, macht es keinen Sinn, Aliase in der `SELECT`-Anweisung anzugeben, da die Namen in der Spaltenliste diese überschreiben
+* Die Spaltenliste ist optional, wenn alle Spalten im `SELECT` explizit benannt und in der Auswahlliste eindeutig sind
+====
+
+[[fblangref30-ddl-view-create-updatable-de]]
+=== Aktualisierbare Ansichten
+
+Eine Ansicht kann aktualisierbar oder schreibgeschützt sein.
+Wenn eine View aktualisierbar ist, können die beim Aufruf dieser View abgerufenen Daten durch die DML-Anweisungen `INSERT`, `UPDATE`, `DELETE`, `UPDATE OR INSERT` oder `MERGE` geändert werden.
+In einer aktualisierbaren Ansicht vorgenommene Änderungen werden auf die zugrunde liegende(n) Tabelle(n) angewendet.
+
+Eine schreibgeschützte Ansicht kann mithilfe von Triggern aktualisierbar gemacht werden.
+Sobald Trigger für eine Ansicht definiert wurden, werden an sie gesendete Änderungen nie automatisch in die zugrunde liegende Tabelle geschrieben, selbst wenn die Ansicht von Anfang an aktualisierbar war.
+Es liegt in der Verantwortung des Programmierers sicherzustellen, dass die Trigger die Basistabellen nach Bedarf aktualisieren (oder aus ihnen löschen oder einfügen).
+
+Eine Ansicht ist automatisch aktualisierbar, wenn alle folgenden Bedingungen erfüllt sind:
+
+* die `SELECT`-Anweisung fragt nur eine Tabelle oder eine aktualisierbare Ansicht ab
+* die `SELECT`-Anweisung ruft keine gespeicherten Prozeduren auf
+* jede nicht in der Ansichtsdefinition vorhandene Spalte der Basistabelle (oder Basisansicht) erfüllt eine der folgenden Bedingungen:
+** es ist nullable
+** es hat einen Nicht-``NULL``-Standardwert
+** es hat einen Trigger, der einen zulässigen Wert liefert
+* die `SELECT`-Anweisung enthält keine Felder, die von Unterabfragen oder anderen Ausdrücken abgeleitet sind
+* die `SELECT`-Anweisung enthält keine Felder, die durch Aggregatfunktionen (`MIN`, `MAX`, `AVG`, `SUM`, `COUNT`, `LIST` usw.), statistische Funktionen (`CORR`, `COVAR_POP`, `COVAR_SAMP`, etc.), lineare Regressionsfunktionen (`REGR_AVGX`, `REGR_AVGY`, etc.) oder jede Art von Fensterfunktion
+* die `SELECT`-Anweisung enthält keine `ORDER BY`-, `GROUP BY`- oder `HAVING`-Klausel
+* die `SELECT`-Anweisung enthält weder das Schlüsselwort `DISTINCT` noch zeilenbeschränkende Schlüsselwörter wie `ROWS`, `FIRST`, `SKIP`, `OFFSET` oder `FETCH`
+
+[[fblangref30-ddl-view-create-chkopt-de]]
+=== `WITH CHECK OPTION`
+
+Die optionale `WITH CHECK OPTION`-Klausel erfordert eine aktualisierbare Ansicht, um zu prüfen, ob neue oder aktualisierte Daten die in der `WHERE`-Klausel der `SELECT`-Anweisung angegebene Bedingung erfüllen.
+Bei jedem Versuch, einen neuen Datensatz einzufügen oder einen bestehenden zu aktualisieren, wird geprüft, ob der neue oder aktualisierte Datensatz die 'WHERE'-Kriterien erfüllen würde.
+Wenn sie die Prüfung nicht bestehen, wird die Operation nicht ausgeführt und eine entsprechende Fehlermeldung zurückgegeben.
+
+`WITH CHECK OPTION` kann nur in einer `CREATE VIEW`-Anweisung angegeben werden, in der eine `WHERE`-Klausel vorhanden ist, um die Ausgabe der `SELECT`-Hauptanweisung einzuschränken.
+Andernfalls wird eine Fehlermeldung zurückgegeben.
+
+.Bitte beachten Sie:
+[IMPORTANT]
+====
+Wenn `WITH CHECK OPTION` verwendet wird, prüft die Engine die Eingabe gegen die `WHERE`-Klausel, bevor sie irgendetwas an die Basisrelation übergibt.
+Wenn die Prüfung der Eingabe fehlschlägt, werden daher keine Standardklauseln oder Trigger für die Basisrelation, die möglicherweise zur Korrektur der Eingabe entworfen wurden, in Aktion treten.
+
+Darüber hinaus werden View-Felder, die in der `INSERT`-Anweisung weggelassen wurden, als ``NULL``s an die Basisrelation übergeben, unabhängig davon, ob sie in der `WHERE`-Klausel vorhanden oder nicht vorhanden sind.
+Daher werden die für solche Felder definierten Basistabellen-Standardwerte nicht angewendet.
+Trigger hingegen werden wie erwartet ausgelöst und funktionieren.
+
+Bei Ansichten, die nicht über `WITH CHECK OPTION` verfügen, werden Felder, die in der `INSERT`-Anweisung weggelassen wurden, überhaupt nicht an die Basisrelation übergeben, sodass alle Standardwerte angewendet werden.
+====
+
+[[fblangref30-ddl-view-create-who-de]]
+=== Wer kann eine Ansicht erstellen?
+
+Die `CREATE VIEW`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref30-security-administrators-de,Administratoren>>
+* Benutzer mit dem Privileg `CREATE VIEW`
+
+Der Ersteller einer Ansicht wird ihr Eigentümer.
+
+Um eine Ansicht zu erstellen, benötigt ein Nicht-Administrator-Benutzer außerdem mindestens 'SELECT'-Zugriff auf die zugrunde liegende(n) Tabelle(n) und/oder Ansicht(en) und das 'EXECUTE'-Privileg für alle beteiligten auswählbaren gespeicherten Prozeduren.
+
+Um Einfügungen, Aktualisierungen und Löschungen über die Ansicht zu ermöglichen, muss der Ersteller/Eigentümer auch die entsprechenden `INSERT`, `UPDATE` und `DELETE`-Rechte für das/die zugrunde liegende(n) Objekt(e) besitzen.
+
+Anderen Benutzern Berechtigungen für die Ansicht zu erteilen ist nur möglich, wenn der Ansichtsbesitzer diese Berechtigungen für die zugrunde liegenden Objekte hat `WITH GRANT OPTION`.
+Dies ist immer dann der Fall, wenn der View-Eigentümer auch der Eigentümer der zugrunde liegenden Objekte ist.
+
+[[fblangref30-ddl-view-create-example-de]]
+===Beispiele für das Erstellen von Ansichten
+
+. Erstellen einer Ansicht, die die Spalten `JOB_CODE` und `JOB_TITLE` nur für die Jobs zurückgibt, bei denen `MAX_SALARY` weniger als 15.000 USD beträgt.
++
+[source]
+----
+CREATE VIEW ENTRY_LEVEL_JOBS AS
+SELECT JOB_CODE, JOB_TITLE
+FROM JOB
+WHERE MAX_SALARY < 15000;
+----
+. Erstellen einer Ansicht, die die Spalten `JOB_CODE` und `JOB_TITLE` nur für Jobs zurückgibt, bei denen `MAX_SALARY` weniger als 15.000 USD beträgt.
+Immer wenn ein neuer Datensatz eingefügt oder ein vorhandener Datensatz aktualisiert wird, wird die Bedingung `MAX_SALARY < 15000` geprüft.
+Wenn die Bedingung nicht wahr ist, wird die Einfüge-/Aktualisierungsoperation abgelehnt.
++
+[source]
+----
+CREATE VIEW ENTRY_LEVEL_JOBS AS
+SELECT JOB_CODE, JOB_TITLE
+FROM JOB
+WHERE MAX_SALARY < 15000
+WITH CHECK OPTION;
+----
+. Erstellen einer Ansicht mit einer expliziten Spaltenliste.
++
+[source]
+----
+CREATE VIEW PRICE_WITH_MARKUP (
+  CODE_PRICE,
+  COST,
+  COST_WITH_MARKUP
+) AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.1
+FROM PRICE;
+----
+. Erstellen einer View mit Hilfe von Aliasen für Felder in der `SELECT`-Anweisung (das gleiche Ergebnis wie in Beispiel 3).
++
+[source]
+----
+CREATE VIEW PRICE_WITH_MARKUP AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.1 AS COST_WITH_MARKUP
+FROM PRICE;
+----
+. Erstellen einer schreibgeschützten Ansicht basierend auf zwei Tabellen und einer gespeicherten Prozedur.
++
+[source]
+----
+CREATE VIEW GOODS_PRICE AS
+SELECT
+  goods.name AS goodsname,
+  price.cost AS cost,
+  b.quantity AS quantity
+FROM
+  goods
+  JOIN price ON goods.code_goods = price.code_goods
+  LEFT JOIN sp_get_balance(goods.code_goods) b ON 1 = 1;
+----
+
+.Siehe auch
+<<fblangref30-ddl-view-alter-de>>, <<fblangref30-ddl-view-crtoralter-de>>, <<fblangref30-ddl-view-recreate-de>>, <<fblangref30-ddl-view-drop-de>>
+
+[[fblangref30-ddl-view-alter-de]]
+== `ALTER VIEW`
+
+.Verwendet für
+Ändern einer vorhandenen Ansicht
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER VIEW _viewname_ [<full_column_list>]
+    AS <select_statement>
+    [WITH CHECK OPTION]
+
+<full_column_list> ::= (_colname_ [, _colname_ ...])
+----
+
+[[fblangref30-ddl-view-alterview-tbl-de]]
+.`ALTER VIEW`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|viewname
+|Name einer existierenden Ansicht
+
+|select_statement
+|SELECT-Anweisung
+
+|full_column_list
+|Die Liste der Spalten in der Ansicht
+
+|colname
+|Spaltennamen anzeigen.
+Doppelte Spaltennamen sind nicht zulässig.
+|===
+
+Verwenden Sie die Anweisung `ALTER VIEW`, um die Definition einer bestehenden Ansicht zu ändern.
+Berechtigungen für Ansichten bleiben erhalten und Abhängigkeiten werden nicht beeinflusst.
+
+Die Syntax der `ALTER VIEW`-Anweisung entspricht vollständig der von `CREATE VIEW`.
+
+[CAUTION]
+====
+Seien Sie vorsichtig, wenn Sie die Anzahl der Spalten in einer Ansicht ändern.
+Vorhandener Anwendungscode und PSQL-Module, die auf die Ansicht zugreifen, können ungültig werden.
+Informationen zum Erkennen dieser Art von Problem in gespeicherten Prozeduren und Triggern finden Sie unter <<fblangref30-appx01-supp-rdb-validblr-de,[ref]_Das RDB$VALID_BLR-Feld_>> im Anhang.
+====
+
+[[fblangref30-ddl-view-alter-who-de]]
+=== Wer kann eine Ansicht ändern?
+
+Die `ALTER VIEW`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref30-security-administrators-de,Administratoren>>
+* Der Besitzer der Ansicht
+* Benutzer mit der Berechtigung `ALTER ANY VIEW`
+
+[[fblangref30-ddl-view-alter-example-de]]
+=== Beispiel mit `ALTER VIEW`
+
+.Ändern der Ansicht `PRICE_WITH_MARKUP`
+[source]
+----
+ALTER VIEW PRICE_WITH_MARKUP (
+  CODE_PRICE,
+  COST,
+  COST_WITH_MARKUP
+) AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.15
+FROM PRICE;
+----
+
+.Siehe auch
+<<fblangref30-ddl-view-create-de>>, <<fblangref30-ddl-view-crtoralter-de>>, <<fblangref30-ddl-view-recreate-de>>
+
+[[fblangref30-ddl-view-crtoralter-de]]
+== `CREATE OR ALTER VIEW`
+
+.Verwendet für
+Erstellen einer neuen Ansicht oder Ändern einer vorhandenen Ansicht.
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE OR ALTER VIEW _viewname_ [<full_column_list>]
+  AS <select_statement>
+  [WITH CHECK OPTION]
+
+<full_column_list> ::= (_colname_ [, _colname_ ...])
+----
+
+[[fblangref30-ddl-view-crtalterview-tbl-de]]
+.`CREATE OR ALTER VIEW`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|viewname
+|Name einer Ansicht, die möglicherweise nicht vorhanden ist
+
+|select_statement
+|SELECT-Anweisung
+
+|full_column_list
+|Die Liste der Spalten in der Ansicht
+
+|colname
+|Spaltennamen anzeigen.
+Doppelte Spaltennamen sind nicht zulässig.
+|===
+
+Verwenden Sie die Anweisung `CREATE OR ALTER VIEW`, um die Definition einer bestehenden Ansicht zu ändern oder sie zu erstellen, falls sie nicht existiert.
+Berechtigungen für eine vorhandene Ansicht bleiben erhalten und Abhängigkeiten werden nicht beeinflusst.
+
+Die Syntax der `CREATE OR ALTER VIEW`-Anweisung entspricht vollständig der von `CREATE VIEW`.
+
+[[fblangref30-ddl-view-crtoralter-example-de]]
+=== Beispiel für `CREATE OR ALTER VIEW`
+
+.Erstellen der neuen Ansicht `PRICE_WITH_MARKUP`-Ansicht oder Ändern, wenn sie bereits vorhanden ist
+[source]
+----
+CREATE OR ALTER VIEW PRICE_WITH_MARKUP (
+  CODE_PRICE,
+  COST,
+  COST_WITH_MARKUP
+) AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.15
+FROM PRICE;
+----
+
+.Siehe auch
+<<fblangref30-ddl-view-create-de>>, <<fblangref30-ddl-view-alter-de>>, <<fblangref30-ddl-view-recreate-de>>
+
+[[fblangref30-ddl-view-drop-de]]
+== `DROP VIEW`
+
+.Verwendet für
+Löschen einer Ansicht
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP VIEW _viewname_
+----
+
+[[fblangref30-ddl-view-dropview-tbl-de]]
+.`DROP VIEW`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|viewname
+|Name der Ansicht
+|===
+
+Die `DROP VIEW`-Anweisung löscht (löscht) eine vorhandene Ansicht.
+Die Anweisung schlägt fehl, wenn die Ansicht Abhängigkeiten aufweist.
+
+[[fblangref30-ddl-view-drop-who-de]]
+=== Wer kann eine Ansicht löschen?
+
+Die `DROP VIEW`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref30-security-administrators-de,Administratoren>>
+* Der Besitzer der Ansicht
+* Benutzer mit dem Privileg `DROP ANY VIEW`
+
+[[fblangref30-ddl-view-drop-example-de]]
+=== Beispiel
+
+.Löschen der Ansicht `PRICE_WITH_MARKUP`
+[source]
+----
+DROP VIEW PRICE_WITH_MARKUP;
+----
+
+.Siehe auch
+<<fblangref30-ddl-view-create-de>>, <<fblangref30-ddl-view-recreate-de>>, <<fblangref30-ddl-view-crtoralter-de>>
+
+[[fblangref30-ddl-view-recreate-de]]
+== `RECREATE VIEW`
+
+.Verwendet für
+Erstellen einer neuen Ansicht oder Neuerstellen einer vorhandenen Ansicht
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+RECREATE VIEW _viewname_ [<full_column_list>]
+  AS <select_statement>
+  [WITH CHECK OPTION]
+
+<full_column_list> ::= (_colname_ [, _colname_ ...])
+----
+
+[[fblangref30-ddl-tbl-view-recreate-de]]
+.`RECREATE VIEW`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|viewname
+|Name der Ansicht (View), maximal 31 Zeichen
+
+|select_statement
+|SELECT-Anweisung
+
+|full_column_list
+|Die Liste der Spalten in der Ansicht
+
+|colname
+|Spaltennamen anzeigen.
+Doppelte Spaltennamen sind nicht zulässig.
+|===
+
+Erstellt eine Ansicht oder erstellt sie neu.
+Wenn bereits eine Ansicht mit diesem Namen vorhanden ist, versucht die Engine, sie zu löschen, bevor die neue Instanz erstellt wird.
+Wenn die vorhandene Ansicht nicht gelöscht werden kann, z. B. aufgrund von Abhängigkeiten oder unzureichenden Rechten, schlägt `RECREATE VIEW` mit einem Fehler fehl.
+
+[[fblangref30-ddl-view-recreate-example-de]]
+=== Beispiel für `RECREATE VIEW`
+
+.Neue Ansicht `PRICE_WITH_MARKUP`-Ansicht erstellen oder neu erstellen, falls bereits vorhanden
+[source]
+----
+RECREATE VIEW PRICE_WITH_MARKUP (
+  CODE_PRICE,
+  COST,
+  COST_WITH_MARKUP
+) AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.15
+FROM PRICE;
+----
+
+.Siehe auch
+<<fblangref30-ddl-view-create-de>>, <<fblangref30-ddl-view-drop-de>>, <<fblangref30-ddl-view-crtoralter-de>>

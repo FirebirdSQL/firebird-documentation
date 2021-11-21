@@ -1,0 +1,694 @@
+[[fblangref30-windowfuncs-de]]
+= Window-Funktionen (analytisch)
+
+Gemäß der SQL-Spezifikation sind Window-Funktionen (auch als analytische Funktionen bekannt) eine Art Aggregation, die jedoch nicht die Ergebnismenge einer Abfrage ""filtert".
+Die Zeilen mit aggregierten Daten werden mit dem Abfrageergebnissatz gemischt.
+
+Die Window-Funktionen werden mit der `OVER`-Klausel verwendet.
+Sie dürfen nur in der `SELECT`-Liste oder der `ORDER BY`-Klausel einer Abfrage erscheinen.
+
+Neben der `OVER`-Klausel können Firebird-Window-Funktionen partitioniert und geordnet werden.
+
+.Syntax
+[listing]
+----
+<window-function> ::=
+  <window-function-name> ([<expr> [, <expr> ...]]) OVER <window-specification>
+
+<window-function-name> ::=
+    <aggregate-function>
+  | <ranking-function>
+  | <navigational-function>
+
+<ranking-function> ::=
+  RANK | DENSE_RANK | ROW_NUMBER
+
+<navigational-function>
+  LEAD | LAG | FIRST_VALUE | LAST_VALUE | NTH_VALUE
+
+<window-specification> ::=
+  ( [ <window-partition> ] [ <window-order> ] )
+
+<window-partition> ::=
+  [PARTITION BY <expr> [, <expr> ...]]
+
+<window-order> ::=
+  [ORDER BY
+    <expr> [<direction>] [<nulls placement>]
+    [, <expr> [<direction>] [<nulls placement>] ...]
+
+<direction> ::= {ASC | DESC}
+
+<nulls placement> ::= NULLS {FIRST | LAST}
+----
+
+[[fblangref30-windowfuncs-tbl-de]]
+.Argumente für Window-Funktionen
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Kann eine Tabellenspalte, Konstante, Variable, Ausdruck, Skalar- oder Aggregatfunktion enthalten.
+Window-Funktionen sind als Ausdruck nicht erlaubt.
+
+|aggregate_function
+|Eine <<#fblangref30-aggfuncs-de,Aggregatfunktion>>, die als Window-Funktion verwendet wird.
+|===
+
+[[fblangref30-windowfuncs-aggfuncs-de]]
+== Aggregatfunktionen als Window-Funktionen
+
+Alle <<#fblangref30-aggfuncs-de,Aggregatfunktionen>> können als Window-Funktionen verwendet werden, indem die `OVER`-Klausel hinzugefügt wird.
+
+Stellen Sie sich eine Tabelle `EMPLOYEE` mit den Spalten `ID`, `NAME` und `SALARY` vor und die Notwendigkeit, jedem Mitarbeiter sein jeweiliges Gehalt und den Prozentsatz seines Gehalts an der Gehaltsabrechnung anzuzeigen.
+
+Eine normale Abfrage könnte dies wie folgt erreichen:
+
+[source]
+----
+select
+    id,
+    department,
+    salary,
+    salary / (select sum(salary) from employee) portion
+  from employee
+  order by id;
+----
+
+.Ergebnisse
+[source]
+----
+id  department  salary  portion
+--  ----------  ------  ----------
+1   R & D        10.00      0.2040
+2   SALES        12.00      0.2448
+3   SALES         8.00      0.1632
+4   R & D         9.00      0.1836
+5   R & D        10.00      0.2040
+----
+
+Die Abfrage ist repetitiv und langwierig, insbesondere wenn es sich bei "EMPLOYEE" um eine komplexe Ansicht handelt.
+
+Die gleiche Abfrage könnte mit einer Window-Funktion viel schneller und eleganter angegeben werden:
+
+[source]
+----
+select
+    id,
+    department,
+    salary,
+    salary / sum(salary) OVER () portion
+  from employee
+  order by id;
+----
+
+Hier wird `sum(salary) over()` mit der Summe aller `SALARY` aus der Abfrage (der `EMPLOYEE`-Tabelle) berechnet.
+
+[[fblangref30-windowfuncs-partition-de]]
+== Partitionierung
+
+Wie Aggregatfunktionen, die allein oder in Bezug auf eine Gruppe arbeiten können, können Window-Funktionen auch auf einer Gruppe arbeiten, die als "`Partition`" bezeichnet wird.
+
+.Syntax
+[listing]
+----
+<window function>(...) OVER (PARTITION BY <expr> [, <expr> ...])
+----
+
+Die Aggregation über eine Gruppe kann mehr als eine Zeile erzeugen, daher wird das von einer Partition generierte Resultset mit der Hauptabfrage unter Verwendung derselben Ausdrucksliste wie die Partition verknüpft.
+
+In Fortsetzung des Beispiels `EMPLOYEE` möchten wir, anstatt den Anteil des Gehalts jedes Mitarbeiters an der Gesamtzahl aller Mitarbeiter zu erhalten, den Anteil nur basierend auf den Mitarbeitern in derselben Abteilung erhalten:
+
+[source]
+----
+select
+    id,
+    department,
+    salary,
+    salary / sum(salary) OVER (PARTITION BY department) portion
+  from employee
+  order by id;
+----
+
+.Ergebnisse
+[source]
+----
+id  department  salary  portion
+--  ----------  ------  ----------
+1   R & D        10.00      0.3448
+2   SALES        12.00      0.6000
+3   SALES         8.00      0.4000
+4   R & D         9.00      0.3103
+5   R & D        10.00      0.3448
+----
+
+[[fblangref30-windowfuncs-order-by-de]]
+== Sortierung
+
+Die Unterklausel `ORDER BY` kann mit oder ohne Partitionen verwendet werden.
+Die `ORDER BY`-Klausel innerhalb von `OVER` gibt die Reihenfolge an, in der die Window-Funktion Zeilen verarbeitet.
+Diese Reihenfolge muss nicht mit den Auftragszeilen übereinstimmen, die in der Ausgabe erscheinen.
+
+Window-funktionen haben ein wichtiges Konzept: Für jede Zeile gibt es eine Reihe von Zeilen in ihrer Partition, die als _Window-Frames_ bezeichnet wird.
+Standardmäßig besteht der Rahmen bei der Angabe von `ORDER BY` aus allen Zeilen vom Anfang der Partition bis zur aktuellen Zeile und Zeilen, die dem aktuellen `ORDER BY`-Ausdruck entsprechen.
+Ohne `ORDER BY` besteht der Standardrahmen aus allen Zeilen in der Partition.
+
+Daher erzeugt die Klausel `ORDER BY` für Standardaggregationsfunktionen bei der Verarbeitung von Zeilen Teilaggregationsergebnisse.
+
+.Beispiel
+[source]
+----
+select
+    id,
+    salary,
+    sum(salary) over (order by salary) cumul_salary
+  from employee
+  order by salary;
+----
+
+.Ergebnisse
+[source]
+----
+id  salary  cumul_salary
+--  ------  ------------
+3     8.00          8.00
+4     9.00         17.00
+1    10.00         37.00
+5    10.00         37.00
+2    12.00         49.00
+----
+
+Dann gibt `cumul_salary` die partielle/akkumulierte (oder laufende) Aggregation (der `SUM`-Funktion) zurück.
+Es mag seltsam erscheinen, dass 37,00 für die IDs 1 und 5 wiederholt wird, aber so sollte es funktionieren.
+Die `ORDER BY`-Schlüssel werden zusammen gruppiert und die Aggregation wird einmal berechnet (aber die beiden summieren 10,00).
+Um dies zu vermeiden, können Sie das Feld "ID" am Ende der Klausel "ORDER BY" hinzufügen.
+
+Es ist möglich, mehrere Windows mit unterschiedlichen Reihenfolgen und `ORDER BY`-Teilen wie `ASC`/`DESC` und `NULLS FIRST/LAST` zu verwenden.
+
+Bei einer Partition funktioniert `ORDER BY` genauso, aber an jeder Partitionsgrenze wird die Aggregation zurückgesetzt.
+
+Alle Aggregationsfunktionen können `ORDER BY` verwenden, außer `LIST()`.
+
+[[fblangref30-windowfuncs-rankfuncs-de]]
+== Ranking-Funktionen
+
+Die Rangordnungsfunktionen berechnen den Ordinalrang einer Zeile innerhalb der Window-Partition.
+
+Diese Funktionen können mit oder ohne Partitionierung und Ordnung verwendet werden.
+Sie zu verwenden, ohne sie zu bestellen, macht jedoch fast nie Sinn.
+
+Die Rangfolgefunktionen können verwendet werden, um verschiedene Arten von inkrementellen Zählern zu erstellen.
+Betrachten Sie `SUM(1) OVER (ORDER BY SALARY)` als Beispiel dafür, was sie tun können, jeder auf unterschiedliche Weise.
+Es folgt eine Beispielabfrage, die auch mit dem Verhalten von `SUM` verglichen wird.
+
+[source]
+----
+select
+    id,
+    salary,
+    dense_rank() over (order by salary),
+    rank() over (order by salary),
+    row_number() over (order by salary),
+    sum(1) over (order by salary)
+  from employee
+  order by salary;
+----
+
+.Ergebnisse
+[source]
+----
+id  salary  dense_rank  rank  row_number  sum
+--  ------  ----------  ----  ----------  ---
+3     8.00           1     1           1    1
+4     9.00           2     2           2    2
+1    10.00           3     3           3    4
+5    10.00           3     3           4    4
+2    12.00           4     5           5    5
+----
+
+Der Unterschied zwischen "DENSE_RANK" und "RANK" besteht darin, dass nur in "RANK" eine Lücke in Bezug auf doppelte Zeilen (relativ zur Window-Reihenfolge) vorhanden ist.
+`DENSE_RANK` vergibt weiterhin fortlaufende Nummern nach dem doppelten Gehalt.
+Andererseits vergibt `ROW_NUMBER` immer fortlaufende Nummern, auch wenn es doppelte Werte gibt.
+
+[[fblangref30-windowfuncs-dense-rank-de]]
+=== `DENSE_RANK`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Ergebnistyp
+`BIGINT`
+
+.Syntax
+[listing]
+----
+DENSE_RANK () OVER <window-specification>
+----
+
+Gibt den Rang von Zeilen in einer Partition einer Ergebnismenge ohne Rangordnungslücken zurück.
+Zeilen mit den gleichen _window-order_ Werten erhalten den gleichen Rang innerhalb der Partition _window-partition_, falls angegeben.
+Der dichte Rang einer Zeile ist gleich der Anzahl verschiedener Rangwerte in der Partition vor der aktuellen Zeile plus eins.
+
+[[fblangref30-windowfuncs-dense-rank-exmpl-de]]
+==== `DENSE_RANK`-Beispiele
+
+[source]
+----
+select
+  id,
+  salary,
+  dense_rank() over (order by salary)
+from employee
+order by salary;
+----
+
+.Ergebnis
+[listing]
+----
+id salary dense_rank
+- ------ -----------
+3   8.00           1
+4   9.00           2
+1  10.00           3
+5  10.00           3
+2  12.00           4
+----
+
+.Siehe auch <<fblangref30-windowfuncs-rank-de>>, <<fblangref30-windowfuncs-row-number-de>>
+
+[[fblangref30-windowfuncs-rank-de]]
+=== `RANK`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Ergebnistyp
+`BIGINT`
+
+.Syntax
+[listing]
+----
+RANK () OVER <window-specification>
+----
+
+Gibt den Rang jeder Zeile in einer Partition der Ergebnismenge zurück.
+Zeilen mit den gleichen Werten von _window-order_ erhalten den gleichen Rang wie in der Partition _window-partition, falls angegeben.
+Der Rang einer Zeile entspricht der Anzahl der Rangwerte in der Partition vor der aktuellen Zeile plus eins.
+
+[[fblangref30-windowfuncs-rank-exmpl-de]]
+==== `RANK`-Beispiele
+
+[source]
+----
+select
+  id,
+  salary,
+  rank() over (order by salary)
+from employee
+order by salary;
+----
+
+.Ergebnis
+[listing]
+----
+id salary rank
+- ------ -----
+3   8.00     1
+4   9.00     2
+1  10.00     3
+5  10.00     3
+2  12.00     5
+----
+
+.Siehe auch
+<<fblangref30-windowfuncs-dense-rank-de>>, <<fblangref30-windowfuncs-row-number-de>>
+
+[[fblangref30-windowfuncs-row-number-de]]
+=== `ROW_NUMBER`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Ergebnistyp
+`BIGINT`
+
+.Syntax
+[listing]
+----
+ROW_NUMBER () OVER <window-specification>
+----
+
+Gibt die fortlaufende Zeilennummer in der Partition der Ergebnismenge zurück, wobei '1' die erste Zeile in jeder der Partitionen ist.
+
+[[fblangref30-windowfuncs-row-number-exmpl-de]]
+==== `ROW_NUMBER`-Beispiele
+
+[source]
+----
+select
+  id,
+  salary,
+  row_number() over (order by salary)
+from employee
+order by salary;
+----
+
+.Ergebnis
+[listing]
+----
+id salary rank
+- ------ -----
+3   8.00     1
+4   9.00     2
+1  10.00     3
+5  10.00     4
+2  12.00     5
+----
+
+.Siehe auch
+<<fblangref30-windowfuncs-dense-rank-de>>, <<fblangref30-windowfuncs-rank-de>>
+
+[[fblangref30-windowfuncs-navfuncs-de]]
+== Navigationsfunktionen
+
+Die Navigationsfunktionen rufen den einfachen (nicht aggregierten) Wert eines Ausdrucks aus einer anderen Zeile der Abfrage innerhalb derselben Partition ab.
+
+[[fblangref30-windowfuncs-navfuncs-frame-note-de]]
+[IMPORTANT]
+====
+`FIRST_VALUE`, `LAST_VALUE` und `NTH_VALUE` wirken auch auf einen Window-Frame.
+Derzeit wendet Firebird immer einen Frame von der ersten bis zur aktuellen Zeile der Partition an, nicht bis zur letzten.
+Dies entspricht der Verwendung der SQL-Standardsyntax (derzeit von Firebird nicht unterstützt):
+
+[source]
+----
+ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+----
+
+Dies führt wahrscheinlich zu seltsamen oder unerwarteten Ergebnissen für "NTH_VALUE" und insbesondere "LAST_VALUE".
+
+Firebird 4 wird Unterstützung für die Angabe des Window-Frames einführen.
+====
+
+[float]
+===== Beispiel für Navigationsfunktionen
+
+[source]
+----
+select
+    id,
+    salary,
+    first_value(salary) over (order by salary),
+    last_value(salary) over (order by salary),
+    nth_value(salary, 2) over (order by salary),
+    lag(salary) over (order by salary),
+    lead(salary) over (order by salary)
+  from employee
+  order by salary;
+----
+
+.Ergebnisse
+[listing]
+----
+id  salary  first_value  last_value  nth_value     lag    lead
+--  ------  -----------  ----------  ---------  ------  ------
+3     8.00         8.00        8.00     <null>  <null>    9.00
+4     9.00         8.00        9.00       9.00    8.00   10.00
+1    10.00         8.00       10.00       9.00    9.00   10.00
+5    10.00         8.00       10.00       9.00   10.00   12.00
+2    12.00         8.00       12.00       9.00   10.00  <null>
+----
+
+[[fblangref30-windowfuncs-first-value-de]]
+=== `FIRST_VALUE`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Ergebnistyp
+Das gleiche wie type wie _expr_
+
+.Syntax
+[listing]
+----
+FIRST_VALUE ( <expr> ) OVER <window-specification>
+----
+
+[[fblangref30-windowfuncs-tbl-first-value]]
+.Arguments of `FIRST_VALUE`
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Kann eine Tabellenspalte, Konstante, Variable, Ausdruck, Skalarfunktion enthalten.
+Aggregatfunktionen sind als Ausdruck nicht zulässig.
+|===
+
+Gibt den ersten Wert der aktuellen Partition zurück.
+
+.Siehe auch
+<<fblangref30-windowfuncs-last-value-de>>, <<fblangref30-windowfuncs-nth-value-de>>
+
+[[fblangref30-windowfuncs-lag-de]]
+=== `LAG`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Ergebnistyp
+Das gleiche wie type wie _expr_
+
+.Syntax
+[listing]
+----
+LAG ( <expr> [, <offset [, <default>]])
+  OVER <window-specification>
+----
+
+[[fblangref30-windowfuncs-tbl-lag]]
+.Arguments of `LAG`
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Kann eine Tabellenspalte, Konstante, Variable, Ausdruck, Skalarfunktion enthalten.
+Aggregatfunktionen sind als Ausdruck nicht zulässig.
+
+|offset
+|Der Offset in Zeilen vor der aktuellen Zeile, um den durch _expr_ identifizierten Wert zu erhalten.
+Wenn _offset_ nicht angegeben ist, ist der Standardwert `1`.
+_offset_ kann eine Spalte, eine Unterabfrage oder ein anderer Ausdruck sein, der zu einem positiven ganzzahligen Wert führt, oder ein anderer Typ, der implizit in `BIGINT` konvertiert werden kann.
+`offset` darf nicht negativ sein (verwenden Sie stattdessen `LEAD`).
+
+|default
+|Der Standardwert, der zurückgegeben werden soll, wenn _offset_ außerhalb der Partition zeigt.
+Der Standardwert ist `NULL`.
+|===
+
+Die `LAG`-Funktion ermöglicht den Zugriff auf die Zeile in der aktuellen Partition mit einem gegebenen _Offset_ vor der aktuellen Zeile.
+
+Wenn _offset_ außerhalb der aktuellen Partition zeigt, wird _default_ zurückgegeben, oder `NULL`, wenn kein Standard angegeben wurde.
+
+[NOTE]
+====
+_offset_ kann ein Parameter sein, aber derzeit ist eine explizite Umwandlung in `INTEGER` oder `BIGINT` erforderlich (zB `LAG(somecolumn, cast(? as bigint))`).
+Siehe auch http://tracker.firebirdsql.org/browse/CORE-6421[CORE-6421]
+====
+
+[[fblangref30-windowfuncs-lag-exmpl-de]]
+==== `LAG`-Beispiele
+
+Angenommen, Sie haben die Tabelle 'RATE', in der der Wechselkurs für jeden Tag gespeichert ist.
+Um die Änderung des Wechselkurses in den letzten fünf Tagen zu verfolgen, können Sie die folgende Abfrage verwenden.
+
+[source]
+----
+select
+  bydate,
+  cost,
+  cost - lag(cost) over (order by bydate) as change,
+  100 * (cost - lag(cost) over (order by bydate)) /
+    lag(cost) over (order by bydate) as percent_change
+from rate
+where bydate between dateadd(-4 day to current_date)
+and current_date
+order by bydate
+----
+
+.Ergebnis
+[listing]
+----
+bydate     cost   change percent_change
+---------- ------ ------ --------------
+27.10.2014  31.00 <null>         <null>
+28.10.2014  31.53   0.53         1.7096
+29.10.2014  31.40  -0.13        -0.4123
+30.10.2014  31.67   0.27         0.8598
+31.10.2014  32.00   0.33         1.0419
+----
+
+.Siehe auch
+<<fblangref30-windowfuncs-lead-de>>
+
+[[fblangref30-windowfuncs-last-value-de]]
+=== `LAST_VALUE`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Ergebnistyp
+Das gleiche wie type wie _expr_
+
+.Syntax
+[source]
+----
+LAST_VALUE ( <expr> ) OVER <window-specification>
+----
+
+[[fblangref30-windowfuncs-tbl-last-value]]
+.Argumente für `LAST_VALUE`
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Kann eine Tabellenspalte, Konstante, Variable, Ausdruck, Skalarfunktion enthalten.
+Aggregatfunktionen sind als Ausdruck nicht zulässig.
+|===
+
+Gibt den letzten Wert der aktuellen Partition zurück.
+
+.Siehe auch
+<<fblangref30-windowfuncs-first-value-de>>, <<fblangref30-windowfuncs-nth-value-de>>
+
+[[fblangref30-windowfuncs-lead-de]]
+=== `LEAD`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Ergebnistyp
+Das gleiche wie type wie _expr_
+
+.Syntax
+[listing]
+----
+LEAD ( <expr> [, <offset [, <default>]])
+  OVER <window-specification>
+----
+
+[[fblangref30-windowfuncs-tbl-lead-de]]
+.Argumente für `LEAD`
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Kann eine Tabellenspalte, Konstante, Variable, Ausdruck, Skalarfunktion enthalten.
+Aggregatfunktionen sind als Ausdruck nicht zulässig.
+
+|offset
+|Der Offset in Zeilen nach der aktuellen Zeile, um den durch _expr_ identifizierten Wert zu erhalten.
+Wenn _offset_ nicht angegeben ist, ist der Standardwert `1`.
+_offset_ kann eine Spalte, eine Unterabfrage oder ein anderer Ausdruck sein, der zu einem positiven ganzzahligen Wert führt, oder ein anderer Typ, der implizit in `BIGINT` konvertiert werden kann.
+`offset` darf nicht negativ sein (verwenden Sie stattdessen `LAG`).
+
+|default
+|Der Standardwert, der zurückgegeben werden soll, wenn _offset_ außerhalb der Partition zeigt.
+Der Standardwert ist `NULL`.
+|===
+
+Die `LEAD`-Funktion ermöglicht den Zugriff auf die Zeile in der aktuellen Partition mit einem gegebenen _Offset_ nach der aktuellen Zeile.
+
+Wenn _offset_ außerhalb der aktuellen Partition zeigt, wird _default_ zurückgegeben, oder `NULL`, wenn kein Standard angegeben wurde.
+
+[NOTE]
+====
+_offset_ kann ein Parameter sein, aber derzeit ist explizites Casting in `INTEGER` oder `BIGINT` erforderlich (zB `LEAD(somecolumn, cast(? as bigint))`).
+Siehe auch http://tracker.firebirdsql.org/browse/CORE-6421[CORE-6421]
+====
+
+.Siehe auch
+<<fblangref30-windowfuncs-lag-de>>
+
+[[fblangref30-windowfuncs-nth-value-de]]
+=== `NTH_VALUE`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Ergebnistyp
+Das gleiche wie type wie _expr_
+
+.Syntax
+[listing]
+----
+NTH_VALUE ( <expr>, <offset> )
+  [FROM {FIRST | LAST}]
+  OVER <window-specification>
+----
+
+[[fblangref30-windowfuncs-tbl-nth-value-de]]
+.Arguments of `NTH_VALUE`
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Beschreibung
+
+|expr
+|Ausdruck.
+Kann eine Tabellenspalte, Konstante, Variable, Ausdruck, Skalarfunktion enthalten.
+Aggregatfunktionen sind als Ausdruck nicht zulässig.
+
+|offset
+|Der Versatz in Zeilen vom Anfang (`FROM FIRST`) oder dem letzten (`FROM LAST`), um den durch _expr_ identifizierten Wert zu erhalten.
+_offset_ kann eine Spalte, eine Unterabfrage oder ein anderer Ausdruck sein, der zu einem positiven ganzzahligen Wert führt, oder ein anderer Typ, der implizit in `BIGINT` konvertiert werden kann.
+`offset` kann nicht null oder negativ sein.
+|===
+
+Die Funktion `NTH_VALUE` gibt den __N__ten Wert ab der ersten (`FROM FIRST`) oder der letzten (`FROM LAST`) Zeile des aktuellen Frames zurück, siehe auch <<fblangref30-windowfuncs-navfuncs-frame-note,note on Rahmen für Navigationsfunktionen>>.
+Offset `1` mit `FROM FIRST` entspricht `FIRST_VALUE` und Offset `1` mit `FROM LAST` entspricht `LAST_VALUE`.
+
+[NOTE]
+====
+_offset_ kann ein Parameter sein, aber derzeit ist explizites Casting in `INTEGER` oder `BIGINT` erforderlich (zB `LEAD(somecolumn, cast(? as bigint))`).
+Siehe auch http://tracker.firebirdsql.org/browse/CORE-6421[CORE-6421]
+====
+
+.Siehe auch
+<<fblangref30-windowfuncs-first-value-de>>, <<fblangref30-windowfuncs-last-value-de>>
+
+[[fblangref30-windowfuncs-aggfuncs-windowspec-de]]
+== Aggregatfunktionen innerhalb der Window-Spezifikation
+
+Es ist möglich, Aggregatfunktionen (aber keine Window-Funktionen) innerhalb der `OVER`-Klausel zu verwenden.
+In diesem Fall wird zuerst die Aggregatfunktion angewendet, um die Windows zu bestimmen, und erst dann werden die Window-Funktionen auf diese Window- angewendet.
+
+[NOTE]
+====
+Bei Verwendung von Aggregatfunktionen innerhalb von `OVER` müssen alle Spalten, die nicht in Aggregatfunktionen verwendet werden, in der `GROUP BY`-Klausel von `SELECT` angegeben werden.
+====
+
+.Verwenden einer Aggregatfunktion in einer Window-spezifikation
+[source]
+----
+select
+  code_employee_group,
+  avg(salary) as avg_salary,
+  rank() over (order by avg(salary)) as salary_rank
+from employee
+group by code_employee_group
+----
