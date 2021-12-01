@@ -10,7 +10,7 @@ NOTE: Creating chunked output is experimental.
    ```
 3. Generate Docbook from Asciidoc (e.g. for Firebird 4.0 Language Reference):
    ```
-   ./gradlew asciidocDocbook --baseName=fblangref40 --docId=fblangref40
+   ./gradlew asciidocDocbook --baseName=refdocs --docId=fblangref40
    ```
 4. Generate chunked HTML from Docbook: (note: trial & error, work in progress; PowerShell syntax; paths based on my setup)
    ```
