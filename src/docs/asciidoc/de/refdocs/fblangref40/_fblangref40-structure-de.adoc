@@ -1,0 +1,301 @@
+[[fblangref40-structure-de]]
+= SQL Sprachstruktur
+
+Diese Referenz beschreibt die von Firebird unterstützte SQL-Sprache.
+
+[[fblangref40-background-de]]
+== Hintergrund zu Firebirds SQL-Sprache
+
+Zu Beginn, ein paar Punkte über die Eigenschaften die im Hintergrund von Firebirds Sprache eine Rolle spielen. 
+
+[[fblangref40-structure-flavours-de]]
+=== SQL Bestandteile
+
+Verschiedene _Teilmengen von SQL_ gehören wiederum in verschiedene Aktivitätsbereiche.
+Die Teilmengen in Firebirds Sprachimplementation sind:
+
+* Dynamic SQL (DSQL)
+* Procedural SQL (PSQL)
+* Embedded SQL (ESQL)
+* Interactive SQL (ISQL)
+
+_Dynamic SQL_ macht den Hauptteil der Sprache aus, der in Abschnitt (SQL/Foundation) 2 der SQL-Spezifikation beschrieben wird.
+DSQL repräsentiert Statements, die von Anwendungen über die Firebird API durch die Datenbank verarbeitet werden.
+
+_Procedural SQL_ erweitert Dynamic SQL, um zusammengesetzte Anweisungen zu ermöglichen, die lokale Variablen, Zuweisungen, Bedingungen, Schleifen und andere prozedurale Konstrukte enthalten.
+PSQL entspricht dem Teil 4 (SQL/PSM) Teil der SQL-Spezifikationen.
+Ursprünglich waren PSQL-Erweiterungen nur in persistent gespeicherten Modulen (Prozeduren und Trigger) verfügbar, aber in neueren Versionen wurden sie auch in Dynamic SQL aufgetaucht (siehe <<fblangref40-dml-execblock-de,`EXECUTE BLOCK`>>).
+
+_Embedded SQL_ definiert die DSQL-Untermenge, die von Firebird _gpre_ unterstützt wird, der Anwendung, mit der Sie SQL-Konstrukte in Ihre Host-Programmiersprache (C, C++, Pascal, Cobol usw.) einbetten und diese eingebetteten Konstrukte in die richtigen Firebird-API-Aufrufe vorverarbeiten können.
+
+[NOTE]
+====
+Nur ein Teil der in DSQL implementierten Anweisungen und Ausdrücke wird in ESQL unterstützt.
+====
+
+_Interactive ISQL_ bezieht sich auf die Sprache, die mit Firebird _isql_ ausgeführt werden kann, der Befehlszeilenanwendung für den interaktiven Zugriff auf Datenbanken.
+Als normale Client-Anwendung ist ihre Muttersprache DSQL.
+Es bietet auch einige zusätzliche Befehle, die außerhalb seiner spezifischen Umgebung nicht verfügbar sind.
+
+Sowohl DSQL- als auch PSQL-Teilmengen werden in dieser Referenz vollständig vorgestellt.
+Weder ESQL- noch ISQL-Varianten werden hier beschrieben, sofern nicht explizit erwähnt.
+
+[[fblangref40-structure-dialects-de]]
+=== SQL-Dialekte
+
+_SQL-Dialekt_ ist ein Begriff, der die spezifischen Funktionen der SQL-Sprache definiert, die beim Zugriff auf eine Datenbank verfügbar sind.
+SQL-Dialekte können auf Datenbankebene definiert und auf Verbindungsebene angegeben werden.
+Drei Dialekte stehen zur Verfügung:
+
+* _Dialekt 1_ dient ausschließlich dazu, die Abwärtskompatibilität mit Legacy-Datenbanken aus sehr alten InterBase-Versionen, v.5 und darunter, zu ermöglichen.
+Dialekt 1-Datenbanken behalten bestimmte Sprachfunktionen bei, die sich von Dialekt 3 unterscheiden, dem Standard für Firebird-Datenbanken.
+** Datums- und Uhrzeitinformationen werden im Datentyp `DATE` gespeichert.
+Ein Datentyp `TIMESTAMP` ist ebenfalls verfügbar, der mit dieser `DATE`-Implementierung identisch ist.
+** Anführungszeichen können als Alternative zu Apostrophen zum Trennen von Zeichenfolgendaten verwendet werden.
+Dies steht im Gegensatz zum SQL-Standard – doppelte Anführungszeichen sind sowohl in Standard-SQL als auch in Dialekt 3 für einen bestimmten syntaktischen Zweck reserviert.
+Strings in doppelten Anführungszeichen sind daher streng zu vermeiden.
+** Die Genauigkeit für die Datentypen `NUMERIC` und `DECIMAL` ist kleiner als in Dialekt 3 und wenn die Genauigkeit einer festen Dezimalzahl größer als 9 ist, speichert Firebird sie intern als langen Gleitkommawert.
+** Der Datentyp `BIGINT` (64-Bit-Ganzzahl) wird nicht unterstützt.
+** Bei Bezeichnern wird die Groß-/Kleinschreibung nicht beachtet und müssen immer den Regeln für normale Bezeichner entsprechen -- siehe Abschnitt <<fblangref40-structure-identifiers-de>> weiter unten.
+** Obwohl Generatorwerte als 64-Bit-Ganzzahlen gespeichert werden, gibt eine Dialekt-1-Client-Anfrage, beispielsweise `SELECT GEN_ID (MyGen, 1)` den Generatorwert auf 32 Bit gekürzt zurück.
+* _Dialekt 2_ ist nur über die Firebird-Client-Verbindung verfügbar und kann nicht in der Datenbank eingestellt werden.
+Es soll das Debuggen möglicher Probleme mit Altdaten bei der Migration einer Datenbank von Dialekt 1 auf 3 unterstützen.
+* In _Dialekt 3_-Datenbanken,
+** Zahlen (Datentypen `DECIMAL` und `NUMERIC`) werden intern als lange Festkommawerte (skalierte Ganzzahlen) gespeichert, wenn die Genauigkeit größer als 9 ist.
+** Der Datentyp `TIME` ist nur zum Speichern von Uhrzeitdaten verfügbar.
+** Der Datentyp `DATE` speichert nur Datumsinformationen.
+** Der 64-Bit-Integer-Datentyp `BIGINT` ist verfügbar.
+** Doppelte Anführungszeichen sind für die Abgrenzung nicht regulärer Bezeichner reserviert, um Objektnamen zu ermöglichen, bei denen die Groß-/Kleinschreibung beachtet wird oder die auf andere Weise nicht die Anforderungen für reguläre Bezeichner erfüllen.
+** Alle Strings müssen durch einfache Anführungszeichen (Apostrophe) getrennt werden.
+** Generatorwerte werden als 64-Bit-Ganzzahlen gespeichert.
+
+[IMPORTANT]
+====
+Für neu entwickelte Datenbanken und Anwendungen wird die Verwendung von Dialect 3 dringend empfohlen.
+Sowohl Datenbank- als auch Verbindungsdialekte sollten übereinstimmen, außer unter Migrationsbedingungen mit Dialekt 2.
+
+Diese Referenz beschreibt die Semantik von SQL Dialect 3, sofern nicht anders angegeben.
+====
+
+[[fblangref40-structure-errors-de]]
+=== Fehlerbedingungen
+
+Die Verarbeitung jeder SQL-Anweisung wird entweder erfolgreich abgeschlossen oder schlägt aufgrund einer bestimmten Fehlerbedingung fehl.
+Die Fehlerbehandlung kann sowohl auf der Clientseite der Anwendung als auch auf der Serverseite mit PSQL erfolgen.
+
+[[fblangref40-structure-basics-de]]
+== Grundelemente: Aussagen, Klauseln, Schlüsselwörter
+
+Das primäre Konstrukt in SQL ist die _Anweisung_.
+Eine Anweisung definiert, was das Datenbankverwaltungssystem mit einem bestimmten Daten- oder Metadatenobjekt tun soll.
+Komplexere Anweisungen enthalten einfachere Konstrukte -- _Klauseln_ und _Optionen_.
+
+Klauseln::
+Eine Klausel definiert eine bestimmte Art von Direktive in einer Anweisung.
+Zum Beispiel spezifiziert die Klausel `WHERE` in einer `SELECT`-Anweisung und in einigen anderen Datenmanipulationsanweisungen (`UPDATE`, `DELETE`) Kriterien zum Durchsuchen einer oder mehrerer Tabellen nach den Zeilen, die ausgewählt, aktualisiert oder gelöscht werden sollen .
+Die `ORDER BY`-Klausel gibt an, wie die Ausgabedaten -- die Ergebnismenge -- sortiert werden sollen.
+
+Optionen::
+Optionen sind die einfachsten Konstrukte und werden in Verbindung mit bestimmten Schlüsselwörtern angegeben, um eine Qualifizierung für Klauselelemente bereitzustellen.
+Wenn alternative Optionen verfügbar sind, ist es üblich, dass eine von ihnen die Standardeinstellung ist, die verwendet wird, wenn für diese Option nichts angegeben ist.
+Zum Beispiel gibt die `SELECT`-Anweisung alle Zeilen zurück, die den Suchkriterien entsprechen, es sei denn, die `DISTINCT`-Option beschränkt die Ausgabe auf nicht duplizierte Zeilen.
+
+Schlüsselwörter::
+Alle Wörter, die im SQL-Lexikon enthalten sind, sind Schlüsselwörter.
+Einige Schlüsselwörter sind _reserviert_, was bedeutet, dass ihre Verwendung als Bezeichner für Datenbankobjekte, Parameternamen oder Variablen in einigen oder allen Kontexten verboten ist.
+Nicht reservierte Schlüsselwörter können als Bezeichner verwendet werden, obwohl dies nicht empfohlen wird.
+Von Zeit zu Zeit können nicht reservierte Schlüsselwörter reserviert werden, wenn eine neue Sprachfunktion eingeführt wird.
++
+Die folgende Anweisung wird beispielsweise ohne Fehler ausgeführt, da `ABS` zwar ein Schlüsselwort, aber kein reserviertes Wort ist.
++
+[source]
+----
+CREATE TABLE T (ABS INT NOT NULL);
+----
++
+Im Gegenteil, die folgende Anweisung gibt einen Fehler zurück, da `ADD` sowohl ein Schlüsselwort als auch ein reserviertes Wort ist.
++
+[source]
+----
+CREATE TABLE T (ADD INT NOT NULL);
+----
++
+Siehe die Liste der reservierten Wörter und Schlüsselwörter im Kapitel <<fblangref40-appx03-reskeywords-de,Reservierte Wörter und Schlüsselwörter>>.
+
+[[fblangref40-structure-identifiers-de]]
+== Bezeichner
+
+Alle Datenbankobjekte haben Namen, die oft als _Identifier_ bezeichnet werden.
+Die maximale Bezeichnerlänge beträgt 63 Zeichen Zeichensatz UTF8 (252 Byte).
+
+[NOTE]
+====
+Es ist möglich, die tatsächliche maximale Identifier-Länge durch Konfiguration einzuschränken.
+Weitere Informationen finden Sie in den _Firebird 4.0 Versionshinweisen_.
+In dieser Sprachreferenz gehen wir von der Standardkonfiguration von 63 Zeichen (252 Byte) aus.
+====
+
+Als Bezeichner sind zwei Arten von Namen gültig: _reguläre_ Namen, ähnlich den Variablennamen in regulären Programmiersprachen, und _getrennte_ Namen, die für SQL spezifisch sind.
+Um gültig zu sein, muss jeder Bezeichnertyp einer Reihe von Regeln entsprechen, wie folgt:
+
+[[fblangref40-structure-identifiers-regular-de]]
+=== Regeln für reguläre Objektbezeichner
+
+* Länge darf 63 Zeichen nicht überschreiten
+* Der Name muss mit einem alphabetischen 7-Bit-ASCII-Zeichen ohne Akzent beginnen.
+Es können weitere 7-Bit-ASCII-Buchstaben, Ziffern, Unterstriche oder Dollarzeichen folgen.
+Andere Zeichen, einschließlich Leerzeichen, sind nicht gültig.
+Bei dem Namen wird die Groß-/Kleinschreibung nicht beachtet, dh er kann in Groß- oder Kleinschreibung deklariert und verwendet werden.
+Somit sind aus Sicht des Systems die folgenden Namen gleich:
++
+[source]
+----
+fullname
+FULLNAME
+FuLlNaMe
+FullName
+----
+
+.Reguläre Namenssyntax
+[listing]
+----
+<name> ::=
+  <letter> | <name><letter> | <name><digit> | <name>_ | <name>$
+
+<letter> ::= <upper letter> | <lower letter>
+
+<upper letter> ::= A | B | C | D | E | F | G | H | I | J | K | L | M |
+                   N | O | P | Q | R | S | T | U | V | W | X | Y | Z
+
+<lower letter> ::= a | b | c | d | e | f | g | h | i | j | k | l | m |
+                   n | o | p | q | r | s | t | u | v | w | x | y | z
+
+<digit> ::= 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+----
+
+[[fblangref40-structure-identifiers-delim-de]]
+=== Regeln für getrennte Objektbezeichner
+
+* Länge darf 63 Zeichen im Zeichensatz UTF8 (252 Byte) nicht überschreiten.
+Bezeichner werden im Zeichensatz `UTF8` gespeichert, dh Zeichen außerhalb des ASCII-Bereichs werden mit 2 bis 4 Byte gespeichert.
+* Der gesamte String muss in doppelte Anführungszeichen eingeschlossen werden, z.B. `"anIdentifier"`
+* Es kann jedes Zeichen aus dem `UTF8`-Zeichensatz enthalten, einschließlich Akzentzeichen, Leerzeichen und Sonderzeichen
+* Ein Bezeichner kann ein reserviertes Wort sein
+* Bei Bezeichnern mit Trennzeichen muss die Groß-/Kleinschreibung in allen Kontexten beachtet werden
+* Nachgestellte Leerzeichen in durch Trennzeichen getrennten Namen werden wie bei jeder Stringkonstanten entfernt
+* Begrenzte Bezeichner sind nur in Dialekt 3 verfügbar.
+Weitere Informationen zu Dialekten finden Sie unter <<fblangref40-structure-dialects-de>>
+
+.Getrennte Namenssyntax
+[listing]
+----
+<delimited name> ::= "<permitted_character>[<permitted_character> ...]"
+----
+
+[NOTE]
+====
+Ein durch Trennzeichen getrennter Bezeichner wie `"FULLNAME"` entspricht den regulären Bezeichnern `FULLNAME`, `fullname`, `FullName` und so weiter.
+Der Grund dafür ist, dass Firebird reguläre Bezeichner in Großbuchstaben speichert, unabhängig davon, wie sie definiert oder deklariert wurden.
+Begrenzte Bezeichner werden immer nach der genauen Schreibweise ihrer Definition oder Deklaration gespeichert.
+Somit unterscheidet sich `"FullName"` (quoted) von `FullName` (unquoted, d.h. regulär), das als `FULLNAME` in den Metadaten gespeichert wird.
+====
+
+[[fblangref40-structure-literals-de]]
+== Literale
+
+Literale werden verwendet, um Daten direkt darzustellen.
+Beispiele für Standardtypen von Literalen sind:
+
+[source]
+----
+integer        - 0, -34, 45, 0X080000000;
+fixed-point    - 0.0, -3.14
+floating-point - 3.23e-23;
+string         - 'text', 'don''t!';
+binary string  - x'48656C6C6F20776F726C64'
+date           - DATE '2018-01-19';
+time           - TIME '15:12:56';
+timestamp      - TIMESTAMP '2018-01-19 13:32:02';
+boolean        - true, false, unknown
+null state     - null
+----
+
+Details zum Umgang mit den Literalen für jeden Datentyp werden im nächsten Kapitel <<fblangref40-datatypes-de,Datentypen und Untertypen>> besprochen.
+
+[[fblangref40-structure-operators-de]]
+== Operatoren und Sonderzeichen
+
+Eine Reihe von Sonderzeichen ist für die Verwendung als Operatoren oder Trennzeichen reserviert.
+
+[source]
+----
+<special char> ::=
+    <space> | " | % | & | ' | ( | ) | * | + | , | -
+  | . | / | : | ; | < | = | > | ? | [ | ] | ^ | { | }
+----
+
+Einige dieser Zeichen können einzeln oder in Kombination als Operatoren (arithmetisch, string, logisch), als Trennzeichen für SQL-Befehle, als Anführungszeichen für Bezeichner und als Begrenzung von String-Literalen oder Kommentaren verwendet werden.
+
+.Operatorsyntax
+[listing]
+----
+<operator> ::=
+    <string concatenation operator>
+  | <arithmetic operator>
+  | <comparison operator>
+  | <logical operator>
+
+<string concatentation operator> ::= "||"
+
+<arithmetic operator> ::= * | / | + | - |
+
+<comparison operator> ::=
+    =  | <> | != | ~= | ^= | > | < | >= | <=
+  | !> | ~> | ^> | !< | ~< | ^<
+
+<logical operator> ::= NOT | AND | OR
+----
+
+Weitere Informationen zu Operatoren finden Sie unter <<fblangref40-commons-expressions-de,Ausdrücke>>.
+
+[[fblangref40-structure-comments-de]]
+== Bemerkungen
+
+Kommentare können in SQL-Skripten, SQL-Anweisungen und PSQL-Modulen vorhanden sein.
+Ein Kommentar kann ein beliebiger Text sein, der vom Code-Autor angegeben wird und normalerweise verwendet wird, um zu dokumentieren, wie bestimmte Teile des Codes funktionieren.
+Der Parser ignoriert den Text von Kommentaren.
+
+Firebird unterstützt zwei Arten von Kommentaren: _block_ und _in-line_.
+
+.Syntax
+[listing]
+----
+
+<comment> ::= <block comment> | <single-line comment>
+
+<block comment> ::=
+  /* <character>[<character> …] */
+
+<single-line comment> ::=
+  -- <character>[<character> …]<end line>
+----
+
+Blockkommentare beginnen mit dem Zeichenpaar `/{asterisk}` und enden mit dem Zeichenpaar `{asterisk}/`.
+Text in Blockkommentaren kann beliebig lang sein und mehrere Zeilen belegen.
+
+Inline-Kommentare beginnen mit einem Bindestrich-Paar `--` und werden bis zum Ende der aktuellen Zeile fortgesetzt.
+
+.Beispiele
+[source]
+----
+CREATE PROCEDURE P(APARAM INT)
+  RETURNS (B INT)
+AS
+BEGIN
+  /* This text will be ignored during the execution of the statement
+     since it is a comment
+  */
+  B = A + 1; -- In-line comment
+  SUSPEND;
+END
+----

@@ -1,0 +1,871 @@
+[[fblangref40-management-de]]
+= Managementanweisungen
+
+Seit Firebird 3.0 ist eine neue Klasse von DSQL-Anweisungen in Firebirds SQL-Lexikon entstanden, normalerweise für die Verwaltung von Aspekten der Client/Server-Umgebung.
+Typischerweise beginnen solche Anweisungen mit dem Verb `SET`.
+
+[NOTE]
+====
+Das _isql_-Tool hat auch eine Sammlung von `SET`-Befehlen.
+Diese Befehle sind nicht Teil des SQL-Lexikons von Firebird.
+Informationen zu __isql__s `SET`-Befehlen finden Sie unter https://www.firebirdsql.org/file/documentation/html/en/firebirddocs/isql/firebird-isql.html#isql-set[_Isql_ Set Commands] in _Firebird Interactive SQL Utility_.
+====
+
+Management-Anweisungen können überall ausgeführt werden, wo DSQL ausgeführt werden kann, aber normalerweise möchte der Entwickler eine Management-Anweisung in einem Datenbank-Trigger ausführen.
+In früheren Versionen wurden Managementanweisungen in PSQL wie DDL behandelt, sodass sie nicht direkt in einem PSQL-Modul ausgeführt werden konnten.
+Ab Firebird 4.0 kann ein vordefinierter Satz davon direkt in PSQL-Modulen verwendet werden, ohne dass sie in einen `EXECUTE STATEMENT`-Block eingeschlossen werden müssen.
+Weitere Einzelheiten zum aktuellen Satz finden Sie unter <<fblangref40-psql-coding-management,Management-Anweisungen in PSQL>> im PSQL-Kapitel.
+
+Die meisten Verwaltungsanweisungen betreffen nur die aktuelle Verbindung (Anhang oder "Sitzung") und erfordern keine Autorisierung über die Anmeldeberechtigungen des aktuellen Benutzers ohne erhöhte Berechtigungen hinaus.
+
+Einige Aussagen des Managements gehen über den Rahmen der aktuellen Sitzung hinaus.
+Beispiele sind die `ALTER DATABASE {BEGIN | END} BACKUP`-Anweisungen zur Steuerung von _nBackup_ oder die `ALTER EXTERNAL CONNECTIONS POOL`-Anweisungen, die in Firebird 4.0 eingeführt wurden, um das Verbindungs-Pooling zu verwalten.
+Ein neuer Satz von _Systemberechtigungen_, analog zu den für Datenbankobjekte gewährten SQL-Berechtigungen, wird bereitgestellt, um die erforderliche Berechtigung zum Ausführen einer bestimmten Verwaltungsanweisung in dieser Kategorie zu ermöglichen.
+
+[NOTE]
+====
+Einige Anweisungen dieser Klasse verwenden das Verb `ALTER`, obwohl Managementanweisungen nicht mit DDL `ALTER`-Anweisungen verwechselt werden sollten, die Datenbankobjekte wie Tabellen, Ansichten, Prozeduren, Rollen usw. modifizieren.
+
+Obwohl einige <<fblangref40-ddl-db-alter-de,`ALTER DATABASE`>>-Klauseln (`BEGIN BACKUP`) als Management-Anweisungen betrachtet werden können, sind sie im Kapitel _DDL_ dokumentiert.
+====
+
+[[fblangref40-management-datatypes-de]]
+== Datentypverhalten
+
+[[fblangref40-management-setbind-de]]
+=== `SET BIND` (Regeln zum Erzwingen von Datentypen)
+
+.Verwendet für
+Konfigurieren von Datentyp-Erzwingungsregeln
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+macros]
+----
+SET BIND OF <type_from> TO <type_to>
+
+<type_from> ::=
+    <scalar_datatype>
+  | <blob_datatype>
+  | TIME ZONE
+  | VARCHAR | {CHARACTER | CHAR} VARYING
+
+<type_to> ::=
+    <scalar_datatype>
+  | <blob_datatype>
+  | VARCHAR | {CHARACTER | CHAR} VARYING
+  | LEGACY | NATIVE | EXTENDED
+  | EXTENDED TIME WITH TIME ZONE
+  | EXTENDED TIMESTAMP WITH TIME ZONE
+
+<scalar_datatype> ::=
+  !! Siehe auch <<fblangref40-datatypes-syntax-scalar-de,Syntax für Skalardatentypen>> !!
+
+<blob_datatype> ::=
+  !! Siehe auch <<fblangref40-datatypes-syntax-blob-de,Syntax der BLOB-Datentypen>> !!
+----
+
+`SET BIND` konfiguriert Datentyp-Zwangsregeln für die aktuelle Sitzung.
+Diese Anweisung ermöglicht es, bei Client-Server-Interaktionen einen Datentyp durch einen anderen zu ersetzen.
+Mit anderen Worten, _type_from_, das von der Engine zurückgegeben wird, wird in der Client-API als _type_to_ dargestellt.
+
+[NOTE]
+====
+Nur Felder, die von der Datenbank-Engine in regulären Nachrichten zurückgegeben werden, werden gemäß diesen Regeln ersetzt.
+Als Array-Slice zurückgegebene Variablen sind von der `SET BIND`-Anweisung nicht betroffen.
+====
+
+Wenn eine unvollständige Typdefinition verwendet wird (d. h. einfach `CHAR` statt `CHAR(n)`) in _from_type_, wird die Zwangsumsetzung für alle `CHAR`-Spalten durchgeführt.
+Der spezielle unvollständige Typ `TIME ZONE` steht für `TIME WITH TIME ZONE` und `TIMESTAMP WITH TIME ZONE`.
+Wenn in _to_type_ eine unvollständige Typdefinition verwendet wird, definiert die Engine fehlende Details zu diesem Typ automatisch basierend auf der Quellspalte.
+
+Das Ändern der Bindung eines 'NUMERIC'- oder 'DECIMAL'-Datentyps hat keinen Einfluss auf den zugrunde liegenden Integer-Typ.
+Im Gegensatz dazu wirkt sich die Änderung der Bindung eines Integer-Datentyps auch auf die entsprechenden NUMERICs/DECIMALs aus (zB `SET BIND OF INT128 TO DOUBLE PRECISION` wird auch `NUMERIC` und `DECIMAL` mit einer Genauigkeit von mehr als 19 abbilden, da diese Typen `INT128` verwenden als ihr zugrunde liegender Typ).
+
+Der spezielle Typ `LEGACY` wird verwendet, wenn ein Datentyp, der in früheren Firebird-Versionen fehlte, für alte Client-Software verständlich dargestellt werden soll (evtl. mit Datenverlust).
+Die in diesem Fall angewandten Nötigungsregeln sind in der folgenden Tabelle aufgeführt.
+
+[[fblangref40-management-legacy-coercion-rules-de]]
+.Nativ- zu `LEGACY`-Zwangsregeln
+[cols="1,1", options="header",stripes="none"]
+|===
+| Nativ-Datentyp
+| Legacy-Datentyp
+
+|BOOLEAN
+|CHAR(5)
+
+|DECFLOAT
+|DOUBLE PRECISION
+
+|INT128
+|BIGINT
+
+|TIME WITH TIME ZONE
+|TIME WITHOUT TIME ZONE
+
+|TIMESTAMP WITH TIME ZONE
+|TIMESTAMP WITHOUT TIME ZONE
+|===
+
+Die Verwendung von `EXTENDED` für _type_to_ bewirkt, dass die Engine zu einer erweiterten Form des _type_from_-Datentyps gezwungen wird.
+Derzeit funktioniert dies nur für `TIME/TIMESTAMP WITH TIME ZONE`, sie werden zu `EXTENDED TIME/TIMESTAMP WITH TIME ZONE` gezwungen.
+Der Typ 'EXTENDED' enthält sowohl den Zeitzonennamen als auch den entsprechenden GMT-Offset, bleibt also verwendbar, wenn die Client-Anwendung benannte Zeitzonen nicht richtig verarbeiten kann (z. B. aufgrund der fehlenden ICU-Bibliothek).
+
+Das Setzen einer Bindung auf `NATIVE` setzt die vorhandene Zwangsregel für diesen Datentyp zurück und gibt sie in ihrem nativen Format zurück.
+
+Die anfänglichen Bindungsregeln einer Verbindung werden über den DPB konfiguriert, indem eine durch Semikolon getrennte Liste von `<type_from> TO <type_to>`-Optionen als Stringwert von _isc_dpb_set_bind_ bereitgestellt wird.
+
+Die Ausführung von <<fblangref40-management-session-reset-alter-de>> wird zu den durch den DPB konfigurierten Bindungsregeln oder andernfalls zum Systemstandard zurückgesetzt.
+
+[TIP]
+====
+Es ist auch möglich, über die Konfigurationsoption `DataTypeCompatibility` einen Standardsatz von Datentyp-Umwandlungsregeln für alle Clients zu konfigurieren, entweder als globale Konfiguration in `firebird.conf` oder pro Datenbank in `databases.conf`.
+
+`DataTypeCompatibility` hat derzeit zwei mögliche Werte: `3.0` und `2.5`.
+Die Option `3.0` ordnet Datentypen, die nach Firebird 3.0 eingeführt wurden -- insbesondere `DECIMAL`/`NUMERIC` mit Genauigkeit 19 oder höher, `DECFLOAT`, `TIME/TIMESTAMP WITH TIME ZONE`, den in Firebird 3.0 unterstützten Datentypen zu .
+Die Option `2.5` konvertiert auch den Datentyp `BOOLEAN`.
+
+Weitere Informationen finden Sie in den <<fblangref40-management-legacy-coercion-rules-de>>.
+Diese Einstellung ermöglicht es Legacy-Client-Anwendungen, mit Firebird 4.0 zu arbeiten, ohne sie neu kompilieren oder anderweitig anpassen zu müssen, um die neuen Datentypen zu verstehen.
+
+====
+
+[[fblangref40-management-setbind-exmpl-de]]
+==== `SET BIND`-Beispiel
+
+[source]
+----
+-- native
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+                 123.45
+
+-- double
+SET BIND OF DECFLOAT TO DOUBLE PRECISION;
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+      123.4500000000000
+
+-- still double
+SET BIND OF DECFLOAT(34) TO CHAR;
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+      123.4500000000000
+
+-- text
+SELECT CAST('123.45' AS DECFLOAT(34)) FROM RDB$DATABASE;
+
+CAST
+==========================================
+123.45
+----
+
+Im Falle einer fehlenden ICU auf Client-Seite:
+
+[source]
+----
+SELECT CURRENT_TIMESTAMP FROM RDB$DATABASE;
+
+                                        CURRENT_TIMESTAMP
+=========================================================
+2020-02-21 16:26:48.0230 GMT*
+
+SET BIND OF TIME ZONE TO EXTENDED;
+SELECT CURRENT_TIMESTAMP FROM RDB$DATABASE;
+
+                                        CURRENT_TIMESTAMP
+=========================================================
+2020-02-21 19:26:55.6820 +03:00
+----
+
+[[fblangref40-management-setdecfloat-de]]
+=== `SET DECFLOAT`
+
+.Verwendet für
+Rundungs- und Fehlerverhalten von `DECFLOAT` konfigurieren
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+SET DECFLOAT
+  { ROUND <round_mode>
+  | TRAPS TO [<trap_opt> [, <trap_opt> ...]] }
+
+<round_mode> ::=
+    CEILING | UP | HALF_UP | HALF_EVEN
+  | HALF_DOWN | DOWN | FLOOR | REROUND
+
+<trap_opt> ::=
+    DIVISON_BY_ZERO | INEXACT | INVALID_OPERATION
+  | OVERFLOW | UNDERFLOW
+----
+
+`SET DECFLOAT` konfiguriert das Rundungs- und Fehlerverhalten von Operationen auf `DECFLOAT`-Typen in der aktuellen Sitzung.
+
+[[fblangref40-management-setdecfl-rnd-de]]
+=== `SET DECFLOAT ROUND`
+
+`SET DECFLOAT ROUND` ändert das Rundungsverhalten von Operationen auf `DECFLOAT`.
+Der Standardrundungsmodus ist `HALF_UP`.
+Die initiale Konfiguration einer Verbindung kann auch über das DPB-Tag `isc_dpb_decfloat_round` mit dem gewünschten _round_mode_ als Stringwert angegeben werden.
+
+Die gültigen Rundungsmodi sind:
+
+[horizontal]
+`CEILING`:: gegen +unendlich
+`UP`:: weg von 0
+`HALF_UP`:: zum nächsten, wenn gleich weit, dann nach oben (Standard)
+`HALF_EVEN`:: zum nächsten, bei gleichem Abstand sicherstellen, dass die letzte Ziffer im Ergebnis gerade ist
+`HALF_DOWN`:: zum nächsten, wenn gleich weit, dann nach unten
+`DOWN`:: in Richtung 0
+`FLOOR`:: in Richtung -unendlich
+`REROUND`:: nach oben, wenn die zu rundende Ziffer 0 oder 5 ist, in anderen Fällen nach unten
+
+Die Ausführung von <<fblangref40-management-session-reset-alter-de>> wird auf den über den DPB konfigurierten Wert oder ansonsten auf den Systemstandard zurückgesetzt.
+
+[[fblangref40-management-setdecfl-traps-de]]
+=== `SET DECFLOAT TRAPS`
+
+`SET DECFLOAT TRAPS` ändert das Fehlerverhalten von Operationen auf `DECFLOAT`.
+Die Standard-Traps sind `DIVISION_BY_ZERO,INVALID_OPERATION,OVERFLOW`;
+dieser Standard entspricht dem Verhalten, das im SQL:2016-Standard für `DECFLOAT` angegeben ist.
+Diese Anweisung steuert, ob bestimmte Ausnahmebedingungen zu einem Fehler ("`trap`") oder einer alternativen Behandlung führen (zB ein Unterlauf gibt `0` zurück, wenn er nicht gesetzt ist, oder ein Überlauf gibt eine Unendlichkeit zurück).
+Die Erstkonfiguration einer Verbindung kann auch über das DPB-Tag `isc_dpb_decfloat_traps` mit den gewünschten kommaseparierten _trap_opt_-Werten als String-Wert angegeben werden.
+
+Gültige Trap-Optionen (Ausnahmebedingungen) sind:
+
+[horizontal]
+`Division_by_zero`:: (standardmäßig eingestellt)
+`Inexact`:: --
+`Invalid_operation`:: (standardmäßig eingestellt)
+`Overflow`:: (standardmäßig eingestellt)
+`Underflow`:: --
+
+Die Ausführung von <<fblangref40-management-session-reset-alter-de>> wird auf den über den DPB konfigurierten Wert oder ansonsten auf den Systemstandard zurückgesetzt.
+
+[[fblangref40-management-extpool-de]]
+== Verbindungspool-Verwaltung
+
+Verwaltungsanweisungen zum Verwalten des Pools für externe Verbindungen.
+
+[[fblangref40-management-extpool-alter-de]]
+=== `ALTER EXTERNAL CONNECTIONS POOL`
+
+.Verwendet für
+Verwalten des externen Verbindungspools
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER EXTERNAL CONNECTIONS POOL
+  { CLEAR ALL
+  | CLEAR OLDEST
+  | SET LIFETIME _lifetime_ <time-unit>
+  | SET SIZE _size_ }
+
+<time-unit> ::= SECOND | MINUTE | HOUR
+----
+
+[[fblangref40-ddl-tbl-extpoolalt-de]]
+.`ALTER EXTERNAL CONNECTIONS POOL`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|lifetime
+|Maximale Lebensdauer einer Verbindung im Pool.
+Der Mindestwert ist `1 SECOND`, Maximum ist `24 HOUR`.
+
+|size
+|Maximale Größe des Verbindungspools.
+Bereich 0 - 1000.
+Die Einstellung auf `0` deaktiviert den Pool für externe Verbindungen.
+
+|===
+
+Wenn es vorbereitet ist, wird es wie eine DDL-Anweisung beschrieben, aber seine Wirkung tritt sofort ein – es wird sofort und vollständig ausgeführt, ohne auf das Transaktionscommit zu warten.
+
+Die Anweisungen können von jeder Verbindung ausgegeben werden, und Änderungen werden auf die speicherinterne Instanz des Pools im aktuellen Firebird-Prozess angewendet.
+Handelt es sich um einen Classic-Prozess, wirkt sich eine dort eingereichte Änderung nicht auf andere Classic-Prozesse aus.
+
+Mit `ALTER EXTERNAL CONNECTIONS POOL` vorgenommene Änderungen sind nicht dauerhaft: Firebird verwendet nach einem Neustart die Pool-Einstellungen, die in `firebird.conf` von `ExtConnPoolSize` und `ExtConnPoolLifeTime` konfiguriert wurden.
+
+[[fblangref40-management-extpool-alter-cls-de]]
+==== `ALTER EXTERNAL CONNECTIONS POOL`-Klauseln
+
+`CLEAR ALL`::
+Schließt alle inaktiven Verbindungen und trennt derzeit aktive Verbindungen, sodass sie sofort geschlossen werden, wenn sie nicht verwendet werden.
+
+`CLEAR OLDEST`::
+Schließt abgelaufene Verbindungen
+
+`SET LIFETIME`::
+Konfiguriert die maximale Lebensdauer einer inaktiven Verbindung im Pool.
+Der Standardwert (in Sekunden) wird über den Parameter `ExtConnPoolLifetime` in `firebird.conf` eingestellt.
+
+`SET SIZE`::
+Konfiguriert die maximale Anzahl inaktiver Verbindungen im Pool.
+Der Standardwert wird über den Parameter `ExtConnPoolSize` in der `firebird.conf` gesetzt.
+
+[[fblangref40-management-extpool-how-de]]
+==== So funktioniert der Verbindungspool
+
+Jeder erfolgreichen Verbindung ist ein Pool zugeordnet, der zwei Listen verwaltet – eine für inaktive Verbindungen und eine für aktive Verbindungen.
+Wenn eine Verbindung in der "`aktiv`"-Liste keine aktiven Anfragen und keine aktiven Transaktionen hat, wird sie als "`unbenutzt`" angenommen.
+Es wird versucht, die nicht verwendete Verbindung zurückzusetzen, indem eine `ALTER SESSION RESET`-Anweisung verwendet wird und
+
+* wenn das Zurücksetzen erfolgreich ist (keine Fehler auftreten), wird die Verbindung in die "`Idle`"-Liste verschoben;
+* wenn das Zurücksetzen fehlschlägt, wird die Verbindung geschlossen;
+* Wenn der Pool seine maximale Größe erreicht hat, wird die älteste inaktive Verbindung geschlossen.
+* Wenn die _Lebensdauer_ einer inaktiven Verbindung abläuft, wird sie aus dem Pool gelöscht und geschlossen.
+
+[[fblangref40-management-extpool-new-conn-de]]
+===== Neue Verbindungen
+
+Wenn die Engine aufgefordert wird, eine neue externe Verbindung zu erstellen, sucht der Pool zunächst nach einem Kandidaten in der "`idle`"-Liste.
+Die Suche, bei der die Groß-/Kleinschreibung beachtet wird, umfasst vier Parameter:
+
+. Verbindungszeichenfolge
+. Nutzername
+. Passwort
+. Rolle
+
+Wenn eine geeignete Verbindung gefunden wird, wird überprüft, ob sie noch am Leben ist.
+
+* Wenn die Prüfung fehlschlägt, wird sie gelöscht und die Suche wiederholt, ohne dem Kunden einen Fehler zu melden
+* Andernfalls wird die Live-Verbindung von der "`Idle`"-Liste in die "`active`"-Liste verschoben und an den Anrufer zurückgegeben
+* Bei mehreren passenden Anschlüssen wird der zuletzt genutzte ausgewählt
+* Wenn keine passende Verbindung vorhanden ist, wird eine neue erstellt und der Liste "aktiv" hinzugefügt.
+
+[[fblangref40-management-extpool-alter-who-de]]
+==== Wer kann den Pool für externe Verbindungen ändern?
+
+Die Anweisung `ALTER EXTERNAL CONNECTIONS POOL` kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem Privileg `MODIFY_EXT_CONN_POOL`
+
+.Siehe auch
+<<fblangref40-scalarfuncs-get-context-de,`RDB$GET_CONTEXT`>>
+
+[[fblangref40-management-role-de]]
+== Ändern der aktuellen Rolle
+
+[[fblangref40-management-role-set-de]]
+=== `SET ROLE`
+
+.Benutzt für
+Ändern der Rolle der aktuellen Sitzung
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET ROLE {_role_name_ | NONE}
+----
+
+.`SET ROLE`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|role_name
+|Der Name der anzuwendenden Rolle role
+|===
+
+Die `SET ROLE`-Anweisung ermöglicht es einem Benutzer, eine andere Rolle anzunehmen;
+es setzt die Kontextvariable `CURRENT_ROLE` auf _role_name_, wenn diese Rolle dem `CURRENT_USER` gewährt wurde.
+Für diese Sitzung erhält der Benutzer die von dieser Rolle gewährten Berechtigungen.
+Alle Rechte, die der vorherigen Rolle gewährt wurden, werden aus der Sitzung entfernt.
+Verwenden Sie `NONE` anstelle von _role_name_, um die `CURRENT_ROLE` zu löschen.
+
+Wenn die angegebene Rolle nicht existiert oder dem Benutzer nicht explizit zugewiesen wurde, wird der Fehler "`__Role *role_name* is invalid or unavailable__`" ausgegeben.
+
+[[fblangref40-management-role-set-exmpl-de]]
+==== `SET ROLE`-Beispiele
+
+. Ändern Sie die aktuelle Rolle in `MANAGER`
++
+[source]
+----
+SET ROLE manager;
+select current_role from rdb$database;
+
+ROLE
+=======================
+MANAGER
+----
+. Löschen Sie die aktuelle Rolle
++
+[source]
+----
+SET ROLE NONE;
+select current_role from rdb$database;
+
+ROLE
+=======================
+NONE
+----
+
+.Siehe auch
+<<fblangref40-management-role-set-trusted-de>>, <<fblangref40-security-grant-de,`GRANT`>>
+
+[[fblangref40-management-role-set-trusted-de]]
+=== `SET TRUSTED ROLE`
+
+.Verwendet für
+Ändert die Rolle der aktuellen Sitzung in die vertrauenswürdige Rolle
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing]
+----
+SET TRUSTED ROLE
+----
+
+Die Anweisung `SET TRUSTED ROLE` ermöglicht es, die dem Benutzer durch eine Mapping-Regel zugewiesene Rolle einzunehmen (siehe <<fblangref40-security-mapping-de,Mapping von Benutzern auf Objekte>>).
+Die durch eine Zuordnungsregel zugewiesene Rolle wird beim Verbinden automatisch übernommen, wenn der Benutzer keine explizite Rolle angegeben hat.
+Die Anweisung `SET TRUSTED ROLE` ermöglicht es, die zugeordnete (oder `trusted``) Rolle zu einem späteren Zeitpunkt oder nach Änderung der aktuellen Rolle mit `SET ROLE` wieder einzunehmen.
+
+Eine vertrauenswürdige Rolle ist kein bestimmter Rollentyp, sondern kann eine beliebige Rolle sein, die mit `CREATE ROLE` erstellt wurde, oder eine vordefinierte Systemrolle wie `RDB$ADMIN`.
+Ein Anhang (Sitzung) hat eine vertrauenswürdige Rolle, wenn das <<fblangref40-security-mapping-de,Sicherheitsobjekt-Mapping-Subsystem>> eine Übereinstimmung zwischen dem vom Plugin übergebenen Authentifizierungsergebnis und einer lokalen oder globalen Zuordnung zu einer Rolle für die aktuelle Datenbank findet.
+Die Rolle kann diesem Benutzer nicht explizit zugewiesen werden.
+
+Wenn eine Sitzung keine vertrauenswürdige Rolle hat, wird die Ausführung von `SET TRUSTED ROLE` den Fehler „`__Your attachment has no trusted role__`“ auslösen.
+
+[NOTE]
+====
+Während die `CURRENT_ROLE` mit `SET ROLE` geändert werden kann, ist es nicht immer möglich, mit demselben Befehl zu einer vertrauenswürdigen Rolle zurückzukehren, da `SET ROLE` prüft, ob die Rolle dem Benutzer zugewiesen wurde.
+Mit `SET TRUSTED ROLE` kann die Trusted Rolle auch dann wieder übernommen werden, wenn `SET ROLE` fehlschlägt.
+====
+
+[[fblangref40-management-role-set-trusted-exmpl-de]]
+==== `SET TRUSTED ROLE`-Beispiele
+
+. Angenommen, eine Zuordnungsregel weist einem Benutzer "ALEX" die Rolle "ROLE1" zu:
++
+[source]
+-----
+CONNECT 'employee' USER ALEX PASSWORD 'password';
+SELECT CURRENT_ROLE FROM RDB$DATABASE;
+
+ROLE
+===============================
+ROLE1
+
+SET ROLE ROLE2;
+SELECT CURRENT_ROLE FROM RDB$DATABASE;
+
+ROLE
+===============================
+ROLE2
+
+SET TRUSTED ROLE;
+SELECT CURRENT_ROLE FROM RDB$DATABASE;
+
+ROLE
+===============================
+ROLE1
+-----
+
+.Siehe auch
+<<fblangref40-management-role-set-de>>, <<fblangref40-security-mapping-de,Zuordnung von Benutzern zu Objekten>>
+
+[[fblangref40-management-timeouts-de]]
+== Session Timeouts
+
+Statements for management of timeouts of the current connection.
+
+[[fblangref40-management-setsessionidle-de]]
+=== `SET SESSION IDLE TIMEOUT`
+
+.Verwendet für
+Ändern des Sitzungsleerlauf-Timeouts
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET SESSION IDLE TIMEOUT _value_ [<time-unit>]
+
+<time-unit> ::= MINUTE | HOUR | SECOND
+----
+
+.`SET SESSION IDLE TIMEOUT`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|value
+|Die Zeitüberschreitungsdauer, ausgedrückt in _time-unit_.
+Ein Wert von '0' verschiebt die Zeitüberschreitung bei Verbindungsleerlauf, die für die Datenbank konfiguriert ist.
+
+|time-unit
+|Zeiteinheit des Timeouts.
+Standard ist `MINUTE`.
+|===
+
+Das `SET SESSION IDLE TIMEOUT` setzt ein Leerlauf-Timeout auf Verbindungsebene und wird sofort wirksam.
+Die Anweisung kann außerhalb der Transaktionssteuerung (ohne aktive Transaktion) ausgeführt werden.
+
+Das Festlegen eines _value_ größer als für die Datenbank konfiguriert ist zulässig, wird aber effektiv ignoriert, siehe auch _<<fblangref40-management-session-timeout-effective-de>>_.
+
+Das aktuelle Zeitlimit für die Sitzung kann über <<fblangref40-scalarfuncs-get-context-de,`RDB$GET_CONTEXT`>>, Namespace `SYSTEM` und Variable `SESSION_IDLE_TIMEOUT` abgerufen werden.
+Informationen sind auch von `MON$ATTACHMENTS` erhältlich:
+
+`MON$IDLE_TIMEOUT`::
+Leerlaufzeitüberschreitung auf Verbindungsebene in Sekunden;
+`0` wenn Timeout nicht gesetzt ist.
+
+`MON$IDLE_TIMER`::
+Ablaufzeit des Leerlauftimers;
+enthält `NULL`, wenn kein Idle-Timeout gesetzt wurde oder kein Timer läuft.
+
+Sowohl `RDB$GET_CONTEXT('SYSTEM', 'SESSION_IDLE_TIMEOUT')` und `MON$ATTACHMENTS.MON$IDLE_TIMEOUT` melden die für die Verbindung konfigurierte Leerlaufzeitüberschreitung;
+sie melden nicht die effektive Leerlaufzeitüberschreitung.
+
+Das Sitzungsleerlauf-Timeout wird zurückgesetzt, wenn <<fblangref40-management-session-reset-alter-de>> ausgeführt wird.
+
+[[fblangref40-management-session-timeouts-de]]
+==== Zeitüberschreitungen bei untätigen Sitzungen
+
+Ein Timeout für eine Leerlaufsitzung ermöglicht, dass eine Nutzungsverbindung nach einer bestimmten Zeit der Inaktivität automatisch geschlossen wird.
+Ein Datenbankadministrator kann damit die Schließung alter Verbindungen erzwingen, die inaktiv geworden sind, um unnötigen Ressourcenverbrauch zu reduzieren.
+Es kann auch von Anwendungs- und Werkzeugentwicklern als Alternative zum Schreiben eigener Module zur Steuerung der Verbindungslebensdauer verwendet werden.
+
+Standardmäßig ist die Leerlaufzeitüberschreitung nicht aktiviert.
+Es wird keine Mindest- oder Höchstgrenze festgelegt, aber ein angemessen langer Zeitraum – beispielsweise einige Stunden – wird empfohlen.
+
+[[fblangref40-management-session-timeouts-how-de]]
+===== So funktioniert das Timeout für Leerlaufsitzungen
+
+* Wenn der Benutzer-API-Aufruf die Engine verlässt (zur aufrufenden Verbindung zurückkehrt), wird ein spezieller Leerlauf-Timer gestartet, der der aktuellen Verbindung zugeordnet ist
+* Wenn ein anderer Benutzer-API-Aufruf von dieser Verbindung in die Engine eingeht, wird der Leerlauf-Timer gestoppt und auf Null zurückgesetzt
+* Bei Überschreitung der maximalen Leerlaufzeit schließt die Engine die Verbindung sofort wie beim asynchronen Verbindungsabbau:
++
+** alle aktiven Anweisungen und Cursor sind geschlossen
+** alle aktiven Transaktionen werden zurückgesetzt
+** Die Netzwerkverbindung bleibt zu diesem Zeitpunkt geöffnet, sodass die Client-Anwendung den genauen Fehlercode beim nächsten API-Aufruf abrufen kann.
+Die Netzwerkverbindung wird serverseitig, nach einer Fehlermeldung oder zu gegebener Zeit durch einen Netzwerk-Timeout durch eine clientseitige Trennung geschlossen.
+
+[NOTE]
+====
+Immer wenn eine Verbindung abgebrochen wird, gibt der nächste Benutzer-API-Aufruf den Fehler `isc_att_shutdown` mit einem sekundären Fehler zurück, der den genauen Grund angibt.
+Jetzt haben wir
+
+`isc_att_shut_idle`:: Idle-Timeout abgelaufen
+
+zusätzlich zu
+
+`isc_att_shut_killed`:: Vom Datenbankadministrator getötet
+`isc_att_shut_db_down`:: Datenbank wird heruntergefahren
+`isc_att_shut_engine`:: Motor wird abgeschaltet
+====
+
+[[fblangref40-management-session-timeouts-setting-de]]
+===== Einstellen des Timeouts für Leerlaufsitzungen
+
+[NOTE]
+====
+Der Leerlauf-Timer startet nicht, wenn die Timeout-Periode auf Null gesetzt ist.
+====
+
+Ein Timeout für eine Leerlaufsitzung kann eingestellt werden:
+
+* Auf Datenbankebene kann der Datenbankadministrator den Konfigurationsparameter `ConnectionIdleTimeout` setzen, einen ganzzahligen Wert **in Minuten**.
+Der Standardwert Null bedeutet, dass kein Timeout festgelegt ist.
+Es ist pro Datenbank konfigurierbar, kann also global in `firebird.conf` eingestellt und für einzelne Datenbanken in `databases.conf` nach Bedarf überschrieben werden.
++
+Der Geltungsbereich dieser Methode umfasst alle Benutzerverbindungen, außer Systemverbindungen (Garbage Collector, Cache Writer usw.).
+* Auf Verbindungsebene wird das Timeout der Leerlaufsitzung sowohl von der Anweisung `SET SESSION IDLE TIMEOUT` als auch von der API (`setIdleTimeout`) unterstützt.
+Der Umfang dieser Methode ist spezifisch für den mitgelieferten Anschluss (Aufsatz).
+Sein Wert in der API ist **in Sekunden**.
+In der SQL-Syntax können es Stunden, Minuten oder Sekunden sein.
+Der Geltungsbereich dieser Methode ist die Verbindung, auf die sie angewendet wird.
+
+[NOTE]
+====
+Weitere Informationen zu den API-Aufrufen finden Sie in den _Firebird 4.0 Release Notes_.
+====
+
+[[fblangref40-management-session-timeout-effective-de]]
+===== Bestimmen des wirksamen Timeouts
+
+Der effektive Leerlauf-Timeout-Wert wird immer dann bestimmt, wenn ein Benutzer-API-Aufruf die Engine verlässt, wobei zuerst auf Verbindungsebene und dann auf Datenbankebene geprüft wird.
+Ein Timeout auf Verbindungsebene kann den Wert einer Einstellung auf Datenbankebene außer Kraft setzen, solange der Zeitraum für die Einstellung auf Verbindungsebene nicht länger als ein auf Datenbankebene anwendbares Timeout ungleich Null ist.
+
+[IMPORTANT]
+====
+Beachten Sie den Unterschied zwischen den Zeiteinheiten auf jeder Ebene.
+Auf Datenbankebene ist in den Konfigurationsdateien die Einheit für `SessionTimeout` Minuten.
+In SQL ist die Standardeinheit Minuten, kann aber explizit in Stunden oder Sekunden ausgedrückt werden.
+Auf API-Ebene ist die Einheit Sekunden.
+
+Absolute Genauigkeit ist in jedem Fall nicht garantiert, insbesondere bei hoher Systemlast, aber es wird garantiert, dass Timeouts nicht vor dem angegebenen Zeitpunkt ablaufen.
+====
+
+[[fblangref40-management-setstatementtimeout-de]]
+=== `SET STATEMENT TIMEOUT`
+
+.Verwendet für
+Anweisungs-Timeout für eine Verbindung ändern
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET STATEMENT TIMEOUT _value_ [<time-unit>]
+
+<time-unit> ::= SECOND | MILLISECOND | MINUTE | HOUR
+----
+
+.`SET STATEMENT TIMEOUT`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|value
+|Die Zeitüberschreitungsdauer, ausgedrückt in _time-unit_.
+Ein Wert von `0` verschiebt die Zeitüberschreitung der Anweisung, die für die Datenbank konfiguriert ist.
+
+|time-unit
+|Zeiteinheit des Timeouts.
+Standardmäßig ist `SECOND`.
+|===
+
+Das `SET SESSION IDLE TIMEOUT` setzt ein Leerlauf-Timeout auf Verbindungsebene und wird sofort wirksam.
+Die Anweisung kann außerhalb der Transaktionssteuerung (ohne aktive Transaktion) ausgeführt werden.
+
+Das Setzen eines _value_ größer als für die Datenbank konfiguriert ist zulässig, wird aber effektiv ignoriert, siehe auch _<<fblangref40-management-stmnt-timeout-effective-de>>_.
+
+Das aktuelle Statement-Timeout für die Sitzung kann über <<fblangref40-scalarfuncs-get-context-de,`RDB$GET_CONTEXT`>>, Namespace `SYSTEM` und Variable `STATEMENT_TIMEOUT` abgerufen werden. Informationen sind auch von `MON$ATTACHMENTS` erhältlich:
+
+`MON$STATEMENT_TIMEOUT`::
+Zeitlimit für Anweisung auf Verbindungsebene in Millisekunden;
+`0` wenn Timeout nicht gesetzt ist.
+
+In `MON$STATEMENTS`:
+
+`MON$STATEMENT_TIMEOUT`::
+Anweisungs-Timeout auf Anweisungsebene in Millisekunden;
+`0` wenn Timeout nicht gesetzt ist.
+
+`MON$STATEMENT_TIMER`::
+Ablaufzeit des Timeout-Timers;
+enthält `NULL`, wenn kein Idle-Timeout gesetzt wurde oder kein Timer läuft.
+
+Sowohl `RDB$GET_CONTEXT('SYSTEM', 'SESSION_IDLE_TIMEOUT')` und `MON$ATTACHMENTS.MON$IDLE_TIMEOUT` melden die für die Verbindung konfigurierte Leerlaufzeitüberschreitung und `MON$STATEMENTS$STATEMENT_TIMEOUT` für die Anweisung;
+sie melden nicht das effektive Zeitlimit für die Anweisung.
+
+Der Anweisungs-Timeout wird zurückgesetzt, wenn <<fblangref40-management-session-reset-alter-de>> ausgeführt wird.
+
+[[fblangref40-management-stmnt-timeouts-de]]
+==== Statement-Timeouts
+
+Die Anweisungs-Timeout-Funktion ermöglicht es, die Ausführung einer Anweisung automatisch zu stoppen, wenn sie länger als ein vorgegebener Timeout-Zeitraum ausgeführt wurde.
+Es gibt dem Datenbankadministrator ein Instrument zur Begrenzung des übermäßigen Ressourcenverbrauchs durch umfangreiche Abfragen.
+
+Anweisungs-Timeouts können auch für Anwendungsentwickler hilfreich sein, wenn sie komplexe Abfragen erstellen und debuggen, ohne die Ausführungszeit im Voraus zu kennen.
+Tester und andere könnten sie nützlich finden, um Abfragen mit langer Laufzeit zu erkennen und endliche Laufzeiten für Testsuiten festzulegen.
+
+[[fblangref40-management-stmt-timeouts-how-de]]
+===== So funktioniert das Anweisungs-Timeout
+
+Wenn die Anweisung mit der Ausführung beginnt oder ein Cursor geöffnet wird, startet die Engine einen speziellen Timer.
+Sie wird gestoppt, wenn die Ausführung der Anweisung abgeschlossen ist oder der letzte Datensatz vom Cursor abgerufen wurde.
+
+[NOTE]
+====
+Ein Abruf setzt diesen Timer nicht zurück.
+====
+
+Wenn der Timeout-Punkt erreicht ist:
+
+* Wenn die Anweisungsausführung aktiv ist, stoppt sie zum nächstmöglichen Zeitpunkt
+* Wenn die Anweisung derzeit nicht aktiv ist (z. B. zwischen Abrufen), wird sie als abgebrochen markiert und der nächste Abruf unterbricht tatsächlich die Ausführung und gibt einen Fehler zurück
+
+.Anweisungstypen von Timeouts ausgeschlossen
+[NOTE]
+====
+Anweisungs-Timeouts gelten nicht für einige Anweisungstypen und werden einfach ignoriert:
+
+* Alle DDL-Anweisungen
+* Alle internen Abfragen, die von der Engine selbst ausgegeben werden
+====
+
+[[fblangref40-management-stmnt-timeouts-setting-de]]
+===== Festlegen eines Anweisungs-Timeouts
+
+[NOTE]
+====
+Der Timer startet nicht, wenn die Timeout-Periode auf Null gesetzt ist.
+====
+
+Ein Anweisungs-Timeout kann eingestellt werden:
+
+* auf Datenbankebene durch den Datenbankadministrator durch Setzen des Konfigurationsparameters `StatementTimeout` in `firebird.conf` oder `databases.conf`.
+`StatementTimeout` ist eine Ganzzahl, die die Anzahl der Sekunden angibt, nach denen die Ausführung der Anweisung automatisch von der Engine abgebrochen wird.
+Null bedeutet, dass kein Timeout eingestellt ist.
+Eine Einstellung ungleich Null wirkt sich auf alle Anweisungen in allen Verbindungen aus.
+* auf Verbindungsebene mit `SET STATEMENT TIMEOUT` oder der API zum Setzen eines Anweisungs-Timeouts (`setStatementTimeout`).
+Eine Einstellung auf Verbindungsebene (über SQL oder die API) wirkt sich auf alle Anweisungen für die angegebene Verbindung aus;
+Einheiten für die Timeout-Periode auf dieser Ebene können mit beliebiger Granularität von Stunden bis Millisekunden angegeben werden.
+* auf Anweisungsebene unter Verwendung der API in Millisekunden
+
+[[fblangref40-management-stmnt-timeout-effective-de]]
+===== Bestimmen des gültigen Anweisungs-Timeouts
+
+Der gültige Anweisungs-Timeout-Wert wird immer dann bestimmt, wenn eine Anweisung ausgeführt wird oder ein Cursor geöffnet wird.
+Bei der Suche nach dem wirksamen Timeout durchläuft die Engine die Ebenen, von der Anweisung bis zur Datenbank- und/oder globalen Ebene, bis sie einen Wert ungleich Null findet.
+Wenn sich herausstellt, dass der gültige Wert null ist, läuft kein Anweisungstimer und es gilt kein Timeout.
+
+Ein Timeout auf Anweisungs- oder Verbindungsebene kann den Wert einer Einstellung auf Datenbankebene außer Kraft setzen, solange der Zeitraum für die Einstellung auf niedrigerer Ebene nicht länger als ein auf Datenbankebene anwendbares Timeout ungleich Null ist.
+
+[IMPORTANT]
+====
+Beachten Sie den Unterschied zwischen den Zeiteinheiten auf jeder Ebene.
+Auf Datenbankebene in der conf-Datei ist die Einheit für `StatementTimeout` Sekunden.
+In SQL ist die Standardeinheit Sekunden, kann aber explizit in Stunden, Minuten oder Millisekunden ausgedrückt werden.
+Auf API-Ebene ist die Einheit Millisekunden.
+
+Absolute Genauigkeit ist in jedem Fall nicht garantiert, insbesondere bei hoher Systemlast, aber es wird garantiert, dass Timeouts nicht vor dem angegebenen Zeitpunkt ablaufen.
+====
+
+Immer wenn eine Anweisung das Zeitlimit überschreitet und abgebrochen wird, gibt der nächste Benutzer-API-Aufruf den Fehler "isc_cancelled" mit einem sekundären Fehler zurück, der den genauen Grund angibt, d. h.
+
+`isc_cfg_stmt_timeout`:: Zeitüberschreitung auf Konfigurationsebene abgelaufen
+`isc_att_stmt_timeout`:: Zeitüberschreitung auf Attachmentebene abgelaufen
+`isc_req_stmt_timeout`:: Zeitüberschreitung auf Anweisungsebene abgelaufen
+
+[NOTE]
+.Hinweise zu Anweisungs-Timeouts
+====
+. Eine Client-Anwendung könnte länger warten als durch den Zeitüberschreitungswert festgelegt, wenn die Engine aufgrund des Abbruchs der Anweisung eine große Anzahl von Aktionen rückgängig machen muss
+. Wenn die Engine eine `EXECUTE STATEMENT`-Anweisung ausführt, übergibt sie den Rest des derzeit aktiven Timeouts an die neue Anweisung.
+Wenn die externe (entfernte) Engine keine Anweisungs-Timeouts unterstützt, ignoriert die lokale Engine stillschweigend alle entsprechenden Fehler.
+. Wenn die Engine eine Sperre vom Sperrenmanager erhält, versucht sie, den Wert des Sperrzeitlimits zu verringern, indem es den Rest des aktuell aktiven Anweisungszeitlimits verwendet, falls möglich.
+Aufgrund der Interna des Sperrmanagers wird der Rest der Anweisungszeitüberschreitung auf ganze Sekunden aufgerundet.
+====
+
+[[fblangref40-management-session-tz-de]]
+== Zeitzonenverwaltung
+
+Anweisungen zur Verwaltung von Zeitzonenfunktionen der aktuellen Verbindungen.
+
+[[fblangref40-management-settimezone-de]]
+=== `SET TIME ZONE`
+
+.Verwendet für
+Ändern der Sitzungszeitzone
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET TIME ZONE { _time_zone_string_ | LOCAL }
+----
+
+Ändert die Sitzungszeitzone in die angegebene Zeitzone.
+Die Angabe von `LOCAL` wird auf die anfängliche Sitzungszeitzone der Sitzung zurückgesetzt (entweder die Standardeinstellung oder wie durch die Verbindungseigenschaft `isc_dpb_session_time_zone` angegeben).
+
+Die Ausführung von <<fblangref40-management-session-reset-alter-de>> hat dieselbe Auswirkung auf die Sitzungszeitzone wie `SET TIME ZONE LOCAL`, setzt aber auch andere Sitzungseigenschaften zurück.
+
+[[fblangref40-management-settimezone-exmpl-de]]
+==== `SET TIME ZONE`-Beispiele
+
+[source]
+----
+set time zone '-02:00';
+set time zone 'America/Sao_Paulo';
+set time zone local;
+----
+
+[[fblangref40-management-session-reset-de]]
+== Sitzungsstatus zurücksetzen
+
+[[fblangref40-management-session-reset-alter-de]]
+=== `ALTER SESSION RESET`
+
+.Verwendet für
+Sitzungsstatus auf die Anfangswerte zurücksetzen
+
+.Verfügbar in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+ALTER SESSION RESET
+----
+
+`ALTER SESSION RESET` setzt die aktuelle Benutzersitzung in ihren Anfangszustand zurück.
+Dies kann nützlich sein, um die Verbindung durch eine Clientanwendung (z. B. durch einen clientseitigen Verbindungspool) wiederzuverwenden.
+Wenn diese Anweisung ausgeführt wird, werden alle Benutzerkontextvariablen gelöscht, der Inhalt globaler temporärer Tabellen wird gelöscht und alle Einstellungen auf Sitzungsebene werden auf ihre Anfangswerte zurückgesetzt.
+
+Es ist möglich, `ALTER SESSION RESET` ohne Transaktion auszuführen.
+
+Die Ausführung von `ALTER SESSION RESET` führt die folgenden Schritte aus:
+
+* Der Fehler _isc_ses_reset_err_ (`335545206`) wird ausgelöst, wenn eine andere Transaktion in der aktuellen Sitzung aktiv ist als die aktuelle Transaktion (diejenige, die `ALTER SESSION RESET` ausführt) und zweiphasige Transaktionen im vorbereiteten Zustand.
+* Systemvariable <<fblangref40-contextvars-resetting-de,`RESETTING`>> wird auf TRUE gesetzt.
+* `ON DISCONNECT` Datenbank-Trigger werden ausgelöst, falls vorhanden und wenn Datenbank-Trigger für die aktuelle Verbindung nicht deaktiviert sind.
+* Die aktuelle Transaktion (diejenige, die `ALTER SESSION RESET` ausführt), falls vorhanden, wird zurückgesetzt.
+Eine Warnung wird gemeldet, wenn diese Transaktion Daten vor dem Zurücksetzen der Sitzung geändert hat.
+* Die Sitzungskonfiguration wird auf ihre Anfangswerte zurückgesetzt.
+Dies beinhaltet, ist aber nicht beschränkt auf:
+** `DECFLOAT`-Parameter (`TRAP` und `ROUND`) und Zurücksetzen auf die Anfangswerte, die mit dem DPB zur Verbindungszeit definiert wurden, oder ansonsten auf den Systemstandard.
+** Sitzungs- und Anweisungs-Timeouts werden auf Null zurückgesetzt.
+** Die aktuelle Rolle wird zum Verbindungszeitpunkt auf den Anfangswert zurückgesetzt, der mit DPB definiert wurde, und - wenn die Rolle geändert wird - wird der Cache der Sicherheitsklassen gelöscht.
+** Die Sitzungszeitzone wird auf den Anfangswert zurückgesetzt, der mit dem DPB zur Verbindungszeit definiert wurde, oder ansonsten auf den Systemstandard.
+** Die Bindungskonfiguration wird auf den Anfangswert zurückgesetzt, der mit dem DPB zur Verbindungszeit definiert wurde, oder ansonsten auf den Datenbank- oder Systemstandard.
+** Im Allgemeinen sollten Konfigurationswerte auf die Werte zurückgesetzt werden, die mit DPB zur Verbindungszeit konfiguriert wurden, oder ansonsten auf den Datenbank- oder Systemstandard.
+* Für den Namespace `USER_SESSION` definierte Kontextvariablen werden entfernt.
+* Globale temporäre Tabellen, die als `ON COMMIT PRESERVE ROWS` definiert sind, werden abgeschnitten (ihr Inhalt wird gelöscht).
+* `ON CONNECT`-Datenbank-Trigger werden ausgelöst, falls vorhanden und wenn Datenbank-Trigger für die aktuelle Verbindung nicht deaktiviert sind.
+* Eine neue Transaktion wird implizit mit denselben Parametern gestartet wie die Transaktion, die zurückgesetzt wurde (sofern eine Transaktion vorhanden war)
+* Die Systemvariable `RESETTING` wird auf FALSE gesetzt.
+
+[NOTE]
+====
+* Die Kontextvariablen `CURRENT_USER` und `CURRENT_CONNECTION` werden nicht verändert.
+* Da _isql_ mehrere Transaktionen für eine einzelne Verbindung startet, kann `ALTER SESSION RESET` in _isql_ nicht ausgeführt werden.
+====
+
+[[fblangref40-management-session-reset-err-de]]
+==== Fehlerbehandlung
+
+Jeder Fehler, der durch `ON DISCONNECT`-Trigger ausgelöst wird, bricht das Zurücksetzen der Sitzung ab und lässt den Sitzungsstatus unverändert.
+Solche Fehler werden mit dem primären Fehlercode _isc_session_reset_err_ (`335545206`) und dem Fehlertext _"Cannot reset user session"_ gemeldet.
+
+Jeder Fehler, der nach `ON DISCONNECT`-Triggern ausgelöst wird (einschließlich der durch `ON CONNECT`-Trigger ausgelösten), bricht sowohl das Zurücksetzen der Sitzung als auch die Verbindung selbst ab.
+Solche Fehler werden mit dem primären Fehlercode _isc_ses_reset_failed_ (`335545272`) und dem Fehlertext _"Reset of user session failed. Connection is shut down."_ gemeldet.
+Nachfolgende Operationen auf der Verbindung (außer Trennen) schlagen mit dem Fehler _isc_att_shutdown_ (`335544856`) fehl.

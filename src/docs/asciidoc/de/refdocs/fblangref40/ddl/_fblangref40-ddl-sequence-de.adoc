@@ -1,0 +1,470 @@
+[[fblangref40-ddl-sequence-de]]
+= `SEQUENCE` (`GENERATOR`)
+
+Eine Sequenz oder -- ein Generator -- ist ein Datenbankobjekt, das verwendet wird, um eindeutige Zahlenwerte zum Füllen einer Reihe zu erhalten.
+"`Sequence`" ist der SQL-konforme Begriff für dasselbe, was -- in Firebird -- traditionell als "`Generator`" bekannt war.
+Firebird hat Syntax für beide Begriffe.
+
+Sequenzen werden immer als 64-Bit-Ganzzahlen gespeichert, unabhängig vom SQL-Dialekt der Datenbank.
+
+[CAUTION]
+====
+Wenn ein Client mit Dialekt 1 verbunden ist, behandelt der Server Sequenzwerte als 32-Bit-Ganzzahlen.
+Die Übergabe eines Sequenzwerts an ein 32-Bit-Feld oder eine 32-Bit-Variable verursacht keine Fehler, solange der aktuelle Wert der Sequenz die Grenzen einer 32-Bit-Zahl nicht überschreitet.
+Sobald jedoch der Sequenzwert diese Grenze überschreitet, erzeugt eine Datenbank in Dialekt 3 einen Fehler.
+Eine Datenbank in Dialekt 1 wird den Wert abschneiden (überlaufen), was die Einzigartigkeit der Serie beeinträchtigen könnte.
+====
+
+In diesem Abschnitt wird beschrieben, wie Sie Sequenzen erstellen, ändern, einstellen und löschen.
+
+[[fblangref40-ddl-sequence-create-de]]
+== `CREATE SEQUENCE`
+
+.Verwendet für
+Erstellen einer neuen `SEQUENCE` (`GENERATOR`)
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE {SEQUENCE | GENERATOR} _seq_name_
+  [START WITH _start_value_]
+  [INCREMENT [BY] _increment_]
+----
+
+[[fblangref40-ddl-tbl-crtseq-de]]
+.`CREATE SEQUENCE`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|seq_name
+|Name der Sequenz (Generator).
+Diese kann aus bis zu 63 Zeichen bestehen
+
+|start_value
+|Anfangswert der Sequenz.
+Standard ist 1.
+
+|increment
+|Erhöhen der Sequenz (bei Verwendung von `NEXT VALUE FOR __seq_name__`);
+kann nicht `0` sein.
+Standard ist 1.
+|===
+
+Die Anweisungen `CREATE SEQUENCE` und `CREATE GENERATOR` sind synonym – beide erzeugen eine neue Sequenz.
+Beide können verwendet werden, aber `CREATE SEQUENCE` wird empfohlen, da dies die im SQL-Standard definierte Syntax ist.
+
+Wenn eine Sequenz erstellt wird, wird ihr aktueller Wert so gesetzt, dass der nächste Wert, der von `NEXT VALUE FOR __seq_name__` erhalten wird, gleich _start_value_ ist.
+Mit anderen Worten, der aktuelle Wert der Sequenz wird auf (`__start_value__ - __increment__`) gesetzt.
+Standardmäßig ist der _start_value_ 1 (eins).
+
+Mit der optionalen `INCREMENT [BY]`-Klausel können Sie ein Inkrement für den Ausdruck <<fblangref40-commons-nxtvlufor-de,`NEXT VALUE FOR _seq_name_`>> angeben.
+Standardmäßig ist das Inkrement 1 (eins).
+Die Schrittweite kann nicht auf 0 (Null) gesetzt werden.
+Stattdessen kann die Funktion `GEN_ID(seq_name, <step>)` aufgerufen werden, um die Serie um eine andere ganze Zahl zu "`step`".
+Das durch `INCREMENT [BY]` angegebene Inkrement wird nicht für `GEN_ID` verwendet.
+
+.Nicht standardmäßiges Verhalten bei negativen Inkrementen
+[NOTE]
+====
+Der SQL-Standard legt fest, dass Sequenzen mit negativem Inkrement beim Maximalwert der Sequenz (2^63^ - 1) beginnen und herunterzählen sollen.
+Firebird tut dies nicht und beginnt stattdessen bei `0 + __Inkrement__`.
+
+Dies kann sich in einer zukünftigen Firebird-Version ändern.
+====
+
+[[fblangref40-ddl-sequence-create-who-de]]
+=== Wer kann eine Sequenz erstellen?
+
+Die Anweisung `CREATE SEQUENCE` (`CREATE GENERATOR`) kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem Privileg `CREATE SEQUENCE` (`CREATE GENERATOR`)
+
+Der Benutzer, der die Anweisung `CREATE SEQUENCE` (`CREATE GENERATOR`) ausführt, wird ihr Eigentümer.
+
+[[fblangref40-ddl-sequence-create-example-de]]
+=== Beispiel für `CREATE SEQUENCE`
+
+. Erstellen der Sequenz `EMP_NO_GEN` mit `CREATE SEQUENCE`.
++
+[source]
+----
+CREATE SEQUENCE EMP_NO_GEN;
+----
+. Erstellen der Sequenz `EMP_NO_GEN` mit `CREATE GENERATOR`.
++
+[source]
+----
+CREATE GENERATOR EMP_NO_GEN;
+----
+. Erstellen der Sequenz `EMP_NO_GEN` mit einem Anfangswert von 5 und einem Inkrement von 1.
++
+[source]
+----
+CREATE SEQUENCE EMP_NO_GEN START WITH 5;
+----
+. Erstellen der Sequenz `EMP_NO_GEN` mit einem Anfangswert von 1 und einem Inkrement von 10.
++
+[source]
+----
+CREATE SEQUENCE EMP_NO_GEN INCREMENT BY 10;
+----
+. Erstellen der Sequenz `EMP_NO_GEN` mit einem Anfangswert von 5 und einem Inkrement von 10.
++
+[source]
+----
+CREATE SEQUENCE EMP_NO_GEN START WITH 5 INCREMENT BY 10;
+----
+
+.Siehe auch
+<<fblangref40-ddl-sequence-alter-de>>, <<fblangref40-ddl-sequence-crtoralt-de>>, <<fblangref40-ddl-sequence-drop-de>>, <<fblangref40-ddl-sequence-recr-de>>, <<fblangref40-ddl-sequence-setgen-de>>, <<fblangref40-commons-nxtvlufor-de,`NEXT VALUE FOR`>>, <<fblangref40-scalarfuncs-gen-id-de,`GEN_ID()-Funktion`>>
+
+[[fblangref40-ddl-sequence-alter-de]]
+== `ALTER SEQUENCE`
+
+.Verwendet für
+Den nächsten Wert einer Sequenz setzen oder deren Inkrement ändern
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER {SEQUENCE | GENERATOR} _seq_name_
+  [RESTART [WITH _newvalue_]]
+  [INCREMENT [BY] _increment_]
+----
+
+[[fblangref40-ddl-tbl-alterseq-de]]
+.`ALTER SEQUENCE`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|seq_name
+|Name der Sequenz (Generator)
+
+|newvalue
+|Neuer Sequenz-(Generator-)Wert.
+Eine 64-Bit-Ganzzahl von -2^-63^ bis 2^63^-1.
+
+|increment
+|Erhöhen der Sequenz (bei Verwendung von `NEXT VALUE FOR __seq_name__`);
+kann nicht `0` sein.
+|===
+
+Die `ALTER SEQUENCE`-Anweisung setzt den aktuellen Wert einer Sequenz oder eines Generators auf den angegebenen Wert
+und/oder ändert das Inkrement der Sequenz.
+
+Mit der `RESTART WITH __newvalue__`-Klausel können Sie den nächsten von `NEXT VALUE FOR __seq_name__` generierten Wert setzen.
+Um dies zu erreichen, wird der aktuelle Wert der Sequenz entweder wie in der Anweisung angegeben auf (`__newvalue__ - __increment__`) mit _increment_ gesetzt oder in den Metadaten der Sequenz gespeichert.
+Die `RESTART`-Klausel (ohne `WITH`) startet die Sequenz mit dem in den Metadaten der Sequenz gespeicherten Anfangswert neu.
+
+[NOTE]
+====
+Im Gegensatz zu Firebird 3.0 startet in Firebird 4.0 `RESTART WITH __newvalue__` die Sequenz nur mit dem angegebenen Wert neu und speichert _newvalue_ nicht als neuen Anfangswert der Sequenz.
+Ein nachfolgender `ALTER SEQUENCE RESTART` verwendet den Anfangswert, der beim Erstellen der Sequenz angegeben wurde, und nicht den _newvalue_ dieser Anweisung.
+Dieses Verhalten ist im SQL-Standard spezifiziert.
+
+Es ist derzeit nicht möglich, den in den Metadaten gespeicherten Initialwert zu ändern.
+====
+
+[WARNING]
+====
+Eine falsche Verwendung der `ALTER SEQUENCE`-Anweisung (Änderung des aktuellen Wertes der Sequenz oder des Generators) kann die logische Integrität der Daten verletzen oder zu Verletzungen von Primärschlüssel- oder Unique-Constraints führen.
+====
+
+Mit `INCREMENT [BY]` können Sie das Sequenzinkrement für den `NEXT VALUE FOR`-Ausdruck ändern.
+
+[NOTE]
+====
+Das Ändern des Inkrementwerts wird für alle Abfragen wirksam, die nach dem Festschreiben der Transaktion ausgeführt werden.
+Prozeduren, die zum ersten Mal nach dem Ändern des Commits aufgerufen werden, verwenden den neuen Wert, wenn sie `NEXT VALUE FOR` verwenden.
+Prozeduren, die bereits verwendet (und im Metadaten-Cache zwischengespeichert wurden) verwenden weiterhin das alte Inkrement.
+Möglicherweise müssen Sie alle Verbindungen zur Datenbank schließen, damit der Metadatencache gelöscht und das neue Inkrement verwendet werden kann.
+Prozeduren, die `NEXT VALUE FOR` verwenden, müssen nicht neu kompiliert werden, um das neue Inkrement zu sehen.
+Prozeduren, die `GEN_ID(gen, expression)` verwenden, sind nicht betroffen, wenn das Inkrement geändert wird.
+====
+
+[[fblangref40-ddl-sequence-alter-who-de]]
+=== Wer kann eine Sequenz ändern?
+
+Die Anweisung `ALTER SEQUENCE` (`ALTER GENERATOR`) kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Besitzer der Sequenz
+* Benutzer mit dem Privileg `ALTER ANY SEQUENCE` (`ALTER ANY GENERATOR`)
+
+[[fblangref40-ddl-sequence-alter-example-de]]
+=== Beispiele für `ALTER SEQUENCE`
+
+. Den Wert der `EMP_NO_GEN`-Sequenz so einstellen, dass der nächste Wert 145 ist.
++
+[source]
+----
+ALTER SEQUENCE EMP_NO_GEN RESTART WITH 145;
+----
+. Zurücksetzen des Basiswerts der Sequenz `EMP_NO_GEN` auf den in den Metadaten gespeicherten Initialwert
++
+[source]
+----
+ALTER SEQUENCE EMP_NO_GEN RESTART;
+----
+. Ändern der Schrittweite der Sequenz `EMP_NO_GEN` auf 10
++
+[source]
+----
+ALTER SEQUENCE EMP_NO_GEN INCREMENT BY 10;
+----
+
+.Siehe auch
+<<fblangref40-ddl-sequence-setgen-de>>, <<fblangref40-ddl-sequence-create-de>>, <<fblangref40-ddl-sequence-crtoralt-de>>, <<fblangref40-ddl-sequence-drop-de>>, <<fblangref40-ddl-sequence-recr-de>>, <<fblangref40-commons-nxtvlufor-de,`NEXT VALUE FOR`>>, <<fblangref40-scalarfuncs-gen-id-de,`GEN_ID()-Funktion`>>
+
+[[fblangref40-ddl-sequence-crtoralt-de]]
+== `CREATE OR ALTER SEQUENCE`
+
+.Verwendet für
+Erstellen einer neuen oder Ändern einer bestehenden Sequenz
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE OR ALTER {SEQUENCE | GENERATOR} _seq_name_
+  {RESTART | START WITH _start_value_}
+  [INCREMENT [BY] _increment_]
+----
+
+[[fblangref40-ddl-sequence-crtoralt-tbl-de]]
+.`CREATE OR ALTER SEQUENCE`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|seq_name
+|Name der Sequenz (Generator).
+Diese kann aus bis zu 63 Zeichen bestehen
+
+|start_value
+|Anfangswert der Sequenz.
+Standard ist 1
+
+|increment
+|Erhöhen der Sequenz (bei Verwendung von `NEXT VALUE FOR __seq_name__`);
+kann nicht `0` sein.
+Standard ist 1.
+|===
+
+Wenn die Sequenz nicht existiert, wird sie erstellt.
+Eine bestehende Sequenz wird geändert:
+
+- Wenn `RESTART` angegeben ist, wird die Sequenz mit dem in den Metadaten gespeicherten Anfangswert neu gestartet
+- Wenn die `START WITH`-Klausel angegeben ist, wird die Sequenz mit _start_value_ neu gestartet, aber der _start_value_ wird nicht gespeichert.
+Mit anderen Worten, es verhält sich wie `RESTART WITH` in <<fblangref40-ddl-sequence-alter-de>>.
+- Wenn die `INCREMENT [BY]`-Klausel angegeben ist, wird _increment_ als Inkrement in den Metadaten gespeichert und für nachfolgende Aufrufe von `NEXT VALUE FOR` verwendet
+
+[[fblangref40-ddl-sequence-crtoralt-example-de]]
+=== Beispiel für `SEQUENZ ERSTELLEN ODER ÄNDERN`
+
+.Erstelle eine neue oder modifiziere eine bestehende Sequenz `EMP_NO_GEN`
+[source]
+----
+CREATE OR ALTER SEQUENCE EMP_NO_GEN
+  START WITH 10
+  INCREMENT BY 1
+----
+
+.Siehe auch
+<<fblangref40-ddl-sequence-create-de>>, <<fblangref40-ddl-sequence-alter-de>>, <<fblangref40-ddl-sequence-drop-de>>, <<fblangref40-ddl-sequence-recr-de>>, <<fblangref40-ddl-sequence-setgen-de>>, <<fblangref40-commons-nxtvlufor-de,`NEXT VALUE FOR`>>, <<fblangref40-scalarfuncs-gen-id-de,`GEN_ID()-Funktion`>>
+
+[[fblangref40-ddl-sequence-drop-de]]
+== `DROP SEQUENCE`
+
+.Verwendet für
+Löschen einer Sequenz `SEQUENCE` (`GENERATOR`)
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP {SEQUENCE | GENERATOR} _seq_name_
+----
+
+[[fblangref40-ddl-tbl-dropseq-de]]
+.`DROP SEQUENCE`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|seq_name
+|Name der Sequenz (Generator).
+Diese kann aus bis zu 63 Zeichen bestehen
+|===
+
+Die Anweisungen `DROP SEQUENCE` und `DROP GENERATOR` sind äquivalent: beide löschen eine existierende Sequenz (Generator).
+Beides ist gültig, aber `DROP SEQUENCE` wird empfohlen, da es im SQL-Standard definiert ist.
+
+Die Anweisungen schlagen fehl, wenn die Sequenz (Generator) Abhängigkeiten hat.
+
+[[fblangref40-ddl-tbl-dropseq-who-de]]
+=== Wer kann eine Sequenz löschen?
+
+Die Anweisung `DROP SEQUENCE` (`DROP GENERATOR`) kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Besitzer der Sequenz
+* Benutzer mit dem Privileg `DROP ANY SEQUENCE` (`DROP ANY GENERATOR`)
+
+[[fblangref40-ddl-tbl-dropseq-example-de]]
+=== Beispiel für `DROP SEQUENCE`
+
+.Löschen der `EMP_NO_GEN`-Reihe:
+[source]
+----
+DROP SEQUENCE EMP_NO_GEN;
+----
+
+.Siehe auch
+<<fblangref40-ddl-sequence-create-de>>, <<fblangref40-ddl-sequence-crtoralt-de>>, <<fblangref40-ddl-sequence-recr-de>>
+
+[[fblangref40-ddl-sequence-recr-de]]
+== `RECREATE SEQUENCE`
+
+.Verwendet für
+Sequenz erstellen oder neu erstellen (Generator)
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+RECREATE {SEQUENCE | GENERATOR} _seq_name_
+  [START WITH _start_value_]
+  [INCREMENT [BY] _increment_]
+----
+
+[[fblangref40-ddl-sequence-recr-tbl-de]]
+.`RECREATE SEQUENCE`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|seq_name
+|Name der Sequenz (Generator).
+Diese kann aus bis zu 63 Zeichen bestehen
+
+|start_value
+|Anfangswert der Sequenz
+
+|increment
+|Erhöhen der Sequenz (bei Verwendung von `NEXT VALUE FOR __seq_name__`);
+kann nicht `0` sein
+|===
+
+Siehe <<fblangref40-ddl-sequence-create-de>> für die vollständige Syntax von `CREATE SEQUENCE` und Beschreibungen zur Definition einer Sequenz und ihrer Optionen.
+
+`RECREATE SEQUENCE` erstellt oder erstellt eine Sequenz neu.
+Existiert bereits eine Sequenz mit diesem Namen, versucht die `RECREATE SEQUENCE`-Anweisung, sie zu löschen und eine neue zu erstellen.
+Vorhandene Abhängigkeiten verhindern die Ausführung der Anweisung.
+
+[[fblangref40-ddl-sequence-recr-example-de]]
+=== Beispiel für `RECREATE SEQUENCE`
+
+.Neuerstellen der Sequenz `EMP_NO_GEN`
+[source]
+----
+RECREATE SEQUENCE EMP_NO_GEN
+  START WITH 10
+  INCREMENT BY 2;
+----
+
+.Siehe auch
+<<fblangref40-ddl-sequence-create-de>>, <<fblangref40-ddl-sequence-alter-de>>, <<fblangref40-ddl-sequence-crtoralt-de>>, <<fblangref40-ddl-sequence-drop-de>>, <<fblangref40-ddl-sequence-setgen-de>>, <<fblangref40-commons-nxtvlufor-de,`NEXT VALUE FOR`>>, <<fblangref40-scalarfuncs-gen-id-de,`GEN_ID()-Funktion`>>
+
+[[fblangref40-ddl-sequence-setgen-de]]
+== `SET GENERATOR`
+
+.Verwendet für
+Setzen des aktuellen Werts einer Sequenz oder eines Generators auf einen bestimmten Wert
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET GENERATOR _seq_name_ TO _new_val_
+----
+
+[[fblangref40-ddl-tbl-setgen-de]]
+.`SET GENERATOR`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|seq_name
+|Name des Generators (Sequenz)
+
+|new_val
+|Neuer Sequenz-(Generator-)Wert.
+Eine 64-Bit-Ganzzahl von -2^-63^ bis 2^63^-1.
+|===
+
+Die Anweisung `SET GENERATOR` setzt den aktuellen Wert einer Sequenz oder eines Generators auf den angegebenen Wert.
+
+[NOTE]
+====
+Obwohl `SET GENERATOR` als veraltet gilt, wird es aus Gründen der Abwärtskompatibilität beibehalten.
+Die Verwendung der standardkonformen `ALTER SEQUENCE` wird empfohlen.
+====
+
+[[fblangref40-ddl-sequence-setgen-who-de]]
+=== Wer kann einen `SET GENERATOR` verwenden?
+
+Die `SET GENERATOR`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Besitzer der Sequenz (Generator)
+* Benutzer mit dem Privileg `ALTER ANY SEQUENCE` (`ALTER ANY GENERATOR`)
+
+[[fblangref40-ddl-sequence-setgen-example-de]]
+=== Beispiel für `SET GENERATOR`
+
+.Wert der Sequenz `EMP_NO_GEN` auf 145 setzen:
+[source]
+----
+SET GENERATOR EMP_NO_GEN TO 145;
+----
+
+[NOTE]
+====
+Ähnliche Effekte lassen sich mit <<fblangref40-ddl-sequence-alter-de>> erzielen:
+
+[listing, subs=+quotes]
+----
+ALTER SEQUENCE EMP_NO_GEN
+  RESTART WITH 145 + _increment_;
+----
+
+Der Wert von _increment_ ist hier das aktuelle Inkrement der Sequenz.
+Wir müssen es hinzufügen, da `ALTER SEQUENCE` den aktuellen Wert berechnet, der basierend auf dem nächsten Wert, den es erzeugen soll, gesetzt werden soll.
+====
+
+.Siehe auch
+<<fblangref40-ddl-sequence-alter-de>>, <<fblangref40-ddl-sequence-create-de>>, <<fblangref40-ddl-sequence-crtoralt-de>>, <<fblangref40-ddl-sequence-drop-de>>, <<fblangref40-commons-nxtvlufor-de,`NEXT VALUE FOR`>>, <<fblangref40-scalarfuncs-gen-id-de,`GEN_ID()-Funktion`>>

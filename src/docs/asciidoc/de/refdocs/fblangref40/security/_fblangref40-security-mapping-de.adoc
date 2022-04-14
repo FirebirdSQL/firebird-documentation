@@ -1,0 +1,360 @@
+[[fblangref40-security-mapping-de]]
+= Zuordnung von Benutzern zu Objekten
+
+Da Firebird nun mehrere Sicherheitsdatenbanken unterstützt, treten einige neue Probleme auf, die mit einer einzigen, globalen Sicherheitsdatenbank nicht auftreten könnten.
+Cluster von Datenbanken, die dieselbe Sicherheitsdatenbank verwenden, wurden effizient getrennt.
+Mappings bieten die Möglichkeit, dieselbe Effizienz zu erzielen, wenn mehrere Datenbanken ihre eigenen Sicherheitsdatenbanken verwenden.
+Einige Fälle erfordern eine Kontrolle für eine begrenzte Interaktion zwischen solchen Clustern.
+Beispielsweise:
+
+* wenn `EXECUTE STATEMENT ON EXTERNAL DATA SOURCE` einen Datenaustausch zwischen Clustern erfordert
+* wenn serverweiter SYSDBA-Zugriff auf Datenbanken von anderen Clustern über Dienste benötigt wird.
+* Vergleichbare Probleme, die bei Firebird 2.1 und 2.5 für Windows aufgrund der Unterstützung der vertrauenswürdigen Benutzerauthentifizierung bestanden haben: zwei separate Listen von Benutzern – eine in der Sicherheitsdatenbank und eine andere in Windows, mit Fällen, in denen eine Verknüpfung erforderlich war.
+Ein Beispiel ist die Forderung nach einer `ROLE`, die einer Windows-Gruppe gewährt wird, um den Mitgliedern dieser Gruppe automatisch zugewiesen zu werden.
+
+Die einzige Lösung für all diese Fälle ist das *Mapping* der Login-Informationen, die einem Benutzer zugewiesen werden, wenn er sich mit einem Firebird-Server verbindet, auf interne Sicherheitsobjekte in einer Datenbank -- `CURRENT_USER` und `CURRENT_ROLE`.
+
+[[fblangref40-security-mapping-rule-de]]
+== Die Zuordnungsregel
+
+Die Abbildungsregel besteht aus vier Informationen:
+
+. Mapping-Bereich
+-- ob die Zuordnung lokal zur aktuellen Datenbank ist oder ob sie global wirkt und alle Datenbanken im Cluster betrifft, einschließlich Sicherheitsdatenbanken
+. Mappingname
+-- ein SQL-Bezeichner, da Mappings Objekte in einer Datenbank sind, wie alle anderen auch
+. das Objekt *FROM*, das das Mapping abbildet.
+Es besteht aus vier Elementen:
+** Die Authentifizierungsquelle
+*** Pluginname *oder*
+*** das Produkt einer Zuordnung in einer anderen Datenbank *oder*
+*** Verwendung einer serverweiten Authentifizierung *oder*
+*** beliebige Methode
+** Der Name der Datenbank, in der die Authentifizierung erfolgreich war
+** Der Name des Objekts, von dem das Mapping durchgeführt wird
+** Der *Typ* dieses Namens – Benutzername, Rolle oder Betriebssystemgruppe – abhängig von dem Plugin, das diesen Namen während der Authentifizierung hinzugefügt hat.
++
+Jeder Artikel wird akzeptiert, aber nur *Typ* ist erforderlich.
+. das Objekt *TO*, das das Mapping abbildet.
+Es besteht aus zwei Elementen:
+** Der Name des Objekts *TO* welches Mapping durchgeführt wird
+** Der *Typ*, für den nur `USER` oder `ROLE` gültig ist
+
+[[fblangref40-security-mapping-create-de]]
+== `CREATE MAPPING`
+
+.Verwendet für
+Erstellen einer Zuordnung eines Sicherheitsobjekts
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE [GLOBAL] MAPPING _name_
+  USING
+    { PLUGIN _plugin_name_ [IN _database_]
+    | ANY PLUGIN [IN _database_ | SERVERWIDE]
+    | MAPPING [IN _database_] | '*' [IN _database_] }
+  FROM {ANY _type_ | _type_ _from_name_}
+  TO {USER | ROLE} [_to_name_]
+----
+
+[[fblangref40-security-mapping-tbl-createmapping-de]]
+.`CREATE MAPPING`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|name
+|Mappingname
+Die maximale Länge beträgt 63 Zeichen.
+Muss unter allen Mapping-Namen im Kontext (lokal oder `GLOBAL`) eindeutig sein.
+
+|plugin_name
+|Name des Authentifizierungs-Plugins
+
+|database
+|Name der Datenbank, gegen die sich authentifiziert wird
+
+|type
+|Der Typ des zuzuordnenden Objekts.
+Mögliche Typen sind pluginspezifisch.
+
+|from_name
+|Der Name des zuzuordnenden Objekts
+
+|to_name
+|Der Name des Benutzers oder der Rolle, dem bzw. der zugeordnet werden soll
+|===
+
+Die `CREATE MAPPING`-Anweisung erstellt eine Zuordnung von Sicherheitsobjekten (z. B. Benutzer, Gruppen, Rollen) eines oder mehrerer Authentifizierungs-Plugins zu internen Sicherheitsobjekten - `CURRENT_USER` und `CURRENT_ROLE`.
+
+Wenn die `GLOBAL`-Klausel vorhanden ist, wird die Zuordnung nicht nur für die aktuelle Datenbank, sondern für alle Datenbanken im selben Cluster, einschließlich Sicherheitsdatenbanken, angewendet.
+
+[WARNING]
+====
+Es kann globale und lokale Zuordnungen mit demselben Namen geben.
+Sie sind unterschiedliche Objekte.
+====
+
+[NOTE]
+====
+Die globale Zuordnung funktioniert am besten, wenn als Sicherheitsdatenbank eine Firebird 3.0- oder höhere Versionsdatenbank verwendet wird.
+Wenn Sie zu diesem Zweck eine andere Datenbank verwenden möchten – zum Beispiel mit Ihrem eigenen Provider – sollten Sie darin eine Tabelle namens `RDB$MAP` erstellen, mit der gleichen Struktur wie `RDB$MAP` in Firebird 3.0 oder höher und nur mit SYSDBA-Schreibzugriff.
+====
+
+Die `USING`-Klausel beschreibt die Mapping-Quelle.
+Es hat eine sehr komplexe Reihe von Optionen:
+
+* Ein expliziter Plugin-Name (`PLUGIN __plugin_name__`) bedeutet, dass dieser nur für dieses Plugin gilt
+* es kann jedes verfügbare Plugin verwenden (`ANY PLUGIN`);
+allerdings nicht, wenn die Quelle das Produkt einer vorherigen Zuordnung ist
+* es kann nur mit serverweiten Plugins (`SERVERWIDE`) zum Laufen gebracht werden
+* es kann nur mit früheren Mapping-Ergebnissen (`MAPPING`) funktionieren
+* Sie können die Verwendung einer bestimmten Methode unterlassen, indem Sie das Sternchen-Argument (`{asterisk}`) verwenden
+* es kann den Namen der Datenbank angeben, die das Mapping für das `FROM`-Objekt definiert hat (`IN __database__`)
++
+[NOTE]
+====
+Dieses Argument ist für die Zuordnung der serverweiten Authentifizierung nicht gültig.
+====
+
+Die `FROM`-Klausel beschreibt das abzubildende Objekt.
+Die `FROM`-Klausel hat ein obligatorisches Argument, den _type_ des benannten Objekts.
+Es hat die folgenden Optionen:
+
+* Beim Zuordnen von Namen über Plugins wird _type_ vom Plugin definiert
+* Beim Mapping des Produkts eines vorherigen Mappings kann _type_ nur `USER` oder `ROLE` sein
+* Wenn ein expliziter _from_name_ angegeben wird, wird dieser von diesem Mapping berücksichtigt
+* Verwenden Sie das Schlüsselwort `ANY`, um mit einem beliebigen Namen des angegebenen Typs zu arbeiten.
+
+Die `TO`-Klausel gibt den Benutzer oder die Rolle an, die das Ergebnis der Zuordnung ist.
+Der _to_name_ ist optional.
+Wenn er nicht angegeben wird, wird der ursprüngliche Name des zugeordneten Objekts verwendet.
+
+Bei Rollen wird die durch eine Zuordnungsregel definierte Rolle nur angewendet, wenn der Benutzer beim Verbinden nicht explizit eine Rolle angibt.
+Die zugeordnete Rolle kann später in der Sitzung mit <<fblangref40-management-role-set-trusted-de,`SET TRUSTED ROLE`>> übernommen werden, auch wenn die zugeordnete Rolle dem Benutzer nicht explizit gewährt wird.
+
+[[fblangref40-security-mapping-create-who-de]]
+=== Wer kann Zuordnungen erstellen?
+
+Die `CREATE MAPPING`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Datenbankbesitzer – wenn die Zuordnung lokal ist
+
+[[fblangref40-security-mapping-create-exmpl-de]]
+=== `CREATE MAPPING`-Beispiele
+
+. Aktivieren Sie die Verwendung der vertrauenswürdigen Windows-Authentifizierung in allen Datenbanken, die die aktuelle Sicherheitsdatenbank verwenden:
++
+[source]
+----
+CREATE GLOBAL MAPPING TRUSTED_AUTH
+  USING PLUGIN WIN_SSPI
+  FROM ANY USER
+  TO USER;
+----
+. Aktivieren Sie den RDB$ADMIN-Zugriff für Windows-Administratoren in der aktuellen Datenbank:
++
+[source]
+----
+CREATE MAPPING WIN_ADMINS
+  USING PLUGIN WIN_SSPI
+  FROM Predefined_Group
+  DOMAIN_ANY_RID_ADMINS
+  TO ROLE RDB$ADMIN;
+----
++
+[NOTE]
+====
+Die Gruppe `DOMAIN_ANY_RID_ADMINS` existiert in Windows nicht, aber ein solcher Name würde vom `Win_Sspi` Plugin hinzugefügt, um eine genaue Abwärtskompatibilität zu gewährleisten.
+====
+. Ermöglichen Sie einem bestimmten Benutzer aus einer anderen Datenbank, mit einem anderen Namen auf die aktuelle Datenbank zuzugreifen:
++
+[source]
+----
+CREATE MAPPING FROM_RT
+  USING PLUGIN SRP IN "rt"
+  FROM USER U1 TO USER U2;
+----
++
+[IMPORTANT]
+====
+Datenbanknamen oder Aliase müssen auf Betriebssystemen mit Dateinamen, bei denen die Groß-/Kleinschreibung beachtet wird, in doppelte Anführungszeichen gesetzt werden.
+====
+. Aktivieren Sie den SYSDBA des Servers (von der Hauptsicherheitsdatenbank), um auf die aktuelle Datenbank zuzugreifen.
+(Angenommen, die Datenbank verwendet eine nicht standardmäßige Sicherheitsdatenbank):
++
+[source]
+----
+CREATE MAPPING DEF_SYSDBA
+  USING PLUGIN SRP IN "security.db"
+  FROM USER SYSDBA
+  TO USER;
+----
+. Stellen Sie sicher, dass Benutzer, die sich mit dem Legacy-Authentifizierungs-Plugin angemeldet haben, nicht zu viele Berechtigungen haben:
++
+[source]
+----
+CREATE MAPPING LEGACY_2_GUEST
+  USING PLUGIN legacy_auth
+  FROM ANY USER
+  TO USER GUEST;
+----
+
+.Siehe auch
+<<fblangref40-security-mapping-alter-de>>, <<fblangref40-security-mapping-createoralter-de>>, <<fblangref40-security-mapping-drop-de>>
+
+[[fblangref40-security-mapping-alter-de]]
+== `ALTER MAPPING`
+
+.Verwendet für
+Ändern einer Zuordnung eines Sicherheitsobjekts
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER [GLOBAL] MAPPING _name_
+  USING
+    { PLUGIN _plugin_name_ [IN _database_]
+    | ANY PLUGIN [IN _database_ | SERVERWIDE]
+    | MAPPING [IN _database_] | '*' [IN _database_] }
+  FROM {ANY _type_ | _type_ _from_name_}
+  TO {USER | ROLE} [_to_name_]
+----
+
+Einzelheiten zu den Optionen finden Sie unter <<fblangref40-security-mapping-create-de>>.
+
+Mit der `ALTER MAPPING`-Anweisung können Sie jede der vorhandenen Mapping-Optionen ändern, aber eine lokale Mapping kann nicht in `GLOBAL` geändert werden oder umgekehrt.
+
+[IMPORTANT]
+====
+Globale und lokale Mappings gleichen Namens sind unterschiedliche Objekte.
+====
+
+[[fblangref40-security-mapping-alter-who-de]]
+=== Wer kann ein Mapping ändern?
+
+The `ALTER MAPPING` statement can be executed by:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Datenbankbesitzer – wenn die Zuordnung lokal ist
+
+[[fblangref40-security-mapping-alter-exmpl-de]]
+=== `ALTER MAPPING`-Beispiele
+
+.Zuordnung ändern
+[source]
+----
+ALTER MAPPING FROM_RT
+  USING PLUGIN SRP IN "rt"
+  FROM USER U1 TO USER U3;
+----
+
+.Siehe auch
+<<fblangref40-security-mapping-create-de>>, <<fblangref40-security-mapping-createoralter-de>>, <<fblangref40-security-mapping-drop-de>>
+
+[[fblangref40-security-mapping-createoralter-de]]
+== `CREATE OR ALTER MAPPING`
+
+.Verwendet für
+Erstellen eines neuen oder Ändern eines bestehenden Mappings eines Sicherheitsobjekts
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE OR ALTER [GLOBAL] MAPPING _name_
+  USING
+    { PLUGIN _plugin_name_ [IN _database_]
+    | ANY PLUGIN [IN _database_ | SERVERWIDE]
+    | MAPPING [IN _database_] | '*' [IN _database_] }
+  FROM {ANY _type_ | _type_ _from_name_}
+  TO {USER | ROLE} [_to_name_]
+----
+
+Einzelheiten zu den Optionen finden Sie unter <<fblangref40-security-mapping-create-de>>.
+
+Die Anweisung `CREATE OR ALTER MAPPING` erstellt eine neue oder modifiziert eine vorhandene Zuordnung.
+
+[IMPORTANT]
+====
+Globale und lokale Mappings gleichen Namens sind unterschiedliche Objekte.
+====
+
+[[fblangref40-security-mapping-createoralter-exmpl-de]]
+=== `CREATE OR ALTER MAPPING`-Beispiele
+
+.Erstellen oder Ändern einer Zuordnung
+[source]
+----
+CREATE OR ALTER MAPPING FROM_RT
+  USING PLUGIN SRP IN "rt"
+  FROM USER U1 TO USER U4;
+----
+
+.Siehe auch
+<<fblangref40-security-mapping-create-de>>, <<fblangref40-security-mapping-alter-de>>, <<fblangref40-security-mapping-drop-de>>
+
+[[fblangref40-security-mapping-drop-de]]
+== `DROP MAPPING`
+
+.Verwendet für
+Löschen (Entfernen) einer Zuordnung eines Sicherheitsobjekts
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP [GLOBAL] MAPPING _name_
+----
+
+[[fblangref40-security-mapping-tbl-dropmapping-de]]
+.`DROP MAPPING`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|name
+|Name der Zuordnung
+|===
+
+Die `DROP MAPPING`-Anweisung entfernt ein vorhandenes Mapping.
+Wenn `GLOBAL` angegeben ist, wird eine globale Zuordnung entfernt.
+
+[IMPORTANT]
+====
+Globale und lokale Mappings gleichen Namens sind unterschiedliche Objekte.
+====
+
+[[fblangref40-security-mapping-drop-who-de]]
+=== Wer kann ein Mapping löschen?
+
+Die `DROP MAPPING`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Datenbankbesitzer – wenn die Zuordnung lokal ist
+
+[[fblangref40-security-mapping-drop-exmpl-de]]
+=== `DROP MAPPING`-Beispiele
+
+.Zuordnung ändern
+[source]
+----
+DROP MAPPING FROM_RT;
+----
+
+.Siehe auch
+<<fblangref40-security-mapping-create-de>>
