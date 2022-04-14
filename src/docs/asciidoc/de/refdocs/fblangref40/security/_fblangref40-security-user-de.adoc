@@ -1,0 +1,455 @@
+[[fblangref40-security-user-de]]
+= SQL-Anweisungen für die Benutzerverwaltung
+
+Dieser Abschnitt beschreibt die SQL-Anweisungen zum Erstellen, Ändern und Löschen von Firebird-Benutzerkonten.
+Diese Anweisungen können von folgenden Benutzern ausgeführt werden:
+
+* SYSDBA
+* Jeder Benutzer mit der Rolle RDB$ADMIN in der Sicherheitsdatenbank
+* Wenn das Flag `AUTO ADMIN MAPPING` in der Sicherheitsdatenbank aktiviert ist (`security4.fdb` oder was auch immer die Sicherheitsdatenbank ist, die für die aktuelle Datenbank in der `databases.conf` konfiguriert ist), jeder Windows-Administrator - vorausgesetzt, `Win_Sspi` war wird verwendet, um eine Verbindung ohne Angabe von Rollen herzustellen.
+* Jeder Benutzer mit dem Systemprivileg `USER_MANAGEMENT` in der Sicherheitsdatenbank
++
+[NOTE]
+====
+Für einen Windows-Administrator reicht die nur in einer regulären Datenbank aktivierte `AUTO ADMIN MAPPING` nicht aus, um die Verwaltung anderer Benutzer zu ermöglichen.
+Anweisungen zum Aktivieren in der Sicherheitsdatenbank finden Sie unter <<fblangref40-security-autoadminmapping02-de>>.
+====
+
+Nicht-privilegierte Benutzer können nur die `ALTER USER`-Anweisung verwenden und dann nur einige Daten ihres eigenen Kontos bearbeiten.
+
+[[fblangref40-security-user-create-de]]
+== `CREATE USER`
+
+.Verwendet für
+Erstellen eines Firebird-Benutzerkontos
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE USER _username_
+  <user_option> [<user_option> ...]
+  [TAGS (<user_var> [, <user_var> ...]]
+
+<user_option> ::=
+    PASSWORD '_password_'
+  | FIRSTNAME '_firstname_'
+  | MIDDLENAME '_middlename_'
+  | LASTNAME '_lastname_'
+  | {GRANT | REVOKE} ADMIN ROLE
+  | {ACTIVE | INACTIVE}
+  | USING PLUGIN _plugin_name_
+
+<user_var> ::=
+    _tag_name_ = '_tag_value_'
+  | DROP _tag_name_
+----
+
+[[fblangref40-security-tbl-createuser-de]]
+.`CREATE USER`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|username
+|Benutzername.
+Die maximale Länge beträgt 63 Zeichen gemäß den Regeln für Firebird-Identifikatoren.
+
+|password
+|Benutzerkennwort
+Die gültige oder effektive Passwortlänge hängt vom Benutzermanager-Plugin ab.
+Groß-/Kleinschreibung beachten.
+
+|firstname
+|Optional: Vorname des Benutzers.
+Maximale Länge 32 Zeichen
+
+|middlename
+|Optional: Zuname des Benutzers.
+Maximale Länge 32 Zeichen
+
+|lastname
+|Optional: Nachname des Benutzers.
+Maximale Länge 32 Zeichen.
+
+|plugin_name
+|Name des Benutzermanager-Plugins.
+
+|tag_name
+|Name eines benutzerdefinierten Attributs.
+Die maximale Länge beträgt 63 Zeichen gemäß den Regeln für reguläre Firebird-Identifikatoren.
+
+|tag_value
+|Wert des benutzerdefinierten Attributs.
+Die maximale Länge beträgt 255 Zeichen.
+|===
+
+Die `CREATE USER`-Anweisung erstellt ein neues Firebird-Benutzerkonto.
+Wenn der Benutzer bereits in der Firebird-Sicherheitsdatenbank für das angegebene Benutzermanager-Plugin vorhanden ist, wird ein entsprechender Fehler ausgegeben.
+Es ist möglich, mehrere Benutzer mit demselben Namen zu erstellen: einen pro Benutzermanager-Plugin.
+
+Das Argument _username_ muss den Regeln für reguläre Firebird-Identifikatoren folgen: siehe <<fblangref40-structure-identifiers-de,_Bezeichner_>> im Kapitel _Struktur_.
+Bei Benutzernamen muss die Groß-/Kleinschreibung beachtet werden, wenn sie in doppelte Anführungszeichen gesetzt werden (mit anderen Worten, sie folgen denselben Regeln wie andere Bezeichner mit Trennzeichen).
+
+[IMPORTANT]
+====
+Benutzernamen folgen den allgemeinen Regeln und der Syntax von <<fblangref40-structure-identifiers-de,Bezeichner>>.
+Somit unterscheidet sich ein Benutzer mit dem Namen `"Alex"` von einem Benutzer mit dem Namen `"ALEX"`
+
+[source]
+----
+CREATE USER ALEX PASSWORD 'bz23ds';
+
+- dieser Benutzer ist der gleiche wie der erste first
+CREATE USER Alex PASSWORD 'bz23ds';
+
+- dieser Benutzer ist der gleiche wie der erste first
+CREATE USER "ALEX" PASSWORD 'bz23ds';
+
+- und das ist ein anderer Benutzer
+CREATE USER "Alex" PASSWORD 'bz23ds';
+----
+====
+
+Die `PASSWORD`-Klausel gibt das Kennwort des Benutzers an und ist erforderlich.
+Die gültige bzw. effektive Passwortlänge hängt vom User Manager Plugin ab, siehe auch <<fblangref40-security-auth-de>>.
+
+Die optionalen Klauseln `FIRSTNAME`, `MIDDLENAME` und `LASTNAME` können verwendet werden, um zusätzliche Benutzereigenschaften anzugeben, wie den Vornamen, den zweiten Vornamen bzw. den Nachnamen der Person.
+Sie sind nur einfache `VARCHAR(32)`-Felder und können verwendet werden, um alles zu speichern, was Sie bevorzugen.
+
+Wenn die `GRANT ADMIN ROLE`-Klausel angegeben ist, wird das neue Benutzerkonto mit den Rechten der `RDB$ADMIN`-Rolle in der Sicherheitsdatenbank (`security4.fdb` oder datenbankspezifisch) erstellt.
+Es ermöglicht dem neuen Benutzer, Benutzerkonten von jeder regulären Datenbank aus zu verwalten, bei der er sich anmeldet, gewährt dem Benutzer jedoch keine besonderen Berechtigungen für Objekte in diesen Datenbanken.
+
+Die `REVOKE ADMIN ROLE`-Klausel ist in einer `CREATE USER`-Anweisung syntaktisch gültig, hat aber keine Wirkung.
+Es ist nicht möglich, `GRANT ADMIN ROLE` und `REVOKE ADMIN ROLE` in einer Anweisung anzugeben.
+
+Die `ACTIVE`-Klausel gibt an, dass der Benutzer aktiv ist und sich anmelden kann, dies ist die Standardeinstellung.
+
+Die `INACTIVE`-Klausel gibt an, dass der Benutzer inaktiv ist und sich nicht anmelden kann.
+Es ist nicht möglich, `ACTIVE` und `INACTIVE` in einer Anweisung anzugeben.
+Die Option `ACTIVE`/`INACTIVE` wird vom `Legacy_UserManager` nicht unterstützt und wird ignoriert.
+
+Die `USING PLUGIN`-Klausel gibt explizit das Benutzer-Manager-Plugin an, das zum Erstellen des Benutzers verwendet werden soll.
+Nur Plugins, die in der `UserManager`-Konfiguration für diese Datenbank aufgelistet sind (`firebird.conf`, oder überschrieben in `databases.conf`) sind gültig.
+Der Standardbenutzermanager (erster in der `UserManager`-Konfiguration) wird angewendet, wenn diese Klausel nicht angegeben wird.
+
+[IMPORTANT]
+====
+Benutzer mit demselben Namen, die mit verschiedenen Benutzermanager-Plugins erstellt wurden, sind unterschiedliche Objekte.
+Daher kann der Benutzer, der mit einem Benutzermanager-Plugin erstellt wurde, nur von demselben Plugin geändert oder gelöscht werden.
+
+Aus der Perspektive des Besitzes und der in einer Datenbank gewährten Berechtigungen und Rollen werden verschiedene Benutzerobjekte mit demselben Namen als ein und derselbe Benutzer betrachtet.
+====
+
+Die `TAGS`-Klausel kann verwendet werden, um zusätzliche Benutzerattribute anzugeben.
+Benutzerdefinierte Attribute werden vom `Legacy_UserManager` nicht unterstützt (stillschweigend ignoriert).
+Benutzerdefinierte Attributnamen folgen den Regeln von Firebird-Identifikatoren, werden jedoch nicht zwischen Groß- und Kleinschreibung gehandhabt (wenn Sie beispielsweise sowohl `"A BC"` als auch `"a bc"` angeben, wird ein Fehler ausgelöst.)
+Der Wert eines benutzerdefinierten Attributs kann eine Zeichenfolge mit maximal 255 Zeichen sein.
+Die Option `DROP __tag_name__` ist in `CREATE USER` syntaktisch gültig, verhält sich aber so, als ob die Eigenschaft nicht angegeben wäre.
+
+[WARNING]
+====
+Benutzer können ihre eigenen benutzerdefinierten Attribute anzeigen und ändern.
+====
+
+[NOTE]
+====
+`CREATE/ALTER/DROP USER` sind DDL-Anweisungen und werden erst beim Festschreiben wirksam.
+Denken Sie daran, Ihre Arbeit zu `COMMIT`.
+In _isql_ aktiviert der Befehl `SET AUTO ON` Autocommit für DDL-Anweisungen.
+In Tools von Drittanbietern und anderen Benutzeranwendungen ist dies möglicherweise nicht der Fall.
+====
+
+[[fblangref40-security-user-createpriv-de]]
+=== Wer kann einen Benutzer erstellen
+
+Um ein Benutzerkonto zu erstellen, muss der aktuelle Benutzer über
+
+* <<fblangref40-security-administrators-de,Administratorprivilegien>> in der Sicherheitsdatenbank
+* das Systemprivileg `USER_MANAGEMENT` in der Sicherheitsdatenbank.
+Benutzer mit der Systemberechtigung 'USER_MANAGEMENT' können die Administratorrolle weder erteilen noch entziehen.
+
+[[fblangref40-security-user-create-exmpl-de]]
+=== `CREATE USER`-Beispiele
+
+. Erstellen eines Benutzers mit dem Benutzernamen `bigshot`:
++
+[source]
+----
+CREATE USER bigshot PASSWORD 'buckshot';
+----
+. Erstellen eines Benutzers mit dem `Legacy_UserManager`-Benutzermanager-Plugin
++
+[source]
+----
+CREATE USER godzilla PASSWORD 'robot'
+  USING PLUGIN Legacy_UserManager;
+----
+. Erstellen des Benutzers `john` mit benutzerdefinierten Attributen:
++
+[source]
+----
+CREATE USER john PASSWORD 'fYe_3Ksw'
+  FIRSTNAME 'John' LASTNAME 'Doe'
+  TAGS (BIRTHYEAR='1970', CITY='New York');
+----
+. Erstellen eines inaktiven Benutzers:
++
+[source]
+----
+CREATE USER john PASSWORD 'fYe_3Ksw'
+  INACTIVE;
+----
+. Erstellen des Benutzers `superuser` mit Benutzerverwaltungsrechten:
++
+[source]
+----
+CREATE USER superuser PASSWORD 'kMn8Kjh'
+GRANT ADMIN ROLE;
+----
+
+.Siehe auch
+<<fblangref40-security-user-alter-de>>, <<fblangref40-security-user-createoralter-de>>, <<fblangref40-security-user-drop-de>>
+
+[[fblangref40-security-user-alter-de]]
+== `ALTER USER`
+
+.Verwendet für
+Ändern eines Firebird-Benutzerkontos
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER {USER _username_ | CURRENT USER}
+  [SET] [<user_option> [<user_option> ...]]
+  [TAGS (<user_var> [, <user_var> ...]]
+
+<user_option> ::=
+    PASSWORD '_password_'
+  | FIRSTNAME '_firstname_'
+  | MIDDLENAME '_middlename_'
+  | LASTNAME '_lastname_'
+  | {GRANT | REVOKE} ADMIN ROLE
+  | {ACTIVE | INACTIVE}
+  | USING PLUGIN _plugin_name_
+
+<user_var> ::=
+    _tag_name_ = '_tag_value_'
+  | DROP _tag_name_
+----
+
+Vgl. <<fblangref40-security-user-create-de>> für Details der Anweisungsparameter.
+
+Die `ALTER USER`-Anweisung ändert die Details im benannten Firebird-Benutzerkonto.
+Die `ALTER USER`-Anweisung muss mindestens eine der optionalen Klauseln außer `USING PLUGIN` enthalten.
+
+Jeder Benutzer kann sein eigenes Konto ändern, mit der Ausnahme, dass nur ein Administrator "ADMIN ROLE GRANT/REVOKE" und "ACTIVE/INACTIVE" verwenden kann.
+
+Alle Klauseln sind optional, aber mindestens eine andere als `USING PLUGIN` muss vorhanden sein:
+
+* Der Parameter 'PASSWORD' dient zum Ändern des Passworts für den Benutzer
+* `FIRSTNAME`, `MIDDLENAME` und `LASTNAME` aktualisieren diese optionalen Benutzereigenschaften, wie den Vornamen, zweiten Vornamen bzw. Nachnamen der Person
+* `GRANT ADMIN ROLE` gewährt dem Benutzer die Privilegien der `RDB$ADMIN` Rolle in der Sicherheitsdatenbank (`security4.fdb`) und ermöglicht es ihm, die Konten anderer Benutzer zu verwalten.
+Es gewährt dem Benutzer keine besonderen Privilegien in regulären Datenbanken.
+* `REVOKE ADMIN ROLE` entfernt den Administrator des Benutzers in der Sicherheitsdatenbank, die diesem Benutzer, sobald die Transaktion festgeschrieben ist, die Möglichkeit verweigert, Benutzerkonten außer seinem eigenen zu ändern
+* `ACTIVE` aktiviert ein deaktiviertes Konto (nicht unterstützt für `Legacy_UserManager`)
+* `INACTIVE` deaktiviert ein Konto (nicht unterstützt für `Legacy_UserManager`).
+Dies ist praktisch, um ein Konto vorübergehend zu deaktivieren, ohne es zu löschen.
+* `USING PLUGIN` gibt das zu verwendende Benutzermanager-Plugin an
+* `TAGS` kann verwendet werden, um zusätzliche benutzerdefinierte Attribute hinzuzufügen, zu aktualisieren oder zu entfernen (`DROP`) (nicht unterstützt für `Legacy_UserManager`).
+Nicht aufgeführte Attribute werden nicht geändert.
+
+Vgl. <<fblangref40-security-user-create-de>> für weitere Details dieser Klausel.
+
+Wenn Sie Ihr eigenes Konto ändern müssen, können Sie anstelle des Namens des aktuellen Benutzers die Klausel `CURRENT USER` verwenden.
+
+[WARNING]
+====
+Die Anweisung `ALTER CURRENT USER` folgt den normalen Regeln für die Auswahl des Benutzermanager-Plugins.
+Wenn der aktuelle Benutzer mit einem nicht standardmäßigen Benutzermanager-Plugin erstellt wurde, müssen die Benutzermanager-Plugins explizit `USING PLUGIN __plugin_name__` angeben, oder es wird eine Fehlermeldung ausgegeben, die anzeigt, dass der Benutzer nicht gefunden wurde.
+Wenn ein Benutzer mit demselben Namen für den Standardbenutzermanager vorhanden ist, ändern Sie stattdessen diesen Benutzer.
+====
+
+[NOTE]
+====
+Denken Sie daran, Ihre Arbeit festzuschreiben (mittels Commit), wenn Sie in einer Anwendung arbeiten, die DDL nicht automatisch festschreibt.
+====
+
+[[fblangref40-security-user-alter-who-de]]
+=== Wer kann einen Benutzer ändern?
+
+Um das Konto eines anderen Benutzers zu ändern, muss der aktuelle Benutzer über
+
+* <<fblangref40-security-administrators-de,Administratorprivilegien>> in der Sicherheitsdatenbank
+* das Systemprivileg `USER_MANAGEMENT` in der Sicherheitsdatenbank
+Benutzer mit der Systemberechtigung `USER_MANAGEMENT` können die Administratorrolle weder erteilen noch entziehen.
+
+Jeder kann sein eigenes Konto ändern, mit Ausnahme der Optionen `GRANT/REVOKE ADMIN ROLE` und `ACTIVE/INACTIVE`, die zum Ändern Administratorrechte erfordern.
+
+[[fblangref40-security-user-alter-exmpl-de]]
+=== `ALTER USER`-Beispiele
+
+. Ändern des Passworts für den Benutzer `bobby` und Erteilen von Benutzerverwaltungsrechten:
++
+[source]
+----
+ALTER USER bobby PASSWORD '67-UiT_G8'
+GRANT ADMIN ROLE;
+----
+. Bearbeiten der optionalen Eigenschaften (der Vor- und Nachnamen) des Benutzers `dan`:
++
+[source]
+----
+ALTER USER dan
+FIRSTNAME 'No_Jack'
+LASTNAME 'Kennedy';
+----
+. Entziehen der Benutzerverwaltungsberechtigungen des Benutzers `Dumbbell`:
++
+[source]
+----
+ALTER USER dumbbell
+DROP ADMIN ROLE;
+----
+
+.Siehe auch
+<<fblangref40-security-user-create-de>>, <<fblangref40-security-user-drop-de>>
+
+[[fblangref40-security-user-createoralter-de]]
+== `CREATE OR ALTER USER`
+
+.Verwendet für
+Erstellen eines neuen oder Ändern eines bestehenden Firebird-Benutzerkontos
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE OR ALTER USER _username_
+  [SET] [<user_option> [<user_option> ...]]
+  [TAGS (<user_var> [, <user_var> ...]]
+
+<user_option> ::=
+    PASSWORD '_password_'
+  | FIRSTNAME '_firstname_'
+  | MIDDLENAME '_middlename_'
+  | LASTNAME '_lastname_'
+  | {GRANT | REVOKE} ADMIN ROLE
+  | {ACTIVE | INACTIVE}
+  | USING PLUGIN _plugin_name_
+
+<user_var> ::=
+    _tag_name_ = '_tag_value_'
+  | DROP _tag_name_
+----
+
+Vgl. <<fblangref40-security-user-create-de>> and <<fblangref40-security-user-alter-de>> für Details der Anweisungsparameter.
+
+Die Anweisung `CREATE OR ALTER USER` erstellt ein neues Firebird-Benutzerkonto oder ändert die Details des angegebenen.
+Wenn der Benutzer nicht existiert, wird er erstellt, als ob die Anweisung `CREATE USER` ausgeführt würde.
+Wenn der Benutzer bereits existiert, wird er so geändert, als ob die Anweisung `ALTER USER` ausgeführt würde.
+Die Anweisung `CREATE OR ALTER USER` muss mindestens eine der optionalen Klauseln außer `USING PLUGIN` enthalten.
+Wenn der Benutzer noch nicht existiert, ist die Klausel 'PASSWORD' erforderlich.
+
+[NOTE]
+====
+Denken Sie daran, Ihre Arbeit festzuschreiben, wenn Sie in einer Anwendung arbeiten, die DDL nicht automatisch festschreibt.
+====
+
+[[fblangref40-security-user-createoralter-exmpl-de]]
+=== `CREATE OR ALTER USER`-Beispiele
+
+.Erstellen oder Ändern eines Benutzers
+[source]
+----
+CREATE OR ALTER USER john PASSWORD 'fYe_3Ksw'
+FIRSTNAME 'John'
+LASTNAME 'Doe'
+INACTIVE;
+----
+
+.Vgl.
+<<fblangref40-security-user-create-de>>, <<fblangref40-security-user-alter-de>>, <<fblangref40-security-user-drop-de>>
+
+[[fblangref40-security-user-drop-de]]
+== `DROP USER`
+
+.Verwendet für
+Löschen eines Firebird-Benutzerkontos
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP USER _username_
+  [USING PLUGIN _plugin_name_]
+----
+
+[[fblangref40-security-tbl-dropuser-de]]
+.`DROP USER`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|username
+|Benutzername
+
+|plugin_name
+|Name des Benutzermanager-Plugins
+|===
+
+Die Anweisung `DROP USER` löscht ein Firebird-Benutzerkonto.
+
+Die optionale `USING PLUGIN`-Klausel gibt explizit das User-Manager-Plugin an, das zum Löschen des Benutzers verwendet werden soll.
+Nur Plugins, die in der `UserManager`-Konfiguration für diese Datenbank aufgelistet sind (`firebird.conf`, oder überschrieben in `databases.conf`) sind gültig.
+Der Standardbenutzermanager (erster in der `UserManager`-Konfiguration) wird angewendet, wenn diese Klausel nicht angegeben wird.
+
+[IMPORTANT]
+====
+Benutzer mit demselben Namen, die mit verschiedenen Benutzermanager-Plugins erstellt wurden, sind unterschiedliche Objekte.
+Daher kann der Benutzer, der mit einem Benutzermanager-Plugin erstellt wurde, nur von demselben Plugin gelöscht werden.
+====
+
+[NOTE]
+====
+Denken Sie daran, Ihre Arbeit festzuschreiben, wenn Sie in einer Anwendung arbeiten, die DDL nicht automatisch festschreibt.
+====
+
+[[fblangref40-security-user-drop-who-de]]
+=== Wer kann einen Benutzer löschen?
+
+Um einen Benutzer zu löschen, muss der aktuelle Benutzer über
+
+* <<fblangref40-security-administrators-de,Administratorprivilegien>> in der Sicherheitsdatenbank verfügen
+* das Systemprivileg `USER_MANAGEMENT` in der Sicherheitsdatenbank haben
+
+[[fblangref40-security-user-drop-exmpl-de]]
+=== `DROP USER`-Beispiele
+
+. Benutzer `bobby` löschen:
++
+[source]
+----
+DROP USER bobby;
+----
+. Entfernen eines Benutzers, der mit dem `Legacy_UserManager`-Plugin erstellt wurde:
++
+[source]
+----
+DROP USER Godzilla
+  USING PLUGIN Legacy_UserManager;
+----
+
+.Vgl.
+<<fblangref40-security-user-create-de>>, <<fblangref40-security-user-alter-de>>

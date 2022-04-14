@@ -1,0 +1,955 @@
+[[fblangref40-ddl-trigger-de]]
+= `TRIGGER`
+
+Ein Trigger ist eine spezielle Art einer gespeicherten Prozedur, die nicht direkt aufgerufen wird, sondern ausgeführt wird, wenn ein angegebenes Ereignis in der zugeordneten Tabelle oder Sicht auftritt.
+Ein DML-Trigger ist spezifisch für eine und nur eine Beziehung (Tabelle oder Ansicht) und eine Phase im Timing des Ereignisses (_BEFORE_ oder _AFTER_).
+Es kann für ein bestimmtes Ereignis (insert, update, delete) oder für eine Kombination von zwei oder drei dieser Ereignisse ausgeführt werden.
+
+Es gibt zwei andere Formen von Auslösern:
+
+. ein "`Datenbank-Trigger`" kann angegeben werden, um zu Beginn oder am Ende einer Benutzersitzung (Verbindung) oder einer Benutzertransaktion auszulösen.
+. ein "`DDL-Trigger`" kann angegeben werden, um vor oder nach der Ausführung einer oder mehrerer Typen von DDL-Anweisungen auszulösen.
+
+[[fblangref40-ddl-trgr-create-de]]
+== `CREATE TRIGGER`
+
+.Verwendet für
+Einen neuen Trigger erstellen
+
+.Verfügbar in
+DSQL, ESQL
+
+[[fblangref40-ddl-trgr-create-syntax-de]]
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+CREATE TRIGGER _trigname_
+  { <relation_trigger_legacy>
+  | <relation_trigger_sql2003>
+  | <database_trigger>
+  | <ddl_trigger> }
+  {<psql_trigger> | <external-module-body>}
+
+<relation_trigger_legacy> ::=
+  FOR {_tablename_ | _viewname_}
+  [ACTIVE | INACTIVE]
+  {BEFORE | AFTER} <mutation_list>
+  [POSITION _number_]
+
+<relation_trigger_sql2003> ::=
+  [ACTIVE | INACTIVE]
+  {BEFORE | AFTER} <mutation_list>
+  ON {_tablename_ | _viewname_}
+  [POSITION _number_]
+
+<database_trigger> ::=
+  [ACTIVE | INACTIVE] ON <db_event>
+  [POSITION _number_]
+
+<ddl_trigger> ::=
+  [ACTIVE | INACTIVE]
+  {BEFORE | AFTER} <ddl_event>
+  [POSITION _number_]
+
+<mutation_list> ::=
+  <mutation> [OR <mutation> [OR <mutation>]]
+
+<mutation> ::= INSERT | UPDATE | DELETE
+
+<db_event> ::=
+    CONNECT | DISCONNECT
+  | TRANSACTION {START | COMMIT | ROLLBACK}
+
+<ddl_event> ::=
+    ANY DDL STATEMENT
+  | <ddl_event_item> [{OR <ddl_event_item>} ...]
+
+<ddl_event_item> ::=
+    {CREATE | ALTER | DROP} TABLE
+  | {CREATE | ALTER | DROP} PROCEDURE
+  | {CREATE | ALTER | DROP} FUNCTION
+  | {CREATE | ALTER | DROP} TRIGGER
+  | {CREATE | ALTER | DROP} EXCEPTION
+  | {CREATE | ALTER | DROP} VIEW
+  | {CREATE | ALTER | DROP} DOMAIN
+  | {CREATE | ALTER | DROP} ROLE
+  | {CREATE | ALTER | DROP} SEQUENCE
+  | {CREATE | ALTER | DROP} USER
+  | {CREATE | ALTER | DROP} INDEX
+  | {CREATE | DROP} COLLATION
+  | ALTER CHARACTER SET
+  | {CREATE | ALTER | DROP} PACKAGE
+  | {CREATE | DROP} PACKAGE BODY
+  | {CREATE | ALTER | DROP} MAPPING
+
+<psql_trigger> ::=
+  [SQL SECURITY {INVOKER | DEFINER}]
+  <psql-module-body>
+
+<psql-module-body> ::=
+  !! Siehe auch <<fblangref40-psql-elements-body-syntax-de,Syntax des Modulrumpfes>> !!
+
+<external-module-body> ::=
+  !! Siehe auch <<fblangref40-psql-elements-body-syntax-de,Syntax des Modulrumpfes>> !!
+----
+
+[[fblangref40-ddl-trgr-createtrigger-de]]
+.`CREATE TRIGGER`-Anweisgungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|trigname
+|Trigger name.
+The maximum length is 63 characters.
+Er muss unter allen Triggernamen in der Datenbank eindeutig sein.
+
+|relation_trigger_legacy
+|Legacy-Stil der Trigger-Deklaration für einen Relations-Trigger
+
+|relation_trigger_sql2003
+|Relations-Trigger-Deklaration gemäß SQL:2003-Standard
+
+|database_trigger
+|Datenbank-Trigger-Deklaration
+
+|tablename
+|Name der Tabelle, mit der der Relationstrigger verknüpft ist
+
+|viewname
+|Name der Ansicht, mit der der Relationstrigger verknüpft ist
+
+|mutation_list
+|Liste der Beziehungsereignisse (Tabellenansicht {vbar})
+
+|number
+|Position des Abzugs in der Schussfolge.
+Von 0 bis 32.767
+
+|db_event
+|Verbindungs- oder Transaktionsereignis
+
+|ddl_event
+|Liste der Metadatenänderungsereignisse
+
+|ddl_event_item
+|Eines der Metadatenänderungsereignisse
+|===
+
+Die Anweisung `CREATE TRIGGER` wird verwendet, um einen neuen Trigger zu erstellen.
+Ein Trigger kann entweder für ein _Relation (Tabelle | Ansicht) Ereignis_ (oder eine Kombination von Ereignissen), für ein _Datenbankereignis_ oder für ein _DDL Ereignis_ erstellt werden.
+
+`CREATE TRIGGER` ist zusammen mit seinen assoziierten `ALTER TRIGGER`, `CREATE OR ALTER TRIGGER` und `RECREATE TRIGGER` eine _zusammengesetzte Anweisung_, bestehend aus einem Header und einem Body.
+Der Header gibt den Namen des Triggers, den Namen der Beziehung (bei einem DML-Trigger), die Phase des Triggers, die Ereignisse, auf die er angewendet wird, und die Position an, um eine Reihenfolge zwischen den Triggern zu bestimmen.
+
+Der Triggerrumpf besteht aus optionalen Deklarationen lokaler Variablen und benannten Cursors gefolgt von einer oder mehreren Anweisungen oder Anweisungsblöcken, die alle in einem äußeren Block eingeschlossen sind, der mit dem Schlüsselwort `BEGIN` beginnt und mit dem Schlüsselwort `END` endet.
+Deklarationen und eingebettete Anweisungen werden mit Semikolons ('```;```') abgeschlossen.
+
+Der Name des Triggers muss unter allen Triggernamen eindeutig sein.
+
+[[fblangref40-ddl-terminators01-de]]
+=== Statement-Terminatoren
+
+Einige SQL-Anweisungseditoren – insbesondere das mit Firebird gelieferte Dienstprogramm _isql_ und möglicherweise einige Editoren von Drittanbietern – verwenden eine interne Konvention, die erfordert, dass alle Anweisungen mit einem Semikolon abgeschlossen werden.
+Dies führt beim Codieren in diesen Umgebungen zu einem Konflikt mit der PSQL-Syntax.
+Wenn Sie dieses Problem und seine Lösung nicht kennen, lesen Sie bitte die Details im PSQL-Kapitel im Abschnitt <<fblangref40-sidebar01-de,Terminator in _isql_>> umschalten.
+
+[[fblangref40-ddl-trgr-sqlsec-de]]
+=== SQL-Sicherheit
+
+Die `SQL SECURITY`-Klausel gibt den Sicherheitskontext zum Ausführen anderer Routinen oder zum Einfügen in andere Tabellen an.
+
+Standardmäßig wendet ein Trigger die in seiner Tabelle definierte SQL-Sicherheitseigenschaft an (oder – wenn die Tabelle nicht über die SQL-Sicherheitseigenschaft festgelegt ist – den Datenbankstandard), kann jedoch durch explizite Angabe überschrieben werden.
+
+[NOTE]
+====
+Wenn die SQL-Sicherheitseigenschaft für die Tabelle geändert wird, sehen Trigger, die keine explizite SQL-Sicherheitseigenschaft haben, die Auswirkung der Änderung erst, wenn der Trigger das nächste Mal in den Metadatencache geladen wird.
+====
+
+Siehe auch _<<fblangref40-security-sql-security-de,SQL-Sicherheit>_ im Kapitel _Sicherheit_.
+
+[[fblangref40-ddl-trgr-relntrigger-body-de]]
+=== Der Trigger-Körper
+
+Der Trigger-Body ist entweder ein PSQL-Body oder ein externer UDR-Modul-Body.
+
+Siehe <<fblangref40-psql-elements-body-de,Der Modulrumpf>> im PSQL-Kapitel für Details.
+
+[[fblangref40-ddl-trgr-relntrigger-de]]
+=== DML-Triggers (auf Tabellen oder Ansichten)
+
+DML- oder "`relation`"-Trigger werden auf Zeilen-(Datensatz-)Ebene ausgeführt, jedes Mal, wenn sich das Zeilenbild ändert.
+Ein Trigger kann entweder 'AKTIV' oder 'INAKTIV' sein.
+Es werden nur aktive Trigger ausgeführt.
+Trigger werden standardmäßig als 'AKTIV' erstellt.
+
+[[fblangref40-ddl-trgr-relntrigger-who-de]]
+==== Wer kann einen DML-Trigger erstellen?
+
+DML-Trigger können erstellt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Besitzer der Tabelle (oder Ansicht)
+* Benutzer mit dem `ALTER ANY TABLE`- oder -- für eine Ansicht -- `ALTER ANY VIEW`-Privileg
+
+[[fblangref40-ddl-trgr-relntrigger-form-de]]
+==== Formulare der Erklärung
+
+Firebird unterstützt zwei Deklarationsformen für Relations-Trigger:
+
+* Die ursprüngliche, veraltete Syntax
+* Das SQL:2003 standardkonforme Formular (empfohlen)
+
+Das mit SQL:2003 standardkonforme Formular wird empfohlen.
+
+Ein Relationstrigger spezifiziert -- unter anderem -- eine _Phase_ und ein oder mehrere _Ereignisse_.
+
+[[fblangref40-ddl-trgr-relntrigger-rowphase-de]]
+==== Phase
+
+Phase betrifft das Timing des Triggers in Bezug auf das Change-of-State-Ereignis in der Datenzeile:
+
+* Ein `BEFORE`-Trigger wird ausgelöst, bevor die angegebene Datenbankoperation (insert, update oder delete) ausgeführt wird
+* Ein 'AFTER'-Trigger wird ausgelöst, nachdem die Datenbankoperation abgeschlossen ist
+
+[[fblangref40-ddl-trgr-relntrigger-rowevent-de]]
+==== Zeilenereignis
+
+Eine Relations-Trigger-Definition spezifiziert mindestens eine der DML-Operationen 'INSERT', 'UPDATE' und 'DELETE', um ein oder mehrere Ereignisse anzugeben, bei denen der Trigger ausgelöst werden soll.
+Werden mehrere Operationen angegeben, müssen diese durch das Schlüsselwort `OR` getrennt werden.
+Keine Operation darf mehr als einmal erfolgen.
+
+Innerhalb des Anweisungsblocks die booleschen Kontextvariablen <<fblangref40-contextvars-inserting-de,`INSERTING`>>, <<fblangref40-contextvars-updating-de,`UPDATING`>> und <<fblangref40-contextvars-deleting-de,`DELETING`>> kann verwendet werden, um zu testen, welche Operation gerade ausgeführt wird.
+
+[[fblangref40-ddl-trgr-relntrigger-position-de]]
+==== Auslösereihenfolge der Auslöser
+
+Das Schlüsselwort `POSITION` ermöglicht die Angabe einer optionalen Ausführungsreihenfolge ("`firing order`") für eine Reihe von Triggern, die die gleiche Phase und das gleiche Ereignis wie ihr Ziel haben.
+Die Standardposition ist 0.
+Wenn keine Positionen angegeben sind oder mehrere Trigger eine einzige Positionsnummer haben, werden die Trigger in alphabetischer Reihenfolge ihrer Namen ausgeführt.
+
+[[fblangref40-ddl-trgr-relntrigger-example-de]]
+==== Beispiele für `CREATE TRIGGER` für Tabellen und Ansichten
+
+. Erstellen eines Triggers in "`legacy`"-Form, der ausgelöst wird, bevor ein neuer Datensatz in die Tabelle `CUSTOMER` eingefügt wird.
++
+[source]
+----
+CREATE TRIGGER SET_CUST_NO FOR CUSTOMER
+ACTIVE BEFORE INSERT POSITION 0
+AS
+BEGIN
+  IF (NEW.CUST_NO IS NULL) THEN
+    NEW.CUST_NO = GEN_ID(CUST_NO_GEN, 1);
+END
+----
+. Erstellen einer Triggerauslösung vor dem Einfügen eines neuen Datensatzes in die `CUSTOMER`-Tabelle in SQL:2003-Standard-konformer Form.
++
+[source]
+----
+CREATE TRIGGER set_cust_no
+ACTIVE BEFORE INSERT ON customer POSITION 0 
+AS
+BEGIN
+  IF (NEW.cust_no IS NULL) THEN
+    NEW.cust_no = GEN_ID(cust_no_gen, 1);
+END
+----
+. Erstellen eines Triggers, der nach dem Einfügen, Aktualisieren oder Löschen eines Datensatzes in der `CUSTOMER`-Tabelle ausgelöst wird.
++
+[source]
+----
+CREATE TRIGGER TR_CUST_LOG
+ACTIVE AFTER INSERT OR UPDATE OR DELETE
+ON CUSTOMER POSITION 10
+AS
+BEGIN
+  INSERT INTO CHANGE_LOG (LOG_ID,
+                          ID_TABLE,
+                          TABLE_NAME,
+                          MUTATION)
+  VALUES (NEXT VALUE FOR SEQ_CHANGE_LOG,
+          OLD.CUST_NO,
+          'CUSTOMER',
+          CASE
+            WHEN INSERTING THEN 'INSERT'
+            WHEN UPDATING  THEN 'UPDATE'
+            WHEN DELETING  THEN 'DELETE'
+          END);
+END
+----
+.Wenn `DEFINER` für den Trigger `tr_ins` gesetzt ist, benötigt der Benutzer `US` nur das `INSERT`-Privileg auf `tr`.
+Wenn es auf `INVOKER` gesetzt wäre, bräuchte entweder der Benutzer oder der Trigger auch das `INSERT`-Privileg für die Tabelle `t`.
++
+[source]
+----
+create table tr (i integer);
+create table t (i integer);
+set term ^;
+create trigger tr_ins for tr after insert SQL SECURITY DEFINER
+as
+begin
+  insert into t values (NEW.i);
+end^
+set term ;^
+grant insert on table tr to user us;
+
+commit;
+
+connect 'localhost:/tmp/29.fdb' user us password 'pas';
+insert into tr values(2);
+----
++
+Das Ergebnis wäre dasselbe, wenn `SQL SECURITY DEFINER` für die Tabelle `TR` angegeben würde:
++
+[source]
+----
+create table tr (i integer) SQL SECURITY DEFINER;
+create table t (i integer);
+set term ^;
+create trigger tr_ins for tr after insert
+as
+begin
+  insert into t values (NEW.i);
+end^
+set term ;^
+grant insert on table tr to user us;
+
+commit;
+
+connect 'localhost:/tmp/29.fdb' user us password 'pas';
+insert into tr values(2);
+----
+
+[[fblangref40-ddl-trgr-dbtrigger-de]]
+=== Datenbank-Trigger
+
+Trigger können so definiert werden, dass sie bei "`Datenbankereignissen`" ausgelöst werden, was sich wirklich auf eine Mischung aus Ereignissen bezieht, die über den Umfang einer Sitzung (Verbindung) und Ereignissen, die über den Umfang einer einzelnen Transaktion hinweg wirken:
+
+* `CONNECT`
+* `DISCONNECT`
+* `TRANSACTION START`
+* `TRANSACTION COMMIT`
+* `TRANSACTION ROLLBACK`
+
+<<fblangref40-ddl-trgr-ddltrigger-de>> sind eine Unterart von Datenbank-Triggern, die in einem separaten Abschnitt behandelt werden.
+
+[[fblangref40-ddl-trgr-dbtrigger-who-de]]
+==== Wer kann einen Datenbank-Trigger erstellen?
+
+Datenbank-Trigger können erstellt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem `ALTER DATABASE`-Privileg
+
+[[fblangref40-ddl-trgr-dbtrigger-exec-de]]
+==== Ausführung von Datenbank-Triggern und Ausnahmebehandlung
+
+Die Trigger `CONNECT` und `DISCONNECT` werden in einer eigens dafür erstellten Transaktion ausgeführt.
+Diese Transaktion verwendet die Standardisolationsstufe, d. h. Snapshot (Parallelität), Schreiben und Warten.
+Wenn alles gut geht, wird die Transaktion festgeschrieben.
+Nicht abgefangene Ausnahmen führen zu einem Rollback der Transaktion und
+
+* bei einem `CONNECT`-Trigger wird die Verbindung dann unterbrochen und die Ausnahme wird an den Client zurückgegeben
+* Bei einem `DISCONNECT`-Trigger werden Ausnahmen nicht gemeldet.
+Die Verbindung ist wie beabsichtigt unterbrochen
+
+`TRANSACTION`-Trigger werden innerhalb der Transaktion ausgeführt, deren Start, Commit oder Rollback sie hervorruft.
+Die nach einer nicht abgefangenen Ausnahme ausgeführte Aktion hängt vom Ereignis ab:
+
+* Bei einem `TRANSACTION START`-Trigger wird die Ausnahme an den Client gemeldet und die Transaktion wird zurückgesetzt
+* Bei einem `TRANSACTION COMMIT` Trigger wird die Ausnahme gemeldet, die bisherigen Aktionen des Triggers werden rückgängig gemacht und der Commit wird abgebrochen
+* Bei einem `TRANSACTION ROLLBACK`-Trigger wird die Ausnahme nicht gemeldet und die Transaktion wie vorgesehen zurückgesetzt.
+
+[[fblangref40-ddl-trgr-dbtrigger-traps-de]]
+===== Fallstricke
+
+Offensichtlich gibt es keine direkte Möglichkeit zu wissen, ob ein `DISCONNECT`- oder `TRANSACTION ROLLBACK`-Trigger eine Ausnahme verursacht hat.
+Daraus folgt auch, dass die Verbindung zur Datenbank nicht zustande kommen kann, wenn ein `CONNECT`-Trigger eine Ausnahme auslöst und eine Transaktion auch nicht starten kann, wenn ein `TRANSACTION START`-Trigger eine auslöst.
+Beide Phänomene sperren Sie effektiv aus Ihrer Datenbank, bis Sie mit unterdrückten Datenbank-Triggern dort hineinkommen und den fehlerhaften Code beheben.
+
+[float]
+[[fblangref40-ddl-trgr-dbtrigger-notrgr-de]]
+===== Unterdrücken von Datenbank-Triggern
+
+Einige Firebird-Befehlszeilentools wurden mit Schaltern geliefert, mit denen ein Administrator das automatische Auslösen von Datenbank-Triggern unterdrücken kann.
+Bisher sind das:
+
+[source]
+----
+gbak -nodbtriggers
+isql -nodbtriggers
+nbackup -T
+----
+
+[[fblangref40-ddl-trgr-dbtrigger-2pc-de]]
+===== Zweiphasen-Commit
+
+In einem zweiphasigen Commit-Szenario löst `TRANSACTION COMMIT` das Auslösen in der Vorbereitungsphase aus, nicht beim Commit.
+
+[[fblangref40-ddl-trgr-dbtrigger-caveats-de]]
+===== Einige Vorbehalte
+
+. Die Verwendung der Anweisung `IN AUTONOMOUS TRANSACTION DO` in den Datenbankereignis-Triggern in Bezug auf Transaktionen (`TRANSACTION START`, `TRANSACTION ROLLBACK`, `TRANSACTION COMMIT`) kann dazu führen, dass die autonome Transaktion in eine Endlosschleife gerät
+. Die Ereignistrigger `DISCONNECT` und `TRANSACTION ROLLBACK` werden nicht ausgeführt, wenn Clients über Monitoring-Tabellen getrennt werden (`DELETE FROM MON$ATTACHMENTS`)
+
+Nur der Datenbankbesitzer und <<fblangref40-security-administrators-de,Administratoren>> haben die Berechtigung, Datenbank-Trigger zu erstellen.
+
+[[fblangref40-ddl-trgr-dbtrigger-example-de]]
+==== Beispiele für `CREATE TRIGGER` für „`Datenbank-Trigger`“
+
+. Erstellen eines Triggers für das Ereignis der Verbindung mit der Datenbank, der die Anmeldung von Benutzern am System protokolliert.
+Der Trigger wird als inaktiv angelegt.
++
+[source]
+----
+CREATE TRIGGER tr_log_connect
+INACTIVE ON CONNECT POSITION 0
+AS
+BEGIN
+  INSERT INTO LOG_CONNECT (ID,
+                           USERNAME,
+                           ATIME)
+  VALUES (NEXT VALUE FOR SEQ_LOG_CONNECT,
+          CURRENT_USER,
+          CURRENT_TIMESTAMP);
+END
+----
+. Erstellen eines Auslösers für das Ereignis einer Verbindung mit der Datenbank, der es keinem Benutzer außer SYSDBA erlaubt, sich außerhalb der Geschäftszeiten anzumelden.
++
+[source]
+----
+CREATE EXCEPTION E_INCORRECT_WORKTIME 'The working day has not started yet.';
+
+CREATE TRIGGER TR_LIMIT_WORKTIME ACTIVE
+ON CONNECT POSITION 1
+AS
+BEGIN
+  IF ((CURRENT_USER <> 'SYSDBA') AND
+      NOT (CURRENT_TIME BETWEEN time '9:00' AND time '17:00')) THEN
+    EXCEPTION E_INCORRECT_WORKTIME;
+END
+----
+
+[[fblangref40-ddl-trgr-ddltrigger-de]]
+=== DDL-Trigger
+
+DDL-Trigger ermöglichen Einschränkungen für Benutzer, die versuchen, ein DDL-Objekt zu erstellen, zu ändern oder zu löschen.
+Ihr anderer Zweck besteht darin, ein Metadatenänderungsprotokoll zu führen.
+
+DDL-Trigger lösen bei bestimmten Metadatenänderungsereignissen in einer bestimmten Phase aus.
+`BEFORE`-Trigger werden vor Änderungen an Systemtabellen ausgeführt.
+`AFTER`-Trigger werden nach Änderungen in Systemtabellen ausgeführt.
+
+[IMPORTANT]
+====
+Der Ereignistyp `[BEFORE | AFTER]` eines DDL-Triggers kann nicht geändert werden.
+====
+
+In gewisser Weise sind DDL-Trigger ein Untertyp von Datenbank-Triggern.
+
+[[fblangref40-ddl-trgr-ddltrigger-who-de]]
+==== Wer kann einen DDL-Trigger erstellen?
+
+DDL-Trigger können erstellt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem `ALTER DATABASE`-Privileg
+
+[[fblangref40-ddl-trgr-ddltrigger-notrgr-de]]
+==== Unterdrücken von DDL-Triggern
+
+Ein DDL-Trigger ist eine Art Datenbank-Trigger.
+Siehe auch <<fblangref40-ddl-trgr-dbtrigger-notrgr-de>> wie man Datenbank- und DDL-Trigger unterdrückt.
+
+[[fblangref40-ddl-trgr-ddltrigger-example-de]]
+==== Beispiele für DDL-Trigger
+
+. So können Sie einen DDL-Trigger verwenden, um ein konsistentes Benennungsschema zu erzwingen. In diesem Fall sollten die Namen der gespeicherten Prozeduren mit dem Präfix "```SP_```" beginnen:
++
+[source]
+----
+set auto on;
+create exception e_invalid_sp_name 'Invalid SP name (should start with SP_)';
+
+set term !;
+
+create trigger trig_ddl_sp before CREATE PROCEDURE
+as
+begin
+  if (rdb$get_context('DDL_TRIGGER', 'OBJECT_NAME') not starting 'SP_') then
+    exception e_invalid_sp_name;
+end!
+----
++
+Test
++
+[source]
+----
+create procedure sp_test
+as
+begin
+end!
+
+create procedure test
+as
+begin
+end!
+
+-- Der letzte Befehl löst diese Ausnahme aus und die Prozedur TEST wird nicht erstellt:
+-- Statement failed, SQLSTATE = 42000
+-- exception 1
+-- -E_INVALID_SP_NAME
+-- -Invalid SP name (should start with SP_)
+-- -At trigger 'TRIG_DDL_SP' line: 4, col: 5
+
+set term ;!
+----
+
+. Implementieren Sie benutzerdefinierte DDL-Sicherheit, indem Sie in diesem Fall die Ausführung von DDL-Befehlen auf bestimmte Benutzer beschränken:
++
+[source]
+----
+create exception e_access_denied 'Access denied';
+
+set term !;
+
+create trigger trig_ddl before any ddl statement
+as
+begin
+  if (current_user <> 'SUPER_USER') then
+    exception e_access_denied;
+end!
+----
++
+Test
++
+[source]
+----
+create procedure sp_test
+as
+begin
+end!
+
+-- Der letzte Befehl löst diese Ausnahme aus und die Prozedur SP_TEST wird nicht erstellt
+-- Statement failed, SQLSTATE = 42000
+-- exception 1
+-- -E_ACCESS_DENIED
+-- -Access denied
+-- -At trigger 'TRIG_DDL' line: 4, col: 5
+
+set term ;!
+----
++
+[NOTE]
+====
+Firebird hat Berechtigungen zum Ausführen von DDL-Anweisungen, daher sollte das Schreiben eines DDL-Triggers dafür der letzte Ausweg sein, wenn der gleiche Effekt nicht mit Berechtigungen erzielt werden kann.
+====
+
+. Verwenden eines Triggers, um DDL-Aktionen und -Versuche zu protokollieren:
++
+[source]
+----
+create sequence ddl_seq;
+
+create table ddl_log (
+  id bigint not null primary key,
+  moment timestamp not null,
+  user_name varchar(63) not null,
+  event_type varchar(25) not null,
+  object_type varchar(25) not null,
+  ddl_event varchar(25) not null,
+  object_name varchar(63) not null,
+  sql_text blob sub_type text not null,
+  ok char(1) not null
+);
+
+set term !;
+
+create trigger trig_ddl_log_before before any ddl statement
+as
+  declare id type of column ddl_log.id;
+begin
+  -- Wir nehmen die Änderungen in einer AUTONOMEN TRANSAKTION vor. Wenn also eine Ausnahme auftritt und 
+  -- der Befehl nicht ausgeführt wurde, bleibt das Protokoll erhalten.
+  in autonomous transaction do
+  begin
+    insert into ddl_log (id, moment, user_name, event_type, object_type,
+                         ddl_event, object_name, sql_text, ok)
+      values (next value for ddl_seq, current_timestamp, current_user,
+              rdb$get_context('DDL_TRIGGER', 'EVENT_TYPE'),
+              rdb$get_context('DDL_TRIGGER', 'OBJECT_TYPE'),
+              rdb$get_context('DDL_TRIGGER', 'DDL_EVENT'),
+              rdb$get_context('DDL_TRIGGER', 'OBJECT_NAME'),
+              rdb$get_context('DDL_TRIGGER', 'SQL_TEXT'),
+              'N')
+      returning id into id;
+    rdb$set_context('USER_SESSION', 'trig_ddl_log_id', id);
+  end
+end!
+----
++
+Der obige Trigger wird für diesen DDL-Befehl ausgelöst.
+Es ist eine gute Idee, `-nodbtriggers` zu verwenden, wenn Sie mit ihnen arbeiten!
++
+[source]
+----
+create trigger trig_ddl_log_after after any ddl statement
+as
+begin
+  -- Hier benötigen wir eine AUTONOME TRANSACTION, da die ursprüngliche Transaktion den Datensatz 
+  -- nicht sehen wird, der in den BEFORE-Trigger der 
+  -- autonomen Transaktion eingefügt wurde, wenn die Benutzertransaktion nicht READ COMMITTED ist.
+  in autonomous transaction do
+     update ddl_log set ok = 'Y'
+     where id = rdb$get_context('USER_SESSION', 'trig_ddl_log_id');
+end!
+
+commit!
+
+set term ;!
+
+-- Löschen Sie den Datensatz über trig_ddl_log_after
+delete from ddl_log;
+commit;
+----
++
+Test
++
+[source]
+----
+-- Dies wird einmalig protokolliert 
+-- (da T1 nicht existierte, fungiert RECREATE als CREATE) mit OK = Y.
+recreate table t1 (
+  n1 integer,
+  n2 integer
+);
+
+-- Dies schlägt fehl, da T1 bereits existiert, also ist OK N.
+create table t1 (
+  n1 integer,
+  n2 integer
+);
+
+-- T2 existiert nicht. Es wird kein Protokoll geben.
+drop table t2;
+
+-- Dies wird zweimal protokolliert 
+-- (da T1 existiert, fungiert RECREATE als DROP und CREATE) mit OK = Y.
+recreate table t1 (
+  n integer
+);
+
+commit;
+----
++
+[source]
+----
+select id, ddl_event, object_name, sql_text, ok
+  from ddl_log order by id;
+
+ ID DDL_EVENT                 OBJECT_NAME                      SQL_TEXT OK
+=== ========================= ======================= ================= ======
+  2 CREATE TABLE              T1                                   80:3 Y
+====================================================
+SQL_TEXT:
+recreate table t1 (
+    n1 integer,
+    n2 integer
+)
+====================================================
+  3 CREATE TABLE              T1                                   80:2 N
+====================================================
+SQL_TEXT:
+create table t1 (
+    n1 integer,
+    n2 integer
+)
+====================================================
+  4 DROP TABLE                T1                                   80:6 Y
+====================================================
+SQL_TEXT:
+recreate table t1 (
+    n integer
+)
+====================================================
+  5 CREATE TABLE              T1                                   80:9 Y
+====================================================
+SQL_TEXT:
+recreate table t1 (
+    n integer
+)
+====================================================
+----
+
+.Siehe auch
+<<fblangref40-ddl-trgr-alter-de>>, <<fblangref40-ddl-trgr-crtalter-de>>, <<fblangref40-ddl-trgr-recreate-de>>, <<fblangref40-ddl-trgr-drop-de>>, <<fblangref40-psql-ddltriggers-de,DDL-Trigger>> im Kapitel _Procedural SQL (PSQL)-Anweisungen_
+
+[[fblangref40-ddl-trgr-alter-de]]
+== `ALTER TRIGGER`
+
+.Verwendet für
+Ändern und Deaktivieren eines bestehenden Triggers
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+ALTER TRIGGER _trigname_
+  [ACTIVE | INACTIVE]
+  [{BEFORE | AFTER} <mutation_list>]
+  [POSITION _number_]
+  {<psql_trigger> | <external-module-body>}
+
+<psql_trigger> ::=
+  [<sql_security>]
+  [<psql-module-body>]
+
+<sql_security> ::=
+    SQL SECURITY {INVOKER | DEFINER}
+  | DROP SQL SECURITY
+
+!! Vgl. auch die Syntax <<fblangref40-ddl-proc-create-syntax-de,`CREATE TRIGGER`>> für weitere Regeln!!
+----
+
+Die `ALTER TRIGGER`-Anweisung erlaubt nur bestimmte Änderungen am Header und Body eines Triggers.
+
+[[fblangref40-ddl-trgr-alterwhat-de]]
+=== Zulässige Änderungen an Triggern
+
+* Status (`ACTIVE | INACTIVE`)
+* Phase (`BEFORE | AFTER`) (bei DML-Triggern)
+* Ereignisse (bei DML-Triggern)
+* Position in der Ausführungsfolge
+* Änderungen am Code im Trigger-Body
+
+Wenn ein Element nicht angegeben wird, bleibt es unverändert.
+
+[NOTE]
+====
+Ein DML-Trigger kann nicht in einen Datenbank- (oder DDL-)Trigger geändert werden.
+
+Es ist nicht möglich, das/die Ereignis(e) oder die Phase eines Datenbank- (oder DDL-)Triggers zu ändern.
+====
+
+.Merken Sie sich
+[NOTE]
+====
+Das Schlüsselwort `BEFORE` weist an, dass der Trigger ausgeführt wird, bevor das zugehörige Ereignis eintritt;
+das Schlüsselwort `AFTER` weist an, dass es nach dem Ereignis ausgeführt wird.
+
+Mehrere DML-Ereignisse – `INSERT`, `UPDATE`, `DELETE` – können in einem einzigen Trigger abgedeckt werden.
+Die Ereignisse sollten mit dem Schlüsselwort `OR` getrennt werden.
+Kein Ereignis sollte mehr als einmal erwähnt werden.
+
+Das Schlüsselwort `POSITION` ermöglicht die Angabe einer optionalen Ausführungsreihenfolge ("`firing order`") für eine Reihe von Triggern, die die gleiche Phase und das gleiche Ereignis wie ihr Ziel haben.
+Die Standardposition ist 0.
+Wenn keine Positionen angegeben sind oder mehrere Trigger eine einzige Positionsnummer haben, werden die Trigger in alphabetischer Reihenfolge ihrer Namen ausgeführt.====
+====
+
+[[fblangref40-ddl-trgr-alter-who-de]]
+=== Wer kann einen Trigger ändern?
+
+DML-Trigger können geändert werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Besitzer der Tabelle (oder Ansicht)
+* Benutzer mit dem `ALTER ANY TABLE`- oder -- für eine Ansicht -- `ALTER ANY VIEW`-Privileg
+
+Datenbank- und DDL-Trigger können geändert werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem `ALTER DATABASE`-Privileg
+
+[[fblangref40-ddl-trgr-alter-example-de]]
+=== Beispiele mit ALTER TRIGGER
+
+. Den Trigger `set_cust_no` deaktivieren (in den inaktiven Zustand schalten).
++
+[source]
+----
+ALTER TRIGGER set_cust_no INACTIVE;
+----
+. Ändern der Position der Zündreihenfolge des Triggers `set_cust_no`.
++
+[source]
+----
+ALTER TRIGGER set_cust_no POSITION 14;
+----
+. Den Trigger `TR_CUST_LOG` in den inaktiven Zustand schalten und die Ereignisliste ändern.
++
+[source]
+----
+ALTER TRIGGER TR_CUST_LOG
+INACTIVE AFTER INSERT OR UPDATE;
+----
+. Den `tr_log_connect Trigger` in den aktiven Status schalten, seine Position und seinen Körper ändern.
++
+[source]
+----
+ALTER TRIGGER tr_log_connect
+ACTIVE POSITION 1
+AS
+BEGIN
+  INSERT INTO LOG_CONNECT (ID,
+                           USERNAME,
+                           ROLENAME,
+                           ATIME)
+  VALUES (NEXT VALUE FOR SEQ_LOG_CONNECT,
+          CURRENT_USER,
+          CURRENT_ROLE,
+          CURRENT_TIMESTAMP);
+END
+----
+
+.Siehe auch
+<<fblangref40-ddl-trgr-create-de>>, <<fblangref40-ddl-trgr-crtalter-de>>, <<fblangref40-ddl-trgr-recreate-de>>, <<fblangref40-ddl-trgr-drop-de>>
+
+[[fblangref40-ddl-trgr-crtalter-de]]
+== `CREATE OR ALTER TRIGGER`
+
+.Verwendet für
+Erstellen eines neuen Triggers oder Ändern eines bestehenden Triggers
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+CREATE OR ALTER TRIGGER _trigname_
+  { <relation_trigger_legacy>
+  | <relation_trigger_sql2003>
+  | <database_trigger>
+  | <ddl_trigger> }
+  {<psql_trigger> | <external-module-body>}
+
+!!Vgl. auch die Syntax <<fblangref40-ddl-proc-create-syntax-de,`CREATE TRIGGER`>> für weitere Regeln !!
+----
+
+Die Anweisung `CREATE OR ALTER TRIGGER` erstellt einen neuen Trigger, falls dieser nicht existiert;
+andernfalls ändert und kompiliert es sie mit den intakten Privilegien und unberührten Abhängigkeiten.
+
+[[fblangref40-ddl-trgr-crtalter-example-de]]
+=== Beispiel für `CREATE OR ALTER TRIGGER`
+
+.Neuen Trigger erstellen, wenn er nicht existiert, oder ihn ändern, falls vorhanden
+[source]
+----
+CREATE OR ALTER TRIGGER set_cust_no
+ACTIVE BEFORE INSERT ON customer POSITION 0 
+AS
+BEGIN
+  IF (NEW.cust_no IS NULL) THEN
+    NEW.cust_no = GEN_ID(cust_no_gen, 1);
+END
+----
+
+.Siehe auch
+<<fblangref40-ddl-trgr-create-de>>, <<fblangref40-ddl-trgr-alter-de>>, <<fblangref40-ddl-trgr-recreate-de>>
+
+[[fblangref40-ddl-trgr-drop-de]]
+== `DROP TRIGGER`
+
+.Verwendet für
+Löschen eines vorhandenen Triggers
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP TRIGGER _trigname_
+----
+
+[[fblangref40-ddl-tbl-droptrigger-de]]
+.`DROP TRIGGER`-Anweisgungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|trigname
+|Triggername
+|===
+
+Die Anweisung `DROP TRIGGER` verwirft (löscht) einen vorhandenen Trigger.
+
+[[fblangref40-ddl-trgr-drop-who-de]]
+=== Wer kann einen Trigger fallen lassen?
+
+DML-Trigger können gelöscht werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Der Besitzer der Tabelle (oder Ansicht)
+* Benutzer mit dem `ALTER ANY TABLE`- oder -- für eine Ansicht -- `ALTER ANY VIEW`-Privileg
+
+Datenbank- und DDL-Trigger können gelöscht werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem `ALTER DATABASE`-Privileg
+
+[[fblangref40-ddl-trgr-drop-example-de]]
+=== Beispiel für `DROP TRIGGER`
+
+.Löschen des Triggers `set_cust_no`
+[source]
+----
+DROP TRIGGER set_cust_no;
+----
+
+.Siehe auch
+<<fblangref40-ddl-trgr-create-de>>, <<fblangref40-ddl-trgr-recreate-de>>
+
+[[fblangref40-ddl-trgr-recreate-de]]
+== `RECREATE TRIGGER`
+
+.Verwendet für
+Erstellen eines neuen Triggers oder Neuerstellen eines vorhandenen Triggers
+
+.Verfügbar in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+RECREATE TRIGGER _trigname_
+  { <relation_trigger_legacy>
+  | <relation_trigger_sql2003>
+  | <database_trigger>
+  | <ddl_trigger> }
+  {<psql_trigger> | <external-module-body>}
+
+!! Vgl. auch die Syntax <<fblangref40-ddl-proc-create-syntax-de,`CREATE TRIGGER`>> für weitere Regeln !!
+----
+
+Die Anweisung `RECREATE TRIGGER` erstellt einen neuen Trigger, wenn kein Trigger mit dem angegebenen Namen existiert;
+andernfalls versucht die Anweisung `RECREATE TRIGGER`, den vorhandenen Trigger zu löschen und einen neuen zu erstellen.
+Die Operation schlägt bei `COMMIT` fehl, wenn der Trigger verwendet wird.
+
+[WARNING]
+====
+Beachten Sie, dass Abhängigkeitsfehler erst in der `COMMIT`-Phase dieser Operation erkannt werden.
+====
+
+[[fblangref40-ddl-trgr-recreate-example-de]]
+=== Beispiel für `RECREATE TRIGGER`
+Erstellen oder erneutes Erstellen des Triggers `set_cust_no`.
+
+[source]
+----
+RECREATE TRIGGER set_cust_no
+ACTIVE BEFORE INSERT ON customer POSITION 0
+AS
+BEGIN
+  IF (NEW.cust_no IS NULL) THEN
+    NEW.cust_no = GEN_ID(cust_no_gen, 1);
+END
+----
+
+.Siehe auch
+<<fblangref40-ddl-trgr-create-de>>, <<fblangref40-ddl-trgr-drop-de>>, <<fblangref40-ddl-trgr-crtalter-de>>

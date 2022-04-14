@@ -1,0 +1,721 @@
+[[fblangref40-ddl-database-de]]
+= `DATABASE`
+
+In diesem Abschnitt wird beschrieben, wie Sie eine Datenbank erstellen, eine Verbindung zu einer vorhandenen Datenbank herstellen, die Dateistruktur einer Datenbank ändern und eine Datenbank löschen.
+Es erklärt auch, wie Sie eine Datenbank auf zwei ganz unterschiedliche Weisen sichern und wie Sie die Datenbank in den "kopiersicheren" Modus schalten, um eine externe Sicherung sicher durchzuführen.
+
+[[fblangref40-ddl-db-create-de]]
+== `CREATE DATABASE`
+
+.Verwendet für
+Erstellen einer neuen Datenbank
+
+.Verfügbar in
+DSQL, ESQL
+
+[[fblangref40-ddl-db-create-syntax-de]]
+.Syntax
+[listing,subs="+quotes,attributes"]
+----
+CREATE {DATABASE | SCHEMA} <filespec>
+  [<db_initial_option> [<db_initial_option> ...]]
+  [<db_config_option> [<db_config_option> ...]]
+
+<db_initial_option> ::=
+    USER _username_
+  | PASSWORD '_password_'
+  | ROLE _rolename_
+  | PAGE_SIZE [=] _size_
+  | LENGTH [=] _num_ [PAGE[S]]
+  | SET NAMES '_charset_'
+
+<db_config_option> ::=
+    DEFAULT CHARACTER SET _default_charset_
+      [COLLATION _collation_] -- _not supported in ESQL_
+  | <sec_file>
+  | DIFFERENCE FILE '_diff_file_' -- _not supported in ESQL_
+
+<filespec> ::= "'" [_server_spec_]{_filepath_ | _db_alias_} "'"
+
+<server_spec> ::=
+    _host_[/{_port_ | _service_}]:
+  | {backslash}{backslash}__host__\
+  | <protocol>://[_host_[:{_port_ | _service_}]/]
+
+<protocol> ::= inet | inet4 | inet6 | wnet | xnet
+
+<sec_file> ::=
+  FILE '_filepath_'
+  [LENGTH [=] _num_ [PAGE[S]]
+  [STARTING [AT [PAGE]] _pagenum_]
+----
+
+[NOTE]
+====
+Jede _db_initial_option_ und _db_config_option_ kann höchstens einmal vorkommen, außer _sec_file_, die null oder mehrmals vorkommen kann.
+====
+
+[[fblangref40-ddl-tbl-createdatabase-de]]
+.`CREATE DATABASE`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|filespec
+|Dateispezifikation für primäre Datenbankdatei
+
+|server_spec
+|Spezifikation des Remote-Servers.
+Einige Protokolle erfordern die Angabe eines Hostnamens.
+Enthält optional eine Portnummer oder einen Dienstnamen.
+Erforderlich, wenn die Datenbank auf einem Remoteserver erstellt wird.
+
+|filepath
+|Vollständiger Pfad und Dateiname einschließlich seiner Erweiterung.
+Der Dateiname muss gemäß den Regeln des verwendeten Plattform-Dateisystems angegeben werden.
+
+|db_alias
+|Datenbankalias, der zuvor in der Datei `databases.conf` erstellt wurde
+
+|host
+|Hostname oder IP-Adresse des Servers, auf dem die Datenbank erstellt werden soll
+
+|port
+|Die Portnummer, auf der der Remote-Server lauscht (Parameter _RemoteServicePort_ in der Datei `firebird.conf`)
+
+|service
+|Dienstname.
+Muss mit dem Parameterwert von _RemoteServiceName_ in der Datei `firebird.conf` übereinstimmen
+
+|username
+|Benutzername des Besitzers der neuen Datenbank.
+Er kann aus bis zu 63 Zeichen bestehen.
+Der Benutzername kann wahlweise in einfache oder doppelte Anführungszeichen eingeschlossen werden.
+Wenn ein Benutzername in doppelte Anführungszeichen eingeschlossen ist, muss die Groß-/Kleinschreibung entsprechend den Regeln für Bezeichner in Anführungszeichen beachtet werden.
+Wenn es in einfache Anführungszeichen eingeschlossen ist, verhält es sich so, als ob der Wert ohne Anführungszeichen angegeben wurde.
+Der Benutzer muss ein Administrator sein oder die Berechtigung `CREATE DATABASE` besitzen.
+
+|password
+|Passwort des Benutzers als Datenbankbesitzer.
+Bei Verwendung des Authentifizierungs-Plugins `Legacy_Auth` werden nur die ersten 8 Zeichen verwendet.
+Groß-/Kleinschreibung beachten
+
+|rolename
+|Der Name der Rolle, deren Rechte beim Anlegen einer Datenbank berücksichtigt werden sollen.
+Der Rollenname kann in einfache oder doppelte Anführungszeichen eingeschlossen werden.
+Wenn der Rollenname in doppelte Anführungszeichen eingeschlossen ist, muss die Groß-/Kleinschreibung entsprechend den Regeln für Bezeichner in Anführungszeichen beachtet werden.
+Wenn es in einfache Anführungszeichen eingeschlossen ist, verhält es sich so, als ob der Wert ohne Anführungszeichen angegeben wurde.
+
+|size
+|Seitengröße für die Datenbank in Byte.
+Mögliche Werte sind 4096, 8192, 16384 und 32768.
+Die Standardseitengröße ist 8192.
+
+|num
+|Maximale Größe der primären Datenbankdatei oder einer sekundären Datei in Seiten
+
+|charset
+|Gibt den Zeichensatz der Verbindung an, die einem Client zur Verfügung steht, nachdem die Datenbank erfolgreich erstellt wurde.
+Einzelne Anführungszeichen sind erforderlich.
+
+|default_charset
+|Gibt den Standardzeichensatz für Zeichenfolgendatentypen an
+
+|collation
+|Standardsortierung für den Standardzeichensatz
+
+|sec_file
+|Dateispezifikation für eine Sekundärdatei
+
+|pagenum
+|Anfangsseitennummer für eine sekundäre Datenbankdatei
+
+|diff_file
+|Dateipfad und Name für Differenzdateien (.delta-Dateien) für den Sicherungsmodus
+|===
+
+Die Anweisung `CREATE DATABASE` erstellt eine neue Datenbank.
+Sie können `CREATE DATABASE` oder `CREATE SCHEMA` verwenden.
+Sie sind synonym, aber wir empfehlen immer `CREATE DATABASE` zu verwenden, da sich dies in einer zukünftigen Version von Firebird ändern kann.
+
+Eine Datenbank kann aus einer oder mehreren Dateien bestehen.
+Die erste (Haupt-)Datei wird als _Primärdatei_ bezeichnet, nachfolgende Dateien werden als _Sekundärdatei(en)_ bezeichnet.
+
+.Mehrdatei-Datenbanken
+[NOTE]
+====
+Heutzutage gelten Multi-File-Datenbanken als Anachronismus.
+Es war sinnvoll, Multi-File-Datenbanken auf alten Dateisystemen zu verwenden, bei denen die Größe einer Datei begrenzt ist.
+Sie können beispielsweise auf FAT32 keine Datei erstellen, die größer als 4 GB ist.
+====
+
+Die primäre Dateispezifikation ist der Name der Datenbankdatei und ihre Erweiterung mit dem vollständigen Pfad zu ihr gemäß den Regeln des verwendeten Dateisystems der OS-Plattform.
+Die Datenbankdatei darf zum Zeitpunkt der Datenbankerstellung noch nicht vorhanden sein.
+Wenn sie vorhanden ist, erhalten Sie eine Fehlermeldung und die Datenbank wird nicht erstellt.
+
+Wenn kein vollständiger Pfad zur Datenbank angegeben ist, wird die Datenbank in einem der Systemverzeichnisse erstellt.
+Das jeweilige Verzeichnis hängt vom Betriebssystem ab.
+Geben Sie daher beim Erstellen einer Datenbank immer entweder den absoluten Pfad oder einen _Alias_ an, es sei denn, Sie haben einen triftigen Grund, diese Situation zu bevorzugen.
+
+[[fblangref40-ddl-db-alias-de]]
+=== Einen Datenbankalias verwenden
+
+Sie können Aliasse anstelle des vollständigen Pfads zur primären Datenbankdatei verwenden.
+Aliase werden in der Datei `databases.conf` im folgenden Format definiert:
+
+[listing,subs=+quotes]
+----
+_alias_ = _filepath_
+----
+
+[NOTE]
+====
+Die Ausführung einer `CREATE DATABASE`-Anweisung erfordert besondere Überlegungen in der Client-Anwendung oder dem Datenbanktreiber.
+Daher ist es nicht immer möglich, eine `CREATE DATABASE`-Anweisung auszuführen.
+Einige Treiber bieten andere Möglichkeiten zum Erstellen von Datenbanken.
+Jaybird stellt zum Beispiel die Klasse `org.firebirdsql.management.FBManager` bereit, um programmgesteuert eine Datenbank zu erstellen.
+
+Bei Bedarf können Sie jederzeit auf _isql_ zurückgreifen, um eine Datenbank zu erstellen.
+====
+
+[[fblangref40-ddl-db-createremote-de]]
+=== Erstellen einer Datenbank auf einem Remote-Server
+
+Wenn Sie eine Datenbank auf einem Remote-Server erstellen, müssen Sie die Remote-Server-Spezifikation angeben.
+Die Spezifikation des Remote-Servers hängt vom verwendeten Protokoll ab.
+Wenn Sie das TCP/IP-Protokoll verwenden, um eine Datenbank zu erstellen, sollte die primäre Dateispezifikation wie folgt aussehen:
+
+[listing,subs=+quotes]
+----
+_host_[/{_port_|_service_}]:{_filepath_ | _db_alias_}
+----
+
+Wenn Sie das Named Pipes-Protokoll verwenden, um eine Datenbank auf einem Windows-Server zu erstellen, sollte die primäre Dateispezifikation so aussehen:
+
+[listing,subs="+quotes,attributes"]
+----
+{backslash}{backslash}__host__\{_filepath_ | _db_alias_}
+----
+
+Firebird hat auch eine einheitliche URL-ähnliche Syntax für die Remote-Server-Spezifikation.
+In dieser Syntax gibt der erste Teil den Namen des Protokolls an, dann einen Hostnamen oder eine IP-Adresse, eine Portnummer und einen Pfad der primären Datenbankdatei oder einen Alias.
+
+Als Protokoll können folgende Werte angegeben werden:
+
+INET:: TCP/IP (versucht zuerst eine Verbindung über das IPv6-Protokoll herzustellen, wenn dies fehlschlägt, dann IPv4)
+INET4:: TCP/IP v4
+INET6:: TCP/IP v6
+WNET:: NetBEUI oder Named Pipes Protocol
+XNET:: lokales Protokoll (enthält keinen Host-, Port- und Servicenamen)
+
+[listing,subs=+quotes]
+----
+<protocol>://[_host_[:{_port_ | _service_}]/]{_filepath_ | _db_alias_}
+----
+
+[[fblangref40-ddl-db-createdbopts-de]]
+=== Optionale Parameter für `CREATE DATABASE`
+
+`USER` und `PASSWORD`::
+Klauseln zur Angabe des Benutzernamens bzw. des Passworts eines bestehenden Benutzers in der Sicherheitsdatenbank (`security4.fdb` oder was auch immer in der _SecurityDatabase_ Konfiguration konfiguriert ist).
+Sie müssen den Benutzernamen und das Kennwort nicht angeben, wenn die Umgebungsvariablen `ISC_USER` und `ISC_PASSWORD` gesetzt sind.
+Der beim Erstellen der Datenbank angegebene Benutzer ist der Eigentümer.
+Dies ist wichtig, wenn Sie Datenbank- und Objektberechtigungen berücksichtigen.
+
+`ROLE`::
+Die `ROLE`-Klausel gibt den Namen der Rolle an (normalerweise `RDB$ADMIN`), die beim Erstellen der Datenbank berücksichtigt wird.
+Die Rolle muss dem Benutzer in der entsprechenden Sicherheitsdatenbank zugewiesen werden.
+
+`PAGE_SIZE`::
+Klausel zum Angeben der Datenbankseitengröße.
+Diese Größe wird für die Primärdatei und alle Sekundärdateien der Datenbank festgelegt.
+Wenn Sie eine Datenbankseitengröße von weniger als 4.096 angeben, wird sie automatisch auf 4.096 aufgerundet.
+Andere Werte, die nicht gleich 4.096, 8.192, 16.384 oder 32.768 sind, werden auf den nächst kleineren unterstützten Wert geändert.
+Wenn die Datenbankseitengröße nicht angegeben wird, wird sie auf den Standardwert 8.192 gesetzt.
++
+.Größer ist nicht immer besser.
+[NOTE]
+====
+Höhere Seitengrößen können mehr Datensätze auf einer einzelnen Seite unterbringen, haben breitere Indizes und mehr Indizes, verschwenden aber auch mehr Platz für Blobs (vergleichen Sie den verschwendeten Speicherplatz eines 3KB-Blobs auf der Seitengröße 4096 mit einem auf 32768: +/- 1 KB vs +/- 29 KB) und erhöhen den Speicherverbrauch des Seitencaches.
+====
+
+`LENGTH`::
+Klausel, die die maximale Größe der primären oder sekundären Datenbankdatei in Seiten angibt.
+Wenn eine Datenbank erstellt wird, belegen ihre Primär- und Sekundärdateien die minimale Anzahl von Seiten, die zum Speichern der Systemdaten erforderlich sind, unabhängig von dem in der `LENGTH`-Klausel angegebenen Wert.
+Der Wert `LENGTH` hat keinen Einfluss auf die Größe der einzigen (oder letzten, in einer Datenbank mit mehreren Dateien) Datei.
+Die Datei wird bei Bedarf automatisch weiter vergrößert.
+
+`SET NAMES`::
+Klausel, die den Zeichensatz der verfügbaren Verbindung angibt, nachdem die Datenbank erfolgreich erstellt wurde.
+Standardmäßig wird der Zeichensatz `NONE` verwendet.
+Beachten Sie, dass der Zeichensatz in ein Paar Apostrophe (einfache Anführungszeichen) eingeschlossen werden sollte.
+
+`DEFAULT CHARACTER SET`::
+Klausel, die den Standardzeichensatz zum Erstellen von Datenstrukturen von Zeichenfolgendatentypen angibt.
+Zeichensätze werden für die Datentypen `CHAR`, `VARCHAR` und `BLOB SUB_TYPE TEXT` verwendet.
+Standardmäßig wird der Zeichensatz `NONE` verwendet.
+Es ist auch möglich, die Standard-"COLLATION" für den Standardzeichensatz anzugeben, wodurch diese Kollatierungssequenz zum Standard für den Standardzeichensatz wird.
+Der Standardwert wird für die gesamte Datenbank verwendet, es sei denn, ein alternativer Zeichensatz mit oder ohne festgelegter Sortierung wird explizit für ein Feld, eine Domäne, eine Variable, einen Umwandlungsausdruck usw. verwendet.
+
+`STARTING AT`::
+Klausel, die die Seitennummer der Datenbank angibt, bei der die nächste sekundäre Datenbankdatei beginnen soll.
+Wenn die vorherige Datei gemäß der angegebenen Seitenzahl vollständig mit Daten gefüllt ist, beginnt das System, der nächsten Datenbankdatei neue Daten hinzuzufügen.
+
+`DIFFERENCE FILE`::
+Klausel, die den Pfad und den Namen für das Datei-Delta angibt, das alle Mutationen in der Datenbankdatei speichert, nachdem sie durch die Anweisung `ALTER DATABASE BEGIN BACKUP` in den "kopiersicheren" Modus geschaltet wurde.
+Eine detaillierte Beschreibung dieser Klausel finden Sie unter `ALTER DATABASE`.
+
+[[fblangref40-ddl-db-create-dialect-de]]
+=== Angabe des Datenbankdialekts
+
+Datenbanken werden standardmäßig in Dialekt 3 erstellt.
+Damit die Datenbank im SQL-Dialekt 1 erstellt wird, müssen Sie die Anweisung `SET SQL DIALECT 1` aus dem Skript oder der Client-Anwendung ausführen, z.B. in _isql_ vor der `CREATE DATABASE`-Anweisung.
+
+[[fblangref40-ddl-db-create-who-de]]
+=== Wer kann eine Datenbank erstellen?
+
+Die `CREATE DATABASE`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem Privileg `CREATE DATABASE`BASE
+
+[[fblangref40-ddl-db-createdbexamples-de]]
+=== Beispiele für die Verwendung von `CREATE DATABASE`
+
+. Erstellen einer Datenbank in Windows, die sich auf Datenträger D mit einer Seitengröße von 4.096 befindet.
+Der Eigentümer der Datenbank ist der Benutzer _wizard_.
+Die Datenbank ist in Dialekt und verwendet `WIN1251` als Standardzeichensatz.
++
+[source]
+----
+SET SQL DIALECT 1;
+CREATE DATABASE 'D:\test.fdb'
+USER 'wizard' PASSWORD 'player'
+PAGE_SIZE = 4096 DEFAULT CHARACTER SET WIN1251;
+----
+. Erstellen einer Datenbank im Linux-Betriebssystem mit einer Seitengröße von 8.192 (Standard).
+Der Eigentümer der Datenbank ist der Benutzer _wizard_.
+Die Datenbank wird in Dialekt 3 sein und verwendet `UTF8` als Standardzeichensatz mit `UNICODE_CI_AI` als Standardsortierung.
++
+[source]
+----
+CREATE DATABASE '/home/firebird/test.fdb'
+USER 'wizard' PASSWORD 'player'
+DEFAULT CHARACTER SET UTF8 COLLATION UNICODE_CI_AI;
+----
+. Erstellen einer Datenbank auf dem entfernten Server "`baseserver`" mit dem im Alias "`test`" angegebenen Pfad, der zuvor in der Datei `databases.conf` definiert wurde.
+Es wird das TCP/IP-Protokoll verwendet.
+Der Eigentümer der Datenbank ist der Benutzer _wizard_.
+Die Datenbank wird in Dialekt 3 sein und verwendet `UTF8` als Standardzeichensatz.
++
+[source]
+----
+CREATE DATABASE 'baseserver:test'
+USER 'wizard' PASSWORD 'player'
+DEFAULT CHARACTER SET UTF8;
+----
+. Erstellen einer Datenbank in Dialekt 3 mit `UTF8` als Standardzeichensatz.
+Die Primärdatei enthält bis zu 10.000 Seiten mit einer Seitengröße von 8.192.
+Sobald die Primärdatei die maximale Seitenzahl erreicht hat, beginnt Firebird damit, Seiten der Sekundärdatei `test.fdb2` zuzuordnen.
+Wenn auch diese Datei maximal gefüllt ist, wird `test.fdb3` der Empfänger aller neuen Seitenzuweisungen.
+Als letzte Datei hat Firebird keine Seitenbegrenzung.
+Neue Zuweisungen werden so lange fortgesetzt, wie das Dateisystem dies zulässt oder bis auf dem Speichergerät kein freier Speicherplatz mehr vorhanden ist.
+Wenn für diese letzte Datei ein `LENGTH`-Parameter angegeben würde, würde er ignoriert.
++
+[source]
+----
+SET SQL DIALECT 3;
+CREATE DATABASE 'baseserver:D:\test.fdb'
+USER 'wizard' PASSWORD 'player'
+PAGE_SIZE = 8192
+DEFAULT CHARACTER SET UTF8
+FILE 'D:\test.fdb2'
+STARTING AT PAGE 10001
+FILE 'D:\test.fdb3'
+STARTING AT PAGE 20001;
+----
+. Erstellen einer Datenbank in Dialekt 3 mit `UTF8` als Standardzeichensatz.
+Die Primärdatei enthält bis zu 10.000 Seiten mit einer Seitengröße von 8.192.
+In Bezug auf die Dateigröße und die Verwendung von Sekundärdateien verhält sich diese Datenbank genau wie im vorherigen Beispiel.
++
+[source]
+----
+SET SQL DIALECT 3;
+CREATE DATABASE 'baseserver:D:\test.fdb'
+USER 'wizard' PASSWORD 'player'
+PAGE_SIZE = 8192
+LENGTH 10000 PAGES
+DEFAULT CHARACTER SET UTF8
+FILE 'D:\test.fdb2'
+FILE 'D:\test.fdb3'
+STARTING AT PAGE 20001;
+----
+
+.Siehe auch
+<<fblangref40-ddl-db-alter-de>>, <<fblangref40-ddl-db-drop-de>>
+
+[[fblangref40-ddl-db-alter-de]]
+== `ALTER DATABASE`
+
+.Verwendet für
+Ändern der Dateiorganisation einer Datenbank, Umschalten ihres "kopiersicheren" Zustands, Verwalten der Verschlüsselung und anderer datenbankweiter Konfigurationen
+
+.Verfügbar in
+DSQL, ESQL -- eingeschränkter Funktionsumfang
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER {DATABASE | SCHEMA} <alter_db_option> [<alter_db_option> ...]
+
+<alter_db_option> :==
+    <add_sec_clause>
+  | {ADD DIFFERENCE FILE '_diff_file_' | DROP DIFFERENCE FILE}
+  | {BEGIN | END} BACKUP
+  | SET DEFAULT CHARACTER SET _charset_
+  | {ENCRYPT WITH _plugin_name_ [KEY _key_name_] | DECRYPT}
+  | SET LINGER TO _linger_duration_
+  | DROP LINGER
+  | SET DEFAULT SQL SECURITY {INVOKER | DEFINER}
+  | {ENABLE | DISABLE} PUBLICATION
+  | INCLUDE <pub_table_filter> TO PUBLICATION
+  | EXCLUDE <pub_table_filter> FROM PUBLICATION
+
+<add_sec_clause> ::= ADD <sec_file> [<sec_file> ...]
+
+<sec_file> ::=
+  FILE '_filepath_'
+  [STARTING [AT [PAGE]] _pagenum_]
+  [LENGTH [=] _num_ [PAGE[S]]
+
+<pub_table_filter> ::=
+    ALL
+  | TABLE _table_name_ [, _table_name_ ...]
+----
+
+[NOTE]
+====
+Mehrere Dateien können in einer ADD-Klausel hinzugefügt werden:
+
+[source]
+----
+ALTER DATABASE
+  ADD FILE x LENGTH 8000
+    FILE y LENGTH 8000
+    FILE z
+----
+
+Mehrfaches Vorkommen von _add_sec_clause_ (`ADD FILE`-Klauseln) ist erlaubt;
+eine `ADD FILE`-Klausel, die mehrere Dateien hinzufügt (wie im obigen Beispiel), kann mit anderen gemischt werden, die nur eine Datei hinzufügen.
+Die Anweisung wurde in der alten _InterBase 6 Language Reference_ falsch dokumentiert.
+====
+
+[[fblangref40-ddl-tbl-alterdatabase-de]]
+.`ALTER DATABASE`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|add_sec_clause
+|Hinzufügen einer sekundären Datenbankdatei
+
+|sec_file
+|Dateispezifikation für Sekundärdatei
+
+|filepath
+|Vollständiger Pfad und Dateiname der Deltadatei oder sekundären Datenbankdatei
+
+|pagenum
+|Seitennummer, ab der die sekundäre Datenbankdatei beginnen soll
+
+|num
+|Maximale Größe der Sekundärdatei in Seiten
+
+|diff_file
+|Dateipfad und Name der .delta-Datei (Differenzdatei)
+
+|charset
+|Neuer Standardzeichensatz der Datenbank
+
+|linger_duration
+|Dauer der _linger_ Verzögerung in Sekunden;
+muss größer oder gleich 0 (null) sein
+
+|plugin_name
+|Der Name des Verschlüsselungs-Plugins
+
+|key_name
+|Der Name des Verschlüsselungsschlüssels
+
+|pub_table_filter
+|Filter of tables to include to or exclude from publication
+
+|table_name
+|Name (identifier) of a table
+|===
+
+Die `ALTER DATABASE`-Anweisung kann:
+
+* Sekundärdateien zu einer Datenbank hinzufügen
+* Umschalten einer Einzeldatei-Datenbank in den "`copy-safe`"-Modus (nur DSQL)
+* Pfad und Name der Delta-Datei für physische Backups setzen oder aufheben (nur DSQL)
+
+[NOTE]
+====
+`SCHEMA` ist derzeit ein Synonym für `DATABASE`;
+dies kann sich in einer zukünftigen Version ändern, daher empfehlen wir immer `DATABASE` zu verwenden
+====
+
+[[fblangref40-ddl-db-alter-who-de]]
+=== Wer kann die Datenbank ändern?
+
+Die `ALTER DATABASE`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem `ALTER DATABASE`-Privileg
+
+[[fblangref40-ddl-db-alterdbopts-de]]
+=== Paramter für `ALTER DATABASE`
+
+`ADD (FILE)`::
+Fügt der Datenbank sekundäre Dateien hinzu.
+Es ist notwendig, den vollständigen Pfad zur Datei und den Namen der Sekundärdatei anzugeben.
+Die Beschreibung für die Sekundärdatei ähnelt der für die Anweisung `CREATE DATABASE`.
+
+`ADD DIFFERENCE FILE`::
+Gibt den Pfad und den Namen der Delta-Datei an, die alle Mutationen in der Datenbank speichert, wenn sie in den "kopiersicheren" Modus geschaltet wird.
+Diese Klausel fügt tatsächlich keine Datei hinzu.
+Es überschreibt nur den Standardnamen und -pfad der .delta-Datei.
+Um die bestehenden Einstellungen zu ändern, sollten Sie die zuvor angegebene Beschreibung der .delta-Datei mit der `DROP DIFFERENCE FILE`-Klausel löschen, bevor Sie die neue Beschreibung der Delta-Datei angeben.
+Wenn Pfad und Name der .delta-Datei nicht überschrieben werden, hat die Datei denselben Pfad und Namen wie die Datenbank, jedoch mit der Dateierweiterung [Pfad]`.delta`.
++
+[CAUTION]
+====
+Wird nur ein Dateiname angegeben, wird die .delta-Datei im aktuellen Verzeichnis des Servers erstellt.
+Unter Windows ist dies das Systemverzeichnis – ein sehr unkluger Ort, um flüchtige Benutzerdateien zu speichern und im Gegensatz zu den Windows-Dateisystemregeln.
+====
+
+`DROP DIFFERENCE FILE`::
+Löscht die Beschreibung (Pfad und Name) der .delta-Datei, die zuvor in der Klausel `ADD DIFFERENCE FILE` angegeben wurde.
+Die Datei wird nicht wirklich gelöscht.
+`DROP DIFFERENCE FILE` löscht den Pfad und den Namen der .delta-Datei aus dem Datenbank-Header.
+Wenn die Datenbank das nächste Mal in den "`copy-safe`"-Modus geschaltet wird, werden die Standardwerte verwendet (d. h. der gleiche Pfad und Name wie die der Datenbank, aber mit der Erweiterung .delta).
+
+`BEGIN BACKUP`::
+Schaltet die Datenbank in den "`kopiersicher`" Modus. `ALTER DATABASE` mit dieser Klausel friert die Hauptdatenbankdatei ein, sodass sie mit Dateisystemtools sicher gesichert werden kann, selbst wenn Benutzer verbunden sind und Operationen mit Daten ausführen.
+Bis der Sicherungsstatus der Datenbank auf _NORMAL_ zurückgesetzt wird, werden alle an der Datenbank vorgenommenen Änderungen in die .delta (Differenz)-Datei geschrieben.
++
+[IMPORTANT]
+====
+Trotz ihrer Syntax startet eine Anweisung mit der `BEGIN BACKUP`-Klausel keinen Backup-Prozess, sondern schafft lediglich die Bedingungen für die Ausführung einer Aufgabe, die erfordert, dass die Datenbankdatei temporär schreibgeschützt ist.
+====
+
+`END BACKUP`::
+Schaltet die Datenbank vom "`kopiersicheren`" Modus in den normalen Modus um.
+Eine Anweisung mit dieser Klausel führt die .delta-Datei mit der Hauptdatenbankdatei zusammen und stellt den normalen Betrieb der Datenbank wieder her.
+Nach dem Start des Prozesses `END BACKUP` sind die Voraussetzungen für die Erstellung sicherer Backups mittels Dateisystemtools nicht mehr gegeben.
++
+[WARNING]
+====
+Die Verwendung von `BEGIN BACKUP` und `END BACKUP` und das Kopieren der Datenbankdateien mit Dateisystemtools ist bei Mehrdateidatenbanken _nicht sicher_!
+Verwenden Sie diese Methode nur für Datenbanken mit einer einzigen Datei.
+
+Eine sichere Sicherung mit dem Dienstprogramm _gbak_ ist jederzeit möglich, es wird jedoch nicht empfohlen, _gbak_ auszuführen, während sich die Datenbank im Status _LOCKED_ oder _MERGE_ befindet.
+====
+
+`SET DEFAULT CHARACTER SET`::
+Ändert den Standardzeichensatz der Datenbank.
+Diese Änderung wirkt sich nicht auf vorhandene Daten oder Spalten aus.
+Der neue Standardzeichensatz wird nur in nachfolgenden DDL-Befehlen verwendet.
+
+`ENCRYPT WITH`::
+Siehe auch <<fblangref40-security-dbcrypt-de,Verschlüsselung einer Datenbank>> im Sicherheitskapitel.
+
+`DECRYPT`::
+Siehe auch <<fblangref40-security-dbcrypt-decrypt-de,Entschlüsselung einer Datenbank>> im Sicherheitskapitel.
+
+`SET LINGER TO`::
+Setzt die _linger_-Verzögerung.
+Die _linger_-Verzögerung gilt nur für Firebird SuperServer und gibt an, wie viele Sekunden der Server eine Datenbankdatei (und ihre Caches) geöffnet hält, nachdem die letzte Verbindung zu dieser Datenbank geschlossen wurde.
+Dies kann dazu beitragen, die Leistung kostengünstig zu verbessern, wenn die Datenbank häufig geöffnet und geschlossen wird, indem Ressourcen für die nächste Verbindung "warm" gehalten werden.
++
+[NOTE]
+====
+Dieser Modus kann für Webanwendungen - ohne Verbindungspool - nützlich sein, bei denen die Verbindung zur Datenbank normalerweise nur für sehr kurze Zeit "lebt".
+====
++
+[WARNING]
+====
+Die Klauseln `SET LINGER TO` und `DROP LINGER` können in einer einzigen Anweisung kombiniert werden, aber die letzte Klausel "gewinnt".
+Zum Beispiel setzt `ALTER DATABASE SET LINGER TO 5 DROP LINGER` die _linger_-Verzögerung auf 0 (kein linger), während `ALTER DATABASE DROP LINGER SET LINGER to 5` die _linger_-Verzögerung auf 5 Sekunden setzt.
+====
+
+`DROP LINGER`::
+Löscht die _linger_-Verzögerung (setzt sie auf Null).
+Die Verwendung von `DROP LINGER` entspricht der Verwendung von `SET LINGER TO 0`.
++
+[NOTE]
+====
+Das Löschen von 'LINGER' ist keine ideale Lösung für die gelegentliche Notwendigkeit, es für einen einmaligen Zustand auszuschalten, in dem der Server erzwungenes Herunterfahren benötigt.
+Das Dienstprogramm _gfix_ hat jetzt den Schalter `-NoLinger`, der die angegebene Datenbank sofort schließt, nachdem der letzte Anhang verschwunden ist, unabhängig von der `LINGER`-Einstellung in der Datenbank.
+Die Einstellung 'LINGER' wird beibehalten und funktioniert beim nächsten Mal normal.
+
+Dieselbe einmalige Überschreibung ist auch über die Dienste-API unter Verwendung des Tags `isc_spb_prp_nolinger` verfügbar, z. (in einer Zeile):
+
+[source]
+----
+fbsvcmgr host:service_mgr user sysdba password xxx
+       action_properties dbname employee prp_nolinger
+----
+====
++
+[WARNING]
+====
+Die Klauseln `DROP LINGER` und `SET LINGER TO` können in einer einzigen Anweisung kombiniert werden, aber die letzte Klausel "gewinnt".
+====
+
+`SET DEFAULT SQL SECURITY`::
+Gibt die Standardoption `SQL SECURITY` an, die zur Laufzeit für Objekte ohne den Eigenschaftssatz SQL-Sicherheit angewendet wird.
+Siehe auch _<<fblangref40-security-sql-security-de,SQL-Sicherheit>>_ im Kapitel _Sicherheit_.
+
+`ENABLE PUBLICATION`::
+Aktiviert die Veröffentlichung dieser Datenbank für die Replikation.
+Die Replikation beginnt (oder wird fortgesetzt) mit der nächsten Transaktion, die gestartet wird, nachdem diese Transaktion festgeschrieben wurde.
+
+`DISABLE PUBLICATION`::
+Aktiviert die Veröffentlichung dieser Datenbank für die Replikation.
+Die Replikation wird sofort nach dem Commit deaktiviert.
+
+`EXCLUDE ... FROM PUBLICATION`::
+Schließt Tabellen von der Veröffentlichung aus.
+Wenn die `INCLUDE ALL TO PUBLICATION`-Klausel verwendet wird, werden alle danach erstellten Tabellen ebenfalls repliziert, sofern sie nicht explizit in der `CREATE TABLE`-Anweisung überschrieben werden.
+
+`INCLUDE ... TO PUBLICATION`::
+Enthält Tabellen zur Veröffentlichung.
+Wenn die `INCLUDE ALL TO PUBLICATION`-Klausel verwendet wird, werden alle danach erstellten Tabellen ebenfalls repliziert, sofern sie nicht explizit in der `CREATE TABLE`-Anweisung überschrieben werden.
+
+[NOTE]
+.Replikation
+====
+* Abgesehen von der Syntax wird die Konfiguration von Firebird für die Replikation in dieser Sprachreferenz nicht behandelt.
+* Alle Replikationsverwaltungsbefehle sind DDL-Anweisungen und werden daher zur Transaktions-Commit-Zeit effektiv ausgeführt.
+====
+
+[[fblangref40-ddl-db-alter-example-de]]
+=== Beispiele zur Verwendung von `ALTER DATABASE`
+
+. Hinzufügen einer sekundären Datei zur Datenbank.
+Sobald 30000 Seiten in der vorherigen Primär- oder Sekundärdatei gefüllt sind, beginnt die Firebird-Engine, Daten in die Sekundärdatei `test4.fdb` hinzuzufügen.
++
+[source]
+----
+ALTER DATABASE
+  ADD FILE 'D:\test4.fdb'
+    STARTING AT PAGE 30001;
+----
+. Angabe von Pfad und Name der Delta-Datei:
++
+[source]
+----
+ALTER DATABASE
+  ADD DIFFERENCE FILE 'D:\test.diff';
+----
+. Löschen der Beschreibung der Delta-Datei:
++
+[source]
+----
+ALTER DATABASE
+  DROP DIFFERENCE FILE;
+----
+. Umschalten der Datenbank in den "`kopiersicher`" Modus:
++
+[source]
+----
+ALTER DATABASE
+  BEGIN BACKUP;
+----
+. Zurückschalten der Datenbank vom "`copy-safe`"-Modus in den normalen Betriebsmodus:
++
+[source]
+----
+ALTER DATABASE
+  END BACKUP;
+----
+. Ändern des Standardzeichensatzes für eine Datenbank in `WIN1251`
++
+[source]
+----
+ALTER DATABASE
+  SET DEFAULT CHARACTER SET WIN1252;
+----
+. Einstellen einer _linger_-verzögerung von 30 Sekunden
++
+[source]
+----
+ALTER DATABASE
+  SET LINGER TO 30;
+----
+. Verschlüsseln der Datenbank mit einem Plugin namens `DbCrypt`
++
+[source]
+----
+ALTER DATABASE
+  ENCRYPT WITH DbCrypt;
+----
+. Entschlüsseln der Datenbank
++
+[source]
+----
+ALTER DATABASE
+  DECRYPT;
+----
+
+.Siehe auch
+<<fblangref40-ddl-db-create-de>>, <<fblangref40-ddl-db-drop-de>>
+
+[[fblangref40-ddl-db-drop-de]]
+== `DROP DATABASE`
+
+.Verwendet für
+Löschen der Datenbank, mit der Sie gerade verbunden sind
+
+.Verfügbar in
+DSQL, ESQL
+
+.Syntax
+[listing]
+----
+DROP DATABASE
+----
+
+Die Anweisung `DROP DATABASE` löscht die aktuelle Datenbank.
+Bevor Sie eine Datenbank löschen, müssen Sie sich mit ihr verbinden.
+Die Anweisung löscht die Primärdatei, alle Sekundärdateien und alle <<fblangref40-ddl-shadow-de,Shadow-Dateien>>.
+
+[NOTE]
+====
+Im Gegensatz zu `CREATE DATABASE` und `ALTER DATABASE` ist `DROP SCHEMA` kein gültiger Alias für `DROP DATABASE`.
+Dies ist beabsichtigt.
+====
+
+[[fblangref40-ddl-db-drop-who-de]]
+=== Wer kann eine Datenbank löschen?
+
+Die `DROP DATABASE`-Anweisung kann ausgeführt werden durch:
+
+* <<fblangref40-security-administrators-de,Administratoren>>
+* Benutzer mit dem Privileg `DROP DATABASE`BASE
+
+[[fblangref40-ddl-db-drop-example-de]]
+=== Beispiel zur Verwendung von `DROP DATABASE`
+
+.Löschen der aktuellen Datenbank
+[source]
+----
+DROP DATABASE;
+----
+
+.Siehe auch
+<<fblangref40-ddl-db-create-de>>, <<fblangref40-ddl-db-alter-de>>

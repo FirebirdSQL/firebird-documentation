@@ -1,0 +1,620 @@
+[[fblangref40-security-granting-de]]
+= Anweisungen zum Erteilen von Rechten
+
+Eine `GRANT`-Anweisung wird verwendet, um Benutzern und anderen Datenbankobjekten Berechtigungen – einschließlich Rollen – zu erteilen.
+
+[[fblangref40-security-grant-de]]
+== `GRANT`
+
+.Verwendet für
+Berechtigungen erteilen und Rollen zuweisen
+
+.Verfügbar in
+DSQL, ESQL
+
+[[fblangref40-security-grant-privsyntax-de]]
+.Syntax (Rechte erteilen)
+[listing,subs="+quotes,macros"]
+----
+GRANT <privileges>
+  TO <grantee_list>
+  [WITH GRANT OPTION]
+  [{GRANTED BY | AS} [USER] _grantor_]
+
+<privileges> ::=
+    <table_privileges> | <execute_privilege>
+  | <usage_privilege>  | <ddl_privileges>
+  | <db_ddl_privilege>
+
+<table_privileges> ::=
+  {ALL [PRIVILEGES] | <table_privilege_list> }
+    ON [TABLE] {_table_name_ | _view_name_}
+
+<table_privilege_list> ::=
+  <table_privilege> [, <tableprivilege> ...]
+
+<table_privilege> ::=
+    SELECT | DELETE | INSERT
+  | UPDATE [(_col_ [, _col_ ...])]
+  | REFERENCES [(_col_ [, _col_ ...)]
+
+<execute_privilege> ::= EXECUTE ON
+  { PROCEDURE _proc_name_ | FUNCTION _func_name_
+  | PACKAGE _package_name_ }
+
+<usage_privilege> ::= USAGE ON
+  { EXCEPTION _exception_name_
+  | {GENERATOR | SEQUENCE} _sequence_name_ }
+
+<ddl_privileges> ::=
+  {ALL [PRIVILEGES] | <ddl_privilege_list>} <object_type>
+
+<ddl_privilege_list> ::=
+  <ddl_privilege> [, <ddl_privilege> ...]
+
+<ddl_privilege> ::= CREATE | ALTER ANY | DROP ANY
+
+<object_type> ::=
+    CHARACTER SET | COLLATION | DOMAIN | EXCEPTION
+  | FILTER | FUNCTION | GENERATOR | PACKAGE
+  | PROCEDURE | ROLE | SEQUENCE | TABLE | VIEW
+
+<db_ddl_privileges> ::=
+  {ALL [PRIVILEGES] | <db_ddl_privilege_list>} {DATABASE | SCHEMA}
+
+<db_ddl_privilege_list> ::=
+  <db_ddl_privilege> [, <db_ddl_privilege> ...]
+
+<db_ddl_privilege> ::= CREATE | ALTER | DROP
+
+<grantee_list> ::= <grantee> [, <grantee> ...]
+
+<grantee> ::=
+    PROCEDURE _proc_name_  | FUNCTION _func_name_
+  | PACKAGE _package_name_ | TRIGGER _trig_name_
+  | VIEW _view_name_       | ROLE _role_name_
+  | [USER] _username_      | GROUP _Unix_group_
+  | SYSTEM PRIVILEGE <sys_privilege>
+
+<sys_privilege> ::=
+ !! Siehe <<fblangref40-security-role-create-de,`CREATE ROLE`>> !!
+----
+
+[[fblangref40-security-grant-rolesyntax-de]]
+.Syntax (Rollenzzuweisung)
+[listing,subs=+quotes]
+----
+GRANT <role_granted_list>
+  TO <role_grantee_list>
+  [WITH ADMIN OPTION]
+  [{GRANTED BY | AS} [USER] _grantor_]
+
+<role_granted_list> ::=
+  <role_granted> [, <role_granted ...]
+
+<role_granted> ::= [DEFAULT] _role_name_
+
+<role_grantee_list> ::=
+  <role_grantee> [, <role_grantee> ...]
+
+<role_grantee> ::=
+    _user_or_role_name_
+  | USER _username_
+  | ROLE _role_name_
+----
+
+[[fblangref40-security-tbl-grant-de]]
+.`GRANT`-Anweisungsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|grantor
+|Der Benutzer, der die Berechtigung(en) gewährt
+
+|table_name
+|Tabellenname
+
+|view_name
+|Der Name der View
+
+|col
+|Name der Tabellenspalte
+
+|proc_name
+|Name der Stored Procedure
+
+|func_name
+|Name der Stored Function (oder UDF)
+
+|package_name
+|Name des Pakets
+
+|exception_name
+|Der Name einer Ausnahme (Exception)
+
+|sequence_name
+|Der Name einer Sequenz (Generator)
+
+|object_type
+|Der Typ des Metadatenobjekts
+
+|trig_name
+|Der Name eines Triggers
+
+|role_name
+|Rollenname
+
+|username
+|Der Benutzername, dem die Berechtigungen erteilt werden oder dem die Rolle zugewiesen ist.
+Wenn das Schlüsselwort `USER` fehlt, kann es auch eine Rolle sein.
+
+|Unix_group
+|Der Name einer Benutzergruppe in einem POSIX-Betriebssystem
+
+|sys_privilege
+|Ein Systemprivileg
+
+|user_or_role_name
+|Name eines Benutzers oder einer Rolle
+|===
+
+Die `GRANT`-Anweisung gewährt Benutzern, Rollen oder anderen Datenbankobjekten ein oder mehrere Privilegien für Datenbankobjekte.
+
+Ein normaler, authentifizierter Benutzer hat keine Berechtigungen für ein Datenbankobjekt, bis sie diesem einzelnen Benutzer, einer dem Benutzer als Standardrolle zugewiesenen Rolle oder allen Benutzern, die als Benutzer `PUBLIC` gebündelt sind, explizit gewährt werden.
+Wenn ein Objekt erstellt wird, haben nur sein Ersteller (der Eigentümer) und <<fblangref40-security-administrators-de,Administratoren>> Berechtigungen dafür und können anderen Benutzern, Rollen oder Objekten Berechtigungen erteilen.
+
+Für unterschiedliche Typen von Metadatenobjekten gelten unterschiedliche Berechtigungen.
+Die verschiedenen Arten von Berechtigungen werden später in diesem Abschnitt separat beschrieben.
+
+[NOTE]
+====
+`SCHEMA` ist derzeit ein Synonym für `DATABASE`;
+dies kann sich in einer zukünftigen Version ändern, daher empfehlen wir immer `DATABASE` zu verwenden
+====
+
+[[fblangref40-security-grant-to-de]]
+=== Die `TO`-Klausel
+
+Die `TO`-Klausel gibt die Benutzer, Rollen und anderen Datenbankobjekte an, denen die in _privileges_ aufgezählten Privilegien gewährt werden sollen.
+Die Klausel ist obligatorisch.
+
+Mit dem optionalen Schlüsselwort `USER` in der `TO`-Klausel können Sie genau angeben, wem oder was die Berechtigung erteilt wird.
+Wenn kein Schlüsselwort `USER` (oder `ROLE`) angegeben ist, sucht der Server zuerst nach einer Rolle mit diesem Namen, und wenn keine solche Rolle vorhanden ist, werden dem Benutzer mit diesem Namen die Privilegien ohne weitere Prüfung gewährt.
+
+[TIP]
+====
+Es wird empfohlen, `USER` und `ROLE` immer explizit anzugeben, um Mehrdeutigkeiten zu vermeiden.
+Zukünftige Versionen von Firebird können 'BENUTZER' obligatorisch machen.
+====
+
+[IMPORTANT]
+====
+* Wenn eine `GRANT`-Anweisung ausgeführt wird, wird die Sicherheitsdatenbank nicht auf die Existenz des Grantee-Benutzers überprüft.
+Dies ist kein Fehler: SQL-Berechtigungen betreffen die Kontrolle des Datenzugriffs für authentifizierte Benutzer, sowohl native als auch vertrauenswürdige, und vertrauenswürdige Betriebssystembenutzer werden nicht in der Sicherheitsdatenbank gespeichert.
+* Wenn Sie einem anderen Datenbankobjekt als einem Benutzer oder einer Rolle, wie einer Prozedur, einem Auslöser oder einer Ansicht, eine Berechtigung erteilen, müssen Sie den Objekttyp angeben.
+* Obwohl das Schlüsselwort `USER` optional ist, empfiehlt es sich, es zu verwenden, um Mehrdeutigkeiten bei Rollen zu vermeiden.
+* Berechtigungen, die einer Systemberechtigung gewährt werden, werden angewendet, wenn der Benutzer mit einer Rolle mit dieser Systemberechtigung angemeldet ist.
+====
+
+[[fblangref40-security-privs-role-de]]
+==== Verpacken von Privilegien in einem `ROLE`-Objekt
+
+Eine Rolle ist ein "`Container`"-Objekt, das verwendet werden kann, um eine Sammlung von Berechtigungen zu packen.
+Die Verwendung der Rolle wird dann jedem Benutzer oder jeder Rolle gewährt, die diese Berechtigungen benötigt.
+Eine Rolle kann auch einer Liste von Benutzern oder Rollen zugewiesen werden.
+
+Die Rolle muss vorhanden sein, bevor ihr Berechtigungen erteilt werden können.
+Syntax und Regeln finden Sie unter <<fblangref40-security-role-create-de,`CREATE ROLE`>>.
+Die Rolle wird aufrechterhalten, indem ihr Berechtigungen erteilt und ihr bei Bedarf Berechtigungen entzogen werden.
+Wenn eine Rolle gelöscht wird -- siehe <<fblangref40-security-role-drop-de,`DROP ROLE`>> --, verlieren alle Benutzer die durch die Rolle erworbenen Berechtigungen.
+Alle Rechte, die einem betroffenen Benutzer zusätzlich durch eine andere grant-Anweisung gewährt wurden, bleiben erhalten.
+
+Sofern die Rolle nicht als Standardrolle zugewiesen wurde, muss ein Benutzer, dem eine Rolle zugewiesen wurde, diese Rolle explizit angeben, entweder mit seinen Anmeldeinformationen oder durch Aktivieren mit `SET ROLE`, um die zugehörigen Privilegien auszuüben.
+Alle anderen Berechtigungen, die dem Benutzer gewährt oder über Standardrollen erhalten werden, werden durch die explizite Angabe einer Rolle nicht beeinflusst.
+
+Einem Benutzer kann mehr als eine Rolle zugewiesen werden.
+Obwohl nur eine Rolle explizit angegeben werden kann, können mehrere Rollen für einen Benutzer aktiv sein, entweder als Standardrollen oder als Rollen, die der aktuellen Rolle zugewiesen wurden.
+
+Eine Rolle kann einem Benutzer oder einer anderen Rolle zugewiesen werden.
+
+[[fblangref40-security-grant-role-cumul-de]]
+==== Kumulative Rollen
+
+Die Möglichkeit, anderen Rollen und Standardrollen Rollen zuzuweisen, führt zu sogenannten kumulativen Rollen.
+Für einen Benutzer können mehrere Rollen aktiv sein, und der Benutzer erhält die kumulativen Berechtigungen aller dieser Rollen.
+
+Wenn beim Verbinden oder Verwenden von <<fblangref40-management-role-set-de,`SET ROLE`>> eine Rolle explizit angegeben wird, übernimmt der Benutzer alle dieser Rolle gewährten Berechtigungen, einschließlich der Berechtigungen, die den sekundären Rollen gewährt wurden (einschließlich der gewährten Rollen). in dieser Nebenrolle usw.).
+Mit anderen Worten, wenn die primäre Rolle explizit angegeben wird, werden auch die sekundären Rollen aktiviert.
+Mit der Funktion <<fblangref40-scalarfuncs-roleinuse-de,`RDB$ROLE_IN_USE`>> kann überprüft werden, ob eine Rolle gerade aktiv ist.
+
+Siehe auch <<fblangref40-security-grant-role-default-de>> für die Auswirkungen von `DEFAULT` mit kumulativen Rollen und <<fblangref40-security-grant-withadminoption-de>> für Auswirkungen auf die Gewährung.
+
+[[fblangref40-security-grant-role-default-de]]
+==== Standardrollen
+
+Eine Rolle kann als _default_-Rolle gewährt werden, indem der Rolle `DEFAULT` in der `GRANT`-Anweisung vorangestellt wird.
+Das Gewähren von Rollen als Standardrolle an Benutzer vereinfacht die Verwaltung von Berechtigungen, da es möglich ist, Berechtigungen für eine Rolle zu gruppieren und diese Gruppe von Berechtigungen einem Benutzer zu erteilen, ohne dass der Benutzer die Rolle explizit angeben muss.
+Benutzer können mehrere Standardrollen erhalten, die ihnen alle Berechtigungen dieser Standardrollen gewähren.
+
+Die Auswirkungen einer Standardrolle hängen davon ab, ob die Rolle einem Benutzer oder einer anderen Rolle zugewiesen wird:
+
+* Wenn einem Benutzer eine Rolle als Standardrolle zugewiesen wird, wird die Rolle automatisch aktiviert und ihre Berechtigungen werden auf den Benutzer angewendet, ohne dass die Rolle explizit angegeben werden muss.
++
+Standardmäßig aktive Rollen werden nicht von <<fblangref40-contextvars-current-role-de,`CURRENT_ROLE`>> zurückgegeben, aber die Funktion <<fblangref40-scalarfuncs-roleinuse-de,`RDB$ROLE_IN_USE`>> kann verwendet werden, um zu überprüfen, ob eine Rolle ist gerade aktiv.
+
+* Wenn eine Rolle einer anderen Rolle als Standardrolle zugewiesen wird, werden die Rechte dieser Rolle nur dann automatisch auf den Benutzer angewendet, wenn dem Benutzer die primäre Rolle als Standardrolle zugewiesen wird, andernfalls muss die primäre Rolle explizit angegeben werden (mit anderen Worten, es verhält sich genauso, als ob die sekundäre Rolle ohne die `DEFAULT`-Klausel gewährt wurde).
++
+Für eine Reihe von gewährten Rollen müssen alle Rollen als Standardrolle zugewiesen werden, damit sie automatisch angewendet werden.
+Das heißt, für "`GRANT DEFAULT ROLEA TO ROLE ROLEB`, `GRANT ROLEB TO ROLE ROLEC`, `GRANT DEFAULT ROLEC TO USER USER1` ist standardmäßig nur `ROLEC` für `BENUTZER1` aktiv.
+Um die Privilegien von `ROLEA` und `ROLEB` zu übernehmen, muss `ROLEC` explizit angegeben werden oder `ROLEB` muss `DEFAULT` für `ROLEC` gewährt werden.
+
+[[fblangref40-security-grant-public-de]]
+==== Der Benutzer `PUBLIC`
+
+Firebird hat einen vordefinierten Benutzer namens `PUBLIC`, der alle Benutzer repräsentiert.
+Privilegien für Operationen an einem bestimmten Objekt, die dem Benutzer "PUBLIC" gewährt werden, können von jedem authentifizierten Benutzer ausgeübt werden.
+
+[IMPORTANT]
+====
+Wenn dem Benutzer `PUBLIC` Privilegien gewährt werden, sollten diese auch dem Benutzer `PUBLIC` entzogen werden.
+====
+
+[[fblangref40-security-grant-withgrantoption-de]]
+=== Die `WITH GRANT OPTION`-Klausel
+
+Die optionale `WITH GRANT OPTION`-Klausel ermöglicht es den in der Benutzerliste angegebenen Benutzern, anderen Benutzern die in der Berechtigungsliste angegebenen Berechtigungen zu erteilen.
+
+[CAUTION]
+====
+Diese Option kann dem Benutzer `PUBLIC` zugewiesen werden.
+Mach das nicht!
+====
+
+[[fblangref40-security-grant-grantedby-de]]
+=== Die `GANTED BY`-Klausel
+
+Wenn Berechtigungen in einer Datenbank gewährt werden, wird standardmäßig der aktuelle Benutzer als Erteilender aufgezeichnet.
+Die `GRANTED BY`-Klausel ermöglicht es dem aktuellen Benutzer, diese Privilegien als anderen Benutzer zu erteilen.
+
+Wenn die `REVOKE`-Anweisung verwendet wird, schlägt sie fehl, wenn der aktuelle Benutzer nicht der Benutzer ist, der in der `GRANTED BY`-Klausel genannt wurde.
+
+Die `GRANTED BY` (und `AS`)-Klausel kann nur vom Datenbankbesitzer und anderen <<fblangref40-security-administrators-de,Administratoren>> verwendet werden.
+Der Objektbesitzer kann `GRANTED BY` nur verwenden, wenn er auch über Administratorrechte verfügt.
+
+[[fblangref40-security-grant-grant-as-de]]
+==== Alternative Syntax mit `AS __username__`
+
+Die nicht standardmäßige `AS`-Klausel wird als Synonym der `GRANTED BY`-Klausel unterstützt, um die Migration von anderen Datenbanksystemen zu vereinfachen.
+
+[[fblangref40-security-grant-table-de]]
+=== Berechtigungen für Tabellen und Ansichten (Views)
+
+Für Tabellen und Views ist es im Gegensatz zu anderen Metadatenobjekten möglich, mehrere Privilegien gleichzeitig zu erteilen.
+
+[[fblangref40-security-tbl-tableprivs-de]]
+.Liste der Berechtigungen für Tabellen
+`SELECT`::
+Erlaubt dem Benutzer oder Objekt, Daten aus der Tabelle oder Ansicht auszuwählen
+
+`INSERT`::
+Erlaubt dem Benutzer oder Objekt, Zeilen in die Tabelle oder Ansicht einzufügen
+
+`DELETE`::
+Ermöglicht dem Benutzer oder Objekt das Löschen von Zeilen aus der Tabelle oder Ansicht or
+
+`UPDATE`::
+Erlaubt dem Benutzer oder Objekt, Zeilen in der Tabelle oder Ansicht zu aktualisieren, optional auf bestimmte Spalten beschränkt specific
+
+`REFERENCES`::
+Erlaubt dem Benutzer oder Objekt, die Tabelle über einen Fremdschlüssel zu referenzieren, optional beschränkt auf die angegebenen Spalten.
+Wenn der primäre oder eindeutige Schlüssel, auf den der Fremdschlüssel der anderen Tabelle verweist, zusammengesetzt ist, müssen alle Spalten des Schlüssels angegeben werden.
+
+`ALL [PRIVILEGES]`::
+Kombiniert die Privilegien `SELECT`, `INSERT`, `UPDATE`, `DELETE` und `REFERENCES` in einem einzigen Paket
+
+[[fblangref40-security-grant-table-exmpl-de]]
+==== Beispiele für `GRANT <privilege>` auf Tabellen
+
+. `SELECT`- und `INSERT`-Berechtigungen für Benutzer `ALEX`:
++
+[source]
+----
+GRANT SELECT, INSERT ON TABLE SALES
+  TO USER ALEX;
+----
+. Das `SELECT`-Privileg für die Rollen `MANAGER` sowie `ENGINEER` und für den Benutzer `IVAN`:
++
+[source]
+----
+GRANT SELECT ON TABLE CUSTOMER
+  TO ROLE MANAGER, ROLE ENGINEER, USER IVAN;
+----
+. Alle Berechtigungen für die Rolle "ADMINISTRATOR", zusammen mit der Berechtigung, anderen dieselben Berechtigungen zu erteilen:
++
+[source]
+----
+GRANT ALL ON TABLE CUSTOMER
+  TO ROLE ADMINISTRATOR
+  WITH GRANT OPTION;
+----
+. Die `SELECT`- sowie `REFERENCES`-Privilegien in der Spalte `NAME` für alle Benutzer und Objekte:
++
+[source]
+----
+GRANT SELECT, REFERENCES (NAME) ON TABLE COUNTRY
+TO PUBLIC;
+----
+. Das `SELECT`-Privileg wird dem Benutzer `IVAN` vom Benutzer `ALEX` gewährt:
++
+[source]
+----
+GRANT SELECT ON TABLE EMPLOYEE
+  TO USER IVAN
+  GRANTED BY ALEX;
+----
+. Gewähren der Berechtigung `UPDATE` für die Spalten `FIRST_NAME`, `LAST_NAME`:
++
+[source]
+----
+GRANT UPDATE (FIRST_NAME, LAST_NAME) ON TABLE EMPLOYEE
+  TO USER IVAN;
+----
+. Gewähren der `INSERT`-Berechtigung für die gespeicherte Prozedur `ADD_EMP_PROJ`:
++
+[source]
+----
+GRANT INSERT ON EMPLOYEE_PROJECT
+  TO PROCEDURE ADD_EMP_PROJ;
+----
+
+[[fblangref40-security-grant-execute-de]]
+=== Die `EXECUTE`-Berechtigung
+
+Das Privileg `EXECUTE` gilt für gespeicherte Prozeduren, gespeicherte Funktionen (einschließlich UDFs) und Pakete.
+Es ermöglicht dem Empfänger, das angegebene Objekt auszuführen und gegebenenfalls seine Ausgabe abzurufen.
+
+Im Fall von auswählbaren gespeicherten Prozeduren verhält es sich insofern wie ein `SELECT`-Privileg, insofern diese Art von gespeicherter Prozedur als Reaktion auf eine `SELECT`-Anweisung ausgeführt wird.
+
+[NOTE]
+====
+Bei Paketen kann das `EXECUTE'-Privileg nur für das gesamte Paket vergeben werden, nicht für einzelne Unterprogramme.
+====
+
+[[fblangref40-security-grant-execute-exmpl-de]]
+==== Beispiele für die Gewährung des `EXECUTE`-Privilegs
+
+. Einer Rolle das Privileg `EXECUTE` für eine gespeicherte Prozedur gewähren:
++
+[source]
+----
+GRANT EXECUTE ON PROCEDURE ADD_EMP_PROJ
+  TO ROLE MANAGER;
+----
+. Einer Rolle das Privileg `EXECUTE` für eine gespeicherte Funktion gewähren:
++
+[source]
+----
+GRANT EXECUTE ON FUNCTION GET_BEGIN_DATE
+  TO ROLE MANAGER;
+----
+. Gewähren des `EXECUTE`-Privilegs für ein Paket an den Benutzer `PUBLIC`:
++
+[source]
+----
+GRANT EXECUTE ON PACKAGE APP_VAR
+  TO USER PUBLIC;
+----
+. Erteilen des `EXECUTE`-Privilegs für eine Funktion an ein Paket:
++
+[source]
+----
+GRANT EXECUTE ON FUNCTION GET_BEGIN_DATE
+  TO PACKAGE APP_VAR;
+----
+
+[[fblangref40-security-grant-usage-de]]
+=== Das `USAGE`-Privileg
+
+Um andere Metadatenobjekte als Tabellen, Ansichten, gespeicherte Prozeduren oder Funktionen, Trigger und Pakete verwenden zu können, ist es notwendig, dem Benutzer (oder Datenbankobjekten wie Trigger, Prozedur oder Funktion) das `USAGE`-Privileg für diese Objekte zu gewähren.
+
+Da Firebird gespeicherte Prozeduren und Funktionen, Trigger und Paketroutinen mit den Rechten des Aufrufers ausführt, ist es notwendig, dass entweder der Benutzer oder die Routine selbst das `USAGE`-Privileg besitzt.
+
+[NOTE]
+====
+In Firebird 3.0 und Firebird 4.0 ist das Privileg `USAGE` nur für Ausnahmen und Sequenzen verfügbar (in `gen_id(__gen_name__, __n__) oder `nächster Wert für __gen_name__`).
+Die Unterstützung des `USAGE`-Privilegs für andere Metadatenobjekte könnte in zukünftigen Versionen hinzugefügt werden.
+====
+
+[NOTE]
+====
+Für Sequenzen (Generatoren) gewährt das Privileg `USAGE` nur das Recht, die Sequenz mit der Funktion `GEN_ID` oder `NEXT VALUE FOR` zu inkrementieren.
+Die Anweisung `SET GENERATOR` ist ein Synonym für `ALTER SEQUENCE ... RESTART WITH ...` und gilt als DDL-Anweisung.
+Standardmäßig haben nur der Besitzer der Sequenz und Administratoren die Rechte für solche Operationen.
+Das Recht, den Anfangswert einer beliebigen Sequenz zu setzen, kann mit `GRANT ALTER ANY SEQUENCE` gewährt werden, was für allgemeine Benutzer nicht empfohlen wird.
+====
+
+[[fblangref40-security-grant-usage-exmpl-de]]
+==== Beispiele für die Gewährung des `USAGE`-Privilegs
+
+. Einer Rolle das Privileg `USAGE` für eine Sequenz gewähren:
++
+[source]
+----
+GRANT USAGE ON SEQUENCE GEN_AGE
+  TO ROLE MANAGER;
+----
+. Gewähren des `USAGE`-Privilegs für eine Sequenz an einen Trigger:
++
+[source]
+----
+GRANT USAGE ON SEQUENCE GEN_AGE
+  TO TRIGGER TR_AGE_BI;
+----
+. Gewähren des Privilegs `USAGE` für eine Ausnahme für ein Paket:
++
+[source]
+----
+GRANT USAGE ON EXCEPTION
+  TO PACKAGE PKG_BILL;
+----
+
+[[fblangref40-security-grant-ddl-de]]
+=== DDL Privileges
+
+Standardmäßig können nur <<fblangref40-security-administrators-de,Administratoren>> neue Metadatenobjekte erstellen;
+Das Ändern oder Löschen dieser Objekte ist auf den Eigentümer des Objekts (seinen Ersteller) und Administratoren beschränkt.
+DDL-Berechtigungen können verwendet werden, um anderen Benutzern Berechtigungen für diese Vorgänge zu erteilen.
+
+.Verfügbare DDL-Berechtigungen
+`CREATE`::
+Ermöglicht die Erstellung eines Objekts des angegebenen Typs
+
+`ALTER ANY`::
+Ermöglicht die Änderung jedes Objekts des angegebenen Typs
+
+`DROP ANY`::
+Ermöglicht das Löschen jedes Objekts des angegebenen Typs
+
+`ALL [PRIVILEGES]`::
+Kombiniert die Berechtigungen `CREATE`, `ALTER ANY` und `DROP ANY` für den angegebenen Typ
+
+[NOTE]
+====
+Es gibt keine separaten DDL-Berechtigungen für Trigger und Indizes.
+Die erforderlichen Berechtigungen werden von der Tabelle oder Sicht geerbt.
+Das Erstellen, Ändern oder Löschen eines Triggers oder Index erfordert das Privileg `ALTER ANY TABLE` oder `ALTER ANY VIEW`.
+====
+
+[[fblangref40-security-grant-ddl-exmpl-de]]
+==== Beispiele für die Gewährung von DDL-Berechtigungen
+
+. Erlaube dem Benutzer `JOE`, Tabellen zu erstellen
++
+[source]
+----
+GRANT CREATE TABLE
+  TO USER Joe;
+----
+. Erlaube dem Benutzer `JOE`, jede Prozedur zu ändern
++
+[source]
+----
+GRANT ALTER ANY PROCEDURE
+  TO USER Joe;
+----
+
+[[fblangref40-security-grant-db-ddl-de]]
+=== Datenbank-DDL-Berechtigungen
+
+Die Syntax für die Vergabe von Berechtigungen zum Erstellen, Ändern oder Löschen einer Datenbank weicht von der normalen Syntax für die Vergabe von DDL-Berechtigungen für andere Objekttypen ab.
+
+.Verfügbare Datenbank-DDL-Berechtigungen
+`CREATE`::
+Ermöglicht die Erstellung einer Datenbank
+
+`ALTER`::
+Ermöglicht die Änderung der aktuellen Datenbank
+
+`DROP`::
+Ermöglicht das Löschen der aktuellen Datenbank
+
+`ALL [PRIVILEGES]`::
+Kombiniert die Berechtigungen `ALTER` und `DROP`.
+`ALL` beinhaltet nicht das `CREATE`-Privileg.
+
+Die Berechtigungen `ALTER DATABASE` und `DROP DATABASE` gelten nur für die aktuelle Datenbank, während die DDL-Berechtigungen `ALTER ANY` und `DROP ANY` für andere Objekttypen für alle Objekte des angegebenen Typs in der aktuellen Datenbank gelten.
+Die Berechtigung zum Ändern oder Löschen der aktuellen Datenbank kann nur von <<fblangref40-security-administrators-de,Administratoren>> erteilt werden.
+
+Das Privileg `CREATE DATABASE` ist ein besonderes Privileg, da es in der Sicherheitsdatenbank gespeichert wird.
+Eine Liste von Benutzern mit dem Privileg `CREATE DATABASE` ist in der virtuellen Tabelle `SEC$DB_CREATORS` verfügbar.
+Nur <<fblangref40-security-administrators-de,Administratoren>> in der Sicherheitsdatenbank kann die Berechtigung zum Anlegen einer neuen Datenbank erteilen.
+
+[NOTE]
+====
+`SCHEMA` ist derzeit ein Synonym für `DATABASE`;
+dies kann sich in einer zukünftigen Version ändern, daher empfehlen wir immer `DATABASE` zu verwenden
+====
+
+[[fblangref40-security-grant-db-ddl-exmpl-de]]
+=== Beispiele für die Gewährung von Datenbank-DDL-Berechtigungen
+
+. Gewähren von `SUPERUSER` die Berechtigung zum Erstellen von Datenbanken:
++
+[source]
+----
+GRANT CREATE DATABASE
+  TO USER Superuser;
+----
+. Gewähren Sie `JOE` das Recht, `ALTER DATABASE` für die aktuelle Datenbank auszuführen:
++
+[source]
+----
+GRANT ALTER DATABASE
+  TO USER Joe;
+----
+. Gewähren Sie `FEDOR` das Recht, die aktuelle Datenbank zu löschen:
++
+[source]
+----
+GRANT DROP DATABASE
+  TO USER Fedor;
+----
+
+[[fblangref40-security-grant-assignroles-de]]
+=== Rollen zuweisen
+
+Das Zuweisen einer Rolle ähnelt dem Erteilen einer Berechtigung.
+Eine oder mehrere Rollen können einem oder mehreren Benutzern zugewiesen werden, einschließlich des <<fblangref40-security-grant-public-de,Benutzer `PUBLIC`>>, mit einer `GRANT`-Anweisung.
+
+[[fblangref40-security-grant-withadminoption-de]]
+==== Die `WITH ADMIN OPTION`-Klausel
+
+Die optionale `WITH ADMIN OPTION`-Klausel ermöglicht es den in der Benutzerliste angegebenen Benutzern, anderen Benutzern die angegebene(n) Rolle(n) zu erteilen.
+
+[CAUTION]
+====
+Es ist möglich, diese Option `PUBLIC` zuzuweisen.
+Tun Sie das nicht!
+====
+
+Bei kumulativen Rollen kann ein Benutzer die `WITH ADMIN OPTION` einer sekundären Rolle nur dann ausüben, wenn allen Zwischenrollen auch `WITH ADMIN OPTION` gewährt wird.
+Das heißt,  `GRANT ROLEA TO ROLE ROLEB WITH ADMIN OPTION`, `GRANT ROLEB TO ROLE ROLEC`, `GRANT ROLEC TO USER USER1 WITH ADMIN OPTION` erlaubt `USER1` nur, `ROLEC` anderen Benutzern oder Rollen zu gewähren, während `GRANT ROLEB TO ROLE ROLEC WITH ADMIN OPTION` es `USER1` ermöglicht `ROLEA`, `ROLEB` und `ROLEC` anderen Benutzern zu gewähren.
+
+[[fblangref40-security-grant-assignroles-exmpl-de]]
+==== Beispiele für Rollenzuweisungen
+
+. Dem Benutzer `IVAN` die Rollen `DIRECTOR` und `MANAGER` zuweisen:
++
+[source]
+----
+GRANT DIRECTOR, MANAGER
+  TO USER IVAN;
+----
+. Zuweisen der Rolle `MANAGER` an den Benutzer `ALEX` mit der Berechtigung, diese Rolle anderen Benutzern zuzuweisen:
++
+[source]
+----
+GRANT MANAGER
+  TO USER ALEX WITH ADMIN OPTION;
+----
+
++
+. Zuweisen der Rolle `DIRECTOR` dem Benutzer `ALEX` als Standardrolle:
++
+[source]
+----
+GRANT DEFAULT DIRECTOR
+  TO USER ALEX;
+----
+. Die Rolle `MANAGER` der Rolle `DIRECTOR` zuweisen:
++
+[source]
+----
+GRANT MANAGER
+  TO ROLE DIRECTOR;
+----
+
+.Siehe auch
+<<fblangref40-security-revoke-de,`REVOKE`>>
