@@ -52,6 +52,7 @@ class FbAsciidocPdfTask extends AsciidoctorPdfTask implements DocConfigurable {
 
     // This is a bit of a hack to get the include pattern to be updated and to force dirty detection
     @InputFiles
+    @IgnoreEmptyDirectories
     @SkipWhenEmpty
     @PathSensitive(RELATIVE)
     final Provider<FileTree> forceSourceFiles = includePattern.map { includePatternValue ->

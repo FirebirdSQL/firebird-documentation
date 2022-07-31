@@ -4,12 +4,11 @@ import org.asciidoctor.gradle.base.AsciidoctorUtils
 import org.asciidoctor.gradle.jvm.AsciidoctorTask
 import org.firebirdsql.documentation.DocConfigExtension
 import org.firebirdsql.documentation.DocConfigurable
-import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.FileTree
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
+import org.gradle.api.tasks.IgnoreEmptyDirectories
 import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.PathSensitive
@@ -59,6 +58,7 @@ class AsciidocToDocbook extends AsciidoctorTask implements DocConfigurable {
 
     // This is a bit of a hack to get the include pattern to be updated and to force dirty detection
     @InputFiles
+    @IgnoreEmptyDirectories
     @SkipWhenEmpty
     @PathSensitive(RELATIVE)
     final Provider<FileTree> forceSourceFiles = includePattern.map { includePatternValue ->
