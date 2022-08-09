@@ -792,7 +792,7 @@ select rdb$get_transaction_cn(123) from rdb$database;
 ----
 
 [[rnfb40-dml-new-make-dbkey]]
-==== Function MAKE_DBKEY
+==== MAKE_DBKEY
 Vlad Khorsun
 
 Creates a DBKEY value using relation name or ID, record number, and (optionally) logical number of data page and pointer page.
@@ -913,6 +913,76 @@ select crypt_hash(job_title using sha256) from job;
 * This function returns a VARBINARY string with the length depending on the specified algorithm.
 * MD5 and SHA1 algorithms are not recommended due to known severe issues, these algorithms are provided for backward compatibility ONLY.
 ====
+
+[[rnfb40-dml-new-blob-append]]
+==== BLOB_APPEND()
+Vlad Khorsun
+
+Tracker ticket https://github.com/FirebirdSQL/firebird/pull/6983[#6983]
+
+Regular operator `||` (concatenation) with BLOB arguments creates a temporary BLOB per every pair of arguments containing BLOB. This could lead to the excessive memory consumption and growth of the database file. The `BLOB_APPEND` function is designed to concatenate BLOBs without creating intermediate BLOBs.
+
+In order to achieve this, the resulting BLOB is left open for writing instead of being closed immediately once it's filled with data. I.e. such blob could be appended as many times as required. Engine marks such blob with new internal flag `BLB_close_on_read` and closes it automatically when necessary.
+
+.Syntax
+[listing]
+----
+BLOB_APPEND( <value1> [, <value2>, ... <valueN> ] )
+----
+
+.Input Arguments
+
+. Depending on the first argument's value, the following options are possible:
+
+.. NULL: new BLOB (unclosed, with flag `BLB_close_on_read`) is created
+.. permanent BLOB (from a table) or temporary BLOB which was already closed: new BLOB (unclosed, with flag `BLB_close_on_read`) is created, its contents is copied from the first BLOB
+.. temporary unclosed BLOB with the `BLB_close_on_read` flag: it will be used further
+.. other data types are converted to a string, new BLOB (unclosed, with flag `BLB_close_on_read`) is created, its contents is copied from this string
+
+. Other arguments can be of any type. The following behavior is defined for them:
+
+.. NULLs are ignored
+.. non-BLOBs are converted to strings (as usual) and appended to the result
+.. BLOBs, if necessary, are transliterated to the character set of the first argument and their contents are appended to the result
+
+The `BLOB_APPEND` function returns a temporary unclosed BLOB with the `BLB_close_on_read` flag. This is either a new BLOB or the one specified as the first argument. Thus, a series of operations like blob = `BLOB_APPEND (blob, ...)` will result in the creation of at most one BLOB (unless you try to append a BLOB to itself). This BLOB will be automatically closed by the engine when the client reads it, assigns it to a table, or uses it in other expressions that require reading the content.
+
+[NOTE]
+====
+Testing a BLOB for NULL value using the `IS [NOT] NULL` operator does not read it and therefore a temporary BLOB with the `BLB_close_on_read` flag will not be closed after such a test.
+====
+
+[TIP]
+====
+Use `LIST` or `BLOB_APPEND` functions to concatenate BLOBs. This reduces memory consumption and disk I/O, and also prevents database growth due to the creation of many temporary BLOBs when using the concatenation operator.
+====
+
+.Example
+[source]
+----
+execute block
+returns (b blob sub_type text)
+as
+begin
+  -- creates a new temporary not closed BLOB 
+  -- and writes the string from the 2nd argument into it 
+  b = blob_append(null, 'Hello ');
+
+  -- adds two strings to the temporary BLOB without closing it 
+  b = blob_append(b, 'World', '!');
+
+  -- comparing a BLOB with a string will close it, because the BLOB needs to be read
+  if (b = 'Hello World!') then
+  begin
+  -- ...
+  end
+
+  -- creates a temporary closed BLOB by adding a string to it
+  b = b || 'Close';
+
+  suspend;
+end
+----
 
 [[rnfb40-dml-changes-built-in-functions]]
 === Changes to Built-in Functions and Expressions
