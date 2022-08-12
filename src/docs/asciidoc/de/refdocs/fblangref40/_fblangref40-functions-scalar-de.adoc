@@ -1549,6 +1549,113 @@ from rdb$database
 .Siehe auch
 <<fblangref40-scalarfuncs-octet-length-de>>, <<fblangref40-scalarfuncs-char-length-de>>
 
+[[fblangref40-scalarfuncs-blob-append-de]]
+=== `BLOB_APPEND()`
+
+.Verfügbar in
+DSQL, PSQL
+
+.Hinzugefügt in Version
+4.0.2
+
+.Rückgabetyp
+`BLOB SUB_TYPE TEXT`
+
+.Syntax
+[listing,subs=+quotes]
+----
+BLOB_APPEND(_expr1_, _expr2_ [, _exprN_ ... ])
+----
+
+[[fblangref40-scalarfuncs-tbl-blob-append-de]]
+.`BLOB_APPEND`-Funktionsparameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Beschreibung
+
+|expr__N__
+|Ein Ausdruck eines Typs, der in `BLOB SUB_TYPE TEXT` umwandelbar ist
+|===
+
+Die `BLOB_APPEND`-Funktion verkettet Blobs, ohne zwischenzeitliche ``BLOB``s zu erstellen, wodurch übermäßiger Speicherverbrauch und Wachstum der Datenbankdatei vermieden werden.
+Die Funktion `BLOB_APPEND` nimmt zwei oder mehr Argumente und fügt sie zu einem `BLOB SUB_TYPE TEXT` hinzu, der für eine weitere Modifikation durch einen nachfolgenden Aufruf von `BLOB_APPEND` offen bleibt.
+
+Das resultierende `BLOB` wird zum Schreiben offen gelassen, anstatt geschlossen zu werden, wenn die Funktion zurückkehrt.
+Mit anderen Worten, das `BLOB` kann beliebig oft angehängt werden.
+Die Engine markiert das von `BLOB_APPEND` zurückgegebene `BLOB` mit einem internen Flag `BLB_close_on_read` und schließt es bei Bedarf automatisch.
+
+Das erste Argument bestimmt das Verhalten der Funktion:
+
+. `NULL`: neues, leeres `BLOB SUB_TYPE TEXT CHARACTER SET NONE` wird erstellt
+. permanentes `BLOB` (aus einer Tabelle) oder temporäres `BLOB`, das bereits geschlossen war: neues `BLOB SUB_TYPE TEXT` wird erstellt, gefüllt mit dem Inhalt des ursprünglichen `BLOB`.
+Wenn das ursprüngliche `BLOB` `SUB_TYPE TEXT` ist, wird dessen Zeichensatz verwendet, andernfalls der Zeichensatz `OCTETS`
+. temporäres, nicht geschlossenes `BLOB` mit dem `BLB_close_on_read`-Flag (z. B. erstellt durch einen anderen Aufruf von `BLOB_APPEND`): unverändert verwendet, verbleibende Argumente werden an dieses `BLOB` angehängt
+. andere Datentypen: ein neuer `BLOB SUB_TYPE TEXT` wird erstellt, gefüllt mit dem ursprünglichen Argument, das in einen String umgewandelt wurde.
+Wenn der Originalwert ein Zeichentyp ist, wird dessen Zeichensatz verwendet (bei String-Literalen der Verbindungszeichensatz), ansonsten Zeichensatz `NONE`.
+
+Andere Argumente können von beliebigem Typ sein.
+Für sie ist folgendes Verhalten definiert:
+
+. ``NULL``s werden ignoriert (verhält sich wie ein leerer String)
+. ``BLOB``s werden ggf. in den Zeichensatz des ersten Arguments transliteriert und ihr Inhalt an das Ergebnis angehängt
+. andere Datentypen werden (wie üblich) in Strings umgewandelt und an das Ergebnis angehängt
+
+Die Funktion `BLOB_APPEND` gibt einen vorübergehend nicht geschlossenen `BLOB SUB_TYPE TEXT` mit dem Flag `BLB_close_on_read` zurück.
+Wenn das erste Argument ein solches temporäres, nicht geschlossenes `BLOB` ist (z. B. durch einen vorherigen Aufruf von `BLOB_APPEND` erstellt), wird es so verwendet, wie es ist, andernfalls wird ein neues `BLOB SUB_TYPE TEXT` erstellt.
+Daher führt eine Reihe von Operationen wie `blob = BLOB_APPEND (blob, ...)` zur Erstellung von höchstens einem `BLOB` (es sei denn, Sie versuchen, ein `BLOB` an sich selbst anzuhängen).
+Dieses Blob wird automatisch von der Engine geschlossen, wenn der Client es liest, es einer Tabelle zuweist oder es in anderen Ausdrücken verwendet, die das Lesen des Inhalts erfordern.
+
+.Wichtige Einschränkungen für `BLOB_APPEND`
+[WARNING]
+====
+. Das `NULL`-Verhalten von `BLOB_APPEND` unterscheidet sich von der normalen Verkettung (unter Verwendung von `||`).
+Das Auftreten von `NULL` verhält sich so, als ob ein leerer String verwendet wurde.
+Mit anderen Worten,`"NULL` wird effektiv ignoriert.
++
+Bei der normalen Verkettung führt die Verkettung mit `NULL` zu `NULL`.
+. Das Ergebnis ist immer ein `BLOB SUB_TYPE TEXT`
+====
+
+[NOTE]
+====
+Der eines Blobs auf `NULL` mittels `IS [NOT] NULL` liest das Blob nicht ein. Deshalb wird ein temporäres Blob mit dem Flag `BLB_close_on_read` nach einem solchen Test nicht geschlossen.
+====
+
+[TIP]
+====
+Verwenden Sie die Funktionen `LIST` oder `BLOB_APPEND`, um Blobs zu verketten.
+Dadurch werden der Arbeitsspeicherverbrauch und die Datenträger-E/A reduziert und außerdem das Datenbankwachstum aufgrund der Erstellung vieler temporärer Blobs bei Verwendung des Verkettungsoperators verhindert.
+====
+
+[[fblangref40-scalarfuncs-blob-append-exmpl-de]]
+==== `BLOB_APPEND`-Beispiele
+
+[source]
+----
+execute block
+returns (b blob sub_type text)
+as
+begin
+  -- creates a new temporary not closed BLOB
+  -- and writes the string from the 2nd argument into it
+  b = blob_append(null, 'Hello ');
+  -- adds two strings to the temporary BLOB without closing it
+  b = blob_append(b, 'World', '!');
+  -- comparing a BLOB with a string will close it, because the BLOB needs to be read
+  if (b = 'Hello World!') then
+  begin
+  -- ...
+  end
+  -- creates a temporary closed BLOB by adding a string to it
+  b = b || 'Close';
+  suspend;
+end
+----
+
+.Siehe auch
+<<fblangref40-commons-concat-de,Verkettungsoperator>>, <<fblangref40-aggfuncs-list-de,`LIST()`>>
+
 [[fblangref40-scalarfuncs-char-length-de]]
 === `CHAR_LENGTH()`, `CHARACTER_LENGTH()`
 
