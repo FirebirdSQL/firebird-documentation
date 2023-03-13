@@ -1,0 +1,195 @@
+[[rnfb50-dml]]
+= Data Manipulation Language (DML)
+
+[[rnfb50-dml-quicklinks]]
+== Quick Links
+
+* <<rnfb50-dml-skip-locked>>
+* <<rnfb50-dml-matched-by-source>>
+* <<rnfb50-dml-built-in-functions>>
+
+[[rnfb50-dml-skip-locked]]
+== `SKIP LOCKED` clause
+Adriano dos Santos Fernandes
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/7350[#7350]
+
+`SKIP LOCKED` clause can be used with `SELECT ... WITH LOCK`, `UPDATE` and `DELETE` statements.
+
+It makes engine skip records locked by others transactions instead of wait on them or raise conflict errors.
+
+This is very useful to implement work queues where one or more processes post work to a table and issue an event while workers listen for events and read/delete items from the table. Using `SKIP LOCKED` multiple workers can get exclusive work items from the table without conflicts.
+
+Syntax:
+
+[listing]
+----
+SELECT
+  [FIRST ...]
+  [SKIP ...]
+  FROM <sometable>
+  [WHERE ...]
+  [PLAN ...]
+  [ORDER BY ...]
+  [{ ROWS ... } | {OFFSET ...} | {FETCH ...}]
+  [FOR UPDATE [OF ...]]
+  [WITH LOCK [SKIP LOCKED]]
+
+UPDATE <sometable>
+  SET ...
+  [WHERE ...]
+  [PLAN ...]
+  [ORDER BY ...]
+  [ROWS ...]
+  [SKIP LOCKED]
+  [RETURNING ...]
+
+DELETE FROM <sometable>
+  [WHERE ...]
+  [PLAN ...]
+  [ORDER BY ...]
+  [ROWS ...]
+  [SKIP LOCKED]
+  [RETURNING ...]
+----
+
+[NOTE]
+====
+As it happens with subclauses `FIRST`/`SKIP`/`ROWS`/`OFFSET`/`FETCH` record lock
+(and "skip locked" check) is done in between of skip (`SKIP`/`ROWS`/`OFFSET`/`FETCH`) and
+limit (`FIRST`/`ROWS`/`OFFSET`/`FETCH`) checks.
+====
+
+Examples:
+
+* Prepare metadata
+
+[listing]
+----
+create table emails_queue (
+    subject varchar(60) not null,
+    text blob sub_type text not null
+);
+
+set term !;
+
+create trigger emails_queue_ins after insert on emails_queue
+as
+begin
+    post_event('EMAILS_QUEUE');
+end!
+
+set term ;!
+----
+
+* Sender application or routine
+
+[listing]
+----
+insert into emails_queue (subject, text)
+  values ('E-mail subject', 'E-mail text...');
+commit;
+----
+
+* Client application
+
+[listing]
+----
+-- Client application can listen to event `EMAILS_QUEUE` to actually send e-mails using this query:
+
+delete from emails_queue
+  rows 10
+  skip locked
+  returning subject, text;
+----
+
+More than one instance of the application may be running, for example to load balance work.
+
+[[rnfb50-dml-matched-by-source]]
+== Support for `WHEN NOT MATCHED BY SOURCE` in the `MERGE` statement
+Adriano dos Santos Fernandes
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/6681[#6681]
+
+Syntax:
+
+[listing]
+----
+<merge when> ::=
+		<merge when matched> |
+		<merge when not matched>
+		<merge when not matched by target> |
+		<merge when not matched by source>
+
+<merge when not matched by target> ::=
+		WHEN NOT MATCHED [ BY TARGET ] [ AND <condition> ] THEN
+			INSERT [ <left paren> <column list> <right paren> ]
+				VALUES <left paren> <value list> <right paren>
+
+<merge when not matched by source> ::=
+		WHEN NOT MATCHED BY SOURCE [ AND <condition> ] THEN
+			{ UPDATE SET <assignment list> | DELETE }
+----
+
+`<merge when not matched by target>` is called when a source record matches no record in target. INSERT will change the target table.
+
+`<merge when not matched by source>` is called when a target record matches no record in source.	UPDATE or DELETE will change the target table.
+
+Example:
+
+[listing]
+----
+MERGE
+	INTO customers c
+	USING new_customers nc
+	ON (c.id = nc.id)
+	WHEN MATCHED THEN
+		UPDATE SET	name = cd.name
+	WHEN NOT MATCHED BY SOURCE THEN
+		DELETE
+----
+
+[[rnfb50-dml-built-in-functions]]
+== New Expressions and Built-in Functions
+
+[[rnfb50-dml-unicode-funcs]]
+=== `UNICODE_CHAR` and `UNICODE_VAL`
+Adriano dos Santos Fernandes
+
+==== `UNICODE_CHAR`
+
+Returns the UNICODE character with the specified code point.
+
+Syntax:
+[listing]
+----
+UNICODE_CHAR( <number> )
+----
+
+[NOTE]
+====
+Argument to UNICODE_CHAR must be a valid UNICODE code point and not in the range of high/low surrogates (0xD800 to 0xDFFF). Otherwise it throws an error.
+====
+
+Example:
+[listing]
+----
+select unicode_char(x) from y;
+----
+
+==== `UNICODE_VAL`
+
+Returns the UNICODE code point of the first character of the specified string,
+or zero if the string is empty.
+
+Syntax:
+[listing]
+----
+UNICODE_VAL( <string> )
+----
+
+Example:
+[listing]
+----
+select unicode_val(x) from y;
+----

@@ -1,0 +1,894 @@
+[[rnfb50-engine]]
+= Changes in the Firebird Engine
+
+[[rnfb50-engine-links]]
+== Quick Links
+
+* <<rnfb50-engine-parallel>>
+* <<rnfb50-engine-inline-upgrade>>
+* <<rnfb50-engine-cursor-info>>
+* <<rnfb50-engine-stmt-cache>>
+* <<rnfb50-engine-rle>>
+* <<rnfb50-engine-profiler>>
+* <<rnfb50-engine-blob-util>>
+
+[[rnfb50-engine-parallel]]
+== Support for parallel operations
+Vlad Khorsun
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/7447[#7447]
+
+The Firebird engine can now execute some tasks using multiple threads in
+parallel. Currently parallel execution is implemented for the sweep and the
+index creation tasks. Parallel execution is supported for both auto- and manual
+sweep.
+
+To handle same task by multiple threads engine runs additional worker threads
+and creates internal worker attachments. By default, parallel execution is not
+enabled. There are two ways to enable parallelism in user attachment:
+* set number of parallel workers in DPB using new tag _isc_dpb_parallel_workers_,
+* set default number of parallel workers using new setting _ParallelWorkers_ in firebird.conf.
+
+For _gfix_ utility there is new command-line switch _-parallel_ that allows to
+set number of parallel workers for the sweep task. For example:
+
+[listing]
+----
+gfix -sweep -parallel 4 <database>
+----
+
+will run sweep on given database and ask engine to use 4 workers. _gfix_ uses DPB
+tag _isc_dpb_parallel_workers_ when attaches to <database>, if switch _-parallel_
+is present.
+
+New firebird.conf setting _ParallelWorkers_ set default number of parallel
+workers that can be used by any user attachment running parallelizable task.
+Default value is 1 and means no use of additional parallel workers. Value in
+DPB have higher priority than setting in firebird.conf.
+
+To control number of additional workers that can be created by the engine 
+there are two new settings in firebird.conf: 
+. ParallelWorkers - set default number of parallel workers that used by user 
+  attachments. Could be overriden by attachment using tag _isc_dpb_parallel_workers_ in DPB.
+. MaxParallelWorkers - limit number of simultaneously used workers for the
+  given database and Firebird process.
+
+Internal worker attachments are created and managed by the engine itself.
+Engine maintains per-database pools of worker attachments. Number of items in
+each of such pool is limited by value of _MaxParallelWorkers_ setting. The pools
+are created by each Firebird process independently.
+
+In SuperServer architecture worker attachments are implemented as light-
+weight system attachments, while in Classic and SuperClassic its looks like
+usual user attachments. All worker attachments are embedded into creating
+server process. Thus in Classic architectures there is no additional server
+processes. Worker attachments are present in monitoring tables. Idle worker
+attachment is destroyed after 60 seconds of inactivity. Also, in Classic
+architectures worker attachments are destroyed immediately after last user
+connection detached from database.
+
+Examples:
+
+Set in firebird.conf _ParallelWorkers = 4, MaxParallelWorkers = 8_ and restart
+Firebird server.
+
+. Connect to test database not using isc_dpb_parallel_workers in DPB and
+execute `CREATE INDEX ...` SQL statement. On commit the index will be actually
+created and engine will use 3 additional worker attachments. In total, 4 
+attachments in 4 threads will work on index creation.
+
+. Ensure auto-sweep is enabled for test database. When auto-sweep will run on
+that database, it also will use 3 additional workers (and run within 4 threads).
+
+. More than one single task at time could be parallelized: make 2 attachments
+and execute `CREATE INDEX ...` in each of them (of course indices to be built
+should be different). Each index will be created using 4 attachments (1 user
+and 3 worker) and 4 threads.
+
+. Run _gfix -sweep <database>_ without specifying switch _-parallel_: sweep will run
+using 4 attachments in 4 threads.
+
+. Run _gfix -sweep -parallel 2 <database>_: sweep will run using 2 attachments in
+2 threads. This shows that value in DPB tag _isc_dpb_parallel_workers_ overrides
+value of setting _ParallelWorkers_.
+
+
+[[rnfb50-engine-inline-upgrade]]
+== Inline minor ODS upgrade
+Dmitry Yemanov
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/7397[#7397]
+
+This feature allows to upgrade the existing database to the newest ODS version without backup/restore, provided that the database belongs to the same major ODS version.
+
+For example, a database created by Firebird 4.0 uses ODS 13.0 and thus can be upgraded to the ODS 13.1 used by Firebird 5.0.
+
+Notes:
+
+* Upgrade must be done manually, using _gfix -upgrade_ command
+* It requires exclusive access to the database, error is thrown otherwise
+* `USE_GFIX_UTILITY` system privilege is required
+* Upgrade is transactional, all changes are reverted if any error happens
+
+Syntax:
+
+[listing]
+----
+gfix -upgrade <database>
+----
+
+See also <<rnfb50-utils-gfix-upgrade, ODS upgrade by _gfix_>>.
+
+[CAUTION]
+====
+This is a one-way modification, downgrading backward is impossible. So please make a database copy before upgrading, just to have a recovery point if something goes wrong during the process.
+====
+
+
+[[rnfb50-engine-cursor-info]]
+== More cursor-related details in the plan output
+Dmitry Yemanov
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/7441[#7441]
+
+Detailed plan output now distinguishes between user-specified `SELECT` statements (reported as _select expressions_), PSQL declared cursors and sub-queries. Both legacy and detailed plans now also include information about cursor's position (line/column) inside their PSQL module.
+
+Examples:
+
+[listing]
+----
+-- line 23, column 2
+PLAN (DISTRICT INDEX (DISTRICT_PK))
+-- line 28, column 2
+PLAN JOIN (CUSTOMER INDEX (CUSTOMER_PK), WAREHOUSE INDEX(WAREHOUSE_PK))
+----
+
+[listing]
+----
+Select Expression (line 23, column 2)
+    -> Singularity Check
+        -> Filter
+            -> Table "DISTRICT" Access By ID
+                -> Bitmap
+                    -> Index "DISTRICT_PK" Unique Scan
+Select Expression (line 28, column 2)
+    -> Singularity Check
+        -> Nested Loop Join (inner)
+            -> Filter
+                -> Table "CUSTOMER" Access By ID
+                    -> Bitmap
+                        -> Index "CUSTOMER_PK" Unique Scan
+            -> Filter
+                -> Table "WAREHOUSE" Access By ID
+                    -> Bitmap
+                        -> Index "WAREHOUSE_PK" Unique Scan
+----
+
+
+[[rnfb50-engine-rle]]
+== Denser compression of records
+Dmitry Yemanov
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/4723[#4723]
+
+Starting with ODS 13.1, the engine uses an advanced RLE compression method (with variable-length counter) that stores repeating byte sequences more effectively, thus reducing the storage overhead. This improves compression for long VARCHAR fields (especially UTF8 encoded) that are filled only partially.
+
+
+[[rnfb50-engine-stmt-cache]]
+== Compiled statement cache
+Adriano dos Santos Fernandes
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/7144[#7144]
+
+The engine now maintains per-attachment cache of compiled SQL statements. By default, caching is enabled, the caching threshold is defined by the _MaxStatementCacheSize_ parameter in firebird.conf. It could be disabled by setting _MaxStatementCacheSize_ to zero.
+
+Cache is maintained automatically, cached statements are invalidated when required (usually when some DDL statement is executed).
+
+[[rnfb50-engine-profiler]]
+== SQL and PSQL profiler
+Adriano dos Santos Fernandes
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/7086[#7086]
+
+The profiler allows users to measure performance cost of SQL and PSQL code.
+
+It's implemented with a system package in the engine passing data to a profiler plugin.
+
+This documentation treats the engine and plugin parts as a single thing, in the way the default profiler (`Default_Profiler`) is going to be used.
+
+The `RDB$PROFILER` package allows to profile execution of PSQL code collecting statistics of how many times each line was executed along with its minimum, maximum and accumulated execution times (with nanoseconds precision), as well open and fetch statistics of implicit and explicit SQL cursors.
+
+To collect profile data, an user must first start a profile session with `RDB$PROFILER.START_SESSION`. This function returns an profile session ID which is later stored in the profiler snapshot tables to be queried and analyzed by the user. A profiler session may be local (same attachment) or remote (another attachment).
+
+Remote profiling just forwards commands to the remote attachment. So it's possible that a client simultaneous profile multiple attachments. It's also possible that a locally or remotely started profile session have commands issued by another attachment.
+
+Remote issued commands needs that the target attachment be in an idle state, i.e., not executing others requests. When they are not idle the call blocks waiting for that state.
+
+If remote attachment is from a different user, the calling user must have system privilege `PROFILE_ANY_ATTACHMENT`.
+
+After a session is started, PSQL and SQL statements statistics starts to be collected in memory. Note that a profile session collects data only of statements executed in the same attachment associated with the session.
+
+Data is aggregated and stored per requests (i.e. a statement execution). When querying snapshot tables, user may do extra aggregation per statements or use the auxiliary views that do that automatically.
+
+A session may be paused to temporary disable statistics collecting. It may be resumed later to return statistics collection in the same session.
+
+A new session may be started when a session is already active. In this case it has the same semantics of finishing the current session with `RDB$PROFILER.FINISH_SESSION(FALSE)` so snapshots tables are not updated in the same moment.
+
+To analyze the collected data, the user must flush the data to the snapshot tables, which may be done finishing or pausing a session (with `FLUSH` parameter set to `TRUE`) or calling `RDB$PROFILER.FLUSH`. Data is flushed using an autonomous transaction (a transaction started and finished for the specific purpose of profiler data update).
+
+Below is a sample profile session and queries for data analysis.
+
+. Preparation - create table and routines that will be analyzed
++
+[listing]
+----
+create table tab (
+    id integer not null,
+    val integer not null
+);
+
+set term !;
+
+create or alter function mult(p1 integer, p2 integer) returns integer
+as
+begin
+    return p1 * p2;
+end!
+
+create or alter procedure ins
+as
+    declare n integer = 1;
+begin
+    while (n <= 1000)
+    do
+    begin
+        if (mod(n, 2) = 1) then
+            insert into tab values (:n, mult(:n, 2));
+        n = n + 1;
+    end
+end!
+
+set term ;!
+----
+
+. Start profiling
++
+[listing]
+----
+select rdb$profiler.start_session('Profile Session 1') from rdb$database;
+
+set term !;
+
+execute block
+as
+begin
+    execute procedure ins;
+    delete from tab;
+end!
+
+set term ;!
+
+execute procedure rdb$profiler.finish_session(true);
+
+execute procedure ins;
+
+select rdb$profiler.start_session('Profile Session 2') from rdb$database;
+
+select mod(id, 5),
+       sum(val)
+  from tab
+  where id <= 50
+  group by mod(id, 5)
+  order by sum(val);
+
+execute procedure rdb$profiler.finish_session(true);
+----
+
+. Data analysis
++
+[listing]
+----
+set transaction read committed;
+
+select * from plg$prof_sessions;
+
+select * from plg$prof_psql_stats_view;
+
+select * from plg$prof_record_source_stats_view;
+
+select preq.*
+  from plg$prof_requests preq
+  join plg$prof_sessions pses
+    on pses.profile_id = preq.profile_id and
+       pses.description = 'Profile Session 1';
+
+select pstat.*
+  from plg$prof_psql_stats pstat
+  join plg$prof_sessions pses
+    on pses.profile_id = pstat.profile_id and
+       pses.description = 'Profile Session 1'
+  order by pstat.profile_id,
+           pstat.request_id,
+           pstat.line_num,
+           pstat.column_num;
+
+select pstat.*
+  from plg$prof_record_source_stats pstat
+  join plg$prof_sessions pses
+    on pses.profile_id = pstat.profile_id and
+       pses.description = 'Profile Session 2'
+  order by pstat.profile_id,
+           pstat.request_id,
+           pstat.cursor_id,
+           pstat.record_source_id;
+----
+
+=== Package routines
+
+==== Function `START_SESSION`
+
+`RDB$PROFILER.START_SESSION` starts a new profiler session, turns it the current session (of the given `ATTACHMENT_ID`) and return its identifier.
+
+If `FLUSH_INTERVAL` is different than `NULL` auto-flush is setup in the same way as manually calling `RDB$PROFILER.SET_FLUSH_INTERVAL`.
+
+If `PLUGIN_NAME` is `NULL` (the default) it uses the database configuration `DefaultProfilerPlugin`.
+
+`PLUGIN_OPTIONS` is plugin specific options and currently should be `NULL` for `Default_Profiler` plugin.
+
+Input parameter(s):
+
+* `DESCRIPTION type VARCHAR(255) CHARACTER SET UTF8 default NULL`
+* `FLUSH_INTERVAL type INTEGER default NULL`
+* `ATTACHMENT_ID type BIGINT NOT NULL default CURRENT_CONNECTION`
+* `PLUGIN_NAME type VARCHAR(255) CHARACTER SET UTF8 default NULL`
+* `PLUGIN_OPTIONS type VARCHAR(255) CHARACTER SET UTF8 default NULL`
+
+Return type: `BIGINT NOT NULL`.
+
+==== Procedure `PAUSE_SESSION`
+
+`RDB$PROFILER.PAUSE_SESSION` pauses the current profiler session (of the given `ATTACHMENT_ID`) so the next executed statements statistics are not collected.
+
+If `FLUSH` is `TRUE` the snapshot tables are updated with data up to the current moment. Otherwise data remains only in memory for later update.
+
+Calling `RDB$PROFILER.PAUSE_SESSION(TRUE)` has the same semantics of calling `RDB$PROFILER.PAUSE_SESSION(FALSE)` followed by `RDB$PROFILER.FLUSH` (using the same `ATTACHMENT_ID`).
+
+Input parameter(s):
+
+* `FLUSH type BOOLEAN NOT NULL default FALSE`
+* `ATTACHMENT_ID type BIGINT NOT NULL default CURRENT_CONNECTION`
+
+==== Procedure `RESUME_SESSION`
+
+`RDB$PROFILER.RESUME_SESSION` resumes the current profiler session (of the given `ATTACHMENT_ID`) if it was paused so the next executed statements statistics are collected again.
+
+Input parameter(s):
+
+* `ATTACHMENT_ID type BIGINT NOT NULL default CURRENT_CONNECTION`
+
+==== Procedure `FINISH_SESSION`
+
+`RDB$PROFILER.FINISH_SESSION` finishes the current profiler session (of the given `ATTACHMENT_ID`).
+
+If `FLUSH` is `TRUE` the snapshot tables are updated with data of the finished session (and old finished sessions not yet present in the snapshot). Otherwise data remains only in memory for later update.
+
+Calling `RDB$PROFILER.FINISH_SESSION(TRUE)` has the same semantics of calling `RDB$PROFILER.FINISH_SESSION(FALSE)` followed by `RDB$PROFILER.FLUSH` (using the same `ATTACHMENT_ID`).
+
+Input parameter(s):
+
+* `FLUSH type BOOLEAN NOT NULL default TRUE`
+* `ATTACHMENT_ID type BIGINT NOT NULL default CURRENT_CONNECTION`
+
+==== Procedure `CANCEL_SESSION`
+
+`RDB$PROFILER.CANCEL_SESSION` cancels the current profiler session (of the given `ATTACHMENT_ID`).
+
+All session data present in the profiler plugin is discarded and will not be flushed.
+
+Data already flushed is not deleted automatically.
+
+Input parameter(s):
+
+* `ATTACHMENT_ID type BIGINT NOT NULL default CURRENT_CONNECTION`
+
+==== Procedure `DISCARD`
+
+`RDB$PROFILER.DISCARD` removes all sessions (of the given `ATTACHMENT_ID`) from memory, without flushing them.
+
+If there is a active session, it is cancelled.
+
+Input parameter(s):
+
+* `ATTACHMENT_ID type BIGINT NOT NULL default CURRENT_CONNECTION`
+
+==== Procedure `FLUSH`
+
+`RDB$PROFILER.FLUSH` updates the snapshot tables with data from the profile sessions (of the given `ATTACHMENT_ID`) in memory.
+
+After update data is stored in tables `PLG$PROF_SESSIONS`, `PLG$PROF_STATEMENTS`, `PLG$PROF_RECORD_SOURCES`, `PLG$PROF_REQUESTS`, `PLG$PROF_PSQL_STATS` and `PLG$PROF_RECORD_SOURCE_STATS` and may be read and analyzed by the user.
+
+Data is updated using an autonomous transaction, so if the procedure is called in a snapshot transaction, data will not be directly readable in the same transaction.
+
+Once flush happens, finished sessions are removed from memory.
+
+Input parameter(s):
+
+* `ATTACHMENT_ID type BIGINT NOT NULL default CURRENT_CONNECTION`
+
+==== Procedure `SET_FLUSH_INTERVAL`
+
+`RDB$PROFILER.SET_FLUSH_INTERVAL` turns periodic auto-flush on (when `FLUSH_INTERVAL` is greater than 0) or off (when `FLUSH_INTERVAL` is equal to 0).
+
+`FLUSH_INTERVAL` is interpreted as number of seconds.
+
+Input parameter(s):
+
+* `FLUSH_INTERVAL type INTEGER NOT NULL`
+* `ATTACHMENT_ID type BIGINT NOT NULL default CURRENT_CONNECTION`
+
+=== Snapshot tables
+
+Snapshot tables (as well views and sequence) are automatically created in the first usage of the profiler. They are owned by the current user with read/write permissions for `PUBLIC`.
+
+When a session is deleted the related data in others profiler snapshot tables are automatically deleted too through foregin keys with `DELETE CASCADE` option.
+
+Below is the list of tables that stores profile data.
+
+==== Table `PLG$PROF_SESSIONS`
+[horizontal]
+`PROFILE_ID type BIGINT`:: Profile session ID
+`ATTACHMENT_ID type BIGINT`:: Attachment ID
+`USER_NAME type CHAR(63) CHARACTER SET UTF8`:: User name
+`DESCRIPTION type VARCHAR(255) CHARACTER SET UTF8`:: Description passed in `RDB$PROFILER.START_SESSION`
+`START_TIMESTAMP type TIMESTAMP WITH TIME ZONE`:: Moment the profile session was started
+`FINISH_TIMESTAMP type TIMESTAMP WITH TIME ZONE`:: Moment the profile session was finished (NULL when not finished)
+Primary key:: `PROFILE_ID`
+
+==== Table `PLG$PROF_STATEMENTS`
+[horizontal]
+`PROFILE_ID type BIGINT`:: Profile session ID
+`STATEMENT_ID type BIGINT`:: Statement ID
+`PARENT_STATEMENT_ID type BIGINT`:: Parent statement ID - related to sub routines
+`STATEMENT_TYPE type VARCHAR(20) CHARACTER SET UTF8`:: BLOCK, FUNCTION, PROCEDURE or TRIGGER
+`PACKAGE_NAME type CHAR(63) CHARACTER SET UTF8`:: Package of FUNCTION or PROCEDURE
+`ROUTINE_NAME type CHAR(63) CHARACTER SET UTF8`:: Routine name of FUNCTION, PROCEDURE or TRIGGER
+`SQL_TEXT type BLOB subtype TEXT CHARACTER SET UTF8`:: SQL text for BLOCK
+Primary key:: `PROFILE_ID, STATEMENT_ID`
+
+==== Table `PLG$PROF_CURSORS`
+[horizontal]
+`PROFILE_ID type BIGINT`:: Profile session ID
+`STATEMENT_ID type BIGINT`:: Statement ID
+`CURSOR_ID type INTEGER`:: Cursor ID
+`NAME type CHAR(63) CHARACTER SET UTF8`:: Name of explicit cursor
+`LINE_NUM type INTEGER`:: Line number of the cursor
+`COLUMN_NUM type INTEGER`:: Column number of the cursor
+Primary key:: `PROFILE_ID, STATEMENT_ID, CURSOR_ID`
+
+==== Table `PLG$PROF_RECORD_SOURCES`
+[horizontal]
+`PROFILE_ID type BIGINT`:: Profile session ID
+`STATEMENT_ID type BIGINT`:: Statement ID
+`CURSOR_ID type INTEGER`:: Cursor ID
+`RECORD_SOURCE_ID type INTEGER`:: Record source ID
+`PARENT_RECORD_SOURCE_ID type INTEGER`:: Parent record source ID
+`ACCESS_PATH type VARCHAR(255) CHARACTER SET UTF8`:: Access path for the record source
+Primary key:: `PROFILE_ID, STATEMENT_ID, CURSOR_ID, RECORD_SOURCE_ID`
+
+==== Table `PLG$PROF_REQUESTS`
+[horizontal]
+`PROFILE_ID type BIGINT`:: Profile session ID
+`REQUEST_ID type BIGINT`:: Request ID
+`STATEMENT_ID type BIGINT`:: Statement ID
+`CALLER_REQUEST_ID type BIGINT`:: Caller request ID
+`START_TIMESTAMP type TIMESTAMP WITH TIME ZONE`:: Moment this request was first gathered profile data
+`FINISH_TIMESTAMP type TIMESTAMP WITH TIME ZONE`:: Moment this request was finished
+`TOTAL_ELAPSED_TIME type BIGINT`:: Accumulated elapsed time (in nanoseconds) of the request
+Primary key:: `PROFILE_ID, REQUEST_ID`
+
+==== Table `PLG$PROF_PSQL_STATS`
+[horizontal]
+`PROFILE_ID type BIGINT`:: Profile session ID
+`REQUEST_ID type BIGINT`:: Request ID
+`LINE_NUM type INTEGER`:: Line number of the statement
+`COLUMN_NUM type INTEGER`:: Column number of the statement
+`STATEMENT_ID type BIGINT`:: Statement ID
+`COUNTER type BIGINT`:: Number of executed times of the line/column
+`MIN_ELAPSED_TIME type BIGINT`:: Minimal elapsed time (in nanoseconds) of a line/column execution
+`MAX_ELAPSED_TIME type BIGINT`:: Maximum elapsed time (in nanoseconds) of a line/column execution
+`TOTAL_ELAPSED_TIME type BIGINT`:: Accumulated elapsed time (in nanoseconds) of the line/column executions
+Primary key:: `PROFILE_ID, REQUEST_ID, LINE_NUM, COLUMN_NUM`
+
+==== Table `PLG$PROF_RECORD_SOURCE_STATS`
+[horizontal]
+`PROFILE_ID type BIGINT`:: Profile session ID
+`REQUEST_ID type BIGINT`:: Request ID
+`CURSOR_ID type INTEGER`:: Cursor ID
+`RECORD_SOURCE_ID type `INTEGER`:: Record source ID
+`STATEMENT_ID type BIGINT`:: Statement ID
+`OPEN_COUNTER type BIGINT`:: Number of open times of the record source
+`OPEN_MIN_ELAPSED_TIME type BIGINT`:: Minimal elapsed time (in nanoseconds) of a record source open
+`OPEN_MAX_ELAPSED_TIME type BIGINT`:: Maximum elapsed time (in nanoseconds) of a record source open
+`OPEN_TOTAL_ELAPSED_TIME type BIGINT`:: Accumulated elapsed time (in nanoseconds) of the record source openings
+`FETCH_COUNTER type BIGINT`:: Number of fetch times of the record source
+`FETCH_MIN_ELAPSED_TIME type BIGINT`:: Minimal elapsed time (in nanoseconds) of a record source fetch
+`FETCH_MAX_ELAPSED_TIME type BIGINT`:: Maximum elapsed time (in nanoseconds) of a record source fetch
+`FETCH_TOTAL_ELAPSED_TIME type BIGINT`:: Accumulated elapsed time (in nanoseconds) of the record source fetches
+Primary key:: `PROFILE_ID, REQUEST_ID, CURSOR_ID, RECORD_SOURCE_ID`
+
+=== Auxiliary views
+
+These views help profile data extraction aggregated at statement level.
+
+They should be the preferred way to analyze the collected data. They can also be used together with the tables to get additional data not present on the views.
+
+After hot spots are found, one can drill down in the data at the request level through the tables.
+
+==== View `PLG$PROF_STATEMENT_STATS_VIEW`
+
+[listing]
+----
+select req.profile_id,
+       req.statement_id,
+       sta.statement_type,
+       sta.package_name,
+       sta.routine_name,
+       sta.parent_statement_id,
+       sta_parent.statement_type parent_statement_type,
+       sta_parent.routine_name parent_routine_name,
+       (select sql_text
+          from plg$prof_statements
+          where profile_id = req.profile_id and
+                statement_id = coalesce(sta.parent_statement_id, req.statement_id)
+       ) sql_text,
+       count(*) counter,
+       min(req.total_elapsed_time) min_elapsed_time,
+       max(req.total_elapsed_time) max_elapsed_time,
+       cast(sum(req.total_elapsed_time) as bigint) total_elapsed_time,
+       cast(sum(req.total_elapsed_time) / count(*) as bigint) avg_elapsed_time
+  from plg$prof_requests req
+  join plg$prof_statements sta
+    on sta.profile_id = req.profile_id and
+       sta.statement_id = req.statement_id
+  left join plg$prof_statements sta_parent
+    on sta_parent.profile_id = sta.profile_id and
+       sta_parent.statement_id = sta.parent_statement_id
+  group by req.profile_id,
+           req.statement_id,
+           sta.statement_type,
+           sta.package_name,
+           sta.routine_name,
+           sta.parent_statement_id,
+           sta_parent.statement_type,
+           sta_parent.routine_name
+  order by sum(req.total_elapsed_time) desc
+----
+
+==== View `PLG$PROF_PSQL_STATS_VIEW`
+
+[listing]
+----
+select pstat.profile_id,
+       pstat.statement_id,
+       sta.statement_type,
+       sta.package_name,
+       sta.routine_name,
+       sta.parent_statement_id,
+       sta_parent.statement_type parent_statement_type,
+       sta_parent.routine_name parent_routine_name,
+       (select sql_text
+          from plg$prof_statements
+          where profile_id = pstat.profile_id and
+                statement_id = coalesce(sta.parent_statement_id, pstat.statement_id)
+       ) sql_text,
+       pstat.line_num,
+       pstat.column_num,
+       cast(sum(pstat.counter) as bigint) counter,
+       min(pstat.min_elapsed_time) min_elapsed_time,
+       max(pstat.max_elapsed_time) max_elapsed_time,
+       cast(sum(pstat.total_elapsed_time) as bigint) total_elapsed_time,
+       cast(sum(pstat.total_elapsed_time) / nullif(sum(pstat.counter), 0) as bigint) avg_elapsed_time
+  from plg$prof_psql_stats pstat
+  join plg$prof_statements sta
+    on sta.profile_id = pstat.profile_id and
+       sta.statement_id = pstat.statement_id
+  left join plg$prof_statements sta_parent
+    on sta_parent.profile_id = sta.profile_id and
+       sta_parent.statement_id = sta.parent_statement_id
+  group by pstat.profile_id,
+           pstat.statement_id,
+           sta.statement_type,
+           sta.package_name,
+           sta.routine_name,
+           sta.parent_statement_id,
+           sta_parent.statement_type,
+           sta_parent.routine_name,
+           pstat.line_num,
+           pstat.column_num
+  order by sum(pstat.total_elapsed_time) desc
+----
+
+==== View `PLG$PROF_RECORD_SOURCE_STATS_VIEW`
+
+[listing]
+----
+select rstat.profile_id,
+       rstat.statement_id,
+       sta.statement_type,
+       sta.package_name,
+       sta.routine_name,
+       sta.parent_statement_id,
+       sta_parent.statement_type parent_statement_type,
+       sta_parent.routine_name parent_routine_name,
+       (select sql_text
+          from plg$prof_statements
+          where profile_id = rstat.profile_id and
+                statement_id = coalesce(sta.parent_statement_id, rstat.statement_id)
+       ) sql_text,
+       rstat.cursor_id,
+       cur.name cursor_name,
+       cur.line_num cursor_line_num,
+       cur.column_num cursor_column_num,
+       rstat.record_source_id,
+       recsrc.parent_record_source_id,
+       recsrc.access_path,
+       cast(sum(rstat.open_counter) as bigint) open_counter,
+       min(rstat.open_min_elapsed_time) open_min_elapsed_time,
+       max(rstat.open_max_elapsed_time) open_max_elapsed_time,
+       cast(sum(rstat.open_total_elapsed_time) as bigint) open_total_elapsed_time,
+       cast(sum(rstat.open_total_elapsed_time) / nullif(sum(rstat.open_counter), 0) as bigint) open_avg_elapsed_time,
+       cast(sum(rstat.fetch_counter) as bigint) fetch_counter,
+       min(rstat.fetch_min_elapsed_time) fetch_min_elapsed_time,
+       max(rstat.fetch_max_elapsed_time) fetch_max_elapsed_time,
+       cast(sum(rstat.fetch_total_elapsed_time) as bigint) fetch_total_elapsed_time,
+       cast(sum(rstat.fetch_total_elapsed_time) / nullif(sum(rstat.fetch_counter), 0) as bigint) fetch_avg_elapsed_time,
+       cast(coalesce(sum(rstat.open_total_elapsed_time), 0) + coalesce(sum(rstat.fetch_total_elapsed_time), 0) as bigint) open_fetch_total_elapsed_time
+  from plg$prof_record_source_stats rstat
+  join plg$prof_cursors cur
+    on cur.profile_id = rstat.profile_id and
+       cur.statement_id = rstat.statement_id and
+       cur.cursor_id = rstat.cursor_id
+  join plg$prof_record_sources recsrc
+    on recsrc.profile_id = rstat.profile_id and
+       recsrc.statement_id = rstat.statement_id and
+       recsrc.cursor_id = rstat.cursor_id and
+       recsrc.record_source_id = rstat.record_source_id
+  join plg$prof_statements sta
+    on sta.profile_id = rstat.profile_id and
+       sta.statement_id = rstat.statement_id
+  left join plg$prof_statements sta_parent
+    on sta_parent.profile_id = sta.profile_id and
+       sta_parent.statement_id = sta.parent_statement_id
+  group by rstat.profile_id,
+           rstat.statement_id,
+           sta.statement_type,
+           sta.package_name,
+           sta.routine_name,
+           sta.parent_statement_id,
+           sta_parent.statement_type,
+           sta_parent.routine_name,
+           rstat.cursor_id,
+           cur.name,
+           cur.line_num,
+           cur.column_num,
+           rstat.record_source_id,
+           recsrc.parent_record_source_id,
+           recsrc.access_path
+  order by coalesce(sum(rstat.open_total_elapsed_time), 0) + coalesce(sum(rstat.fetch_total_elapsed_time), 0) desc
+----
+
+[[rnfb50-engine-blob-util]]
+== `RDB$BLOB_UTIL` package
+Adriano dos Santos Fernandes
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/281[#281]
+
+This package exists to manipulate BLOBs in a way that standard Firebird functions, like `BLOB_APPEND` and `SUBSTRING` cannot do it or is very slow.
+
+These routines operates on binary data directly, even for text BLOBs.
+
+=== Package routines
+
+==== Function `NEW_BLOB`
+
+`RDB$BLOB_UTIL.NEW_BLOB` is used to create a new BLOB. It returns a BLOB suitable for data appending, like `BLOB_APPEND` does.
+
+The advantage over `BLOB_APPEND` is that it's possible to set custom `SEGMENTED` and `TEMP_STORAGE` options.
+
+`BLOB_APPEND` always creates BLOB in temporary storage. That may not be the best approach if the created BLOB is going to be stored in a permanent table, as it will require copy.
+
+Returned BLOB from this function, even when `TEMP_STORAGE = FALSE` may be used with `BLOB_APPEND` for appending data.
+
+Input parameter(s):
+
+* `SEGMENTED type BOOLEAN NOT NULL`
+* `TEMP_STORAGE type BOOLEAN NOT NULL`
+
+Return type: `BLOB NOT NULL`.
+
+==== Function `OPEN_BLOB`
+
+`RDB$BLOB_UTIL.OPEN_BLOB` is used to open an existing BLOB for read. It returns a handle (an integer bound to the transaction) suitable for use with others functions of this package, like `SEEK`, `READ_DATA` and `CLOSE_HANDLE`.
+
+Input parameter(s):
+
+* `BLOB type BLOB NOT NULL`
+
+Return type: `INTEGER NOT NULL`.
+
+==== Function `IS_WRITABLE`
+
+`RDB$BLOB_UTIL.IS_WRITABLE` returns `TRUE` when BLOB is suitable for data appending without copying using `BLOB_APPEND`.
+
+Input parameter(s):
+
+* `BLOB type BLOB NOT NULL`
+
+Return type: `BOOLEAN NOT NULL`.
+
+==== Function `READ_DATA`
+
+`RDB$BLOB_UTIL.READ_DATA` is used to read chunks of data of a BLOB handle opened with `RDB$BLOB_UTIL.OPEN_BLOB`. When the BLOB is fully read and there is no more data, it returns `NULL`.
+
+If `LENGTH` is passed with a positive number, it returns a VARBINARY with its maximum length.
+
+If `LENGTH` is `NULL` it returns just a segment of the BLOB with a maximum length of 32765.
+
+Input parameter(s):
+
+* `HANDLE type INTEGER NOT NULL`
+* `LENGTH type INTEGER`
+
+Return type: `VARBINARY(32767)`.
+
+==== Function `SEEK`
+
+`RDB$BLOB_UTIL.SEEK` is used to set the position for the next `READ_DATA`. It returns the new position.
+
+`MODE` may be 0 (from the start), 1 (from current position) or 2 (from end).
+
+When `MODE` is 2, `OFFSET` should be zero or negative.
+
+Input parameter(s):
+
+* `HANDLE type INTEGER NOT NULL`
+* `MODE type INTEGER NOT NULL`
+* `OFFSET type INTEGER NOT NULL`
+
+Return type: `INTEGER NOT NULL`.
+
+==== Procedure `CANCEL_BLOB`
+
+`RDB$BLOB_UTIL.CANCEL_BLOB` is used to immediately release a temporary BLOB, like one created with `BLOB_APPEND`.
+
+Note that if the same BLOB is used after cancel, using the same variable or another one with the same BLOB id reference, invalid blob id error will be raised.
+
+==== Procedure `CLOSE_HANDLE`
+
+`RDB$BLOB_UTIL.CLOSE_HANDLE` is used to close a BLOB handle opened with `RDB$BLOB_UTIL.OPEN_BLOB`.
+
+Not closed handles are closed automatically only in the transaction end.
+
+Input parameter(s):
+
+* `HANDLE type INTEGER NOT NULL`
+
+=== Examples
+
+. Create a BLOB in temporary space and return it in `EXECUTE BLOCK`:
++
+[listing]
+----
+execute block returns (b blob)
+as
+begin
+    -- Create a BLOB handle in the temporary space.
+    b = rdb$blob_util.new_blob(false, true);
+
+    -- Add chunks of data.
+    b = blob_append(b, '12345');
+    b = blob_append(b, '67');
+
+    suspend;
+end
+----
+
+. Open a BLOB and return chunks of it with `EXECUTE BLOCK`:
++
+[listing]
+----
+execute block returns (s varchar(10))
+as
+    declare b blob = '1234567';
+    declare bhandle integer;
+begin
+    -- Open the BLOB and get a BLOB handle.
+    bhandle = rdb$blob_util.open_blob(b);
+
+    -- Get chunks of data as string and return.
+
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Here EOF is found, so it returns NULL.
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Close the BLOB handle.
+    execute procedure rdb$blob_util.close_handle(bhandle);
+end
+----
+
+. Seek in a blob:
++
+[listing]
+----
+set term !;
+
+execute block returns (s varchar(10))
+as
+    declare b blob;
+    declare bhandle integer;
+begin
+    -- Create a stream BLOB handle.
+    b = rdb$blob_util.new_blob(false, true);
+
+    -- Add data.
+    b = blob_append(b, '0123456789');
+
+    -- Open the BLOB.
+    bhandle = rdb$blob_util.open_blob(b);
+
+    -- Seek to 5 since the start.
+    rdb$blob_util.seek(bhandle, 0, 5);
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Seek to 2 since the start.
+    rdb$blob_util.seek(bhandle, 0, 2);
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Advance 2.
+    rdb$blob_util.seek(bhandle, 1, 2);
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Seek to -1 since the end.
+    rdb$blob_util.seek(bhandle, 2, -1);
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+end!
+
+set term ;!
+----
+
+. Check if blobs are writable:
++
+[listing]
+----
+create table t(b blob);
+
+set term !;
+
+execute block returns (bool boolean)
+as
+    declare b blob;
+begin
+    b = blob_append(null, 'writable');
+    bool = rdb$blob_util.is_writable(b);
+    suspend;
+
+    insert into t (b) values ('not writable') returning b into b;
+    bool = rdb$blob_util.is_writable(b);
+    suspend;
+end!
+
+set term ;!
+----
