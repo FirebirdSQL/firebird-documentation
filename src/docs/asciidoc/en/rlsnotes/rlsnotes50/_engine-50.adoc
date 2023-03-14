@@ -18,79 +18,70 @@ Vlad Khorsun
 
 Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/7447[#7447]
 
-The Firebird engine can now execute some tasks using multiple threads in
-parallel. Currently parallel execution is implemented for the sweep and the
-index creation tasks. Parallel execution is supported for both auto- and manual
-sweep.
+The Firebird engine can now execute some tasks using multiple threads in parallel.
+Currently, parallel execution is implemented for the sweep and the index creation tasks.
+Parallel execution is supported for both automatic and manual sweep.
 
-To handle same task by multiple threads engine runs additional worker threads
-and creates internal worker attachments. By default, parallel execution is not
-enabled. There are two ways to enable parallelism in user attachment:
-* set number of parallel workers in DPB using new tag _isc_dpb_parallel_workers_,
-* set default number of parallel workers using new setting _ParallelWorkers_ in firebird.conf.
+To handle a task with multiple threads, the engine runs additional worker threads and creates internal worker attachments.
+By default, parallel execution is not enabled.
+There are two ways to enable parallelism in a user attachment:
 
-For _gfix_ utility there is new command-line switch _-parallel_ that allows to
-set number of parallel workers for the sweep task. For example:
+. set the number of parallel workers in DPB using new tag _isc_dpb_parallel_workers_,
+. set the default number of parallel workers using new setting _ParallelWorkers_ in firebird.conf.
+
+The _gfix_ utility has a new command-line switch, _-parallel_, that allows to set the number of parallel workers for the sweep task.
+For example:
 
 [listing]
 ----
 gfix -sweep -parallel 4 <database>
 ----
 
-will run sweep on given database and ask engine to use 4 workers. _gfix_ uses DPB
-tag _isc_dpb_parallel_workers_ when attaches to <database>, if switch _-parallel_
-is present.
+will run sweep on the given database and asks the engine to use 4 workers.
+_gfix_ uses DPB tag _isc_dpb_parallel_workers_ when attaches to <database>, if switch _-parallel_ is present.
 
-New firebird.conf setting _ParallelWorkers_ set default number of parallel
-workers that can be used by any user attachment running parallelizable task.
-Default value is 1 and means no use of additional parallel workers. Value in
-DPB have higher priority than setting in firebird.conf.
+The new firebird.conf setting _ParallelWorkers_ sets the default number of parallel workers that can be used by any user attachment running parallelizable task.
+The default value is 1 and means no use of additional parallel workers.
+The value in the DPB has a higher priority than the setting in firebird.conf.
 
-To control number of additional workers that can be created by the engine 
-there are two new settings in firebird.conf: 
-. ParallelWorkers - set default number of parallel workers that used by user 
-  attachments. Could be overriden by attachment using tag _isc_dpb_parallel_workers_ in DPB.
-. MaxParallelWorkers - limit number of simultaneously used workers for the
-  given database and Firebird process.
+To control the number of additional workers that can be created by the engine, there are two new settings in firebird.conf:
+
+ParallelWorkers::
+Sets default number of parallel workers that used by user attachments.
+Can be overridden by attachment using tag _isc_dpb_parallel_workers_ in DPB.
+MaxParallelWorkers::
+Limits the number of simultaneously used workers for the given database and Firebird process.
 
 Internal worker attachments are created and managed by the engine itself.
-Engine maintains per-database pools of worker attachments. Number of items in
-each of such pool is limited by value of _MaxParallelWorkers_ setting. The pools
-are created by each Firebird process independently.
+The engine maintains per-database pools of worker attachments.
+The number of threads in each pool is limited by the value of the _MaxParallelWorkers_ setting.
+The pools are created by each Firebird process independently.
 
-In SuperServer architecture worker attachments are implemented as light-
-weight system attachments, while in Classic and SuperClassic its looks like
-usual user attachments. All worker attachments are embedded into creating
-server process. Thus in Classic architectures there is no additional server
-processes. Worker attachments are present in monitoring tables. Idle worker
-attachment is destroyed after 60 seconds of inactivity. Also, in Classic
-architectures worker attachments are destroyed immediately after last user
-connection detached from database.
+In SuperServer architecture worker attachments are implemented as light-weight system attachments, while in Classic and SuperClassic they look like usual user attachments.
+All worker attachments are embedded into creating server process.
+Thus, in Classic architectures there is no additional server processes.
+Worker attachments are present in monitoring tables.
+Idle worker attachments are destroyed after 60 seconds of inactivity.
+Also, in Classic architectures, worker attachments are destroyed immediately after last user connection detaches the from database.
 
 Examples:
 
-Set in firebird.conf _ParallelWorkers = 4, MaxParallelWorkers = 8_ and restart
-Firebird server.
+Set in firebird.conf _ParallelWorkers = 4, MaxParallelWorkers = 8_ and restart Firebird server.
 
-. Connect to test database not using isc_dpb_parallel_workers in DPB and
-execute `CREATE INDEX ...` SQL statement. On commit the index will be actually
-created and engine will use 3 additional worker attachments. In total, 4 
-attachments in 4 threads will work on index creation.
+. Connect to test database not using _isc_dpb_parallel_workers_ in DPB and execute `CREATE INDEX ...` SQL statement.
+On commit, the index will be actually created and engine will use 3 additional worker attachments.
+In total, 4 attachments in 4 threads will work on index creation.
 
-. Ensure auto-sweep is enabled for test database. When auto-sweep will run on
-that database, it also will use 3 additional workers (and run within 4 threads).
+. Ensure auto-sweep is enabled for test database.
+When auto-sweep will run on that database, it also will use 3 additional workers (and run within 4 threads).
 
-. More than one single task at time could be parallelized: make 2 attachments
-and execute `CREATE INDEX ...` in each of them (of course indices to be built
-should be different). Each index will be created using 4 attachments (1 user
-and 3 worker) and 4 threads.
+. More than one single task at time can be parallelized: make 2 attachments and execute `CREATE INDEX ...` in each of them (of course indices to be built should be different).
+Each index will be created using 4 attachments (1 user and 3 worker) and 4 threads.
 
-. Run _gfix -sweep <database>_ without specifying switch _-parallel_: sweep will run
-using 4 attachments in 4 threads.
+. Run _gfix -sweep <database>_ without specifying switch _-parallel_: sweep will run using 4 attachments in 4 threads.
 
-. Run _gfix -sweep -parallel 2 <database>_: sweep will run using 2 attachments in
-2 threads. This shows that value in DPB tag _isc_dpb_parallel_workers_ overrides
-value of setting _ParallelWorkers_.
+. Run _gfix -sweep -parallel 2 <database>_: sweep will run using 2 attachments in 2 threads.
+This shows that value in DPB tag _isc_dpb_parallel_workers_ overrides value of setting _ParallelWorkers_.
 
 
 [[rnfb50-engine-inline-upgrade]]
@@ -121,7 +112,8 @@ See also <<rnfb50-utils-gfix-upgrade, ODS upgrade by _gfix_>>.
 
 [CAUTION]
 ====
-This is a one-way modification, downgrading backward is impossible. So please make a database copy before upgrading, just to have a recovery point if something goes wrong during the process.
+This is a one-way modification, downgrading backward is impossible.
+So please make a database copy before upgrading, just to have a recovery point if something goes wrong during the process.
 ====
 
 
@@ -131,7 +123,8 @@ Dmitry Yemanov
 
 Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/7441[#7441]
 
-Detailed plan output now distinguishes between user-specified `SELECT` statements (reported as _select expressions_), PSQL declared cursors and sub-queries. Both legacy and detailed plans now also include information about cursor's position (line/column) inside their PSQL module.
+Detailed plan output now distinguishes between user-specified `SELECT` statements (reported as _select expressions_), PSQL declared cursors and sub-queries.
+Both legacy and detailed plans now also include information about cursor's position (line/column) inside their PSQL module.
 
 Examples:
 
@@ -171,7 +164,8 @@ Dmitry Yemanov
 
 Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/4723[#4723]
 
-Starting with ODS 13.1, the engine uses an advanced RLE compression method (with variable-length counter) that stores repeating byte sequences more effectively, thus reducing the storage overhead. This improves compression for long VARCHAR fields (especially UTF8 encoded) that are filled only partially.
+Starting with ODS 13.1, the engine uses an advanced RLE compression method (with variable-length counter) that stores repeating byte sequences more effectively, thus reducing the storage overhead.
+This improves compression for long VARCHAR fields (especially UTF8 encoded) that are filled only partially.
 
 
 [[rnfb50-engine-stmt-cache]]
@@ -180,7 +174,9 @@ Adriano dos Santos Fernandes
 
 Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/7144[#7144]
 
-The engine now maintains per-attachment cache of compiled SQL statements. By default, caching is enabled, the caching threshold is defined by the _MaxStatementCacheSize_ parameter in firebird.conf. It could be disabled by setting _MaxStatementCacheSize_ to zero.
+The engine now maintains per-attachment cache of compiled SQL statements.
+By default, caching is enabled, the caching threshold is defined by the _MaxStatementCacheSize_ parameter in firebird.conf.
+It can be disabled by setting _MaxStatementCacheSize_ to zero.
 
 Cache is maintained automatically, cached statements are invalidated when required (usually when some DDL statement is executed).
 
@@ -191,34 +187,42 @@ Adriano dos Santos Fernandes
 Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/7086[#7086]
 
 The profiler allows users to measure performance cost of SQL and PSQL code.
-
 It's implemented with a system package in the engine passing data to a profiler plugin.
 
 This documentation treats the engine and plugin parts as a single thing, in the way the default profiler (`Default_Profiler`) is going to be used.
 
-The `RDB$PROFILER` package allows to profile execution of PSQL code collecting statistics of how many times each line was executed along with its minimum, maximum and accumulated execution times (with nanoseconds precision), as well open and fetch statistics of implicit and explicit SQL cursors.
+The `RDB$PROFILER` package can profile execution of PSQL code, collecting statistics of how many times each line was executed along with its minimum, maximum and accumulated execution times (with nanoseconds precision), as well as open and fetch statistics of implicit and explicit SQL cursors.
 
-To collect profile data, an user must first start a profile session with `RDB$PROFILER.START_SESSION`. This function returns an profile session ID which is later stored in the profiler snapshot tables to be queried and analyzed by the user. A profiler session may be local (same attachment) or remote (another attachment).
+To collect profile data, a user must first start a profile session with `RDB$PROFILER.START_SESSION`.
+This function returns a profile session ID which is later stored in the profiler snapshot tables to be queried and analyzed by the user.
+A profiler session may be local (same attachment) or remote (another attachment).
 
-Remote profiling just forwards commands to the remote attachment. So it's possible that a client simultaneous profile multiple attachments. It's also possible that a locally or remotely started profile session have commands issued by another attachment.
+Remote profiling just forwards commands to the remote attachment.
+So, it's possible that a client profiles multiple attachments simultaneously.
+It's also possible that a locally or remotely started profile session have commands issued by another attachment.
 
-Remote issued commands needs that the target attachment be in an idle state, i.e., not executing others requests. When they are not idle the call blocks waiting for that state.
+Remotely issued commands require that the target attachment is in an idle state, i.e. not executing others requests.
+When the target attachment is not idle, the call blocks waiting for that state.
 
-If remote attachment is from a different user, the calling user must have system privilege `PROFILE_ANY_ATTACHMENT`.
+If the remote attachment is from a different user, the calling user must have the system privilege `PROFILE_ANY_ATTACHMENT`.
 
-After a session is started, PSQL and SQL statements statistics starts to be collected in memory. Note that a profile session collects data only of statements executed in the same attachment associated with the session.
+After a session is started, PSQL and SQL statements statistics are collected in memory.
+A profile session collects data only of statements executed in the same attachment associated with the session.
+Data is aggregated and stored per requests (i.e. a statement execution).
+When querying snapshot tables, the user may do extra aggregation per statement, or use the auxiliary views that do that automatically.
 
-Data is aggregated and stored per requests (i.e. a statement execution). When querying snapshot tables, user may do extra aggregation per statements or use the auxiliary views that do that automatically.
+A session may be paused to temporarily disable statistics collecting.
+It may be resumed later to return statistics collection in the same session.
 
-A session may be paused to temporary disable statistics collecting. It may be resumed later to return statistics collection in the same session.
+A new session may be started when a session is already active.
+In that case, it has the same semantics of finishing the current session with `RDB$PROFILER.FINISH_SESSION(FALSE)`, so snapshots tables are not updated.
 
-A new session may be started when a session is already active. In this case it has the same semantics of finishing the current session with `RDB$PROFILER.FINISH_SESSION(FALSE)` so snapshots tables are not updated in the same moment.
-
-To analyze the collected data, the user must flush the data to the snapshot tables, which may be done finishing or pausing a session (with `FLUSH` parameter set to `TRUE`) or calling `RDB$PROFILER.FLUSH`. Data is flushed using an autonomous transaction (a transaction started and finished for the specific purpose of profiler data update).
+To analyze the collected data, the user must flush the data to the snapshot tables, which can be done by finishing or pausing a session (with `FLUSH` parameter set to `TRUE`), or calling `RDB$PROFILER.FLUSH`.
+Data is flushed using an autonomous transaction (a transaction started and finished for the specific purpose of profiler data update).
 
 Below is a sample profile session and queries for data analysis.
 
-. Preparation - create table and routines that will be analyzed
+. Preparation -- create table and routines that will be analyzed
 +
 [listing]
 ----
@@ -327,13 +331,13 @@ select pstat.*
 
 ==== Function `START_SESSION`
 
-`RDB$PROFILER.START_SESSION` starts a new profiler session, turns it the current session (of the given `ATTACHMENT_ID`) and return its identifier.
+`RDB$PROFILER.START_SESSION` starts a new profiler session, makes it the current session (of the given `ATTACHMENT_ID`) and returns its identifier.
 
-If `FLUSH_INTERVAL` is different than `NULL` auto-flush is setup in the same way as manually calling `RDB$PROFILER.SET_FLUSH_INTERVAL`.
+If `FLUSH_INTERVAL` is different from `NULL`, auto-flush is set up in the same way as manually calling `RDB$PROFILER.SET_FLUSH_INTERVAL`.
 
-If `PLUGIN_NAME` is `NULL` (the default) it uses the database configuration `DefaultProfilerPlugin`.
+If `PLUGIN_NAME` is `NULL` (the default), it uses the database configuration `DefaultProfilerPlugin`.
 
-`PLUGIN_OPTIONS` is plugin specific options and currently should be `NULL` for `Default_Profiler` plugin.
+`PLUGIN_OPTIONS` are plugin specific options and currently should be `NULL` for the `Default_Profiler` plugin.
 
 Input parameter(s):
 
@@ -347,9 +351,9 @@ Return type: `BIGINT NOT NULL`.
 
 ==== Procedure `PAUSE_SESSION`
 
-`RDB$PROFILER.PAUSE_SESSION` pauses the current profiler session (of the given `ATTACHMENT_ID`) so the next executed statements statistics are not collected.
+`RDB$PROFILER.PAUSE_SESSION` pauses the current profiler session (of the given `ATTACHMENT_ID`), so the next executed statements statistics are not collected.
 
-If `FLUSH` is `TRUE` the snapshot tables are updated with data up to the current moment. Otherwise data remains only in memory for later update.
+If `FLUSH` is `TRUE`, the snapshot tables are updated with data up to the current moment, otherwise data remains only in memory for later update.
 
 Calling `RDB$PROFILER.PAUSE_SESSION(TRUE)` has the same semantics of calling `RDB$PROFILER.PAUSE_SESSION(FALSE)` followed by `RDB$PROFILER.FLUSH` (using the same `ATTACHMENT_ID`).
 
@@ -360,7 +364,7 @@ Input parameter(s):
 
 ==== Procedure `RESUME_SESSION`
 
-`RDB$PROFILER.RESUME_SESSION` resumes the current profiler session (of the given `ATTACHMENT_ID`) if it was paused so the next executed statements statistics are collected again.
+`RDB$PROFILER.RESUME_SESSION` resumes the current profiler session (of the given `ATTACHMENT_ID`), if it was paused so the next executed statements statistics are collected again.
 
 Input parameter(s):
 
@@ -370,7 +374,7 @@ Input parameter(s):
 
 `RDB$PROFILER.FINISH_SESSION` finishes the current profiler session (of the given `ATTACHMENT_ID`).
 
-If `FLUSH` is `TRUE` the snapshot tables are updated with data of the finished session (and old finished sessions not yet present in the snapshot). Otherwise data remains only in memory for later update.
+If `FLUSH` is `TRUE`, the snapshot tables are updated with data of the finished session (and old finished sessions not yet present in the snapshot), otherwise data remains only in memory for later update.
 
 Calling `RDB$PROFILER.FINISH_SESSION(TRUE)` has the same semantics of calling `RDB$PROFILER.FINISH_SESSION(FALSE)` followed by `RDB$PROFILER.FLUSH` (using the same `ATTACHMENT_ID`).
 
@@ -395,7 +399,7 @@ Input parameter(s):
 
 `RDB$PROFILER.DISCARD` removes all sessions (of the given `ATTACHMENT_ID`) from memory, without flushing them.
 
-If there is a active session, it is cancelled.
+If there is an active session, it is cancelled.
 
 Input parameter(s):
 
@@ -405,7 +409,7 @@ Input parameter(s):
 
 `RDB$PROFILER.FLUSH` updates the snapshot tables with data from the profile sessions (of the given `ATTACHMENT_ID`) in memory.
 
-After update data is stored in tables `PLG$PROF_SESSIONS`, `PLG$PROF_STATEMENTS`, `PLG$PROF_RECORD_SOURCES`, `PLG$PROF_REQUESTS`, `PLG$PROF_PSQL_STATS` and `PLG$PROF_RECORD_SOURCE_STATS` and may be read and analyzed by the user.
+After flushing, the data is stored in tables `PLG$PROF_SESSIONS`, `PLG$PROF_STATEMENTS`, `PLG$PROF_RECORD_SOURCES`, `PLG$PROF_REQUESTS`, `PLG$PROF_PSQL_STATS` and `PLG$PROF_RECORD_SOURCE_STATS` and may be read and analyzed by the user.
 
 Data is updated using an autonomous transaction, so if the procedure is called in a snapshot transaction, data will not be directly readable in the same transaction.
 
@@ -428,34 +432,38 @@ Input parameter(s):
 
 === Snapshot tables
 
-Snapshot tables (as well views and sequence) are automatically created in the first usage of the profiler. They are owned by the current user with read/write permissions for `PUBLIC`.
+Snapshot tables (as well views and sequence) are automatically created in the first usage of the profiler.
+They are owned by the current user with read/write permissions for `PUBLIC`.
 
-When a session is deleted the related data in others profiler snapshot tables are automatically deleted too through foregin keys with `DELETE CASCADE` option.
+When a session is deleted the related data in others profiler snapshot tables are automatically deleted too through foreign keys with `DELETE CASCADE` option.
 
 Below is the list of tables that stores profile data.
 
 ==== Table `PLG$PROF_SESSIONS`
+
 [horizontal]
 `PROFILE_ID type BIGINT`:: Profile session ID
 `ATTACHMENT_ID type BIGINT`:: Attachment ID
-`USER_NAME type CHAR(63) CHARACTER SET UTF8`:: User name
+`USER_NAME type CHAR(63) CHARACTER SET UTF8`:: Username
 `DESCRIPTION type VARCHAR(255) CHARACTER SET UTF8`:: Description passed in `RDB$PROFILER.START_SESSION`
 `START_TIMESTAMP type TIMESTAMP WITH TIME ZONE`:: Moment the profile session was started
 `FINISH_TIMESTAMP type TIMESTAMP WITH TIME ZONE`:: Moment the profile session was finished (NULL when not finished)
 Primary key:: `PROFILE_ID`
 
 ==== Table `PLG$PROF_STATEMENTS`
+
 [horizontal]
 `PROFILE_ID type BIGINT`:: Profile session ID
 `STATEMENT_ID type BIGINT`:: Statement ID
-`PARENT_STATEMENT_ID type BIGINT`:: Parent statement ID - related to sub routines
+`PARENT_STATEMENT_ID type BIGINT`:: Parent statement ID -- related to sub routines
 `STATEMENT_TYPE type VARCHAR(20) CHARACTER SET UTF8`:: BLOCK, FUNCTION, PROCEDURE or TRIGGER
 `PACKAGE_NAME type CHAR(63) CHARACTER SET UTF8`:: Package of FUNCTION or PROCEDURE
 `ROUTINE_NAME type CHAR(63) CHARACTER SET UTF8`:: Routine name of FUNCTION, PROCEDURE or TRIGGER
 `SQL_TEXT type BLOB subtype TEXT CHARACTER SET UTF8`:: SQL text for BLOCK
-Primary key:: `PROFILE_ID, STATEMENT_ID`
+Primary key:: `PROFILE_ID`, `STATEMENT_ID`
 
 ==== Table `PLG$PROF_CURSORS`
+
 [horizontal]
 `PROFILE_ID type BIGINT`:: Profile session ID
 `STATEMENT_ID type BIGINT`:: Statement ID
@@ -463,9 +471,10 @@ Primary key:: `PROFILE_ID, STATEMENT_ID`
 `NAME type CHAR(63) CHARACTER SET UTF8`:: Name of explicit cursor
 `LINE_NUM type INTEGER`:: Line number of the cursor
 `COLUMN_NUM type INTEGER`:: Column number of the cursor
-Primary key:: `PROFILE_ID, STATEMENT_ID, CURSOR_ID`
+Primary key:: `PROFILE_ID`, `STATEMENT_ID`, `CURSOR_ID`
 
 ==== Table `PLG$PROF_RECORD_SOURCES`
+
 [horizontal]
 `PROFILE_ID type BIGINT`:: Profile session ID
 `STATEMENT_ID type BIGINT`:: Statement ID
@@ -473,9 +482,10 @@ Primary key:: `PROFILE_ID, STATEMENT_ID, CURSOR_ID`
 `RECORD_SOURCE_ID type INTEGER`:: Record source ID
 `PARENT_RECORD_SOURCE_ID type INTEGER`:: Parent record source ID
 `ACCESS_PATH type VARCHAR(255) CHARACTER SET UTF8`:: Access path for the record source
-Primary key:: `PROFILE_ID, STATEMENT_ID, CURSOR_ID, RECORD_SOURCE_ID`
+Primary key:: `PROFILE_ID`, `STATEMENT_ID`, `CURSOR_ID`, `RECORD_SOURCE_ID`
 
 ==== Table `PLG$PROF_REQUESTS`
+
 [horizontal]
 `PROFILE_ID type BIGINT`:: Profile session ID
 `REQUEST_ID type BIGINT`:: Request ID
@@ -484,9 +494,10 @@ Primary key:: `PROFILE_ID, STATEMENT_ID, CURSOR_ID, RECORD_SOURCE_ID`
 `START_TIMESTAMP type TIMESTAMP WITH TIME ZONE`:: Moment this request was first gathered profile data
 `FINISH_TIMESTAMP type TIMESTAMP WITH TIME ZONE`:: Moment this request was finished
 `TOTAL_ELAPSED_TIME type BIGINT`:: Accumulated elapsed time (in nanoseconds) of the request
-Primary key:: `PROFILE_ID, REQUEST_ID`
+Primary key:: `PROFILE_ID`, `REQUEST_ID`
 
 ==== Table `PLG$PROF_PSQL_STATS`
+
 [horizontal]
 `PROFILE_ID type BIGINT`:: Profile session ID
 `REQUEST_ID type BIGINT`:: Request ID
@@ -497,9 +508,10 @@ Primary key:: `PROFILE_ID, REQUEST_ID`
 `MIN_ELAPSED_TIME type BIGINT`:: Minimal elapsed time (in nanoseconds) of a line/column execution
 `MAX_ELAPSED_TIME type BIGINT`:: Maximum elapsed time (in nanoseconds) of a line/column execution
 `TOTAL_ELAPSED_TIME type BIGINT`:: Accumulated elapsed time (in nanoseconds) of the line/column executions
-Primary key:: `PROFILE_ID, REQUEST_ID, LINE_NUM, COLUMN_NUM`
+Primary key:: `PROFILE_ID`, `REQUEST_ID`, `LINE_NUM`, `COLUMN_NUM`
 
 ==== Table `PLG$PROF_RECORD_SOURCE_STATS`
+
 [horizontal]
 `PROFILE_ID type BIGINT`:: Profile session ID
 `REQUEST_ID type BIGINT`:: Request ID
@@ -514,15 +526,16 @@ Primary key:: `PROFILE_ID, REQUEST_ID, LINE_NUM, COLUMN_NUM`
 `FETCH_MIN_ELAPSED_TIME type BIGINT`:: Minimal elapsed time (in nanoseconds) of a record source fetch
 `FETCH_MAX_ELAPSED_TIME type BIGINT`:: Maximum elapsed time (in nanoseconds) of a record source fetch
 `FETCH_TOTAL_ELAPSED_TIME type BIGINT`:: Accumulated elapsed time (in nanoseconds) of the record source fetches
-Primary key:: `PROFILE_ID, REQUEST_ID, CURSOR_ID, RECORD_SOURCE_ID`
+Primary key:: `PROFILE_ID`, `REQUEST_ID`, `CURSOR_ID`, `RECORD_SOURCE_ID`
 
 === Auxiliary views
 
 These views help profile data extraction aggregated at statement level.
 
-They should be the preferred way to analyze the collected data. They can also be used together with the tables to get additional data not present on the views.
+They should be the preferred way to analyze the collected data.
+They can also be used together with the tables to get additional data not present on the views.
 
-After hot spots are found, one can drill down in the data at the request level through the tables.
+After hotspots are found, one can drill down in the data at the request level through the tables.
 
 ==== View `PLG$PROF_STATEMENT_STATS_VIEW`
 
@@ -685,19 +698,20 @@ Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/281[#281]
 
 This package exists to manipulate BLOBs in a way that standard Firebird functions, like `BLOB_APPEND` and `SUBSTRING` cannot do it or is very slow.
 
-These routines operates on binary data directly, even for text BLOBs.
+These routines operate on binary data directly, even for text BLOBs.
 
 === Package routines
 
 ==== Function `NEW_BLOB`
 
-`RDB$BLOB_UTIL.NEW_BLOB` is used to create a new BLOB. It returns a BLOB suitable for data appending, like `BLOB_APPEND` does.
+`RDB$BLOB_UTIL.NEW_BLOB` is used to create a new BLOB.
+It returns a BLOB suitable for data appending, like `BLOB_APPEND` does.
 
 The advantage over `BLOB_APPEND` is that it's possible to set custom `SEGMENTED` and `TEMP_STORAGE` options.
 
-`BLOB_APPEND` always creates BLOB in temporary storage. That may not be the best approach if the created BLOB is going to be stored in a permanent table, as it will require copy.
+`BLOB_APPEND` always creates BLOB in temporary storage, which may not always be the best approach if the created BLOB is going to be stored in a permanent table, as it will require copy.
 
-Returned BLOB from this function, even when `TEMP_STORAGE = FALSE` may be used with `BLOB_APPEND` for appending data.
+The BLOB returned from this function, even when `TEMP_STORAGE = FALSE`, may be used with `BLOB_APPEND` for appending data.
 
 Input parameter(s):
 
@@ -708,7 +722,8 @@ Return type: `BLOB NOT NULL`.
 
 ==== Function `OPEN_BLOB`
 
-`RDB$BLOB_UTIL.OPEN_BLOB` is used to open an existing BLOB for read. It returns a handle (an integer bound to the transaction) suitable for use with others functions of this package, like `SEEK`, `READ_DATA` and `CLOSE_HANDLE`.
+`RDB$BLOB_UTIL.OPEN_BLOB` is used to open an existing BLOB for read.
+It returns a handle (an integer bound to the transaction) suitable for use with others functions of this package, like `SEEK`, `READ_DATA` and `CLOSE_HANDLE`.
 
 Input parameter(s):
 
@@ -728,7 +743,8 @@ Return type: `BOOLEAN NOT NULL`.
 
 ==== Function `READ_DATA`
 
-`RDB$BLOB_UTIL.READ_DATA` is used to read chunks of data of a BLOB handle opened with `RDB$BLOB_UTIL.OPEN_BLOB`. When the BLOB is fully read and there is no more data, it returns `NULL`.
+`RDB$BLOB_UTIL.READ_DATA` is used to read chunks of data of a BLOB handle opened with `RDB$BLOB_UTIL.OPEN_BLOB`.
+When the BLOB is fully read and there is no more data, it returns `NULL`.
 
 If `LENGTH` is passed with a positive number, it returns a VARBINARY with its maximum length.
 
@@ -743,7 +759,7 @@ Return type: `VARBINARY(32767)`.
 
 ==== Function `SEEK`
 
-`RDB$BLOB_UTIL.SEEK` is used to set the position for the next `READ_DATA`. It returns the new position.
+`RDB$BLOB_UTIL.SEEK` is used to set the position for the next `READ_DATA`, it returns the new position.
 
 `MODE` may be 0 (from the start), 1 (from current position) or 2 (from end).
 
@@ -767,7 +783,7 @@ Note that if the same BLOB is used after cancel, using the same variable or anot
 
 `RDB$BLOB_UTIL.CLOSE_HANDLE` is used to close a BLOB handle opened with `RDB$BLOB_UTIL.OPEN_BLOB`.
 
-Not closed handles are closed automatically only in the transaction end.
+Handles which are not explicitly closed are only closed automatically when the transaction ends.
 
 Input parameter(s):
 
@@ -775,8 +791,7 @@ Input parameter(s):
 
 === Examples
 
-. Create a BLOB in temporary space and return it in `EXECUTE BLOCK`:
-+
+.Create a BLOB in temporary space and return it in `EXECUTE BLOCK`
 [listing]
 ----
 execute block returns (b blob)
@@ -793,8 +808,7 @@ begin
 end
 ----
 
-. Open a BLOB and return chunks of it with `EXECUTE BLOCK`:
-+
+.Open a BLOB and return chunks of it with `EXECUTE BLOCK`
 [listing]
 ----
 execute block returns (s varchar(10))
@@ -825,8 +839,7 @@ begin
 end
 ----
 
-. Seek in a blob:
-+
+.Seek in a blob
 [listing]
 ----
 set term !;
@@ -869,8 +882,7 @@ end!
 set term ;!
 ----
 
-. Check if blobs are writable:
-+
+.Check if blobs are writable
 [listing]
 ----
 create table t(b blob);
