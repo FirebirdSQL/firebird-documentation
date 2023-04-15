@@ -11,3 +11,45 @@ New system privilege `PROFILE_ANY_ATTACHMENT` has been added to the engine.
 When remote SQL profiling is used and the attachment being profiled is from a different user, the calling user must have this system privilege.
 
 See more details in the <<rnfb50-engine-profiler>> chapter.
+
+[[rnfb50-security-trace-ctx]]
+== Trace events before a valid security context is established
+Alex Peshkov
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/7165[#7165]
+
+A privileged trace session (e.g. by an administrator or user with `TRACE_ANY_ATTACHMENT`) can now report events (i.e. errors) taking place before validation of an attachment's security context.
+
+As an example:
+
+Set up a conflicting mapping for a user:
+
+[listing]
+----
+# ./isql employee
+Database: employee, User: SYSDBA
+SQL> create user qq password 'qq';
+SQL> create global mapping z1 using * from user qq to user z1;
+SQL> create global mapping z2 using * from user qq to user z2;
+SQL> ^D
+----
+
+Because of the conflicting mapping user QQ can not attach to a database even with valid login/password:
+
+[listing]
+----
+# ./isql localhost:employee -user qq -pas qq
+Statement failed, SQLSTATE = 08004
+Multiple maps found for QQ
+Use CONNECT or CREATE DATABASE to specify a database
+SQL> ^D
+----
+
+In the trace output one can see the following:
+
+[listing]
+----
+2023-03-17T13:38:41.5240 (25380:0x7f282c10c750) FAILED ATTACH_DATABASE
+        employee (ATT_0, QQ, NONE, TCPv4:127.0.0.1/39474)
+        /opt/firebird/bin/isql:25396
+----
