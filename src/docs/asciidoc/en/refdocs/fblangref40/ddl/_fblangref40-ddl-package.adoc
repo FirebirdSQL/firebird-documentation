@@ -1,0 +1,402 @@
+[[fblangref40-ddl-package]]
+= `PACKAGE`
+
+A package is a group of procedures and functions managed as one entity.
+
+[[fblangref40-ddl-pkg-create]]
+== `CREATE PACKAGE`
+
+.Used for
+Declaring the package header
+
+.Available in
+DSQL
+
+[[fblangref40-ddl-pkg-create-syntax]]
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+CREATE PACKAGE _package_name_
+[SQL SECURITY {INVOKER | DEFINER}]
+AS
+BEGIN
+  [ <package_item> ... ]
+END
+
+<package_item> ::=
+    <function_decl>;
+  | <procedure_decl>;
+
+<function_decl> ::=
+  FUNCTION _funcname_ [ ( [ <in_params> ] ) ]
+  RETURNS <domain_or_non_array_type> [COLLATE _collation_]
+  [DETERMINISTIC]
+
+<procedure_decl> ::=
+  PROCEDURE _procname_ [ ( [ <in_params> ] ) ]
+  [RETURNS (<out_params>)]
+
+<in_params> ::= <inparam> [, <inparam> ... ]
+
+<inparam> ::= <param_decl> [ { = | DEFAULT } <value> ]
+
+<out_params> ::= <outparam> [, <outparam> ...]
+
+<outparam> ::= <param_decl>
+
+<value> ::= { _literal_ | NULL | _context_var_ }
+
+<param-decl> ::= _paramname_ <domain_or_non_array_type> [NOT NULL]
+  [COLLATE _collation_]
+
+<domain_or_non_array_type> ::=
+  !! See <<fblangref40-datatypes-syntax-scalar,Scalar Data Types Syntax>> !!
+----
+
+[[fblangref40-ddl-tbl-createpkg]]
+.`CREATE PACKAGE` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|package_name
+|Package name.
+The maximum length is 63 characters.
+The package name must be unique among all package names.
+
+|function_decl
+|Function declaration
+
+|procedure_decl
+|Procedure declaration
+
+|func_name
+|Function name.
+The maximum length is 63 characters.
+The function name must be unique within the package.
+
+|proc_name
+|Procedure name.
+The maximum length is 63 characters.
+The function name must be unique within the package.
+
+|collation
+|Collation sequence
+
+|inparam
+|Input parameter declaration
+
+|outparam
+|Output parameter declaration
+
+|literal
+|A literal value that is assignment-compatible with the data type of the parameter
+
+|context_var
+|Any context variable that is assignment-compatible with the data type of the parameter
+
+|paramname
+|The name of an input parameter of a procedure or function, or an output parameter of a procedure.
+The maximum length is 63 characters.
+The name of the parameter must be unique among input and output parameters of the procedure or function.
+|===
+
+The `CREATE PACKAGE` statement creates a new package header.
+Routines (procedures and functions) declared in the package header are available outside the package using the full identifier (__package_name__.__proc_name__ or __package_name__.__func_name__).
+Routines defined only in the package body -- but not in the package header -- are not visible outside the package.
+
+[[fblangref40-ddl-pkg-routine-shadowing]]
+.Package procedure and function names may shadow global routines
+[NOTE]
+====
+If a package header or package body declares a procedure or function with the same name as a stored procedure or function in the global namespace, it is not possible to call that global procedure or function from the package body.
+In this case, the procedure or function of the package will always be called.
+
+For this reason, it is recommended that the names of stored procedures and functions in packages do not overlap with names of stored procedures and functions in the global namespace.
+====
+
+[[fblangref40-ddl-terminators04]]
+=== Statement Terminators
+
+Some SQL statement editors -- specifically the _isql_ utility that comes with Firebird and possibly some third-party editors -- employ an internal convention that requires all statements to be terminated with a semi-colon.
+This creates a conflict with PSQL syntax when coding in these environments.
+If you are unacquainted with this problem and its solution, please study the details in the PSQL chapter in the section entitled <<fblangref40-sidebar01,Switching the Terminator in _isql_>>.
+
+[[fblangref40-ddl-pkg-sqlsec]]
+=== SQL Security
+
+The `SQL SECURITY` clause specifies the security context for executing other routines or inserting into other tables from functions or procedures defined in this package.
+When SQL Security is not specified, the default value of the database is applied at runtime.
+
+The `SQL SECURITY` clause can only be specified for the package, not for individual procedures and functions of the package.
+
+See also _<<fblangref40-security-sql-security,SQL Security>>_ in chapter _Security_.
+
+[[fblangref40-ddl-pkg-create-procfunc]]
+=== Procedure and Function Parameters
+
+For details on stored procedure parameters, see <<fblangref40-ddl-proc-params>> in <<fblangref40-ddl-proc-create>>.
+
+For details on function parameters, see <<fblangref40-ddl-func-params>> in <<fblangref40-ddl-func-create>>.
+
+[[fblangref40-ddl-pkg-create-who]]
+=== Who Can Create a Package
+
+The `CREATE PACKAGE` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* Users with the `CREATE PACKAGE` privilege
+
+The user who created the package header becomes its owner.
+
+[[fblangref40-ddl-pkg-create-example]]
+=== Examples of `CREATE PACKAGE`
+
+. Create a package header
+[source]
+----
+CREATE PACKAGE APP_VAR
+AS
+BEGIN
+  FUNCTION GET_DATEBEGIN() RETURNS DATE DETERMINISTIC;
+  FUNCTION GET_DATEEND() RETURNS DATE DETERMINISTIC;
+  PROCEDURE SET_DATERANGE(ADATEBEGIN DATE,
+      ADATEEND DATE DEFAULT CURRENT_DATE);
+END
+----
+
+. With `DEFINER` set for package `pk`, user `US` needs only the `EXECUTE` privilege on `pk`.
+If it were set for `INVOKER`, either the user or the package would also need the `INSERT` privilege on table `t`.
++
+[source]
+----
+create table t (i integer);
+set term ^;
+create package pk SQL SECURITY DEFINER
+as
+begin
+    function f(i integer) returns int;
+end^
+
+create package body pk
+as
+begin
+    function f(i integer) returns int
+    as
+    begin
+      insert into t values (:i);
+      return i + 1;
+    end
+end^
+set term ;^
+grant execute on package pk to user us;
+
+commit;
+
+connect 'localhost:/tmp/69.fdb' user us password 'pas';
+select pk.f(3) from rdb$database;
+----
+
+.See also
+<<fblangref40-ddl-pkg-body-create,`CREATE PACKAGE BODY`>>, <<fblangref40-ddl-pkg-body-recreate,`RECREATE PACKAGE BODY`>>, <<fblangref40-ddl-pkg-alter>>, <<fblangref40-ddl-pkg-drop>>, <<fblangref40-ddl-pkg-recreate>>
+
+[[fblangref40-ddl-pkg-alter]]
+== `ALTER PACKAGE`
+
+.Used for
+Altering the package header
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+ALTER PACKAGE _package_name_
+[SQL SECURITY {INVOKER | DEFINER}]
+AS
+BEGIN
+  [ <package_item> ... ]
+END
+
+!! See syntax of <<fblangref40-ddl-pkg-create-syntax,`CREATE PACKAGE`>> for further rules!!
+----
+
+The `ALTER PACKAGE` statement modifies the package header.
+It can be used to change the number and definition of procedures and functions, including their input and output parameters.
+However, the source and compiled form of the package body is retained, though the body might be incompatible after the change to the package header.
+The validity of a package body for the defined header is stored in the column `RDB$PACKAGES.RDB$VALID_BODY_FLAG`.
+
+Altering a package without specifying the `SQL SECURITY` clause will remove the SQL Security property if currently set for this package.
+This means the behaviour will revert to the database default.
+
+[[fblangref40-ddl-pkg-alter-who]]
+=== Who Can Alter a Package
+
+The `ALTER PACKAGE` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* The owner of the package
+* Users with the `ALTER ANY PACKAGE` privilege
+
+[[fblangref40-ddl-pkg-alter-example]]
+=== Examples of `ALTER PACKAGE`
+
+.Modifying a package header
+[source]
+----
+ALTER PACKAGE APP_VAR
+AS
+BEGIN
+  FUNCTION GET_DATEBEGIN() RETURNS DATE DETERMINISTIC;
+  FUNCTION GET_DATEEND() RETURNS DATE DETERMINISTIC;
+  PROCEDURE SET_DATERANGE(ADATEBEGIN DATE,
+      ADATEEND DATE DEFAULT CURRENT_DATE);
+END
+----
+
+.See also
+<<fblangref40-ddl-pkg-create>>, <<fblangref40-ddl-pkg-drop>>, <<fblangref40-ddl-pkg-body-alter,`ALTER PACKAGE BODY`>>, <<fblangref40-ddl-pkg-body-recreate,`RECREATE PACKAGE BODY`>>
+
+[[fblangref40-ddl-pkg-createalter]]
+== `CREATE OR ALTER PACKAGE`
+
+.Used for
+Creating a new or altering an existing package header
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+CREATE OR ALTER PACKAGE _package_name_
+[SQL SECURITY {INVOKER | DEFINER}]
+AS
+BEGIN
+  [ <package_item> ... ]
+END
+
+!! See syntax of <<fblangref40-ddl-pkg-create-syntax,`CREATE PACKAGE`>> for further rules!!
+----
+
+The `CREATE OR ALTER PACKAGE` statement creates a new package or modifies an existing package header.
+If the package header does not exist, it will be created using `CREATE PACKAGE`.
+If it already exists, then it will be modified using `ALTER PACKAGE` while retaining existing privileges and dependencies.
+
+[[fblangref40-ddl-pkg-createalter-example]]
+=== Examples of `CREATE OR ALTER PACKAGE`
+
+.Creating a new or modifying an existing package header
+[source]
+----
+CREATE OR ALTER PACKAGE APP_VAR
+AS
+BEGIN
+  FUNCTION GET_DATEBEGIN() RETURNS DATE DETERMINISTIC;
+  FUNCTION GET_DATEEND() RETURNS DATE DETERMINISTIC;
+  PROCEDURE SET_DATERANGE(ADATEBEGIN DATE,
+      ADATEEND DATE DEFAULT CURRENT_DATE);
+END
+----
+
+.See also
+<<fblangref40-ddl-pkg-create>>, <<fblangref40-ddl-pkg-alter>>, <<fblangref40-ddl-pkg-recreate>>, <<fblangref40-ddl-pkg-body-alter,`ALTER PACKAGE BODY`>>, <<fblangref40-ddl-pkg-body-recreate,`RECREATE PACKAGE BODY`>>
+
+[[fblangref40-ddl-pkg-drop]]
+== `DROP PACKAGE`
+
+.Used for
+Dropping a package header
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs="+quotes"]
+----
+DROP PACKAGE _package_name_
+----
+
+[[fblangref40-ddl-tbl-droppkg]]
+.`DROP PACKAGE` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|package_name
+|Package name
+|===
+
+The `DROP PACKAGE` statement deletes an existing package header.
+If a package body exists, it will be dropped together with the package header.
+If there are still dependencies on the package, an error will be raised.
+
+[[fblangref40-ddl-pkg-drop-who]]
+=== Who Can Drop a Package
+
+The `DROP PACKAGE` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* The owner of the package
+* Users with the `DROP ANY PACKAGE` privilege
+
+[[fblangref40-ddl-pkg-drop-example]]
+=== Examples of `DROP PACKAGE`
+
+.Dropping a package header
+[source]
+----
+DROP PACKAGE APP_VAR
+----
+
+.See also
+<<fblangref40-ddl-pkg-create>>, <<fblangref40-ddl-pkg-body-drop,`DROP PACKAGE BODY`>>
+
+[[fblangref40-ddl-pkg-recreate]]
+== `RECREATE PACKAGE`
+
+.Used for
+Creating a new or recreating an existing package header
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+RECREATE PACKAGE _package_name_
+[SQL SECURITY {INVOKER | DEFINER}]
+AS
+BEGIN
+  [ <package_item> ... ]
+END
+
+!! See syntax of <<fblangref40-ddl-pkg-create-syntax,`CREATE PACKAGE`>> for further rules!!
+----
+
+The `RECREATE PACKAGE` statement creates a new package or recreates an existing package header.
+If a package header with the same name already exists, then this statement will first drop it and then create a new package header.
+It is not possible to recreate the package header if there are still dependencies on the existing package, or if the body of the package exists.
+Existing privileges of the package itself are not preserved, nor are privileges to execute the procedures or functions of the package.
+
+[[fblangref40-ddl-pkg-recreate-example]]
+=== Examples of `RECREATE PACKAGE`
+
+.Creating a new or recreating an existing package header
+[source]
+----
+RECREATE PACKAGE APP_VAR
+AS
+BEGIN
+  FUNCTION GET_DATEBEGIN() RETURNS DATE DETERMINISTIC;
+  FUNCTION GET_DATEEND() RETURNS DATE DETERMINISTIC;
+  PROCEDURE SET_DATERANGE(ADATEBEGIN DATE,
+      ADATEEND DATE DEFAULT CURRENT_DATE);
+END
+----
+
+.See also
+<<fblangref40-ddl-pkg-create>>, <<fblangref40-ddl-pkg-drop>>, <<fblangref40-ddl-pkg-body-create,`CREATE PACKAGE BODY`>>, <<fblangref40-ddl-pkg-body-recreate,`RECREATE PACKAGE BODY`>>

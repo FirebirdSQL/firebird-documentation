@@ -1,0 +1,142 @@
+:sectnums!:
+
+[appendix]
+[[fblangref40-appx01-supplement]]
+= Supplementary Information
+
+In this Appendix are topics that developers may wish to refer to, to enhance understanding of features or changes.
+
+[[fblangref40-appx01-supp-rdb-validblr]]
+== The `RDB$VALID_BLR` Field
+
+The field `RDB$VALID_BLR` was added to the system tables `RDB$PROCEDURES` and `RDB$TRIGGERS` in Firebird 2.1.
+Its purpose is to signal possible invalidation of a PSQL module after alteration of a domain or table column on which the module depends.
+``RDB$VALID_BLR`` is set to 0 for any procedure or trigger whose code is made invalid by such a change.
+
+=== How Invalidation Works
+
+In triggers and procedures, dependencies arise on the definitions of table columns accessed and also on any parameter or variable that has been defined in the module using the `TYPE OF` clause.
+
+After the engine has altered any domain, including the implicit domains created internally behind column definitions and output parameters, the engine internally recompiles all of its dependencies.
+
+[NOTE]
+====
+In v2.x these comprise procedures and triggers but not blocks coded in DML statements for run-time execution with ``EXECUTE BLOCK``.
+Firebird  3 will encompass more module types (stored functions, packages).
+====
+
+Any module that fails to recompile because of an incompatibility arising from a domain change is marked as invalid ("`invalidated`" by setting the `RDB$VALID_BLR` in its system record (in `RDB$PROCEDURES` or ``RDB$TRIGGERS``, as appropriate) to zero.
+
+Revalidation (setting `RDB$VALID_BLR` to 1) occurs when 
+
+. the domain is altered again and the new definition is compatible with the previously invalidated module definition; OR
+. the previously invalidated module is altered to match the new domain definition
+
+The following query will find the modules that depend on a specific domain and report the state of their `RDB$VALID_BLR` fields:
+
+[source]
+----
+SELECT * FROM (
+  SELECT
+    'Procedure',
+    rdb$procedure_name,
+    rdb$valid_blr
+  FROM rdb$procedures
+  UNION ALL
+  SELECT
+    'Trigger',
+    rdb$trigger_name,
+    rdb$valid_blr
+  FROM rdb$triggers
+) (type, name, valid)
+WHERE EXISTS
+  (SELECT * from rdb$dependencies
+   WHERE rdb$dependent_name = name
+     AND rdb$depended_on_name = 'MYDOMAIN')
+
+/* Replace MYDOMAIN with the actual domain name.
+   Use all-caps if the domain was created
+   case-insensitively. Otherwise, use the exact
+   capitalisation. */
+----
+
+The following query will find the modules that depend on a specific table column and report the state of their `RDB$VALID_BLR` fields:
+
+[source]
+----
+SELECT * FROM (
+  SELECT
+    'Procedure',
+    rdb$procedure_name,
+    rdb$valid_blr
+  FROM rdb$procedures
+  UNION ALL
+  SELECT
+    'Trigger',
+    rdb$trigger_name,
+    rdb$valid_blr
+  FROM rdb$triggers) (type, name, valid)
+WHERE EXISTS
+  (SELECT *
+   FROM rdb$dependencies
+   WHERE rdb$dependent_name = name
+     AND rdb$depended_on_name = 'MYTABLE'
+     AND rdb$field_name = 'MYCOLUMN')
+----
+
+[IMPORTANT]
+====
+All PSQL invalidations caused by domain/column changes are reflected in the `RDB$VALID_BLR` field.
+However, other kinds of changes, such as the number of input or output parameters, called routines and so on, do not affect the validation field even though they potentially invalidate the module.
+A typical such scenario might be one of the following: 
+
+. A procedure (B) is defined, that calls another procedure (A) and reads output parameters from it.
+In this case, a dependency is registered in ``RDB$DEPENDENCIES``.
+Subsequently, the called procedure (A) is altered to change or remove one or more of those output parameters.
+The `ALTER PROCEDURE A` statement will fail with an error when commit is attempted.
+. A procedure (B) calls procedure A, supplying values for its input parameters.
+No dependency is registered in ``RDB$DEPENDENCIES``.
+Subsequent modification of the input parameters in procedure A will be allowed.
+Failure will occur at run-time, when B calls A with the mismatched input parameter set.
+====
+
+.Other Notes
+[NOTE]
+====
+* For PSQL modules inherited from earlier Firebird versions (including a number of system triggers, even if the database was created under Firebird 2.1 or higher), `RDB$VALID_BLR` is NULL.
+This does not imply that their BLR is invalid.
+* The _isql_ commands `SHOW PROCEDURES` and `SHOW TRIGGERS` display an asterisk in the `RDB$VALID_BLR` column for any module for which the value is zero (i.e., invalid).
+However, `SHOW PROCEDURE <procname>` and ``SHOW TRIGGER <trigname>``, which display individual PSQL modules, do not signal invalid BLR at all.
+====
+
+[[fblangref40-appx01-note-on-equality]]
+== A Note on Equality
+
+[IMPORTANT]
+====
+This note about equality and inequality operators applies everywhere in Firebird's SQL language.
+====
+
+The "```=```" operator, which is explicitly used in many conditions, only matches values to values.
+According to the SQL standard, [constant]``NULL`` is not a value and hence two [constant]``NULLs`` are neither equal nor unequal to one another.
+If you need [constant]``NULLs`` to match each other in a condition, use the `IS NOT DISTINCT FROM` operator.
+This operator returns true if the operands have the same value _or_ if they are both ``NULL``.
+
+[source]
+----
+select *
+  from A join B
+  on A.id is not distinct from B.code
+----
+
+Likewise, in cases where you want to test against [constant]``NULL`` for a condition of __inequality__, use ``IS DISTINCT FROM``, not "```<>```".
+If you want [constant]``NULL`` to be considered different from any value and two [constant]``NULLs`` to be considered equal:
+
+[source]
+----
+select *
+  from A join B
+  on A.id is distinct from B.code
+----
+
+:sectnums:

@@ -1,0 +1,301 @@
+[[fblangref40-structure]]
+= SQL Language Structure
+
+This reference describes the SQL language supported by Firebird.
+
+[[fblangref40-background]]
+== Background to Firebird's SQL Language
+
+To begin, a few points about some characteristics that are in the background to Firebird's language implementation. 
+
+[[fblangref40-structure-flavours]]
+=== SQL Flavours
+
+Distinct _subsets of SQL_ apply to different sectors of activity.
+The SQL subsets in Firebird's language implementation are:
+
+* Dynamic SQL (DSQL)
+* Procedural SQL (PSQL)
+* Embedded SQL (ESQL)
+* Interactive SQL (ISQL)
+
+_Dynamic SQL_ is the major part of the language which corresponds to the Part 2 (SQL/Foundation) part of the SQL specification.
+DSQL represents statements passed by client applications through the public Firebird API and processed by the database engine.
+
+_Procedural SQL_ augments Dynamic SQL to allow compound statements containing local variables, assignments, conditions, loops and other procedural constructs.
+PSQL corresponds to the Part 4 (SQL/PSM) part of the SQL specifications.
+Originally, PSQL extensions were available in persistent stored modules (procedures and triggers) only, but in more recent releases they were surfaced in Dynamic SQL as well (see <<fblangref40-dml-execblock,`EXECUTE BLOCK`>>).
+
+_Embedded SQL_ defines the DSQL subset supported by Firebird _gpre_, the application which allows you to embed SQL constructs into your host programming language (C, C++, Pascal, Cobol, etc.) and preprocess those embedded constructs into the proper Firebird API calls.
+
+[NOTE]
+====
+Only a portion of the statements and expressions implemented in DSQL are supported in ESQL.
+====
+
+_Interactive ISQL_ refers to the language that can be executed using Firebird _isql_, the command-line application for accessing databases interactively.
+As a regular client application, its native language is DSQL.
+It also offers a few additional commands that are not available outside its specific environment.
+
+Both DSQL and PSQL subsets are completely presented in this reference.
+Neither ESQL nor ISQL flavours are described here unless mentioned explicitly.
+
+[[fblangref40-structure-dialects]]
+=== SQL Dialects
+
+_SQL dialect_ is a term that defines the specific features of the SQL language that are available when accessing a database.
+SQL dialects can be defined at the database level and specified at the connection level.
+Three dialects are available:
+
+* _Dialect 1_ is intended solely to allow backward comptibility with legacy databases from very old InterBase versions, v.5 and below.
+Dialect 1 databases retain certain language features that differ from Dialect 3, the default for Firebird databases.
+** Date and time information are stored in a `DATE` data type.
+A `TIMESTAMP` data type is also available, that is identical to this `DATE` implementation.
+** Double quotes may be used as an alternative to apostrophes for delimiting string data.
+This is contrary to the SQL standard -- double quotes are reserved for a distinct syntactic purpose both in standard SQL and in Dialect 3.
+Double-quoting strings is therefore to be avoided strenuously.
+** The precision for `NUMERIC` and `DECIMAL` data types is smaller than in Dialect 3 and, if the precision of a fixed decimal number is greater than 9, Firebird stores it internally as a long floating point value.
+** The `BIGINT` (64-bit integer) data type is not supported.
+** Identifiers are case-insensitive and must always comply with the rules for regular identifiers -- see the section <<fblangref40-structure-identifiers>> below.
+** Although generator values are stored as 64-bit integers, a Dialect 1 client request, `SELECT GEN_ID (MyGen, 1)`, for example, will return the generator value truncated to 32 bits.
+* _Dialect 2_ is available only on the Firebird client connection and cannot be set in the database.
+It is intended to assist debugging of possible problems with legacy data when migrating a database from dialect 1 to 3.
+* In _Dialect 3_ databases,
+** numbers (`DECIMAL` and `NUMERIC` data types) are stored internally as long fixed point values (scaled integers) when the precision is greater than 9.
+** The `TIME` data type is available for storing time-of-day data only.
+** The `DATE` data type stores only date information.
+** The 64-bit integer data type `BIGINT` is available.
+** Double quotes are reserved for delimiting non-regular identifiers, enabling object names that are case-sensitive or that do not meet the requirements for regular identifiers in other ways.
+** All strings must be delimited with single quotes (apostrophes).
+** Generator values are stored as 64-bit integers.
+
+[IMPORTANT]
+====
+Use of Dialect 3 is strongly recommended for newly developed databases and applications.
+Both database and connection dialects should match, except under migration conditions with Dialect 2.
+
+This reference describes the semantics of SQL Dialect 3 unless specified otherwise.
+====
+
+[[fblangref40-structure-errors]]
+=== Error Conditions
+
+Processing of every SQL statement either completes successfully or fails due to a specific error condition.
+Error handling can be done as in the client the application and on the server side using PSQL.
+
+[[fblangref40-structure-basics]]
+== Basic Elements: Statements, Clauses, Keywords
+
+The primary construct in SQL is the _statement_.
+A statement defines what the database management system should do with a particular data or metadata object.
+More complex statements contain simpler constructs -- _clauses_ and _options_.
+
+Clauses::
+A clause defines a certain type of directive in a statement.
+For instance, the `WHERE` clause in a `SELECT` statement and in some other data manipulation statements (`UPDATE`, `DELETE`) specifies criteria for searching one or more tables for the rows that are to be selected, updated or deleted.
+The `ORDER BY` clause specifies how the output data -- result set -- should be sorted.
+
+Options::
+Options, being the simplest constructs, are specified in association with specific keywords to provide qualification for clause elements.
+Where alternative options are available, it is usual for one of them to be the default, used if nothing is specified for that option.
+For instance, the `SELECT` statement will return all of the rows that match the search criteria unless the `DISTINCT` option restricts the output to non-duplicated rows.
+
+Keywords::
+All words that are included in the SQL lexicon are keywords.
+Some keywords are _reserved_, meaning their usage as identifiers for database objects, parameter names or variables is prohibited in some or all contexts.
+Non-reserved keywords can be used as identifiers, although it is not recommended.
+From time to time, non-reserved keywords may become reserved when some new language feature is introduced.
++
+For instance, the following statement will be executed without errors because, although `ABS` is a keyword, it is not a reserved word.
++
+[source]
+----
+CREATE TABLE T (ABS INT NOT NULL);
+----
++
+On the contrary, the following statement will return an error because `ADD` is both a keyword and a reserved word.
++
+[source]
+----
+CREATE TABLE T (ADD INT NOT NULL);
+----
++
+Refer to the list of reserved words and keywords in the chapter <<fblangref40-appx03-reskeywords,Reserved Words and Keywords>>.
+
+[[fblangref40-structure-identifiers]]
+== Identifiers
+
+All database objects have names, often called _identifiers_.
+The maximum identifier length is 63 characters character set UTF8 (252 bytes).
+
+[NOTE]
+====
+It is possible to restrict the actual maximum identifier length through configuration.
+Consult the _Firebird 4.0 Release Notes_ for details.
+In this language reference we assume the default configuration of 63 characters (252 bytes).
+====
+
+Two types of names are valid as identifiers: _regular_ names, similar to variable names in regular programming languages, and _delimited_ names that are specific to SQL.
+To be valid, each type of identifier must conform to a set of rules, as follows:
+
+[[fblangref40-structure-identifiers-regular]]
+=== Rules for Regular Object Identifiers
+
+* Length cannot exceed 63 characters
+* The name must start with an unaccented, 7-bit ASCII alphabetic character.
+It may be followed by other 7-bit ASCII letters, digits, underscores or dollar signs.
+No other characters, including spaces, are valid.
+The name is case-insensitive, meaning it can be declared and used in either upper or lower case.
+Thus, from the system's point of view, the following names are the same:
++
+[source]
+----
+fullname
+FULLNAME
+FuLlNaMe
+FullName
+----
+
+.Regular name syntax
+[listing]
+----
+<name> ::=
+  <letter> | <name><letter> | <name><digit> | <name>_ | <name>$
+
+<letter> ::= <upper letter> | <lower letter>
+
+<upper letter> ::= A | B | C | D | E | F | G | H | I | J | K | L | M |
+                   N | O | P | Q | R | S | T | U | V | W | X | Y | Z
+
+<lower letter> ::= a | b | c | d | e | f | g | h | i | j | k | l | m |
+                   n | o | p | q | r | s | t | u | v | w | x | y | z
+
+<digit> ::= 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+----
+
+[[fblangref40-structure-identifiers-delim]]
+=== Rules for Delimited Object Identifiers
+
+* Length cannot exceed 63 characters in character set UTF8 (252 bytes).
+Identifiers are stored in character set `UTF8`, which means characters outside the ASCII range are stored using 2 to 4 bytes.
+* The entire string must be enclosed in double-quotes, e.g. `"anIdentifier"`
+* It may contain any character from the `UTF8` character set, including accented characters, spaces and special characters
+* An identifier can be a reserved word
+* Delimited identifiers are case-sensitive in all contexts
+* Trailing spaces in delimited names are removed, as with any string constant
+* Delimited identifiers are available in Dialect 3 only.
+For more details on dialects, see <<fblangref40-structure-dialects>>
+
+.Delimited name syntax
+[listing]
+----
+<delimited name> ::= "<permitted_character>[<permitted_character> ...]"
+----
+
+[NOTE]
+====
+A delimited identifier such as `"FULLNAME"` is the same as the regular identifiers `FULLNAME`, `fullname`, `FullName`, and so on.
+The reason is that Firebird stores regular identifiers in upper case, regardless of how they were defined or declared.
+Delimited identifiers are always stored according to the exact case of their definition or declaration.
+Thus, `"FullName"` (quoted) is different from `FullName` (unquoted, i.e. regular) which is stored as `FULLNAME` in the metadata.
+====
+
+[[fblangref40-structure-literals]]
+== Literals
+
+Literals are used to directly represent data.
+Examples of standard types of literals are:
+
+[source]
+----
+integer        - 0, -34, 45, 0X080000000;
+fixed-point    - 0.0, -3.14
+floating-point - 3.23e-23;
+string         - 'text', 'don''t!';
+binary string  - x'48656C6C6F20776F726C64'
+date           - DATE '2018-01-19';
+time           - TIME '15:12:56';
+timestamp      - TIMESTAMP '2018-01-19 13:32:02';
+boolean        - true, false, unknown
+null state     - null
+----
+
+Details about literals for each data type are discussed in section <<fblangref40-commons-constants,Literals (Constants)>> of chapter <<fblangref40-commons,Common Language Elements>>.
+
+[[fblangref40-structure-operators]]
+== Operators and Special Characters
+
+A set of special characters is reserved for use as operators or separators.
+
+[source]
+----
+<special char> ::=
+    <space> | " | % | & | ' | ( | ) | * | + | , | -
+  | . | / | : | ; | < | = | > | ? | [ | ] | ^ | { | }
+----
+
+Some of these characters, alone or in combinations, may be used as operators (arithmetical, string, logical), as SQL command separators, to quote identifiers and to mark the limits of string literals or comments.
+
+.Operator Syntax
+[listing]
+----
+<operator> ::=
+    <string concatenation operator>
+  | <arithmetic operator>
+  | <comparison operator>
+  | <logical operator>
+
+<string concatentation operator> ::= "||"
+
+<arithmetic operator> ::= * | / | + | - |
+
+<comparison operator> ::=
+    =  | <> | != | ~= | ^= | > | < | >= | <=
+  | !> | ~> | ^> | !< | ~< | ^<
+
+<logical operator> ::= NOT | AND | OR
+----
+
+For more details on operators, see <<fblangref40-commons-expressions,Expressions>>.
+
+[[fblangref40-structure-comments]]
+== Comments
+
+Comments may be present in SQL scripts, SQL statements and PSQL modules.
+A comment can be any text specified by the code writer, usually used to document how particular parts of the code work.
+The parser ignores the text of comments.
+
+Firebird supports two types of comments: _block_  and _in-line_.
+
+.Syntax
+[listing]
+----
+
+<comment> ::= <block comment> | <single-line comment>
+
+<block comment> ::=
+  /* <character>[<character> …] */
+
+<single-line comment> ::=
+  -- <character>[<character> …]<end line>
+----
+
+Block comments start with the `/{asterisk}` character pair and end with the `{asterisk}/` character pair.
+Text in block comments may be of any length and can occupy multiple lines.
+
+In-line comments start with a pair of hyphen characters, `--` and continue up to the end of the current line.
+
+.Example
+[source]
+----
+CREATE PROCEDURE P(APARAM INT)
+  RETURNS (B INT)
+AS
+BEGIN
+  /* This text will be ignored during the execution of the statement
+     since it is a comment
+  */
+  B = A + 1; -- In-line comment
+  SUSPEND;
+END
+----
