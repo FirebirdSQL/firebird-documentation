@@ -1,0 +1,911 @@
+[[fblangref40-management]]
+= Management Statements
+
+Since Firebird 3.0 a new class of DSQL statement has emerged in Firebird's SQL lexicon, usually for administering aspects of the client/server environment.
+Typically, such statements start with the verb `SET`.
+
+[NOTE]
+====
+The _isql_ tool also has a collection of `SET` commands.
+Those commands are not part of Firebird's SQL lexicon.
+For information on __isql__s `SET` commands, see https://www.firebirdsql.org/file/documentation/html/en/firebirddocs/isql/firebird-isql.html#isql-set[_Isql_ Set Commands] in _Firebird Interactive SQL Utility_.
+====
+
+Management statements can run anywhere DSQL can run but, typically, the developer will want to run a management statement in a database trigger.
+In past releases, management statements were treated in PSQL like DDL, precluding them from running directly inside a PSQL module.
+From Firebird 4.0 forward, a pre-determined set of them can be used directly in PSQL modules without the need to wrap them in an `EXECUTE STATEMENT` block.
+For more details of the current set, see <<fblangref40-psql-coding-management,Management Statements in PSQL>> in the PSQL chapter.
+
+Most of the management statements affect the current connection (attachment, or "`session`") only, and do not require any authorization over and above the login privileges of the current user without elevated privileges.
+
+Some management statements operate beyond the scope of the current session.
+Examples are the `ALTER DATABASE {BEGIN | END} BACKUP` statements to control _nBackup_, or the `ALTER EXTERNAL CONNECTIONS POOL` statements introduced in Firebird 4.0 to manage connection pooling.
+A new set of _system privileges,_ analogous with SQL privileges granted for database objects, is provided to enable the required authority to run a specific management statement in this category.
+
+[NOTE]
+====
+Some statements of this class use the verb `ALTER`, although management statements should not be confused with DDL `ALTER` statements that modify database objects like tables, views, procedures, roles, et al.
+
+Although some <<fblangref40-ddl-db-alter,`ALTER DATABASE`>> clauses (`BEGIN BACKUP`) can be considered as management statements, they are documented in the _DDL_ chapter.
+====
+
+[[fblangref40-management-datatypes]]
+== Data Type Behaviour
+
+[[fblangref40-management-setbind]]
+=== `SET BIND` (Data Type Coercion Rules)
+
+.Used for
+Configuring data type coercion rules
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+macros]
+----
+SET BIND OF <type_from> TO <type_to>
+
+<type_from> ::=
+    <scalar_datatype>
+  | <blob_datatype>
+  | TIME ZONE
+  | VARCHAR | {CHARACTER | CHAR} VARYING
+
+<type_to> ::=
+    <scalar_datatype>
+  | <blob_datatype>
+  | VARCHAR | {CHARACTER | CHAR} VARYING
+  | LEGACY | NATIVE | EXTENDED
+  | EXTENDED TIME WITH TIME ZONE
+  | EXTENDED TIMESTAMP WITH TIME ZONE
+
+<scalar_datatype> ::=
+  !! See <<fblangref40-datatypes-syntax-scalar,Scalar Data Types Syntax>> !!
+
+<blob_datatype> ::=
+  !! See <<fblangref40-datatypes-syntax-blob,BLOB Data Types Syntax>> !!
+----
+
+`SET BIND` configures data type coercion rules for the current session.
+This statement makes it possible to substitute one data type with another when performing client-server interactions.
+In other words, _type_from_ returned by the engine is represented as _type_to_ in the client API.
+
+[NOTE]
+====
+Only fields returned by the database engine in regular messages are substituted according to these rules.
+Variables returned as an array slice are not affected by the `SET BIND` statement.
+====
+
+When an incomplete type definition is used (i.e. simply `CHAR` instead of `CHAR(n)`) in _from_type_, the coercion is performed for all `CHAR` columns.
+The special incomplete type `TIME ZONE` stands for `TIME WITH TIME ZONE` and `TIMESTAMP WITH TIME ZONE`.
+When an incomplete type definition is used in _to_type_, the engine defines missing details about that type automatically based on source column.
+
+Changing the binding of any `NUMERIC` or `DECIMAL` data type does not affect the underlying integer type.
+In contrast, changing the binding of an integer data type also affects appropriate NUMERICs/DECIMALs (e.g. `SET BIND OF INT128 TO DOUBLE PRECISION` will also map `NUMERIC` and `DECIMAL` with precision 19 or higher, as these types use `INT128` as their underlying type).
+
+The special type `LEGACY` is used when a data type, missing in previous Firebird version, should be represented in a way, understandable by old client software (possibly with some data loss).
+The coercion rules applied in this case are shown in the table below.
+
+[[fblangref40-management-legacy-coercion-rules]]
+.Native to `LEGACY` coercion rules
+[cols="1,1", options="header",stripes="none"]
+|===
+| Native data type
+| Legacy data type
+
+|BOOLEAN
+|CHAR(5)
+
+|DECFLOAT
+|DOUBLE PRECISION
+
+|INT128
+|BIGINT
+
+|TIME WITH TIME ZONE
+|TIME WITHOUT TIME ZONE
+
+|TIMESTAMP WITH TIME ZONE
+|TIMESTAMP WITHOUT TIME ZONE
+|===
+
+Using `EXTENDED` for _type_to_ causes the engine to coerce to an extended form of the _type_from_ data type.
+Currently, this works only for `TIME/TIMESTAMP WITH TIME ZONE`, they are coerced to `EXTENDED TIME/TIMESTAMP WITH TIME ZONE`.
+The `EXTENDED` type contains both the time zone name, and the corresponding GMT offset, so it remains usable if the client application cannot process named time zones properly (e.g. due to the missing ICU library).
+
+Setting a binding to `NATIVE` resets the existing coercion rule for this data type and returns it in its native format.
+
+The initial bind rules of a connection be configured through the DPB by providing a semi-colon separated list of `<type_from> TO <type_to>` options as the string value of _isc_dpb_set_bind_.
+
+Execution of <<fblangref40-management-session-reset-alter>> will revert to the binding rules configured through the DPB, or otherwise the system default.
+
+[TIP]
+====
+It is also possible to configure a default set of data type coercion rules for all clients through the `DataTypeCompatibility` configuration option, either as a global configuration in `firebird.conf` or per database in `databases.conf`.
+
+`DataTypeCompatibility` currently has two possible values: `3.0` and `2.5`.
+The `3.0` option maps data types introduced after Firebird 3.0 -- in particular `DECIMAL`/`NUMERIC` with precision 19 or higher, `DECFLOAT`, `TIME/TIMESTAMP WITH TIME ZONE` -- to data types supported in Firebird 3.0.
+The `2.5` option also converts the `BOOLEAN` data type.
+
+See the <<fblangref40-management-legacy-coercion-rules>> for details.
+This setting allows legacy client applications to work with Firebird 4.0 without recompiling or otherwise adjusting them to understand the new data types.
+====
+
+[[fblangref40-management-setbind-exmpl]]
+==== `SET BIND` Examples
+
+[source]
+----
+-- native
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+                 123.45
+
+-- double
+SET BIND OF DECFLOAT TO DOUBLE PRECISION;
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+      123.4500000000000
+
+-- still double
+SET BIND OF DECFLOAT(34) TO CHAR;
+SELECT CAST('123.45' AS DECFLOAT(16)) FROM RDB$DATABASE;
+
+                   CAST
+=======================
+      123.4500000000000
+
+-- text
+SELECT CAST('123.45' AS DECFLOAT(34)) FROM RDB$DATABASE;
+
+CAST
+==========================================
+123.45
+----
+
+In the case of missing ICU on the client side:
+
+[source]
+----
+SELECT CURRENT_TIMESTAMP FROM RDB$DATABASE;
+
+                                        CURRENT_TIMESTAMP
+=========================================================
+2020-02-21 16:26:48.0230 GMT*
+
+SET BIND OF TIME ZONE TO EXTENDED;
+SELECT CURRENT_TIMESTAMP FROM RDB$DATABASE;
+
+                                        CURRENT_TIMESTAMP
+=========================================================
+2020-02-21 19:26:55.6820 +03:00
+----
+
+[[fblangref40-management-setdecfloat]]
+=== `SET DECFLOAT`
+
+.Used for
+Configuring `DECFLOAT` rounding and error behaviour
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+SET DECFLOAT
+  { ROUND <round_mode>
+  | TRAPS TO [<trap_opt> [, <trap_opt> ...]] }
+
+<round_mode> ::=
+    CEILING | UP | HALF_UP | HALF_EVEN
+  | HALF_DOWN | DOWN | FLOOR | REROUND
+
+<trap_opt> ::=
+    DIVISON_BY_ZERO | INEXACT | INVALID_OPERATION
+  | OVERFLOW | UNDERFLOW
+----
+
+`SET DECFLOAT` configures the rounding and error behaviour of operations on `DECFLOAT` types in the current session.
+
+[[fblangref40-management-setdecfl-rnd]]
+=== `SET DECFLOAT ROUND`
+
+`SET DECFLOAT ROUND` changes the rounding behaviour of operations on `DECFLOAT`.
+The default rounding mode is `HALF_UP`.
+The initial configuration of a connection can also be specified using the DPB tag `isc_dpb_decfloat_round` with the desired _round_mode_ as string value.
+
+The valid rounding modes are:
+
+[horizontal]
+`CEILING`:: towards +infinity
+`UP`:: away from 0
+`HALF_UP`:: to nearest, if equidistant, then up (default)
+`HALF_EVEN`:: to nearest, if equidistant, ensure last digit in the result will be even
+`HALF_DOWN`:: to nearest, if equidistant, then down
+`DOWN`:: towards 0
+`FLOOR`:: towards -infinity
+`REROUND`:: up if digit to be rounded is 0 or 5, down in other cases
+
+Execution of <<fblangref40-management-session-reset-alter>> will revert to the value configured through the DPB, or otherwise the system default.
+
+[[fblangref40-management-setdecfl-traps]]
+=== `SET DECFLOAT TRAPS`
+
+`SET DECFLOAT TRAPS` changes the error behaviour of operations on `DECFLOAT`.
+The default traps are `DIVISION_BY_ZERO,INVALID_OPERATION,OVERFLOW`;
+this default matches the behaviour specified in the SQL:2016 standard for `DECFLOAT`.
+This statement controls whether certain exceptional conditions result in an error ("`trap`") or alternative handling (for example, an underflow returns `0` when not set, or an overflow returns an infinity).
+The initial configuration of a connection can also be specified using the DPB tag `isc_dpb_decfloat_traps` with the desired comma-separated _trap_opt_ values as a string value.
+
+Valid trap options (exceptional conditions) are:
+
+[horizontal]
+`Division_by_zero`:: (set by default)
+`Inexact`:: --
+`Invalid_operation`:: (set by default)
+`Overflow`:: (set by default)
+`Underflow`:: --
+
+Execution of <<fblangref40-management-session-reset-alter>> will revert to the value configured through the DPB, or otherwise the system default.
+
+[[fblangref40-management-extpool]]
+== Connections Pool Management
+
+Management statements to manage the external connections pool.
+
+[[fblangref40-management-extpool-alter]]
+=== `ALTER EXTERNAL CONNECTIONS POOL`
+
+.Used for
+Managing the external connections pool
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER EXTERNAL CONNECTIONS POOL
+  { CLEAR ALL
+  | CLEAR OLDEST
+  | SET LIFETIME _lifetime_ <time-unit>
+  | SET SIZE _size_ }
+
+<time-unit> ::= SECOND | MINUTE | HOUR
+----
+
+[[fblangref40-ddl-tbl-extpoolalt]]
+.`ALTER EXTERNAL CONNECTIONS POOL` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|lifetime
+|Maximum lifetime of a connection in the pool.
+Minimum values is `1 SECOND`, maximum is `24 HOUR`.
+
+|size
+|Maximum size of the connection pool.
+Range 0 - 1000.
+Setting to `0` disables the external connections pool.
+
+|===
+
+When prepared it is described like a DDL statement but its effect is immediate -- it is executed immediately and completely, without waiting for transaction commit.
+
+The statements can be issued from any connection, and changes are applied to the in-memory instance of the pool in the current Firebird process.
+If the process is a Classic one, a change submitted there does not affect other Classic processes.
+
+Changes made with `ALTER EXTERNAL CONNECTIONS POOL` are not persistent: after a restart, Firebird will use the pool settings configured in `firebird.conf` by `ExtConnPoolSize` and `ExtConnPoolLifeTime`.
+
+[[fblangref40-management-extpool-alter-cls]]
+==== Clauses of `ALTER EXTERNAL CONNECTIONS POOL`
+
+`CLEAR ALL`::
+Closes all idle connections and disassociates currently active connections so they are immediately closed when unused.
+
+`CLEAR OLDEST`::
+Closes expired connections
+
+`SET LIFETIME`::
+Configures the maximum lifetime of an idle connection in the pool.
+The default value (in seconds) is set using the parameter `ExtConnPoolLifetime` in `firebird.conf`.
+
+`SET SIZE`::
+Configures the maximum number of idle connections in the pool.
+The default value is set using the parameter `ExtConnPoolSize` in `firebird.conf`.
+
+[[fblangref40-management-extpool-how]]
+==== How the Connection Pool Works
+
+Every successful connection is associated with a pool, which maintains two lists -- one for idle connections and one for active connections.
+When a connection in the "`active`" list has no active requests and no active transactions, it is assumed to be "`unused`".
+A reset of the unused connection is attempted using an `ALTER SESSION RESET` statement and,
+
+* if the reset succeeds (no errors occur) the connection is moved into the "`idle`" list;
+* if the reset fails, the connection is closed;
+* if the pool has reached its maximum size, the oldest idle connection is closed.
+* When the _lifetime_ of an idle connection expires, it is deleted from the pool and closed.
+
+[[fblangref40-management-extpool-new-conn]]
+===== New Connections
+
+When the engine is asked to create a new external connection, the pool first looks for a candidate in the "`idle`" list.
+The search, which is case-sensitive, involves four parameters:
+
+. connection string
+. username
+. password
+. role
+
+If suitable connection is found, it is tested to check that it is still alive.
+
+* If it fails the check, it is deleted, and the search is repeated, without reporting any error to the client
+* Otherwise, the live connection is moved from the "`idle`" list to the "`active`" list and returned to the caller
+* If there are multiple suitable connections, the most recently used one is chosen
+* If there is no suitable connection, a new one is created and added to the "`active`" list.
+
+[[fblangref40-management-extpool-alter-who]]
+==== Who Can Alter the External Connections Pool
+
+The `ALTER EXTERNAL CONNECTIONS POOL` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* Users with the `MODIFY_EXT_CONN_POOL` privilege
+
+.See also
+<<fblangref40-scalarfuncs-get-context,`RDB$GET_CONTEXT`>>
+
+[[fblangref40-management-role]]
+== Changing the Current Role
+
+[[fblangref40-management-role-set]]
+=== `SET ROLE`
+
+.Used for
+Changing the role of the current session
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET ROLE {_role_name_ | NONE}
+----
+
+.`SET ROLE` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|role_name
+|The name of the role to apply
+|===
+
+The `SET ROLE` statement allows a user to assume a different role;
+it sets the `CURRENT_ROLE` context variable to _role_name_, if that role has been granted to the `CURRENT_USER`.
+For this session, the user receives the privileges granted by that role.
+Any rights granted to the previous role are removed from the session.
+Use `NONE` instead of _role_name_ to clear the `CURRENT_ROLE`.
+
+When the specified role does not exist or has not been explicitly granted to the user, the error "`__Role *role_name* is invalid or unavailable__`" is raised.
+
+[[fblangref40-management-role-set-exmpl]]
+==== `SET ROLE` Examples
+
+. Change the current role to `MANAGER`
++
+[source]
+----
+SET ROLE manager;
+select current_role from rdb$database;
+
+ROLE
+=======================
+MANAGER
+----
+. Clear the current role
++
+[source]
+----
+SET ROLE NONE;
+select current_role from rdb$database;
+
+ROLE
+=======================
+NONE
+----
+
+.See also
+<<fblangref40-management-role-set-trusted>>, <<fblangref40-security-grant,`GRANT`>>
+
+[[fblangref40-management-role-set-trusted]]
+=== `SET TRUSTED ROLE`
+
+.Used for
+Changes role of the current session to the trusted role
+
+.Available in
+DSQL
+
+.Syntax
+[listing]
+----
+SET TRUSTED ROLE
+----
+
+The `SET TRUSTED ROLE` statement makes it possible to assume the role assigned to the user through a mapping rule (see <<fblangref40-security-mapping,Mapping of Users to Objects>>).
+The role assigned through a mapping rule is assumed automatically on connect, if the user hasn't specified an explicit role.
+The `SET TRUSTED ROLE` statement makes it possible to assume the mapped (or "`trusted`") role at a later time, or to assume it again after the current role was changed using `SET ROLE`.
+
+A trusted role is not a specific type of role, but can be any role that was created using `CREATE ROLE`, or a predefined system role such as `RDB$ADMIN`.
+An attachment (session) has a trusted role when the <<fblangref40-security-mapping,security objects mapping subsystem>> finds a match between the authentication result passed from the plugin and a local or global mapping to a role for the current database.
+The role may be one that is not granted explicitly to that user.
+
+When a session has no trusted role, executing `SET TRUSTED ROLE` will raise error "`__Your attachment has no trusted role__`".
+
+[NOTE]
+====
+While the `CURRENT_ROLE` can be changed using `SET ROLE`, it is not always possible to revert to a trusted role using the same command, because `SET ROLE` checks if the role has been granted to the user.
+With `SET TRUSTED ROLE`, the trusted role can be assumed again even when `SET ROLE` fails.
+====
+
+[[fblangref40-management-role-set-trusted-exmpl]]
+==== `SET TRUSTED ROLE` Examples
+
+. Assuming a mapping rule that assigns the role `ROLE1` to a user `ALEX`:
++
+[source]
+-----
+CONNECT 'employee' USER ALEX PASSWORD 'password';
+SELECT CURRENT_ROLE FROM RDB$DATABASE;
+
+ROLE
+===============================
+ROLE1
+
+SET ROLE ROLE2;
+SELECT CURRENT_ROLE FROM RDB$DATABASE;
+
+ROLE
+===============================
+ROLE2
+
+SET TRUSTED ROLE;
+SELECT CURRENT_ROLE FROM RDB$DATABASE;
+
+ROLE
+===============================
+ROLE1
+-----
+
+.See also
+<<fblangref40-management-role-set>>, <<fblangref40-security-mapping,Mapping of Users to Objects>>
+
+[[fblangref40-management-timeouts]]
+== Session Timeouts
+
+Statements for management of timeouts of the current connection.
+
+[[fblangref40-management-setsessionidle]]
+=== `SET SESSION IDLE TIMEOUT`
+
+.Used for
+Changing the session idle timeout
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET SESSION IDLE TIMEOUT _value_ [<time-unit>]
+
+<time-unit> ::= MINUTE | HOUR | SECOND
+----
+
+.`SET SESSION IDLE TIMEOUT` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|value
+|The timeout duration expressed in _time-unit_.
+A value of `0` defers to connection idle timeout configured for the database.
+
+|time-unit
+|Time unit of the timeout.
+Defaults to `MINUTE`.
+|===
+
+The `SET SESSION IDLE TIMEOUT` sets an idle timeout at connection level and takes effect immediately.
+The statement can run outside transaction control (without an active transaction).
+
+Setting a _value_ larger than configured for the database is allowed, but is effectively ignored, see also _<<fblangref40-management-session-timeout-effective>>_.
+
+The current timeout set for the session can be retrieved through <<fblangref40-scalarfuncs-get-context,`RDB$GET_CONTEXT`>>, namespace `SYSTEM` and variable `SESSION_IDLE_TIMEOUT`.
+Information is also available from `MON$ATTACHMENTS`:
+
+`MON$IDLE_TIMEOUT`::
+Connection-level idle timeout in seconds;
+`0` if timeout is not set.
+
+`MON$IDLE_TIMER`::
+Idle timer expiration time;
+contains `NULL` if an idle timeout was not set, or if a timer is not running.
+
+Both `RDB$GET_CONTEXT('SYSTEM', 'SESSION_IDLE_TIMEOUT')` and `MON$ATTACHMENTS.MON$IDLE_TIMEOUT` report the idle timeout configured for the connection;
+they do not report the effective idle timeout.
+
+The session idle timeout is reset when <<fblangref40-management-session-reset-alter>> is executed.
+
+[[fblangref40-management-session-timeouts]]
+==== Idle Session Timeouts
+
+An idle session timeout allows a use connection to close automatically after a specified period of inactivity.
+A database administrator can use it to enforce closure of old connections that have become inactive, to reduce unnecessary consumption of resources.
+It can also be used by application and tools developers as an alternative to writing their own modules for controlling connection lifetime.
+
+By default, the idle timeout is not enabled.
+No minimum or maximum limit is imposed, but a reasonably large period -- such as a few hours -- is recommended.
+
+[[fblangref40-management-session-timeouts-how]]
+===== How the Idle Session Timeout Works
+
+* When the user API call leaves the engine (returns to the calling connection) a special idle timer associated with the current connection is started
+* When another user API call from that connection enters the engine, the idle timer is stopped and reset to zero
+* If the maximum idle time is exceeded, the engine immediately closes the connection in the same way as with asynchronous connection cancellation:
++
+** all active statements and cursors are closed
+** all active transactions are rolled back
+** The network connection remains open at this point, allowing the client application to get the exact error code on the next API call.
+The network connection will be closed on the server side, after an error is reported or in due course as a result of a network timeout from a client-side disconnection.
+
+[NOTE]
+====
+Whenever a connection is cancelled, the next user API call returns the error `isc_att_shutdown` with a secondary error specifying the exact reason.
+Now, we have
+
+`isc_att_shut_idle`:: Idle timeout expired
+
+in addition to
+
+`isc_att_shut_killed`:: Killed by database administrator
+`isc_att_shut_db_down`:: Database is shut down
+`isc_att_shut_engine`:: Engine is shut down
+====
+
+[[fblangref40-management-session-timeouts-setting]]
+===== Setting the Idle Session Timeout
+
+[NOTE]
+====
+The idle timer will not start if the timeout period is set to zero.
+====
+
+An idle session timeout can be set:
+
+* At database level, the database administrator can set the configuration parameter `ConnectionIdleTimeout`, an integer value **in minutes**.
+The default value of zero means no timeout is set.
+It is configurable per-database, so it may be set globally in `firebird.conf` and overridden for individual databases in `databases.conf` as required.
++
+The scope of this method is all user connections, except system connections (garbage collector, cache writer, etc.).
+* at connection level, the idle session timeout is supported by both the `SET SESSION IDLE TIMEOUT` statement and the API (`setIdleTimeout`).
+The scope of this method is specific to the supplied connection (attachment).
+Its value in the API is **in seconds**.
+In the SQL syntax it can be hours, minutes or seconds.
+Scope for this method is the connection to which it is applied.
+
+[NOTE]
+====
+For more information about the API calls, consult the _Firebird 4.0 Release Notes_.
+====
+
+[[fblangref40-management-session-timeout-effective]]
+===== Determining the Timeout that is In Effect
+
+The effective idle timeout value is determined whenever a user API call leaves the engine, checking first at connection level and then at database level.
+A connection-level timeout can override the value of a database-level setting, as long as the period of time for the connection-level setting is no longer than any non-zero timeout that is applicable at database level.
+
+[IMPORTANT]
+====
+Take note of the difference between the time units at each level.
+At database level, in the configuration files, the unit for `SessionTimeout` is minutes.
+In SQL, the default unit is minutes but can be expressed in hours or seconds explicitly.
+At the API level, the unit is seconds.
+
+Absolute precision is not guaranteed in any case, especially when the system load is high, but timeouts are guaranteed not to expire earlier than the moment specified.
+====
+
+[[fblangref40-management-setstatementtimeout]]
+=== `SET STATEMENT TIMEOUT`
+
+.Used for
+Changing the statement timeout for a connection
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET STATEMENT TIMEOUT _value_ [<time-unit>]
+
+<time-unit> ::= SECOND | MILLISECOND | MINUTE | HOUR
+----
+
+.`SET STATEMENT TIMEOUT` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|value
+|The timeout duration expressed in _time-unit_.
+A value of `0` defers to statement timeout configured for the database.
+
+|time-unit
+|Time unit of the timeout.
+Defaults to `SECOND`.
+|===
+
+The `SET SESSION IDLE TIMEOUT` sets an idle timeout at connection level and takes effect immediately.
+The statement can run outside transaction control (without an active transaction).
+
+Setting a _value_ larger than configured for the database is allowed, but is effectively ignored, see also _<<fblangref40-management-stmnt-timeout-effective>>_.
+
+The current statement timeout set for the session can be retrieved through <<fblangref40-scalarfuncs-get-context,`RDB$GET_CONTEXT`>>, namespace `SYSTEM` and variable `STATEMENT_TIMEOUT`. Information is also available from `MON$ATTACHMENTS`:
+
+`MON$STATEMENT_TIMEOUT`::
+Connection-level statement timeout in milliseconds;
+`0` if timeout is not set.
+
+In `MON$STATEMENTS`:
+
+`MON$STATEMENT_TIMEOUT`::
+Statement-level statement timeout in milliseconds;
+`0` if timeout is not set.
+
+`MON$STATEMENT_TIMER`::
+Timeout timer expiration time;
+contains `NULL` if an idle timeout was not set, or if a timer is not running.
+
+Both `RDB$GET_CONTEXT('SYSTEM', 'SESSION_IDLE_TIMEOUT')` and `MON$ATTACHMENTS.MON$IDLE_TIMEOUT` report the idle timeout configured for the connection, and `MON$STATEMENTS$STATEMENT_TIMEOUT` for the statement;
+they do not report the effective statement timeout.
+
+The statement timeout is reset when <<fblangref40-management-session-reset-alter>> is executed.
+
+[[fblangref40-management-stmnt-timeouts]]
+==== Statement Timeouts
+
+The statement timeout feature allows execution of a statement to be stopped automatically when it has been running longer than a given timeout period.
+It gives the database administrator an instrument for limiting excessive resource consumption from heavy queries.
+
+Statement timeouts can also be useful to application developers when creating and debugging complex queries without advance knowledge of execution time.
+Testers and others could find them handy for detecting long-running queries and establishing finite run times for test suites.
+
+[[fblangref40-management-stmt-timeouts-how]]
+===== How the Statement Timeout Works
+
+When the statement starts execution, or a cursor is opened, the engine starts a special timer.
+It is stopped when the statement completes execution, or the last record has been fetched by the cursor.
+
+[NOTE]
+====
+A fetch does not reset this timer.
+====
+
+When the timeout point is reached:
+
+* if statement execution is active, it stops at closest possible moment
+* if statement is not active currently (between fetches, for example), it is marked as cancelled, and the next fetch will actually break execution and return an error
+
+.Statement types excluded from timeouts
+[NOTE]
+====
+Statement timeouts are not applicable to some types of statement and will simply be ignored:
+
+* All DDL statements
+* All internal queries issued by the engine itself
+====
+
+[[fblangref40-management-stmnt-timeouts-setting]]
+===== Setting a Statement Timeout
+
+[NOTE]
+====
+The timer will not start if the timeout period is set to zero.
+====
+
+A statement timeout can be set:
+
+* at database level, by the database administrator, by setting the configuration parameter `StatementTimeout` in `firebird.conf` or `databases.conf`.
+`StatementTimeout` is an integer representing the number of seconds after which statement execution will be cancelled automatically by the engine.
+Zero means no timeout is set.
+A non-zero setting will affect all statements in all connections.
+* at connection level, using `SET STATEMENT TIMEOUT` or the API for setting a statement timeout (`setStatementTimeout`).
+A connection-level setting (via SQL or the API) affects all statements for the given connection;
+units for the timeout period at this level can be specified to any granularity from hours to milliseconds.
+* at statement level, using the API, in milliseconds
+
+[[fblangref40-management-stmnt-timeout-effective]]
+===== Determining the Statement Timeout that is In Effect
+
+The statement timeout value that is in effect is determined whenever a statement starts executing, or a cursor is opened.
+In searching out the timeout in effect, the engine goes up through the levels, from statement through to database and/or global levels until it finds a non-zero value.
+If the value in effect turns out to be zero then no statement timer is running and no timeout applies.
+
+A statement-level or connection-level timeout can override the value of a database-level setting, as long as the period of time for the lower-level setting is no longer than any non-zero timeout that is applicable at database level.
+
+[IMPORTANT]
+====
+Take note of the difference between the time units at each level.
+At database level, in the conf file, the unit for `StatementTimeout` is seconds.
+In SQL, the default unit is seconds but can be expressed in hours, minutes or milliseconds explicitly.
+At the API level, the unit is milliseconds.
+
+Absolute precision is not guaranteed in any case, especially when the system load is high, but timeouts are guaranteed not to expire earlier than the moment specified.
+====
+
+Whenever a statement times out and is cancelled, the next user API call returns the error `isc_cancelled` with a secondary error specifying the exact reason, viz.,
+
+`isc_cfg_stmt_timeout`:: Config level timeout expired
+`isc_att_stmt_timeout`:: Attachment level timeout expired
+`isc_req_stmt_timeout`:: Statement level timeout expired
+
+[NOTE]
+.Notes about Statement Timeouts
+====
+. A client application could wait longer than the time set by the timeout value if the engine needs to undo a large number of actions as a result of the statement cancellation
+. When the engine runs an `EXECUTE STATEMENT` statement, it passes the remainder of the currently active timeout to the new statement.
+If the external (remote) engine does not support statement timeouts, the local engine silently ignores any corresponding error.
+. When the engine acquires some lock from the lock manager, it tries to lower the value of the lock timeout using the remainder of the currently active statement timeout, if possible.
+Due to lock manager internals, any statement timeout remainder will be rounded up to whole seconds.
+====
+
+[[fblangref40-management-session-tz]]
+== Time Zone Management
+
+Statements for management of time zone features of the current connections.
+
+[[fblangref40-management-settimezone]]
+=== `SET TIME ZONE`
+
+.Used for
+Changing the session time zone
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET TIME ZONE { _time_zone_string_ | LOCAL }
+----
+
+Changes the session time zone to the specified time zone.
+Specifying `LOCAL` will revert to initial session time zone of the session (either the default or as specified through connection property `isc_dpb_session_time_zone`).
+
+Executing <<fblangref40-management-session-reset-alter>> has the same effect on the session time zone as `SET TIME ZONE LOCAL`, but will also reset other session properties.
+
+[[fblangref40-management-settimezone-exmpl]]
+==== `SET TIME ZONE` Examples
+
+[source]
+----
+set time zone '-02:00';
+set time zone 'America/Sao_Paulo';
+set time zone local;
+----
+
+[[fblangref40-management-session-reset]]
+== Reset Session State
+
+[[fblangref40-management-session-reset-alter]]
+=== `ALTER SESSION RESET`
+
+.Used for
+Resetting session state to its initial values
+
+.Available in
+DSQL, PSQL
+
+.Syntax
+[listing]
+----
+ALTER SESSION RESET
+----
+
+`ALTER SESSION RESET` resets the current user session to its initial state.
+It can be useful for reusing the connection by a client application (for example, by a client-side connection pool).
+When this statement is executed, all user context variables are cleared, contents of global temporary tables are cleared, and all session-level settings are reset to their initial values.
+
+It is possible to execute `ALTER SESSION RESET` without a transaction.
+
+Execution of `ALTER SESSION RESET` performs the following steps:
+
+* Error _isc_ses_reset_err_ (`335545206`) is raised if any transaction is active in the current session other than the current transaction(the one executing `ALTER SESSION RESET`) and two-phase transactions in the prepared state.
+* System variable <<fblangref40-contextvars-resetting,`RESETTING`>> is set to TRUE.
+* `ON DISCONNECT` database triggers are fired, if present and if database triggers are not disabled for the current connection.
+* The current transaction (the one executing `ALTER SESSION RESET`), if present, is rolled back.
+A warning is reported if this transaction modified data before resetting the session.
+* Session configuration is reset to their initial values.
+This includes, but is not limited to:
+** `DECFLOAT` parameters (`TRAP` and `ROUND`) and reset to the initial values defined using the DPB at connect time, or otherwise the system default.
+** Session and statement timeouts are reset to zero.
+** The current role is restored to the initial value defined using DPB at connect time, and -- if the role changed -- the security classes cache is cleared.
+** The session time zone is reset to the initial value defined using the DPB at connect time, or otherwise the system default.
+** The bind configuration is reset to the initial value defined using the DPB at connect time, or otherwise the database or system default.
+** In general, configuration values should revert to the values configured using DPB at connect time, or otherwise the database or system default.
+* Context variables defined for the `USER_SESSION` namespace are removed.
+* Global temporary tables defined as `ON COMMIT PRESERVE ROWS` are truncated (their contents is cleared).
+* `ON CONNECT` database triggers are fired, if present and if database triggers are not disabled for the current connection.
+* A new transaction is implicitly started with the same parameters as the transaction that was rolled back (if there was a transaction)
+* System variable `RESETTING` is set to FALSE.
+
+[NOTE]
+====
+* The context variables `CURRENT_USER` and `CURRENT_CONNECTION` will not be changed.
+* As _isql_ starts multiple transactions for a single connection, `ALTER SESSION RESET` cannot be executed in _isql_.
+====
+
+[[fblangref40-management-session-reset-err]]
+==== Error Handling
+
+Any error raised by `ON DISCONNECT` triggers aborts the session reset and leave the session state unchanged.
+Such errors are reported using primary error code _isc_session_reset_err_ (`335545206`) and error text _"Cannot reset user session"_.
+
+Any error raised after `ON DISCONNECT` triggers (including the ones raised by `ON CONNECT` triggers) aborts both the session reset and the connection itself.
+Such errors are reported using primary error code _isc_ses_reset_failed_ (`335545272`) and error text _"Reset of user session failed. Connection is shut down."_.
+Subsequent operations on the connection (except detach) will fail with error _isc_att_shutdown_ (`335544856`).
+
+[[fblangref40-management-debug]]
+== Debugging
+
+[[fblangref40-management-setdebugoption]]
+=== `SET DEBUG OPTION`
+
+.Used for
+Setting debug options
+
+.Available in
+DSQL, PSQL
+
+.Introduced in
+Firebird 4.0.1
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET DEBUG OPTION _option-name_ = _value_
+----
+
+.Supported options
+[cols="<1m,<1m,<3", options="header",stripes="none"]
+|===
+^| Option name
+^| Value Type
+^| Description
+
+|DSQL_KEEP_BLR
+|BOOLEAN
+|Stores statement BLR for retrieval with `isc_info_sql_exec_path_blr_bytes` and `isc_info_sql_exec_path_blr_text`. +
+Added in Firebird 4.0.1.
+|===
+
+`SET DEBUG OPTION` configures debug information for the current connection.
+
+[WARNING]
+====
+Debug options are closely tied to engine internals and their usage is discouraged if you do not understand very well how these internals are subject to change between versions.
+====

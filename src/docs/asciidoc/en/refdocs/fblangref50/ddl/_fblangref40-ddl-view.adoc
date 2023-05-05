@@ -1,0 +1,465 @@
+[[fblangref40-ddl-view]]
+= `VIEW`
+
+A view is a virtual table that is actually a stored and named `SELECT` query for retrieving data of any complexity.
+Data can be retrieved from one or more tables, from other views and also from selectable stored procedures.
+
+Unlike regular tables in relational databases, a view is not an independent data set stored in the database.
+The result is dynamically created as a data set when the view is selected.
+
+The metadata of a view are available to the process that generates the binary code for stored procedures and triggers, just as though they were concrete tables storing persistent data.
+
+[[fblangref40-ddl-view-create]]
+== `CREATE VIEW`
+
+.Used for
+Creating a view
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE VIEW _viewname_ [<full_column_list>]
+  AS <select_statement>
+  [WITH CHECK OPTION]
+
+<full_column_list> ::= (_colname_ [, _colname_ ...])
+----
+
+[[fblangref40-ddl-view-createview-tbl]]
+.`CREATE VIEW` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|viewname
+|View name.
+The maximum length is 63 characters
+
+|select_statement
+|SELECT statement
+
+|full_column_list
+|The list of columns in the view
+
+|colname
+|View column name.
+Duplicate column names are not allowed.
+|===
+
+The `CREATE VIEW` statement creates a new view.
+The identifier (name) of a view must be unique among the names of all views, tables and stored procedures in the database.
+
+The name of the new view can be followed by the list of column names that should be returned to the caller when the view is invoked.
+Names in the list do not have to be related to the names of the columns in the base tables from which they derive.
+
+If the view column list is omitted, the system will use the column names and/or aliases from the `SELECT` statement.
+If duplicate names or non-aliased expression-derived columns make it impossible to obtain a valid list, creation of the view fails with an error.
+
+The number of columns in the view's list must exactly match the number of columns in the selection list of the underlying SELECT statement in the view definition.
+
+.Additional Points
+[NOTE]
+====
+* If the full list of columns is specified, it makes no sense to specify aliases in the `SELECT` statement because the names in the column list will override them
+* The column list is optional if all the columns in the `SELECT` are explicitly named and are unique in the selection list
+====
+
+[[fblangref40-ddl-view-create-updatable]]
+=== Updatable Views
+
+A view can be updatable or read-only.
+If a view is updatable, the data retrieved when this view is called can be changed by the DML statements `INSERT`, `UPDATE`, `DELETE`, `UPDATE OR INSERT` or `MERGE`.
+Changes made in an updatable view are applied to the underlying table(s).
+
+A read-only view can be made updateable with the use of triggers.
+Once triggers have been defined on a view, changes posted to it will never be written automatically to the underlying table, even if the view was updateable to begin with.
+It is the responsibility of the programmer to ensure that the triggers update (or delete from, or insert into) the base tables as needed.
+
+A view will be automatically updatable if all the following conditions are met:
+
+* the `SELECT` statement queries only one table or one updatable view
+* the `SELECT` statement does not call any stored procedures
+* each base table (or base view) column not present in the view definition meets one of the following conditions:
+** it is nullable
+** it has a non-``NULL`` default value
+** it has a trigger that supplies a permitted value
+* the `SELECT` statement contains no fields derived from subqueries or other expressions
+* the `SELECT` statement does not contain fields defined through aggregate functions (`MIN`, `MAX`, `AVG`, `SUM`, `COUNT`, `LIST`, etc.), statistical functions (`CORR`, `COVAR_POP`, `COVAR_SAMP`, etc.), linear regression functions (`REGR_AVGX`, `REGR_AVGY`, etc.) or any type of window function
+* the `SELECT` statement contains no `ORDER BY`, `GROUP BY` or `HAVING` clause
+* the `SELECT` statement does not include the keyword `DISTINCT` or row-restrictive keywords such as `ROWS`, `FIRST`, `SKIP`, `OFFSET` or `FETCH`
+
+[[fblangref40-ddl-view-create-chkopt]]
+=== `WITH CHECK OPTION`
+
+The optional `WITH CHECK OPTION` clause requires an updatable view to check whether new or updated data meet the condition specified in the `WHERE` clause of the `SELECT` statement.
+Every attempt to insert a new record or to update an existing one is checked whether the new or updated record would meet the `WHERE` criteria.
+If they fail the check, the operation is not performed and an appropriate error message is returned.
+
+`WITH CHECK OPTION` can be specified only in a `CREATE VIEW` statement in which a `WHERE` clause is present to restrict the output of the main `SELECT` statement.
+An error message is returned otherwise.
+
+.Please note:
+[IMPORTANT]
+====
+If `WITH CHECK OPTION` is used, the engine checks the input against the `WHERE` clause before passing anything to the base relation.
+Therefore, if the check on the input fails, any default clauses or triggers on the base relation that might have been designed to correct the input will never come into action.
+
+Furthermore, view fields omitted from the `INSERT` statement are passed as ``NULL``s to the base relation, regardless of their presence or absence in the `WHERE` clause.
+As a result, base table defaults defined on such fields will not be applied.
+Triggers, on the other hand, will fire and work as expected.
+
+For views that do not have `WITH CHECK OPTION`, fields omitted from the `INSERT` statement are not passed to the base relation at all, so any defaults will be applied.
+====
+
+[[fblangref40-ddl-view-create-who]]
+=== Who Can Create a View?
+
+The `CREATE VIEW` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* Users with the `CREATE VIEW` privilege
+
+The creator of a view becomes its owner.
+
+To create a view, a non-admin user also needs at least `SELECT` access to the underlying table(s) and/or view(s), and the `EXECUTE` privilege on any selectable stored procedures involved.
+
+To enable insertions, updates and deletions through the view, the creator/owner must also possess the corresponding `INSERT`, `UPDATE` and `DELETE` rights on the underlying object(s).
+
+Granting other users privileges on the view is only possible if the view owner has these privileges on the underlying objects `WITH GRANT OPTION`.
+It will always be the case if the view owner is also the owner of the underlying objects.
+
+[[fblangref40-ddl-view-create-example]]
+=== Examples of Creating Views
+
+. Creating view returning the `JOB_CODE` and `JOB_TITLE` columns only for those jobs where `MAX_SALARY` is less than $15,000.
++
+[source]
+----
+CREATE VIEW ENTRY_LEVEL_JOBS AS
+SELECT JOB_CODE, JOB_TITLE
+FROM JOB
+WHERE MAX_SALARY < 15000;
+----
+. Creating a view returning the `JOB_CODE` and `JOB_TITLE` columns only for those jobs where `MAX_SALARY` is less than $15,000.
+Whenever a new record is inserted or an existing record is updated, the `MAX_SALARY < 15000` condition will be checked.
+If the condition is not true, the insert/update operation will be rejected.
++
+[source]
+----
+CREATE VIEW ENTRY_LEVEL_JOBS AS
+SELECT JOB_CODE, JOB_TITLE
+FROM JOB
+WHERE MAX_SALARY < 15000
+WITH CHECK OPTION;
+----
+. Creating a view with an explicit column list.
++
+[source]
+----
+CREATE VIEW PRICE_WITH_MARKUP (
+  CODE_PRICE,
+  COST,
+  COST_WITH_MARKUP
+) AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.1
+FROM PRICE;
+----
+. Creating a view with the help of aliases for fields in the `SELECT` statement (the same result as in Example 3).
++
+[source]
+----
+CREATE VIEW PRICE_WITH_MARKUP AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.1 AS COST_WITH_MARKUP
+FROM PRICE;
+----
+. Creating a read-only view based on two tables and a stored procedure.
++
+[source]
+----
+CREATE VIEW GOODS_PRICE AS
+SELECT
+  goods.name AS goodsname,
+  price.cost AS cost,
+  b.quantity AS quantity
+FROM
+  goods
+  JOIN price ON goods.code_goods = price.code_goods
+  LEFT JOIN sp_get_balance(goods.code_goods) b ON 1 = 1;
+----
+
+.See also
+<<fblangref40-ddl-view-alter>>, <<fblangref40-ddl-view-crtoralter>>, <<fblangref40-ddl-view-recreate>>, <<fblangref40-ddl-view-drop>>
+
+[[fblangref40-ddl-view-alter]]
+== `ALTER VIEW`
+
+.Used for
+Modifying an existing view
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER VIEW _viewname_ [<full_column_list>]
+    AS <select_statement>
+    [WITH CHECK OPTION]
+
+<full_column_list> ::= (_colname_ [, _colname_ ...])
+----
+
+[[fblangref40-ddl-view-alterview-tbl]]
+.`ALTER VIEW` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|viewname
+|Name of an existing view
+
+|select_statement
+|SELECT statement
+
+|full_column_list
+|The list of columns in the view
+
+|colname
+|View column name.
+Duplicate column names are not allowed.
+|===
+
+Use the `ALTER VIEW` statement for changing the definition of an existing view.
+Privileges for views remain intact and dependencies are not affected.
+
+The syntax of the `ALTER VIEW` statement corresponds completely with that of `CREATE VIEW`.
+
+[CAUTION]
+====
+Be careful when you change the number of columns in a view.
+Existing application code and PSQL modules that access the view may become invalid.
+For information on how to detect this kind of problem in stored procedures and trigger, see <<fblangref40-appx01-supp-rdb-validblr,[ref]_The RDB$VALID_BLR Field_>> in the Appendix.
+====
+
+[[fblangref40-ddl-view-alter-who]]
+=== Who Can Alter a View?
+
+The `ALTER VIEW` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* The owner of the view
+* Users with the `ALTER ANY VIEW` privilege
+
+[[fblangref40-ddl-view-alter-example]]
+=== Example using `ALTER VIEW`
+
+.Altering the view `PRICE_WITH_MARKUP`
+[source]
+----
+ALTER VIEW PRICE_WITH_MARKUP (
+  CODE_PRICE,
+  COST,
+  COST_WITH_MARKUP
+) AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.15
+FROM PRICE;
+----
+
+.See also
+<<fblangref40-ddl-view-create>>, <<fblangref40-ddl-view-crtoralter>>, <<fblangref40-ddl-view-recreate>>
+
+[[fblangref40-ddl-view-crtoralter]]
+== `CREATE OR ALTER VIEW`
+
+.Used for
+Creating a new view or altering an existing view.
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE OR ALTER VIEW _viewname_ [<full_column_list>]
+  AS <select_statement>
+  [WITH CHECK OPTION]
+
+<full_column_list> ::= (_colname_ [, _colname_ ...])
+----
+
+[[fblangref40-ddl-view-crtalterview-tbl]]
+.`CREATE OR ALTER VIEW` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|viewname
+|Name of a view which may or may not exist
+
+|select_statement
+|SELECT statement
+
+|full_column_list
+|The list of columns in the view
+
+|colname
+|View column name.
+Duplicate column names are not allowed.
+|===
+
+Use the `CREATE OR ALTER VIEW` statement for changing the definition of an existing view or creating it if it does not exist.
+Privileges for an existing view remain intact and dependencies are not affected.
+
+The syntax of the `CREATE OR ALTER VIEW` statement corresponds completely with that of `CREATE VIEW`.
+
+[[fblangref40-ddl-view-crtoralter-example]]
+=== Example of `CREATE OR ALTER VIEW`
+
+.Creating the new view `PRICE_WITH_MARKUP` view or altering it if it already exists
+[source]
+----
+CREATE OR ALTER VIEW PRICE_WITH_MARKUP (
+  CODE_PRICE,
+  COST,
+  COST_WITH_MARKUP
+) AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.15
+FROM PRICE;
+----
+
+.See also
+<<fblangref40-ddl-view-create>>, <<fblangref40-ddl-view-alter>>, <<fblangref40-ddl-view-recreate>>
+
+[[fblangref40-ddl-view-drop]]
+== `DROP VIEW`
+
+.Used for
+Deleting (dropping) a view
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP VIEW _viewname_
+----
+
+[[fblangref40-ddl-view-dropview-tbl]]
+.`DROP VIEW` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|viewname
+|View name
+|===
+
+The `DROP VIEW` statement drops (deletes) an existing view.
+The statement will fail if the view has dependencies.
+
+[[fblangref40-ddl-view-drop-who]]
+=== Who Can Drop a View?
+
+The `DROP VIEW` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* The owner of the view
+* Users with the `DROP ANY VIEW` privilege
+
+[[fblangref40-ddl-view-drop-example]]
+=== Example
+
+.Deleting the `PRICE_WITH_MARKUP` view
+[source]
+----
+DROP VIEW PRICE_WITH_MARKUP;
+----
+
+.See also
+<<fblangref40-ddl-view-create>>, <<fblangref40-ddl-view-recreate>>, <<fblangref40-ddl-view-crtoralter>>
+
+[[fblangref40-ddl-view-recreate]]
+== `RECREATE VIEW`
+
+.Used for
+Creating a new view or recreating an existing view
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+RECREATE VIEW _viewname_ [<full_column_list>]
+  AS <select_statement>
+  [WITH CHECK OPTION]
+
+<full_column_list> ::= (_colname_ [, _colname_ ...])
+----
+
+[[fblangref40-ddl-tbl-view-recreate]]
+.`RECREATE VIEW` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|viewname
+|View name.
+The maximum length is 63 characters
+
+|select_statement
+|SELECT statement
+
+|full_column_list
+|The list of columns in the view
+
+|colname
+|View column name.
+Duplicate column names are not allowed.
+|===
+
+Creates or recreates a view.
+If there is a view with this name already, the engine will try to drop it before creating the new instance.
+If the existing view cannot be dropped, because of dependencies or insufficient rights, for example, `RECREATE VIEW` fails with an error.
+
+[[fblangref40-ddl-view-recreate-example]]
+=== Example of `RECREATE VIEW`
+
+.Creating the new view `PRICE_WITH_MARKUP` view or recreating it, if it already exists
+[source]
+----
+RECREATE VIEW PRICE_WITH_MARKUP (
+  CODE_PRICE,
+  COST,
+  COST_WITH_MARKUP
+) AS
+SELECT
+  CODE_PRICE,
+  COST,
+  COST * 1.15
+FROM PRICE;
+----
+
+.See also
+<<fblangref40-ddl-view-create>>, <<fblangref40-ddl-view-drop>>, <<fblangref40-ddl-view-crtoralter>>

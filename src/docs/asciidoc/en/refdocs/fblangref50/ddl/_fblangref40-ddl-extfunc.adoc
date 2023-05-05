@@ -1,0 +1,368 @@
+[[fblangref40-ddl-extfunc]]
+= `EXTERNAL FUNCTION`
+
+[NOTE]
+====
+External functions (UDFs) have been aggressively deprecated in Firebird 4.0:
+
+* The default setting for the configuration parameter `UdfAccess` is `None`.
+In order to run UDFs at all will now require an explicit configuration of `Restrict __path-list__`
+* The UDF libraries (`ib_udf`, `fbudf`) are no longer distributed in the installation kits
+* Most of the functions in the libraries previously distributed in the shared (dynamic) libraries `ib_udf` and `fbudf` had already been replaced with built-in functional analogs.
+A few remaining UDFs have been replaced with either analog routines in a new library of UDRs named `udf_compat` or converted to stored functions.
++
+Refer to _Deprecation of External Functions (UDFs)_ in the _Compatibility_ chapter of the Firebird 4.0 Release notes for details and instructions about upgrading to use the safe functions.
+* Replacement of UDFs with UDRs or stored functions is strongly recommended
+====
+
+External functions, also known as "`User-Defined Functions`" (UDFs) are programs written in an external programming language and stored in dynamically loaded libraries.
+Once declared in a database, they become available in dynamic and procedural statements as though they were implemented in the SQL language.
+
+External functions extend the possibilities for processing data with SQL considerably.
+To make a function available to a database, it is declared using the statement `DECLARE EXTERNAL FUNCTION`.
+
+The library containing a function is loaded when any function included in it is called.
+
+[NOTE]
+====
+External functions declared as `DECLARE EXTERNAL FUNCTION` are a legacy from previous versions of Firebird.
+Their capabilities are inferior to the capabilities of the new type of external functions, UDR (User-Defined Routine).
+Such functions are declared as `CREATE FUNCTION ... EXTERNAL ...`.
+See <<fblangref40-ddl-func-create,`CREATE FUNCTION`>> for details.
+====
+
+[NOTE]
+====
+External functions may be contained in more than one library -- or "`module`", as it is referred to in the syntax.
+====
+
+[CAUTION]
+====
+UDFs are fundamentally insecure.
+We recommend avoiding their use whenever possible, and disabling UDFs in your database configuration (`UdfAccess = None` in `firebird.conf`; this is the default since Firebird 4).
+If you do need to call native code from your database, use a UDR external engine instead.
+====
+
+.See also
+<<fblangref40-ddl-function,`FUNCTION`>>
+
+[[fblangref40-ddl-extfunc-declare]]
+== `DECLARE EXTERNAL FUNCTION`
+
+.Used for
+Declaring a user-defined function (UDF) to the database
+
+.Available in
+DSQL, ESQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+DECLARE EXTERNAL FUNCTION _funcname_
+  [{ <arg_desc_list> | ( <arg_desc_list> ) }]
+  RETURNS { <return_value> | ( <return_value> ) }
+  ENTRY_POINT '_entry_point_' MODULE_NAME '_library_name_'
+
+<arg_desc_list> ::=
+  <arg_type_decl> [, <arg_type_decl> ...]
+
+<arg_type_decl> ::=
+  <udf_data_type> [BY {DESCRIPTOR | SCALAR_ARRAY} | NULL]
+
+<udf_data_type> ::=
+    <scalar_datatype>
+  | BLOB
+  | CSTRING(_length_) [ CHARACTER SET _charset_ ]
+
+<scalar_datatype> ::=
+  !! See <<fblangref40-datatypes-syntax-scalar,Scalar Data Types Syntax>> !!
+
+<return_value> ::=
+  { <udf_data_type> | PARAMETER _param_num_ }
+  [{ BY VALUE | BY DESCRIPTOR [FREE_IT] | FREE_IT }]
+----
+
+[[fblangref40-ddl-tbl-declarefunc]]
+.`DECLARE EXTERNAL FUNCTION` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|funcname
+|Function name in the database.
+The maximum length is 63 characters.
+It should be unique among all internal and external function names in the database and need not be the same name as the name exported from the UDF library via `ENTRY_POINT`.
+
+|entry_point
+|The exported name of the function
+
+|library_name
+|The name of the module (`MODULE_NAME`) from which the function is exported.
+This will be the name of the file, without the "`.dll`" or "`.so`" file extension.
+
+|length
+|The maximum length of a null-terminated string, specified in bytes
+
+|charset
+|Character set of the CSTRING
+
+|param_num
+|The number of the input parameter, numbered from 1 in the list of input parameters in the declaration, describing the data type that will be returned by the function
+|===
+
+The `DECLARE EXTERNAL FUNCTION` statement makes a user-defined function available in the database.
+UDF declarations must be made in _each database_ that is going to use them.
+There is no need to declare UDFs that will never be used.
+
+The name of the external function must be unique among all function names.
+It may be different from the exported name of the function, as specified in the `ENTRY_POINT` argument.
+
+[[fblangref40-ddl-extfunc-inp]]
+=== `DECLARE EXTERNAL FUNCTION` Input Parameters
+
+The input parameters of the function follow the name of the function and are separated with commas.
+Each parameter has an SQL data type specified for it.
+Arrays cannot be used as function parameters.
+In addition to the SQL types, the `CSTRING` type is available for specifying a null-terminated string with a maximum length of `LENGTH` bytes.
+There are several mechanisms for passing a parameter from the Firebird engine to an external function, each of these mechanisms will be discussed below.
+
+By default, input parameters are passed _by reference_.
+There is no separate clause to explicitly indicate that parameters are passed by reference.
+
+When passing a `NULL` value by reference, it is converted to the equivalent of zero, for example, a number '```0```' or an empty string ("```''```").
+If the keyword `NULL` is specified after a parameter, then with passing a `NULL` values, the null pointer will be passed to the external function.
+
+[NOTE]
+====
+Declaring a function with the `NULL` keyword does not guarantee that the function will correctly handle a `NULL` input parameter.
+Any function must be written or rewritten to correctly handle `NULL` values.
+Always use the function declaration as provided by its developer.
+====
+
+If `BY DESCRIPTOR` is specified, then the input parameter is passed by descriptor.
+In this case, the UDF parameter will receive a pointer to an internal structure known as a descriptor.
+The descriptor contains information about the data type, sub-type, precision, character set and collation, scale, a pointer to the data itself and some flags, including the `NULL` indicator.
+// TODO Meaning of 'handle' unclear
+This declaration only works if the external function is written using a handle.
+
+[WARNING]
+====
+When passing a function parameter by descriptor, the passed value is not cast to the declared data type.
+====
+
+The `BY SCALAR_ARRAY` clause is used when passing arrays as input parameters.
+Unlike other types, you cannot return an array from a UDF.
+
+[[fblangref40-ddl-extfunc-keywords]]
+==== Clauses and Keywords
+
+`RETURNS` clause::
+(Required) specifies the output parameter returned by the function.
+A function is scalar, it returns one value (output parameter).
+The output parameter can be of any SQL type (except an array or an array element) or a null-terminated string (`CSTRING`).
+The output parameter can be passed by reference (the default), by descriptor or by value.
+If the `BY DESCRIPTOR` clause is specified, the output parameter is passed by descriptor.
+If the `BY VALUE` clause is specified, the output parameter is passed by value.
+
+`PARAMETER` keyword::
+specifies that the function returns the value from the parameter under number _param_num_.
+It is necessary if you need to return a value of data type `BLOB`.
+
+`FREE_IT` keyword::
+means that the memory allocated for storing the return value will be freed after the function is executed.
+It is used only if the memory was allocated dynamically in the UDF.
+In such a UDF, the memory must be allocated with the help of the `ib_util_malloc` function from the [path]`ib_util` module, a requirement for compatibility with the functions used in Firebird code and in the code of the shipped UDF modules, for allocating and freeing memory.
+
+`ENTRY_POINT` clause::
+specifies the name of the entry point (the name of the imported function), as exported from the module.
+
+`MODULE_NAME` clause::
+defines the name of the module where the exported function is located.
+The link to the module should not be the full path and extension of the file, if that can be avoided.
+If the module is located in the default location (in the `../UDF` subdirectory of the Firebird server root) or in a location explicitly configured in [path]`firebird.conf`, it makes it easier to move the database between different platforms.
+The `UDFAccess` parameter in the firebird.conf file allows access restrictions to external functions modules to be configured.
+
+Any user connected to the database can declare an external function (UDF).
+
+[[fblangref40-ddl-extfunc-create-who]]
+=== Who Can Create an External Function
+
+The `DECLARE EXTERNAL FUNCTION` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* Users with the `CREATE FUNCTION` privilege
+
+The user who created the function becomes its owner.
+
+=== Examples using `DECLARE EXTERNAL FUNCTION`
+
+. Declaring the `addDay` external function located in the `fbudf` module.
+The input and output parameters are passed by reference.
++
+[source]
+----
+DECLARE EXTERNAL FUNCTION addDay
+  TIMESTAMP, INT
+  RETURNS TIMESTAMP
+  ENTRY_POINT 'addDay' MODULE_NAME 'fbudf';
+----
+. Declaring the `invl` external function located in the `fbudf` module.
+The input and output parameters are passed by descriptor.
++
+[source]
+----
+DECLARE EXTERNAL FUNCTION invl
+  INT BY DESCRIPTOR, INT BY DESCRIPTOR
+  RETURNS INT BY DESCRIPTOR
+  ENTRY_POINT 'idNvl' MODULE_NAME 'fbudf';
+----
+. Declaring the `isLeapYear` external function located in the `fbudf` module.
+The input parameter is passed by reference, while the output parameter is passed by value.
++
+[source]
+----
+DECLARE EXTERNAL FUNCTION isLeapYear
+  TIMESTAMP
+  RETURNS INT BY VALUE
+  ENTRY_POINT 'isLeapYear' MODULE_NAME 'fbudf';
+----
+. Declaring the `i64Truncate` external function located in the `fbudf` module.
+The input and output parameters are passed by descriptor.
+The second parameter of the function is used as the return value.
++
+[source]
+----
+DECLARE EXTERNAL FUNCTION i64Truncate
+  NUMERIC(18) BY DESCRIPTOR, NUMERIC(18) BY DESCRIPTOR
+  RETURNS PARAMETER 2
+  ENTRY_POINT 'fbtruncate' MODULE_NAME 'fbudf';
+----
+
+.See also
+<<fblangref40-ddl-extfunc-alter>>, <<fblangref40-ddl-extfunc-drop>>, <<fblangref40-ddl-func-create,`CREATE FUNCTION`>>
+
+[[fblangref40-ddl-extfunc-alter]]
+== `ALTER EXTERNAL FUNCTION`
+
+.Used for
+Changing the entry point and/or the module name for a user-defined function (UDF)
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER EXTERNAL FUNCTION _funcname_
+  [ENTRY_POINT '_new_entry_point_']
+  [MODULE_NAME '_new_library_name_']
+----
+
+[[fblangref40-ddl-tbl-alterfunc]]
+.`ALTER EXTERNAL FUNCTION` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|funcname
+|Function name in the database
+
+|new_entry_point
+|The new exported name of the function
+
+|new_library_name
+|The new name of the module (`MODULE_NAME` from which the function is exported).
+This will be the name of the file, without the "`.dll`" or "`.so`" file extension.
+|===
+
+The `ALTER EXTERNAL FUNCTION` statement changes the entry point and/or the module name for a user-defined function (UDF).
+Existing dependencies remain intact after the statement containing the change(s) is executed.
+
+The `ENTRY_POINT` clause::
+is for specifying the new entry point (the name of the function as exported from the module).
+
+The `MODULE_NAME` clause::
+is for specifying the new name of the module where the exported function is located.
+
+Any user connected to the database can change the entry point and the module name.
+
+[[fblangref40-ddl-extfunc-alter-who]]
+=== Who Can Alter an External Function
+
+The `ALTER EXTERNAL FUNCTION` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* Owner of the external function
+* Users with the `ALTER ANY FUNCTION` privilege
+
+[[fblangref40-ddl-extfunc-alter-example]]
+=== Examples using `ALTER EXTERNAL FUNCTION`
+
+.Changing the entry point for an external function
+[source]
+----
+ALTER EXTERNAL FUNCTION invl ENTRY_POINT 'intNvl';
+----
+
+.Changing the module name for an external function
+[source]
+----
+ALTER EXTERNAL FUNCTION invl MODULE_NAME 'fbudf2';
+----
+
+.See also
+<<fblangref40-ddl-extfunc-declare>>, <<fblangref40-ddl-extfunc-drop>>
+
+[[fblangref40-ddl-extfunc-drop]]
+== `DROP EXTERNAL FUNCTION`
+
+.Used for
+Removing a user-defined function (UDF) from a database
+
+.Available in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP EXTERNAL FUNCTION _funcname_
+----
+
+[[fblangref40-ddl-tbl-dropextfunc]]
+.`DROP EXTERNAL FUNCTION` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|funcname
+|Function name in the database
+|===
+
+The `DROP EXTERNAL FUNCTION` statement deletes the declaration of a user-defined function from the database.
+If there are any dependencies on the external function, the statement will fail and the appropriate error will be raised.
+
+Any user connected to the database can delete the declaration of an internal function.
+
+[[fblangref40-ddl-extfunc-drop-who]]
+=== Who Can Drop an External Function
+
+The `DROP EXTERNAL FUNCTION` statement can be executed by:
+
+* <<fblangref40-security-administrators,Administrators>>
+* Owner of the external function
+* Users with the `DROP ANY FUNCTION` privilege
+
+[[fblangref40-ddl-extfunc-drop-example]]
+=== Example using `DROP EXTERNAL FUNCTION`
+
+.Deleting the declaration of the `addDay` function.
+[source]
+----
+DROP EXTERNAL FUNCTION addDay;
+----
+
+.See also
+<<fblangref40-ddl-extfunc-declare>>
