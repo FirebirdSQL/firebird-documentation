@@ -1,0 +1,479 @@
+[[fblangref50-ddl-index]]
+= `INDEX`
+
+An index is a database object used for faster data retrieval from a table or for speeding up the sorting in a query.
+Indexes are used also to enforce the referential integrity constraints `PRIMARY KEY`, `FOREIGN KEY` and `UNIQUE`.
+
+This section describes how to create indexes, activate and deactivate them, delete them and collect statistics (recalculate selectivity) for them.
+
+[[fblangref50-ddl-idx-create]]
+== `CREATE INDEX`
+
+.Used for
+Creating an index for a table
+
+.Available in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE [UNIQUE] [ASC[ENDING] | DESC[ENDING]]
+  INDEX _indexname_ ON _tablename_
+  {(_col_ [, _col_ …]) | COMPUTED BY (<expression>)}
+----
+
+[[fblangref50-ddl-idx-createidx]]
+.`CREATE INDEX` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|indexname
+|Index name.
+The maximum length is 63 characters
+
+|tablename
+|The name of the table for which the index is to be built
+
+|col
+|Name of a column in the table.
+Columns of the types `BLOB` and `ARRAY` and computed fields cannot be used in an index
+
+|expression
+|The expression that will compute the values for a computed index, also known as an "`expression index`"
+|===
+
+The `CREATE INDEX` statement creates an index for a table that can be used to speed up searching, sorting and grouping.
+Indexes are created automatically in the process of defining constraints, such as primary key, foreign key or unique constraints.
+
+An index can be built on the content of columns of any data type except for `BLOB` and arrays.
+The name (identifier) of an index must be unique among all index names.
+
+.Key Indexes
+[NOTE]
+====
+When a primary key, foreign key or unique constraint is added to a table or column, an index with the same name is created automatically, without an explicit directive from the designer.
+For example, the `PK_COUNTRY` index will be created automatically when you execute and commit the following statement:
+
+[source]
+----
+ALTER TABLE COUNTRY ADD CONSTRAINT PK_COUNTRY
+  PRIMARY KEY (ID);
+----
+====
+
+[[fblangref50-ddl-idx-createidx-who]]
+=== Who Can Create an Index?
+
+The `CREATE INDEX` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* The owner of the table
+* Users with the `ALTER ANY TABLE` privilege
+
+[[fblangref50-ddl-idx-uq]]
+=== Unique Indexes
+
+Specifying the keyword `UNIQUE` in the index creation statement creates an index in which uniqueness will be enforced throughout the table.
+The index is referred to as a "`unique index`".
+A unique index is not a constraint.
+
+Unique indexes cannot contain duplicate key values (or duplicate key value combinations, in the case of _compound_, or multi-column, or multi-segment) indexes.
+Duplicated ``NULL``s are permitted, in accordance with the SQL:99 standard, in both single-segment and multi-segment indexes.
+
+[[fblangref50-ddl-idx-drctn]]
+=== Index Direction
+
+All indexes in Firebird are uni-directional.
+An index may be constructed from the lowest value to the highest (ascending order) or from the highest value to the lowest (descending order). The keywords `ASC[ENDING]` and `DESC[ENDING]` are used to specify the direction of the index.
+The default index order is `ASC[ENDING]`.
+It is quite valid to define both an ascending and a descending index on the same column or key set.
+
+[TIP]
+====
+A descending index can be useful on a column that will be subjected to searches on the high values ("`newest`", maximum, etc.)
+====
+
+[NOTE]
+====
+Firebird uses B-tree indexes, which are bidirectional.
+However, due to technical limitations, Firebird uses an index in one direction only.
+
+See also https://www.ibphoenix.com/resources/documents/design/doc_20[Firebird for the Database Expert: Episode 3 - On disk consistency]
+====
+
+[[fblangref50-ddl-idx-exprssn]]
+=== Computed (Expression) Indexes
+
+In creating an index, you can use the `COMPUTED BY` clause to specify an expression instead of one or more columns.
+Computed indexes are used in queries where the condition in a `WHERE`, `ORDER BY` or `GROUP BY` clause exactly matches the expression in the index definition.
+The expression in a computed index may involve several columns in the table.
+
+[NOTE]
+====
+You can actually create a computed index on a computed field, but such an index will never be used.
+====
+
+[[fblangref50-ddl-idx-limits]]
+=== Limits on Indexes
+
+Certain limits apply to indexes.
+
+The maximum length of a key in an index is limited to ¼ of the page size.
+
+[[fblangref50-ddl-idx-maxno]]
+==== Maximum Indexes per Table
+
+The number of indexes that can be accommodated for each table is limited.
+The actual maximum for a specific table depends on the page size and the number of columns in the indexes.
+
+[[fblangref50-ddl-idx-idxpertbl]]
+.Maximum Indexes per Table
+[%autowidth,cols=">1,>1,>1,>1",stripes="none"]
+|===
+.2+^h|Page Size
+3+^h|Number of Indexes Depending on Column Count
+
+^h|Single
+^h|2-Column
+^h|3-Column
+
+|4096
+|203
+|145
+|113
+
+|8192
+|408
+|291
+|227
+
+|16384
+|818
+|584
+|454
+
+|32768
+|1637
+|1169
+|909
+|===
+
+[[fblangref50-ddl-idx-maxstrnglgth]]
+==== Character Index Limits
+
+The maximum indexed string length is 9 bytes less than the maximum key length.
+The maximum indexable string length depends on the page size and the character set.
+
+[[fblangref50-ddl-idx-idxstrnglgth]]
+.Maximum indexable (VAR)CHAR length
+[%autowidth,cols=">1,>1,>1,>1,>1", stripes="none"]
+|===
+.2+^h|Page Size
+4+^h|Maximum Indexable String Length by Charset Type
+
+^h|1 byte/char
+^h|2 byte/char
+^h|3 byte/char
+^h|4 byte/char
+
+|4096
+|1015
+|507
+|338
+|253
+
+|8192
+|2039
+|1019
+|679
+|509
+
+|16384
+|4087
+|2043
+|1362
+|1021
+
+|32768
+|8183
+|4091
+|2727
+|2045
+|===
+
+[NOTE]
+====
+Depending on the collation, the maximum size can be further reduced as case-insensitive and accent-insensitive collations require more bytes per character in an index.
+See also <<fblangref50-datatypes-chartypes-charindxs,_Character Indexes_>> in Chapter _Data Types and Subtypes_.
+====
+
+[[fblangref50-ddl-idx-crtidxexmpls]]
+=== Examples Using `CREATE INDEX`
+
+. Creating an index for the `UPDATER_ID` column in the `SALARY_HISTORY` table
++
+[source]
+----
+CREATE INDEX IDX_UPDATER
+  ON SALARY_HISTORY (UPDATER_ID);
+----
+. Creating an index with keys sorted in the descending order for the `CHANGE_DATE` column in the `SALARY_HISTORY` table
++
+[source]
+----
+CREATE DESCENDING INDEX IDX_CHANGE
+  ON SALARY_HISTORY (CHANGE_DATE);
+----
+. Creating a multi-segment index for the `ORDER_STATUS`, `PAID` columns in the `SALES` table
++
+[source]
+----
+CREATE INDEX IDX_SALESTAT
+  ON SALES (ORDER_STATUS, PAID);
+----
+. Creating an index that does not permit duplicate values for the `NAME` column in the `COUNTRY` table
++
+[source]
+----
+CREATE UNIQUE INDEX UNQ_COUNTRY_NAME
+  ON COUNTRY (NAME);
+----
+. Creating a computed index for the `PERSONS` table
++
+[source]
+----
+CREATE INDEX IDX_NAME_UPPER ON PERSONS
+  COMPUTED BY (UPPER (NAME));
+----
++
+An index like this can be used for a case-insensitive search:
++
+[source]
+----
+SELECT *
+FROM PERSONS
+WHERE UPPER(NAME) STARTING WITH UPPER('Iv');
+----
+
+.See also
+<<fblangref50-ddl-idx-altridx>>, <<fblangref50-ddl-idx-dropidx>>
+
+[[fblangref50-ddl-idx-altridx]]
+== `ALTER INDEX`
+
+.Used for
+Activating or deactivating an index;
+rebuilding an index
+
+.Available in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER INDEX _indexname_ {ACTIVE | INACTIVE}
+----
+
+[[fblangref50-ddl-idx-alteridx]]
+.`ALTER INDEX` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|indexname
+|Index name
+|===
+
+The `ALTER INDEX` statement activates or deactivates an index.
+There is no facility on this statement for altering any attributes of the index.
+
+`INACTIVE`::
+With the `INACTIVE` option, the index is switched from the active to inactive state.
+The effect is similar to the `DROP INDEX` statement except that the index definition remains in the database.
+Altering a constraint index to the inactive state is not permitted.
++
+An active index can be deactivated if there are no queries prepared using that index;
+otherwise, an "`object in use`" error is returned.
++
+Activating an inactive index is also safe.
+However, if there are active transactions modifying the table, the transaction containing the `ALTER INDEX` statement will fail if it has the `NOWAIT` attribute.
+If the transaction is in `WAIT` mode, it will wait for completion of concurrent transactions.
++
+On the other side of the coin, if our `ALTER INDEX` succeeds and starts to rebuild the index at `COMMIT`, other transactions modifying that table will fail or wait, according to their `WAIT`/`NO WAIT` attributes.
+The situation is exactly the same for `CREATE INDEX`.
++
+.How is it Useful?
+[NOTE]
+====
+It might be useful to switch an index to the inactive state whilst inserting, updating or deleting a large batch of records in the table that owns the index.
+====
+
+`ACTIVE`::
+With the `ACTIVE` option, if the index is in the inactive state, it will be switched to active state and the system rebuilds the index.
++
+.How is it Useful?
+[NOTE]
+====
+Even if the index is _active_ when `ALTER INDEX ... ACTIVE` is executed, the index will be rebuilt.
+Rebuilding indexes can be a useful piece of houskeeping to do, occasionally, on the indexes of a large table in a database that has frequent inserts, updates or deletes but is infrequently restored.
+====
+
+[[fblangref50-ddl-idx-altridx-who]]
+=== Who Can Alter an Index?
+
+The `ALTER INDEX` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* The owner of the table
+* Users with the `ALTER ANY TABLE` privilege
+
+[[fblangref50-ddl-idx-altrcnstrntidx]]
+=== Use of `ALTER INDEX` on a Constraint Index
+
+Altering the index of a `PRIMARY KEY`, `FOREIGN KEY` or `UNIQUE` constraint to `INACTIVE` is not permitted.
+However, `ALTER INDEX ... ACTIVE` works just as well with constraint indexes as it does with others, as an index rebuilding tool.
+
+[[fblangref50-ddl-idx-altridx-example]]
+=== ALTER INDEX Examples
+
+. Deactivating the `IDX_UPDATER` index
++
+[source]
+----
+ALTER INDEX IDX_UPDATER INACTIVE;
+----
+. Switching the `IDX_UPDATER` index back to the active state and rebuilding it
++
+[source]
+----
+ALTER INDEX IDX_UPDATER ACTIVE;
+----
+
+.See also
+<<fblangref50-ddl-idx-create>>, <<fblangref50-ddl-idx-dropidx>>, <<fblangref50-ddl-idx-setsttstcs>>
+
+[[fblangref50-ddl-idx-dropidx]]
+== `DROP INDEX`
+
+.Used for
+Dropping (deleting) an index
+
+.Available in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP INDEX _indexname_
+----
+
+[[fblangref50-ddl-idx-dropidx-tbl]]
+.`DROP INDEX` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|indexname
+|Index name
+|===
+
+The `DROP INDEX` statement drops (deletes) the named index from the database.
+
+[NOTE]
+====
+A constraint index cannot dropped using `DROP INDEX`.
+Constraint indexes are dropped during the process of executing the command `ALTER TABLE ... DROP CONSTRAINT ...`.
+====
+
+[[fblangref50-ddl-idx-dropidx-who]]
+=== Who Can Drop an Index?
+
+The `DROP INDEX` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* The owner of the table
+* Users with the `ALTER ANY TABLE` privilege
+
+[[fblangref50-ddl-idx-dropidx-example]]
+=== DROP INDEX Example
+
+.Dropping the `IDX_UPDATER` index
+[source]
+----
+DROP INDEX IDX_UPDATER;
+----
+
+.See also
+<<fblangref50-ddl-idx-create>>, <<fblangref50-ddl-idx-altridx>>
+
+[[fblangref50-ddl-idx-setsttstcs]]
+== `SET STATISTICS`
+
+.Used for
+Recalculating the selectivity of an index
+
+.Available in
+DSQL, ESQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+SET STATISTICS INDEX _indexname_
+----
+
+[[fblangref50-ddl-idx-setsttstcs-tbl]]
+.`SET STATISTICS` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|indexname
+|Index name
+|===
+
+The `SET STATISTICS` statement recalculates the selectivity of the specified index.
+
+[[fblangref50-ddl-idx-setsttstcs-who]]
+=== Who Can Update Index Statistics?
+
+The `SET STATISTICS` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* The owner of the table
+* Users with the `ALTER ANY TABLE` privilege
+
+[[fblangref50-ddl-idx-selectivity]]
+=== Index Selectivity
+
+The selectivity of an index is the result of evaluating the number of rows that can be selected in a search on every index value.
+A unique index has the maximum selectivity because it is impossible to select more than one row for each value of an index key if it is used.
+Keeping the selectivity of an index up to date is important for the optimizer's choices in seeking the most optimal query plan.
+
+Index statistics in Firebird are not automatically recalculated in response to large batches of inserts, updates or deletions.
+It may be beneficial to recalculate the selectivity of an index after such operations because the selectivity tends to become outdated.
+
+[NOTE]
+====
+The statements `CREATE INDEX` and `ALTER INDEX ACTIVE` both store index statistics that completely correspond to the contents of the newly-[re]built index.
+====
+
+It can be performed under concurrent load without risk of corruption.
+However, be aware that, under concurrent load, the newly calculated statistics could become outdated as soon as `SET STATISTICS` finishes.
+
+[[fblangref50-ddl-idx-setsttstcs-example]]
+=== Example Using SET STATISTICS
+
+.Recalculating the selectivity of the index `IDX_UPDATER`
+[source]
+----
+SET STATISTICS INDEX IDX_UPDATER;
+----
+
+.See also
+<<fblangref50-ddl-idx-create>>, <<fblangref50-ddl-idx-altridx>>

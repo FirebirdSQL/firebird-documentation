@@ -1,0 +1,578 @@
+[[fblangref50-ddl-function]]
+= `FUNCTION`
+
+A stored function is a user-defined function stored in the metadata of a database, and running on the server.
+Stored functions can be called by stored procedures, stored functions (including the function itself), triggers and client programs.
+When a stored function calls itself, such a stored function is called a recursive function.
+
+Unlike stored procedures, stored functions always return a single scalar value.
+To return a value from a stored functions, use the `RETURN` statement, which immediately ends the function.
+
+.See also
+<<fblangref50-ddl-extfunc,`EXTERNAL FUNCTION`>>
+
+[[fblangref50-ddl-func-create]]
+== `CREATE FUNCTION`
+
+.Used for
+Creating a new stored function
+
+.Available in
+DSQL
+
+[[fblangref50-ddl-func-create-syntax]]
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+CREATE FUNCTION _funcname_ [ ( [ <in_params> ] ) ]
+  RETURNS <domain_or_non_array_type> [COLLATE _collation_]
+  [DETERMINISTIC]
+  {<psql_function> | <external-module-body>}
+
+<in_params> ::= <inparam> [, <inparam> ... ]
+
+<inparam> ::= <param-decl> [ { = | DEFAULT } <value> ]
+
+<value> ::= { <literal> | NULL | <context-var> }
+
+<param-decl> ::= _paramname_ <domain_or_non_array_type> [NOT NULL]
+  [COLLATE _collation_]
+
+<domain_or_non_array_type> ::=
+  !! See <<fblangref50-datatypes-syntax-scalar,Scalar Data Types Syntax>> !!
+
+<psql_function> ::=
+  [SQL SECURITY {INVOKER | DEFINER}]
+  <psql-module-body>
+
+<psql-module-body> ::=
+  !! See <<fblangref50-psql-elements-body-syntax,Syntax of Module Body>> !!
+
+<external-module-body> ::=
+  !! See <<fblangref50-psql-elements-body-syntax,Syntax of Module Body>> !!
+----
+
+[[fblangref50-ddl-tbl-createfunc]]
+.`CREATE FUNCTION` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|funcname
+|Stored function name.
+The maximum length is 63 characters.
+Must be unique among all function names in the database.
+
+|inparam
+|Input parameter description
+
+|collation
+|Collation sequence
+
+|literal
+|A literal value that is assignment-compatible with the data type of the parameter
+
+|context-var
+|Any context variable whose type is compatible with the data type of the parameter
+
+|paramname
+|The name of an input parameter of the function.
+The maximum length is 63 characters.
+The name of the parameter must be unique among input parameters of the function and its local variables.
+|===
+
+The `CREATE FUNCTION` statement creates a new stored function.
+The stored function name must be unique among the names of all stored and external (legacy) functions, excluding sub-functions or functions in packages.
+For sub-functions or functions in packages, the name must be unique within its module (package, stored procedure, stored function, trigger).
+
+[NOTE]
+====
+It is advisable to not reuse function names between global stored functions and stored functions in packages, although this is legal.
+At the moment, it is not possible to call a function or procedure from the global namespace from inside a package, if that package defines a function or procedure with the same name.
+In that situation, the function or procedure of the package will be called.
+====
+
+`CREATE FUNCTION` is a compound statement with a header and a body.
+The header defines the name of the stored function, and declares input parameters and return type.
+
+The function body consists of optional declarations of local variables, named cursors, and subroutines (sub-functions and sub-procedures), and one or more statements or statement blocks, enclosed in an outer block that starts with the keyword `BEGIN` and ends with the keyword `END`.
+Declarations and statements inside the function body must be terminated with a semicolon ('```;```').
+
+[[fblangref50-ddl-terminators03]]
+=== Statement Terminators
+
+Some SQL statement editors -- specifically the _isql_ utility that comes  with Firebird and possibly some third-party editors -- employ an internal convention that requires all statements to be terminated with a semi-colon.
+This creates a conflict with PSQL syntax when coding in these environments.
+If you are unacquainted with this problem and its solution, please study the details in the PSQL chapter in the section entitled <<fblangref50-sidebar01,Switching the Terminator in _isql_>>.
+
+[[fblangref50-ddl-func-params]]
+=== Parameters
+
+Each parameter has a data type.
+
+A collation sequence can be specified for string-type parameters, using the `COLLATE` clause.
+
+Input Parameters::
+Input parameters are presented as a parenthesized list following the name of the function.
+They are passed by value into the function, so any changes inside the function has no effect on the parameters in the caller.
+The `NOT NULL` constraint can also be specified for any input parameter, to prevent `NULL` being passed or assigned to it.
+Input parameters may have default values.
+Parameters with default values specified must be added at the end of the list of parameters.
+
+Output Parameter::
+The `RETURNS` clause specifies the return type of the stored function.
+If a function returns a string value, then it is possible to specify the collation using the `COLLATE` clause.
+As a return type, you can specify a data type, a domain name, the type of a domain (using `TYPE OF`), or the type of a column of a table or view (using `TYPE OF COLUMN`).
+
+[[fblangref50-ddl-func-create-deterministic]]
+=== Deterministic functions
+
+The optional `DETERMINISTIC` clause indicates that the function is deterministic.
+Deterministic functions always return the same result for the same set of inputs.
+Non-deterministic functions can return different results for each invocation, even for the same set of inputs.
+If a function is specified as deterministic, then such a function might not be called again if it has already been called once with the given set of inputs, and instead takes the result from a metadata cache.
+
+[NOTE]
+====
+Current versions of Firebird do not actually cache results of deterministic functions.
+
+Specifying the `DETERMINISTIC` clause is actually something like a "`promise`" that the function will return the same thing for equal inputs.
+At the moment, a deterministic function is considered an invariant, and works like other invariants.
+That is, they are computed and cached at the current execution level of a given statement.
+
+This is easily demonstrated with an example:
+
+[source]
+----
+CREATE FUNCTION FN_T
+RETURNS DOUBLE PRECISION DETERMINISTIC
+AS
+BEGIN
+  RETURN rand();
+END;
+
+-- the function will be evaluated twice and will return 2 different values
+SELECT fn_t() FROM rdb$database
+UNION ALL
+SELECT fn_t() FROM rdb$database;
+
+-- the function will be evaluated once and will return 2 identical values
+WITH t (n) AS (
+  SELECT 1 FROM rdb$database
+  UNION ALL
+  SELECT 2 FROM rdb$database
+)
+SELECT n, fn_t() FROM t;
+----
+====
+
+[[fblangref50-ddl-func-sqlsec]]
+=== SQL Security
+
+The `SQL SECURITY` clause specifies the security context for executing other routines or inserting into other tables.
+When SQL Security is not specified, the default value of the database is applied at runtime.
+
+The `SQL SECURITY` clause can only be specified for PSQL functions, and is not valid for functions defined in a package.
+
+See also _<<fblangref50-security-sql-security,SQL Security>>_ in chapter _Security_.
+
+[[fblangref50-ddl-func-declarations]]
+=== Variable, Cursor and Subroutine Declarations
+
+The optional declarations section, located at the start of the body of the function definition, defines variables (including cursors) and subroutines local to the function.
+Local variable declarations follow the same rules as parameters regarding specification of the data type.
+See details in the <<fblangref50-psql,PSQL chapter>> for <<fblangref50-psql-declare-variable,`DECLARE VARIABLE`>>, <<fblangref50-psql-declare-cursor,`DECLARE CURSOR`>>, <<fblangref50-psql-declfunc,`DECLARE FUNCTION`>>, and <<fblangref50-psql-declproc,`DECLARE PROCEDURE`>>.
+
+[[fblangref50-ddl-func-funcbody]]
+=== Function Body
+
+The header section is followed by the function body, consisting of one or more PSQL statements enclosed between the outer keywords `BEGIN` and `END`.
+Multiple `BEGIN ... END` blocks of terminated statements may be embedded inside the procedure body.
+
+[[fblangref50-ddl-func-create-udr]]
+=== External UDR Functions
+
+A stored function can also be located in an external module.
+In this case, instead of a function body, the `CREATE FUNCTION` specifies the location of the function in the external module using the `EXTERNAL` clause.
+The optional `NAME` clause specifies the name of the external module, the name of the function inside the module, and -- optionally -- user-defined information.
+The required `ENGINE` clause specifies the name of the UDR engine that handles communication between Firebird and the external module.
+The optional `AS` clause accepts a string literal "`body`", which can be used by the engine or module for various purposes.
+
+[WARNING]
+====
+External UDR (User Defined Routine) functions created using `CREATE FUNCTION ... EXTERNAL ...` should not be confused with legacy UDFs (User Defined Functions) declared using `DECLARE EXTERNAL FUNCTION`.
+
+UDFs are deprecated, and a legacy from previous Firebird functions.
+Their capabilities are significantly inferior to the capabilities to the new type of external UDR functions.
+====
+
+[[fblangref50-ddl-func-create-who]]
+=== Who Can Create a Function
+
+The `CREATE FUNCTION` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* Users with the `CREATE FUNCTION` privilege
+
+The user who created the stored function becomes its owner.
+
+[[fblangref50-ddl-func-create-example]]
+=== `CREATE FUNCTION` Examples
+
+. Creating a stored function
++
+[source]
+----
+CREATE FUNCTION ADD_INT (A INT, B INT DEFAULT 0)
+RETURNS INT
+AS
+BEGIN
+  RETURN A + B;
+END
+----
++
+Calling in a select:
++
+[source]
+----
+SELECT ADD_INT(2, 3) AS R FROM RDB$DATABASE
+----
++
+Call inside PSQL code, the second optional parameter is not specified:
++
+[source]
+----
+MY_VAR = ADD_INT(A);
+----
+
+. Creating a deterministic stored function
++
+[source]
+----
+CREATE FUNCTION FN_E()
+RETURNS DOUBLE PRECISION DETERMINISTIC
+AS
+BEGIN
+  RETURN EXP(1);
+END
+----
+
+. Creating a stored function with table column type parameters
++
+Returns the name of a type by field name and value
++
+[source]
+----
+CREATE FUNCTION GET_MNEMONIC (
+  AFIELD_NAME TYPE OF COLUMN RDB$TYPES.RDB$FIELD_NAME,
+  ATYPE TYPE OF COLUMN RDB$TYPES.RDB$TYPE)
+RETURNS TYPE OF COLUMN RDB$TYPES.RDB$TYPE_NAME
+AS
+BEGIN
+  RETURN (SELECT RDB$TYPE_NAME
+          FROM RDB$TYPES
+          WHERE RDB$FIELD_NAME = :AFIELD_NAME
+          AND RDB$TYPE = :ATYPE);
+END
+----
+
+. Creating an external stored function
++
+Create a function located in an external module (UDR).
+Function implementation is located in the external module `udrcpp_example`.
+The name of the function inside the module is `wait_event`.
++
+[source]
+----
+CREATE FUNCTION wait_event (
+  event_name varchar (31) CHARACTER SET ascii
+) RETURNS INTEGER
+EXTERNAL NAME 'udrcpp_example!Wait_event'
+ENGINE udr
+----
+
+. Creating a stored function containing a sub-function
++
+Creating a function to convert a number to hexadecimal format.
++
+[source]
+----
+CREATE FUNCTION INT_TO_HEX (
+  ANumber BIGINT ,
+  AByte_Per_Number SMALLINT = 8)
+RETURNS CHAR (66)
+AS
+DECLARE VARIABLE xMod SMALLINT ;
+DECLARE VARIABLE xResult VARCHAR (64);
+DECLARE FUNCTION TO_HEX (ANum SMALLINT ) RETURNS CHAR
+  AS
+  BEGIN
+    RETURN CASE ANum
+      WHEN 0 THEN '0'
+      WHEN 1 THEN '1'
+      WHEN 2 THEN '2'
+      WHEN 3 THEN '3'
+      WHEN 4 THEN '4'
+      WHEN 5 THEN '5'
+      WHEN 6 THEN '6'
+      WHEN 7 THEN '7'
+      WHEN 8 THEN '8'
+      WHEN 9 THEN '9'
+      WHEN 10 THEN 'A'
+      WHEN 11 THEN 'B'
+      WHEN 12 THEN 'C'
+      WHEN 13 THEN 'D'
+      WHEN 14 THEN 'E'
+      WHEN 15 THEN 'F'
+      ELSE NULL
+    END;
+  END
+BEGIN
+  xMod = MOD (ANumber, 16);
+  ANumber = ANumber / 16;
+  xResult = TO_HEX (xMod);
+  WHILE (ANUMBER> 0) DO
+  BEGIN
+    xMod = MOD (ANumber, 16);
+    ANumber = ANumber / 16;
+    xResult = TO_HEX (xMod) || xResult;
+  END
+  RETURN '0x' || LPAD (xResult, AByte_Per_Number * 2, '0' );
+END
+----
+
+. With `DEFINER` set for function `f`, user `US` needs only the `EXECUTE` privilege on `f`.
+If it were set for `INVOKER`, the user would also need the `INSERT` privilege on table `t`.
++
+[source]
+----
+set term ^;
+create function f (i integer) returns int SQL SECURITY DEFINER
+as
+begin
+  insert into t values (:i);
+  return i + 1;
+end^
+set term ;^
+grant execute on function f to user us;
+
+commit;
+
+connect 'localhost:/tmp/59.fdb' user us password 'pas';
+select f(3) from rdb$database;
+----
+
+.See also
+<<fblangref50-ddl-func-creatalter>>, <<fblangref50-ddl-func-alter>>, <<fblangref50-ddl-func-recreate>>, <<fblangref50-ddl-func-drop>>, <<fblangref50-ddl-extfunc-declare>>
+
+[[fblangref50-ddl-func-alter]]
+== `ALTER FUNCTION`
+
+.Used for
+Modifying an existing stored function
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+ALTER FUNCTION _funcname_
+  [ ( [ <in_params> ] ) ]
+  RETURNS <domain_or_non_array_type> [COLLATE _collation_]
+  [DETERMINISTIC]
+  {<psql_function> | <external-module-body>}
+
+!! See syntax of <<fblangref50-ddl-func-create-syntax,`CREATE FUNCTION`>> for further rules !!
+----
+
+The `ALTER FUNCTION` statement allows the following changes to a stored function definition:
+
+* the set and characteristics of input and output type
+* local variables, named cursors, and subroutines
+* code in the body of the stored procedure
+
+For external functions (UDR), you can change the entry point and engine name.
+For legacy external functions declared using `DECLARE EXTERNAL FUNCTION` -- also known as UDFs -- it is not possible to convert to PSQL and vice versa.
+
+After `ALTER FUNCTION` executes, existing privileges remain intact and dependencies are not affected.
+
+Altering a function without specifying the `SQL SECURITY` clause will remove the SQL Security property if currently set for this function.
+This means the behaviour will revert to the database default.
+
+[CAUTION]
+====
+Take care about changing the number and type of input parameters and the output type of a stored function.
+Existing application code and procedures, functions and triggers that call it could become invalid because the new description of the parameters is incompatible with the old calling format.
+For information on how to troubleshoot such a situation, see the article <<fblangref50-appx01-supp-rdb-validblr,The `RDB$VALID_BLR` Field>> in the Appendix.
+====
+
+[[fblangref50-ddl-func-alter-who]]
+=== Who Can Alter a Function
+
+The `ALTER FUNCTION` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* Owner of the stored function
+* Users with the `ALTER ANY FUNCTION` privilege
+
+[[fblangref50-ddl-func-alter-example]]
+=== Examples of `ALTER FUNCTION`
+
+.Altering a stored function
+[source]
+----
+ALTER FUNCTION ADD_INT(A INT, B INT, C INT)
+RETURNS INT
+AS
+BEGIN
+  RETURN A + B + C;
+END
+----
+
+.See also
+<<fblangref50-ddl-func-create>>, <<fblangref50-ddl-func-creatalter>>, <<fblangref50-ddl-func-recreate>>, <<fblangref50-ddl-func-drop>>
+
+[[fblangref50-ddl-func-creatalter]]
+== `CREATE OR ALTER FUNCTION`
+
+.Used for
+Creating a new or modifying an existing stored function
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+CREATE OR ALTER FUNCTION _funcname_
+  [ ( [ <in_params> ] ) ]
+  RETURNS <domain_or_non_array_type> [COLLATE _collation_]
+  [DETERMINISTIC]
+  {<psql_function> | <external-module-body>}
+
+!! See syntax of <<fblangref50-ddl-func-create-syntax,`CREATE FUNCTION`>> for further rules !!
+----
+
+The `CREATE OR ALTER FUNCTION` statement creates a new stored function or alters an existing one.
+If the stored function does not exist, it will be created by invoking a `CREATE FUNCTION` statement transparently.
+If the function already exists, it will be altered and compiled (through `ALTER FUNCTION`) without affecting its existing privileges and dependencies.
+
+[[fblangref50-ddl-func-creatalter-exmpl]]
+=== Examples of `CREATE OR ALTER FUNCTION`
+
+.Create a new or alter an existing stored function
+[syntax]
+----
+CREATE OR ALTER FUNCTION ADD_INT(A INT, B INT DEFAULT 0)
+RETURNS INT
+AS
+BEGIN
+  RETURN A + B;
+END
+----
+
+.See also
+<<fblangref50-ddl-func-create>>, <<fblangref50-ddl-func-alter>>, <<fblangref50-ddl-func-drop>>
+
+[[fblangref50-ddl-func-drop]]
+== `DROP FUNCTION`
+
+.Used for
+Dropping a stored function
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+DROP FUNCTION _funcname_
+----
+
+[[fblangref50-ddl-tbl-dropfunc]]
+.`DROP FUNCTION` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|funcname
+|Stored function name.
+The maximum length is 63 characters.
+Must be unique among all function names in the database.
+|===
+
+The `DROP FUNCTION` statement deletes an existing stored function.
+If the stored function has any dependencies, the attempt to delete it will fail, and the appropriate error will be raised.
+
+[[fblangref50-ddl-func-drop-who]]
+=== Who Can Drop a Function
+
+The `DROP FUNCTION` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* Owner of the stored function
+* Users with the `DROP ANY FUNCTION` privilege
+
+[[fblangref50-ddl-func-drop-example]]
+=== Examples of `DROP FUNCTION`
+
+[source]
+----
+DROP FUNCTION ADD_INT;
+----
+
+.See also
+<<fblangref50-ddl-func-create>>, <<fblangref50-ddl-func-creatalter>>, <<fblangref50-ddl-func-recreate>>
+
+[[fblangref50-ddl-func-recreate]]
+== `RECREATE FUNCTION`
+
+.Used for
+Creating a new stored function or recreating an existing one
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+RECREATE FUNCTION _funcname_
+  [ ( [ <in_params> ] ) ]
+  RETURNS <domain_or_non_array_type> [COLLATE _collation_]
+  [DETERMINISTIC]
+  {<psql_function> | <external-module-body>}
+
+!! See syntax of <<fblangref50-ddl-func-create-syntax,`CREATE FUNCTION`>> for further rules !!
+----
+
+The `RECREATE FUNCTION` statement creates a new stored function or recreates an existing one.
+If there is a function with this name already, the engine will try to drop it and then create a new one.
+Recreating an existing function will fail at `COMMIT` if the function has dependencies.
+
+[NOTE]
+====
+Be aware that dependency errors are not detected until the `COMMIT` phase of this operation.
+====
+
+After a procedure is successfully recreated, existing privileges to execute the stored function and the
+privileges of the stored function itself are dropped.
+
+[[fblangref50-ddl-func-recreate-example]]
+=== Examples of `RECREATE FUNCTION`
+
+.Creating or recreating a stored function
+[source]
+----
+RECREATE FUNCTION ADD_INT(A INT, B INT DEFAULT 0)
+RETURNS INT
+AS
+BEGIN
+  RETURN A + B;
+EN
+----
+
+.See also
+<<fblangref50-ddl-func-create>>, <<fblangref50-ddl-func-drop>>

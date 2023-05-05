@@ -1,0 +1,455 @@
+[[fblangref50-security-user]]
+= SQL Statements for User Management
+
+This section describes the SQL statements for creating, modifying and deleting Firebird user accounts.
+These statements can be executed by the following users:
+
+* SYSDBA
+* Any user with the RDB$ADMIN role in the security database
+* When the `AUTO ADMIN MAPPING` flag is enabled in the security database (`security4.fdb` or whatever is the security database configured for the current database in the `databases.conf`), any Windows Administrator - assuming `Win_Sspi` was used to connect without specifying roles.
+* Any user with the system privilege `USER_MANAGEMENT` in the security database
++
+[NOTE]
+====
+For a Windows Administrator, `AUTO ADMIN MAPPING` enabled only in a regular database is not sufficient to permit management of other users.
+For instructions to enable it in the security database, see <<fblangref50-security-autoadminmapping02>>.
+====
+
+Non-privileged users can use only the `ALTER USER` statement, and then only to edit some data of their own account.
+
+[[fblangref50-security-user-create]]
+== `CREATE USER`
+
+.Used for
+Creating a Firebird user account
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE USER _username_
+  <user_option> [<user_option> ...]
+  [TAGS (<user_var> [, <user_var> ...]]
+
+<user_option> ::=
+    PASSWORD '_password_'
+  | FIRSTNAME '_firstname_'
+  | MIDDLENAME '_middlename_'
+  | LASTNAME '_lastname_'
+  | {GRANT | REVOKE} ADMIN ROLE
+  | {ACTIVE | INACTIVE}
+  | USING PLUGIN _plugin_name_
+
+<user_var> ::=
+    _tag_name_ = '_tag_value_'
+  | DROP _tag_name_
+----
+
+[[fblangref50-security-tbl-createuser]]
+.`CREATE USER` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|username
+|Username.
+The maximum length is 63 characters, following the rules for Firebird identifiers.
+
+|password
+|User password.
+Valid or effective password length depends on the user manager plugin.
+Case-sensitive.
+
+|firstname
+|Optional: User's first name.
+Maximum length 32 characters
+
+|middlename
+|Optional: User's middle name.
+Maximum length 32 characters
+
+|lastname
+|Optional: User's last name.
+Maximum length 32 characters.
+
+|plugin_name
+|Name of the user manager plugin.
+
+|tag_name
+|Name of a custom attribute.
+The maximum length is 63 characters, following the rules for Firebird regular identifiers.
+
+|tag_value
+|Value of the custom attribute.
+The maximum length is 255 characters.
+|===
+
+The `CREATE USER` statement creates a new Firebird user account.
+If the user already exist in the Firebird security database for the specified user manager plugin, an appropriate error be raised.
+It is possible to create multiple users with the same name: one per user manager plugin.
+
+The _username_ argument must follow the rules for Firebird regular identifiers: see <<fblangref50-structure-identifiers,_Identifiers_>> in the _Structure_ chapter.
+Usernames are case-sensitive when double-quoted (in other words, they follow the same rules as other delimited identifiers).
+
+[IMPORTANT]
+====
+Usernames follow the general rules and syntax of <<fblangref50-structure-identifiers,identifiers>>.
+Thus, a user named `"Alex"` is distinct from a user named `"ALEX"`
+
+[source]
+----
+CREATE USER ALEX PASSWORD 'bz23ds';
+
+- this user is the same as the first one
+CREATE USER Alex PASSWORD 'bz23ds';
+
+- this user is the same as the first one
+CREATE USER "ALEX" PASSWORD 'bz23ds';
+
+- and this is a different user
+CREATE USER "Alex" PASSWORD 'bz23ds';
+----
+====
+
+The `PASSWORD` clause specifies the user's password, and is required.
+The valid or effective password length depends on the user manager plugin, see also <<fblangref50-security-auth>>.
+
+The optional `FIRSTNAME`, `MIDDLENAME` and `LASTNAME` clauses can be used to specify additional user properties, such as the person's first name, middle name and last name, respectively.
+They are just simple `VARCHAR(32)` fields and can be used to store anything you prefer.
+
+If the `GRANT ADMIN ROLE` clause is specified, the new user account is created with the privileges of the `RDB$ADMIN` role in the security database (`security4.fdb` or database-specific).
+It allows the new user to manage user accounts from any regular database they log into, but it does not grant the user any special privileges on objects in those databases.
+
+The `REVOKE ADMIN ROLE` clause is syntactically valid in a `CREATE USER` statement, but has no effect.
+It is not possible to specify `GRANT ADMIN ROLE` and `REVOKE ADMIN ROLE` in one statement.
+
+The `ACTIVE` clause specifies the user is active and can log in, this is the default.
+
+The `INACTIVE` clause specifies the user is inactive and cannot log in.
+It is not possible to specify `ACTIVE` and `INACTIVE` in one statement.
+The `ACTIVE`/`INACTIVE` option is not supported by the `Legacy_UserManager` and will be ignored.
+
+The `USING PLUGIN` clause explicitly specifies the user manager plugin to use for creating the user.
+Only plugins listed in the `UserManager` configuration for this database (`firebird.conf`, or overridden in `databases.conf`) are valid.
+The default user manager (first in the `UserManager` configuration) is applied when this clause is not specified.
+
+[IMPORTANT]
+====
+Users of the same name created using different user manager plugins are different objects.
+Therefore, the user created with one user manager plugin can only be altered or dropped by that same plugin.
+
+From the perspective of ownership, and privileges and roles granted in a databases, different user objects with the same name are considered one and the same user.
+====
+
+The `TAGS` clause can be used to specify additional user attributes.
+Custom attributes are not supported (silently ignored) by the `Legacy_UserManager`.
+Custom attributes names follow the rules of Firebird identifiers, but are handled case-insensitive (for example, specifying both `"A BC"` and `"a bc"` will raise an error).
+The value of a custom attribute can be a string of maximum 255 characters.
+The `DROP __tag_name__` option is syntactically valid in `CREATE USER`, but behaves as if the property is not specified.
+
+[WARNING]
+====
+Users can view and alter their own custom attributes.
+====
+
+[NOTE]
+====
+`CREATE/ALTER/DROP USER` are DDL statements, and only take effect at commit.
+Remember to `COMMIT` your work.
+In _isql_, the command `SET AUTO ON` will enable autocommit on DDL statements.
+In third-party tools and other user applications, this may not be the case.
+====
+
+[[fblangref50-security-user-createpriv]]
+=== Who Can Create a User
+
+To create a user account, the current user must have
+
+* <<fblangref50-security-administrators,administrator privileges>> in the security database
+* the `USER_MANAGEMENT` system privilege in the security database.
+Users with the `USER_MANAGEMENT` system privilege can not grant or revoke the admin role.
+
+[[fblangref50-security-user-create-exmpl]]
+=== `CREATE USER` Examples
+
+. Creating a user with the username `bigshot`:
++
+[source]
+----
+CREATE USER bigshot PASSWORD 'buckshot';
+----
+. Creating a user with the `Legacy_UserManager` user manager plugin
++
+[source]
+----
+CREATE USER godzilla PASSWORD 'robot'
+  USING PLUGIN Legacy_UserManager;
+----
+. Creating the user `john` with custom attributes:
++
+[source]
+----
+CREATE USER john PASSWORD 'fYe_3Ksw'
+  FIRSTNAME 'John' LASTNAME 'Doe'
+  TAGS (BIRTHYEAR='1970', CITY='New York');
+----
+. Creating an inactive user:
++
+[source]
+----
+CREATE USER john PASSWORD 'fYe_3Ksw'
+  INACTIVE;
+----
+. Creating the user `superuser` with user management privileges:
++
+[source]
+----
+CREATE USER superuser PASSWORD 'kMn8Kjh'
+GRANT ADMIN ROLE;
+----
+
+.See also
+<<fblangref50-security-user-alter>>, <<fblangref50-security-user-createoralter>>, <<fblangref50-security-user-drop>>
+
+[[fblangref50-security-user-alter]]
+== `ALTER USER`
+
+.Used for
+Modifying a Firebird user account
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER {USER _username_ | CURRENT USER}
+  [SET] [<user_option> [<user_option> ...]]
+  [TAGS (<user_var> [, <user_var> ...]]
+
+<user_option> ::=
+    PASSWORD '_password_'
+  | FIRSTNAME '_firstname_'
+  | MIDDLENAME '_middlename_'
+  | LASTNAME '_lastname_'
+  | {GRANT | REVOKE} ADMIN ROLE
+  | {ACTIVE | INACTIVE}
+  | USING PLUGIN _plugin_name_
+
+<user_var> ::=
+    _tag_name_ = '_tag_value_'
+  | DROP _tag_name_
+----
+
+See <<fblangref50-security-user-create>> for details on the statement parameters.
+
+The `ALTER USER` statement changes the details in the named Firebird user account.
+The `ALTER USER` statement must contain at least one of the optional clauses other than `USING PLUGIN`.
+
+Any user can alter his or her own account, except that only an administrator may use `GRANT/REVOKE ADMIN ROLE` and `ACTIVE/INACTIVE`.
+
+All clauses are optional, but at least one other than `USING PLUGIN` must be present:
+
+* The `PASSWORD` parameter is for changing the password for the user
+* `FIRSTNAME`, `MIDDLENAME` and `LASTNAME` update these optional user properties, such as the person's first name, middle name and last name respectively
+* `GRANT ADMIN ROLE` grants the user the privileges of the `RDB$ADMIN` role in the security database (`security4.fdb`), enabling them to manage the accounts of other users.
+It does not grant the user any special privileges in regular databases.
+* `REVOKE ADMIN ROLE` removes the user's administrator in the security database which, once the transaction is committed, will deny that user the ability to alter any user account except their own
+* `ACTIVE` will enable a disabled account (not supported for `Legacy_UserManager`)
+* `INACTIVE` will disable an account (not supported for `Legacy_UserManager`).
+This is convenient to temporarily disable an account without deleting it.
+* `USING PLUGIN` specifies the user manager plugin to use
+* `TAGS` can be used to add, update or remove (`DROP`) additional custom attributes (not supported for `Legacy_UserManager`).
+Attributes not listed will not be changed.
+
+See <<fblangref50-security-user-create>> for more details on the clauses.
+
+If you need to change your own account, then instead of specifying the name of the current user, you can use the `CURRENT USER` clause.
+
+[WARNING]
+====
+The `ALTER CURRENT USER` statement follows the normal rules for selecting the user manager plugin.
+If the current user was created with a non-default user manager plugin, they will need to explicitly specify the user manager plugins with `USING PLUGIN __plugin_name__`, or they will receive an error that the user is not found.
+Or, if a user with the same name exists for the default user manager, they will alter that user instead.
+====
+
+[NOTE]
+====
+Remember to commit your work if you are working in an application that does not auto-commit DDL.
+====
+
+[[fblangref50-security-user-alter-who]]
+=== Who Can Alter a User?
+
+To modify the account of another user, the current user must have
+
+* <<fblangref50-security-administrators,administrator privileges>> in the security database
+* the `USER_MANAGEMENT` system privilege in the security database
+Users with the `USER_MANAGEMENT` system privilege can not grant or revoke the admin role.
+
+Anyone can modify their own account, except for the `GRANT/REVOKE ADMIN ROLE` and `ACTIVE/INACTIVE` options, which require administrative privileges to change.
+
+[[fblangref50-security-user-alter-exmpl]]
+=== `ALTER USER` Examples
+
+. Changing the password for the user `bobby` and granting them user management privileges:
++
+[source]
+----
+ALTER USER bobby PASSWORD '67-UiT_G8'
+GRANT ADMIN ROLE;
+----
+. Editing the optional properties (the first and last names) of the user `dan`:
++
+[source]
+----
+ALTER USER dan
+FIRSTNAME 'No_Jack'
+LASTNAME 'Kennedy';
+----
+. Revoking user management privileges from user `dumbbell`:
++
+[source]
+----
+ALTER USER dumbbell
+DROP ADMIN ROLE;
+----
+
+.See also
+<<fblangref50-security-user-create>>, <<fblangref50-security-user-drop>>
+
+[[fblangref50-security-user-createoralter]]
+== `CREATE OR ALTER USER`
+
+.Used for
+Creating a new or modifying an existing Firebird user account
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE OR ALTER USER _username_
+  [SET] [<user_option> [<user_option> ...]]
+  [TAGS (<user_var> [, <user_var> ...]]
+
+<user_option> ::=
+    PASSWORD '_password_'
+  | FIRSTNAME '_firstname_'
+  | MIDDLENAME '_middlename_'
+  | LASTNAME '_lastname_'
+  | {GRANT | REVOKE} ADMIN ROLE
+  | {ACTIVE | INACTIVE}
+  | USING PLUGIN _plugin_name_
+
+<user_var> ::=
+    _tag_name_ = '_tag_value_'
+  | DROP _tag_name_
+----
+
+See <<fblangref50-security-user-create>> and <<fblangref50-security-user-alter>> for details on the statement parameters.
+
+The `CREATE OR ALTER USER` statement creates a new or changes the details in the named Firebird user account.
+If the user does not exist, it will be created as if executing the `CREATE USER` statement.
+If the user already exists, it will be modified as if executing the `ALTER USER` statement.
+The `CREATE OR ALTER USER` statement must contain at least one of the optional clauses other than `USING PLUGIN`.
+If the user does not exist yet, the `PASSWORD` clause is required.
+
+[NOTE]
+====
+Remember to commit your work if you are working in an application that does not auto-commit DDL.
+====
+
+[[fblangref50-security-user-createoralter-exmpl]]
+=== `CREATE OR ALTER USER` Examples
+
+.Creating or altering a user
+[source]
+----
+CREATE OR ALTER USER john PASSWORD 'fYe_3Ksw'
+FIRSTNAME 'John'
+LASTNAME 'Doe'
+INACTIVE;
+----
+
+.See also
+<<fblangref50-security-user-create>>, <<fblangref50-security-user-alter>>, <<fblangref50-security-user-drop>>
+
+[[fblangref50-security-user-drop]]
+== `DROP USER`
+
+.Used for
+Deleting a Firebird user account
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP USER _username_
+  [USING PLUGIN _plugin_name_]
+----
+
+[[fblangref50-security-tbl-dropuser]]
+.`DROP USER` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|username
+|Username
+
+|plugin_name
+|Name of the user manager plugin
+|===
+
+The `DROP USER` statement deletes a Firebird user account.
+
+The optional `USING PLUGIN` clause explicitly specifies the user manager plugin to use for dropping the user.
+Only plugins listed in the `UserManager` configuration for this database (`firebird.conf`, or overridden in `databases.conf`) are valid.
+The default user manager (first in the `UserManager` configuration) is applied when this clause is not specified.
+
+[IMPORTANT]
+====
+Users of the same name created using different user manager plugins are different objects.
+Therefore, the user created with one user manager plugin can only be dropped by that same plugin.
+====
+
+[NOTE]
+====
+Remember to commit your work if you are working in an application that does not auto-commit DDL.
+====
+
+[[fblangref50-security-user-drop-who]]
+=== Who Can Drop a User?
+
+To drop a user, the current user must have
+
+* <<fblangref50-security-administrators,administrator privileges>> in the security database
+* the `USER_MANAGEMENT` system privilege in the security database
+
+[[fblangref50-security-user-drop-exmpl]]
+=== `DROP USER` Example
+
+. Deleting the user `bobby`:
++
+[source]
+----
+DROP USER bobby;
+----
+. Removing a user created with the `Legacy_UserManager` plugin:
++
+[source]
+----
+DROP USER Godzilla
+  USING PLUGIN Legacy_UserManager;
+----
+
+.See also
+<<fblangref50-security-user-create>>, <<fblangref50-security-user-alter>>
