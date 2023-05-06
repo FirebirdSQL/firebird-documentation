@@ -3999,11 +3999,13 @@ Of course, the column names in the source table need not be the same as those in
 Any type of `SELECT` statement is permitted, as long as its output columns exactly match the insert columns in number, order and type.
 Types need not be exactly the same, but they must be assignment-compatible.
 
-[IMPORTANT]
+[NOTE]
 ====
-When using and `INSERT ... SELECT` with a `RETURNING` clause, the `SELECT` has to produce at most one row, as `RETURNING` currently only works for statements affecting at most one row.
+Since Firebird 5.0, an `INSERT ... SELECT` with a `RETURNING` clause will produce zero or more rows, and the statement is described as type `isc_info_sql_stmt_select`.
+In other words, an `INSERT ... SELECT ... RETURNING` will no longer produce a "`multiple rows in singleton select`" error when the select produces multiple rows.
 
-This behaviour may change in future Firebird versions.
+For the time being, a `INSERT ... VALUES (...)` is still described as `isc_info_sql_stmt_exec_procedure`.
+This behaviour may change in a future Firebird version.
 ====
 
 [[fblangref50-dml-insert-defaults]]
@@ -4060,8 +4062,8 @@ insert into objects_default (id, name)
 [[fblangref50-dml-insert-returning]]
 === The `RETURNING` Clause
 
-An `INSERT` statement adding _at most one row_ may optionally include a `RETURNING` clause in order to return values from the inserted row.
-The clause, if present, need not contain all of the insert columns and may also contain other columns or expressions.
+An `INSERT` statement may optionally include a `RETURNING` clause in order to return values from the inserted rows.
+The clause, if present, need not contain all columns referenced in the insert statement and may also contain other columns or expressions.
 The returned values reflect any changes that may have been made in `BEFORE INSERT` triggers.
 
 The user executing the statement needs to have `SELECT` privileges on the columns specified in the `RETURNING` clause.
@@ -4074,8 +4076,9 @@ The optional `INTO` sub-clause is only valid in PSQL.
 .Multiple ``INSERT``s
 [IMPORTANT]
 ====
-In DSQL, a statement with `RETURNING` always returns only one row.
-If the `RETURNING` clause is specified and more than one row is inserted by the `INSERT` statement, the statement fails and an error message is returned.
+In DSQL, a statement with `INSERT ... VALUES (...) RETURNING` returns only one row, and a `INSERT ... SELECT ... RETURNING` can return zero or more rows.
+
+In PSQL, if the `RETURNING` clause is specified and more than one row is inserted by the `INSERT` statement, the statement fails and an "`multiple rows in singleton select`" error is returned.
 This behaviour may change in future Firebird versions.
 ====
 
@@ -4105,11 +4108,12 @@ INTO :id, :fname, :iq;
 
 [NOTE]
 ====
-* `RETURNING` is supported for `VALUES` and `DEFAULT VALUES` inserts, and singleton `SELECT` inserts.
-* In DSQL, a statement with a `RETURNING` clause _always_ returns exactly one row.
-If no record was actually inserted, the fields in this row are all `NULL`.
-This behaviour may change in a later version of Firebird.
-In PSQL, if no row was inserted, nothing is returned, and the target variables keep their existing values.
+* In DSQL, an `INSERT ... VALUES (...) RETURNING` statement _always_ returns exactly one row.
+This behaviour may change in a future Firebird version.
+* In DSQL, an `INSERT ... SELECT ... RETURNING` returns zero or more rows.
+* In PSQL, if multiple rows are returned, the statement fails with a "`multiple rows in singleton select`" error.
+This behaviour may change in a future Firebird version.
+* In PSQL, if no row was inserted, nothing is returned, and the target variables keep their existing values.
 ====
 
 [[fblangref50-dml-insert-blobs]]
@@ -4401,7 +4405,7 @@ When a `ROWS` clause is specified, the "`skip locked`" check is performed _after
 [[fblangref50-dml-update-returningclause]]
 === The `RETURNING` Clause
 
-An `UPDATE` statement involving _at most one row_ may include `RETURNING` in order to return some values from the row being updated.
+An `UPDATE` statement may include `RETURNING` in order to return some values from the rows being updated.
 `RETURNING` may include data from any column of the row, not necessarily the columns that are currently being updated.
 It can include literals or expressions not associated with columns, if there is a need for that.
 
@@ -4415,10 +4419,9 @@ If `OLD.` or `NEW.` is not specified, or if the table name (_target_) is specifi
 The syntax of the _returning_list_ is similar to the column list of a `SELECT` clause.
 It is possible to reference all columns using `{asterisk}`, or `__table_name__.{asterisk}`, `NEW.{asterisk}` and/or `OLD.{asterisk}`.
 
-In DSQL, a statement with `RETURNING` always returns a single row.
-Attempts to execute an `UPDATE ... RETURNING ...` that affects multiple rows will result in the error "`multiple rows in singleton select`".
-If the statement updates no records, the returned values contain `NULL`.
-This behaviour may change in future Firebird versions.
+In DSQL, a positioned update statement (`WHERE CURRENT OF ...`) with `RETURNING` always returns a single row, a normal update statement can return zero or more rows.
+In PSQL, attempts to execute an `UPDATE ... RETURNING` that affects multiple rows will result in the error "`multiple rows in singleton select`".
+This behaviour may change in a future Firebird version.
 
 [[fblangref50-dml-update-returning-into]]
 ==== The `INTO` Sub-clause
@@ -4549,7 +4552,8 @@ Matching is done with the <<fblangref50-commons-isnotdistinct,`IS NOT DISTINCT`>
 === The `RETURNING` clause
 
 The optional `RETURNING` clause, if present, need not contain all the columns mentioned in the statement and may also contain other columns or expressions.
-The returned values reflect any changes that may have been made in `BEFORE` triggers, but not those in `AFTER` triggers. `OLD.__fieldname__` and `NEW.__fieldname__` may both be used in the list of columns to return;
+The returned values reflect any changes that may have been made in `BEFORE` triggers, but not those in `AFTER` triggers.
+`OLD.__fieldname__` and `NEW.__fieldname__` may both be used in the list of columns to return;
 for field names not preceded by either of these, the new value is returned.
 
 The user executing the statement needs to have `SELECT` privileges on the columns specified in the `RETURNING` clause.
@@ -4557,9 +4561,9 @@ The user executing the statement needs to have `SELECT` privileges on the column
 The syntax of the _returning_list_ is similar to the column list of a `SELECT` clause.
 It is possible to reference all columns using `{asterisk}`, or `__table_name__.{asterisk}`, `NEW.{asterisk}` and/or `OLD.{asterisk}`.
 
-In DSQL, a statement with a `RETURNING` clause _always_ returns exactly one row.
-If a `RETURNING` clause is present and more than one matching record is found, an error "`multiple rows in singleton select`" is raised.
-This behaviour may change in a later version of Firebird.
+In DSQL, a statement with a `RETURNING` clause can return zero or more rows.
+In PSQL, if a `RETURNING` clause is present and more than one matching record is found, an error "`multiple rows in singleton select`" is raised.
+This behaviour may change in a future Firebird version.
 
 The optional `INTO` sub-clause is only valid in PSQL.
 
@@ -4824,7 +4828,7 @@ When a `ROWS` clause is specified, the "`skip locked`" check is performed _after
 [[fblangref50-dml-delete-returning]]
 === `RETURNING`
 
-A `DELETE` statement removing _at most one row_ may optionally include a `RETURNING` clause in order to return values from the deleted row.
+A `DELETE` statement may optionally include a `RETURNING` clause in order to return values from the deleted rows.
 The clause, if present, need not contain all the relation's columns and may also contain other columns or expressions.
 
 The user executing the statement needs to have `SELECT` privileges on the columns specified in the `RETURNING` clause.
@@ -4834,12 +4838,13 @@ It is possible to reference all columns using `{asterisk}`, or `__table_name__.{
 
 [NOTE]
 ====
-* In DSQL, a statement with `RETURNING` always returns a singleton, never a multi-row set.
-If a `RETURNING` clause is present and more than one matching record is found, an error "`multiple rows in singleton select`" is raised.
-If no records are deleted, the returned columns contain `NULL`.
-This behaviour may change in future Firebird versions
+* In DSQL, a positioned delete statement (`WHERE CURRENT OF ...`) with `RETURNING` always returns a singleton, never a multi-row set.
+If no records is deleted, the returned columns contain `NULL`.
+* A normal `DELETE` statement can return zero or more rows.
+* In PSQL, if a `RETURNING` clause is present and more than one matching record is found, an error "`multiple rows in singleton select`" is raised.
+This behaviour may change in a future Firebird version.
 * The `INTO` clause is available only in PSQL
-** If the row is not deleted, nothing is returned and the target variables keep their values
+** If no row is deleted, nothing is returned and the target variables keep their values
 ====
 
 [float]
@@ -5017,18 +5022,15 @@ For details and progress, refer to https://github.com/FirebirdSQL/firebird/issue
 [[fblangref50-dml-merge-returning]]
 === The `RETURNING` Clause
 
-A `MERGE` statement that affects at most one row can contain a `RETURNING` clause to return values added, modified or removed.
-If a `RETURNING` clause is present and more than one matching record is found, an error "`multiple rows in singleton select`" is raised.
+A `MERGE` statement can contain a `RETURNING` clause to return rows added, modified or removed.
 The `RETURNING` clause can contain any columns from the target table (or updateable view), as well as other columns (eg from the source) and expressions.
 
 The user executing the statement needs to have `SELECT` privileges on the columns specified in the `RETURNING` clause.
 
-The optional `INTO` sub-clause is only valid in PSQL.
+In PSQL, If a `RETURNING` clause is present and more than one matching record is found, an error "`multiple rows in singleton select`" is raised.
+This behaviour may change in a future Firebird version.
 
-[NOTE]
-====
-The restriction that `RETURNING` can only be used with a statement that affects at most one row might be removed in a future version.
-====
+The optional `INTO` sub-clause is only valid in PSQL.
 
 Column names can be qualified by the `OLD` or `NEW` prefix to define exactly what value to return: before or after modification. The returned values include the changes made by `BEFORE` triggers.
 
