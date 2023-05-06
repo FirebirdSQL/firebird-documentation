@@ -21,6 +21,7 @@ DSQL, ESQL
 CREATE [UNIQUE] [ASC[ENDING] | DESC[ENDING]]
   INDEX _indexname_ ON _tablename_
   {(_col_ [, _col_ …]) | COMPUTED BY (<expression>)}
+  [WHERE <search_condition>]
 ----
 
 [[fblangref50-ddl-idx-createidx]]
@@ -43,6 +44,9 @@ Columns of the types `BLOB` and `ARRAY` and computed fields cannot be used in an
 
 |expression
 |The expression that will compute the values for a computed index, also known as an "`expression index`"
+
+|search_condition
+|Conditional expression of a partial index, to filter the rows to include in the index.
 |===
 
 The `CREATE INDEX` statement creates an index for a table that can be used to speed up searching, sorting and grouping.
@@ -82,6 +86,22 @@ A unique index is not a constraint.
 
 Unique indexes cannot contain duplicate key values (or duplicate key value combinations, in the case of _compound_, or multi-column, or multi-segment) indexes.
 Duplicated ``NULL``s are permitted, in accordance with the SQL:99 standard, in both single-segment and multi-segment indexes.
+
+[[fblangref50-ddl-idx-partial]]
+=== Partial Indexes
+
+Specifying the `WHERE` clause in the index creation statement creates a partial index (also knows as filtered index).
+A partial index contains only rows that match the search condition of the `WHERE`.
+
+A partial index definition may include the `UNIQUE` clause.
+In this case, every key in the index is required to be unique.
+This allows to enforce uniqueness across some subset of table rows.
+
+A partial index is usable only in the following cases:
+
+* The `WHERE` clause of the statement includes exactly the same boolean expression as the one defined for the index;
+* The search condition defined for the index contains ORed boolean expressions and one of them is explicitly included in the `WHERE` clause of the statement;
+* The search condition defined for the index specifies `IS NOT NULL` and the `WHERE` clause of the statement includes an expression on the same field that is known to exclude NULLs.
 
 [[fblangref50-ddl-idx-drctn]]
 === Index Direction
@@ -256,6 +276,54 @@ An index like this can be used for a case-insensitive search:
 SELECT *
 FROM PERSONS
 WHERE UPPER(NAME) STARTING WITH UPPER('Iv');
+----
+. Creating a partial index and using its condition:
++
+[source]
+----
+CREATE INDEX IT1_COL ON T1 (COL) WHERE COL < 100;
+SELECT * FROM T1 WHERE COL < 100;
+-- PLAN (T1 INDEX (IT1_COL))
+----
+. Creating a partial index which excludes NULL
++
+[source]
+----
+CREATE INDEX IT1_COL2 ON T1 (COL) WHERE COL IS NOT NULL;
+SELECT * FROM T1 WHERE COL > 100;
+PLAN (T1 INDEX IT1_COL2)
+----
+. Creating a partial index with ORed conditions
++
+[source]
+----
+CREATE INDEX IT1_COL3 ON T1 (COL) WHERE COL = 1 OR COL = 2;
+SELECT * FROM T1 WHERE COL = 2;
+-- PLAN (T1 INDEX IT1_COL3)
+----
+. Using a partial index to enforce uniqueness for a subset of rows
++
+[source]
+----
+create table OFFER (
+  OFFER_ID bigint generated always as identity primary key,
+  PRODUCT_ID bigint not null,
+  ARCHIVED boolean default false not null,
+  PRICE decimal(9,2) not null
+);
+
+create unique index IDX_OFFER_UNIQUE_PRODUCT
+  on OFFER (PRODUCT_ID)
+  where not ARCHIVED;
+
+insert into OFFER (PRODUCT_ID, ARCHIVED, PRICE) values (1, false, 18.95);
+insert into OFFER (PRODUCT_ID, ARCHIVED, PRICE) values (1, true, 17.95);
+insert into OFFER (PRODUCT_ID, ARCHIVED, PRICE) values (1, true, 16.95);
+-- Next fails due to second record for PRODUCT_ID=1 and ARCHIVED=false:
+insert into OFFER (PRODUCT_ID, ARCHIVED, PRICE) values (1, false, 19.95);
+-- Statement failed, SQLSTATE = 23000
+-- attempt to store duplicate value (visible to active transactions) in unique index "IDX_OFFER_UNIQUE_PRODUCT"
+-- -Problematic key value is ("PRODUCT_ID" = 1)
 ----
 
 .See also
