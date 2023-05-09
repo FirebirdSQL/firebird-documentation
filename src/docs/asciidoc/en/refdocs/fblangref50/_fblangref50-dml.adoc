@@ -20,33 +20,34 @@ DSQL, ESQL, PSQL
 ----
 [WITH [RECURSIVE] <cte> [, <cte> ...]]
 SELECT
-  [FIRST _m_] [SKIP _n_]
-  [{DISTINCT | ALL}] <columns>
-FROM
-  <source> [[AS] _alias_]
-  [<joins>]
-[WHERE <condition>]
-[GROUP BY <grouping-list>
-[HAVING <aggregate-condition>]]
+  [FIRST <limit-expression>] [SKIP <limit-expression>]
+  [{ALL | DISTINCT}] <select-list>
+FROM <table-reference> [, <table-reference> ...]
+[WHERE <search-condition>]
+[GROUP BY <value-expression> [, <value-expression> ...]
+[HAVING <search-condition>]]
 [WINDOW <window_definition> [, <window_definition> ...]
-[PLAN <plan-expr>]
-[UNION [{DISTINCT | ALL}] <other-select>]
-[ORDER BY <ordering-list>]
-[{ ROWS <m> [TO <n>]
- | [OFFSET _n_ {ROW | ROWS}]
-   [FETCH {FIRST | NEXT} [_m_] {ROW | ROWS} ONLY]
+[PLAN <plan-expression>]
+[UNION [{DISTINCT | ALL}] <query-term>]
+[ORDER BY <sort-specification [, <sort-specification> ...]]
+[{ ROWS <value-expression> [TO <value-expression>]
+ | [OFFSET <offset-fetch-expression> {ROW | ROWS}]
+   [FETCH {FIRST | NEXT}
+    [<offset-fetch-expression>] {ROW | ROWS} ONLY]
 }]
-[FOR UPDATE [OF <columns>]]
+[FOR UPDATE [OF <column-name-list>]]
 [WITH LOCK [SKIP LOCKED]]
-[INTO <variables>]
+[INTO <variable-list>]
 
-<variables> ::= [:]varname [, [:]varname ...]
+<variable-list> ::= <variable> [, <variable> ...]
+
+<variable> ::= _varname_ | ':' _varname_
 ----
 
 [NOTE]
 ====
 The above syntax is not the full `SELECT` syntax.
-For documentation reasons, we attempt to build out the syntax in later sections.
+For documentation reasons it is simplified, and we attempt to build out the syntax in later sections.
 The full SELECT syntax can be found below, in <<fblangref50-dml-select-full-syntax>>.
 ====
 
@@ -56,8 +57,10 @@ The total of rows returned is the [term]_result set_ of the statement.
 
 The only mandatory parts of the `SELECT` statement are:
 
-* The `SELECT` keyword, followed by a columns list. This part specifies _what_ you want to retrieve.
-* The `FROM` keyword, followed by a selectable object. This tells the engine _where_ you want to get it _from_.
+* The `SELECT` keyword, followed by a select list.
+This part specifies _what_ you want to retrieve.
+* The `FROM` keyword, followed by a selectable object.
+This tells the engine _where_ you want to get it _from_.
 
 In its most basic form, `SELECT` retrieves a number of columns from a single table or view, like this:
 
@@ -75,7 +78,7 @@ select * from sales
 ----
 
 In practice, a `SELECT` statement is usually executed with a `WHERE` clause, which limits the rows returned.
-The result set may be sorted by an `ORDER BY` clause, and `FIRST ... SKIP`, `OFFSET ... FETCH` or `ROWS` may further limit the number of returned rows, and can - for example - be used for pagination.
+The result set may be sorted by an `ORDER BY` clause, and `FIRST ... SKIP`, `OFFSET ... FETCH` or `ROWS` may further limit the number of returned rows, and can -- for example -- be used for pagination.
 
 The column list may contain all kinds of expressions instead of just column names, and the source need not be a table or view: it may also be a derived table, a common table expression (CTE) or a selectable stored procedure (SP).
 Multiple sources may be combined in a `JOIN`, and multiple result sets may be combined in a `UNION`.
@@ -95,14 +98,14 @@ DSQL, PSQL
 [listing]
 ----
 SELECT
-  [FIRST <m>] [SKIP <n>]
+  [FIRST <limit-expression>] [SKIP <limit-expression>]
   FROM ...
   ...
 
-<m>, <n>  ::=
+<limit-expression> ::=
     <integer-literal>
   | <query-parameter>
-  | (<integer-expression>)
+  | (<value-expression>)
 ----
 
 [[fblangref50-dml-tbl-firstskip]]
@@ -119,8 +122,8 @@ SELECT
 |Query parameter place-holder.
 `?` in DSQL and `:paramname` in PSQL
 
-|integer-expression
-|Expression returning an integer value
+|value-expression
+|A valid expression (returning an integer value)
 |===
 
 .`FIRST` and `SKIP` are non-standard syntax
@@ -130,8 +133,8 @@ SELECT
 Use the SQL-standard <<fblangref50-dml-select-offsetfetch>> syntax wherever possible.
 ====
 
-`FIRST` limits the output of a query to the first _m_ rows.
-`SKIP` will suppress the given _n_ rows before starting to return output.
+`FIRST __m__` limits the output of a query to the first _m_ rows.
+`SKIP __n__` will suppress the given _n_ rows before starting to return output.
 
 `FIRST` and `SKIP` are both optional.
 When used together as in "```FIRST __m__ SKIP __n__```", the _n_ topmost rows of the output set are discarded, and the first _m_ rows of the rest of the set are returned.
@@ -198,19 +201,19 @@ Alternatively, `{asterisk}` ("`select star`" or "`select all`") can be used to s
 ----
 SELECT
   [...]
-  [{DISTINCT | ALL}] <select_list>
+  [{ ALL | DISTINCT }] <select-list>
   [...]
   FROM ...
 
-<select_list> ::= * | <output_column> [, <output_column> ...]
+<select_list> ::= * | <select-sublist> [, <select-sublist> ...]
 
-<output_column> ::=
-    <qualifier>.*
-  | <value_expression> [COLLATE _collation_] [[AS] _alias_]
+<select-sublist> ::=
+    __table-alias__.*
+  | <value-expression> [[AS] _column-alias_]
 
 <value_expression> ::=
-    [<qualifier>.{endsb}__col_name__
-  | [<qualifier>.{endsb}__selectable_SP_outparm__
+    [__table-alias__.{endsb}__col_name__
+  | [__table-alias__.{endsb}__selectable_SP_outparm__
   | <literal>
   | <context-variable>
   | <function-call>
@@ -219,20 +222,18 @@ SELECT
   | _any other expression returning a single_
     _value of a Firebird data type or NULL_
 
-<qualifier> ::= _a relation name or alias_
-
 <function-call> ::=
-    <normal_function>
-  | <aggregate_function>
-  | <window_function>
+    <normal-function>
+  | <aggregate-function>
+  | <window-function>
 
-<normal_function> ::=
+<normal-function> ::=
   !! See <<fblangref50-functions,Built-in Scalar Functions>> !!
 
-<aggregate_function> ::=
+<aggregate-function> ::=
   !! See <<fblangref50-aggfuncs,Aggregate Functions>> !!
 
-<window_function> ::=
+<window-function> ::=
   !! See <<fblangref50-windowfuncs,Window Functions>> !!
 ----
 
@@ -243,18 +244,11 @@ SELECT
 ^| Argument
 ^| Description
 
-|qualifier
-|Name of relation (view, stored procedure, derived table);
-or an alias for it
-
-|collation
-|Only for character-type columns: a collation name that exists and is valid for the character set of the data
-
-|alias
-|Column or field alias
+|table-alias
+|Name of relation (view, stored procedure, derived table), or its alias
 
 |col_name
-|Name of a table or view column
+|Name of a table or view column, or its alias
 
 |selectable_SP_outparm
 |Declared name of an output parameter of a selectable stored procedure
@@ -290,14 +284,14 @@ The column list may optionally be preceded by one of the keywords `DISTINCT` or 
 
 * `DISTINCT` filters out any duplicate rows.
 That is, if two or more rows have the same values in every corresponding column, only one of them is included in the result set
-* `ALL` is the default: it returns all of the rows, including duplicates.
+* `ALL` is the default: it returns all rows, including duplicates.
 `ALL` is rarely used;
-it is supported for compliance with the SQL standard.
+it is allowed for compliance with the SQL standard.
 
-A `COLLATE` clause will not change the appearance of the column as such.
+A `COLLATE` clause of a value-expression will not change the appearance of the column as such.
 However, if the specified collation changes the case or accent sensitivity of the column, it may influence: 
 
-* The ordering, if an `ORDER BY` clause is also present and it involves that column
+* The ordering, if an `ORDER BY` clause is also present, and it involves that column
 * Grouping, if the column is part of a `GROUP BY` clause
 * The rows retrieved (and hence the total number of rows in the result set), if `DISTINCT` is used
 
@@ -444,20 +438,29 @@ This section focuses on single-source selects.
 ----
 SELECT
   ...
-  FROM <source>
-  [<joins>]
+  FROM <table-reference> [, <table-reference> ...]
   [...]
 
-<source> ::=
-    _table_ [[AS] _alias_]
-  | _selectable-stored-procedure_ [(<args>)] [[AS] _alias_]
-  | <derived-table>
-  | LATERAL <derived-table>
+<table-reference> ::= <table-primary> | <joined-table>
 
-<derived-table> ::=
-  (<select-statement>) [[AS] _alias_] [(<column-aliases>)]
+<table-primary> ::=
+    <table-or-query-name> [[AS] _correlation-name_]
+  | [LATERAL] <derived-table> [<correlation-or-recognition>]
+  | (<joined-table>)
 
-<column-aliases> ::= _column-alias_ [, _column-alias_ ...]
+<table-or-query-name> ::=
+    _table-name_
+  | _query-name_
+  | \[__package-name__.]_procedure-name_ [(<procedure-args>)]
+
+<procedure-args> ::= <value-expression [, <value-expression> ...]
+
+<derived-table> ::= (<query-expression>)
+
+<correlation-or-recognition> ::=
+  [AS] _correlation-name_ [(<column-name-list>)]
+
+<column-name-list> ::= _column-name_ [, _column-name_ ...]
 ----
 
 [[fblangref50-dml-tbl-from]]
@@ -467,26 +470,29 @@ SELECT
 ^| Argument
 ^| Description
 
-|table
-|Name of a table, view or CTE
+|table-name
+|Name of a table or view
 
-|selectable-stored-procedure
+|query-name
+|Name of a CTE
+
+|package-name
+|Name of a package
+
+|procedure-name
 |Name of a selectable stored procedure
 
-|args
+|procedure-args
 |Selectable stored procedure arguments
 
 |derived-table
 |Derived table query expression
 
-|select-statement
-|Any SELECT statement
-
-|column-aliases
-|Alias for a column in a relation, CTE or derived table
-
-|alias
+|correlation-name
 |The alias of a data source (table, view, procedure, CTE, derived table)
+
+|column-name
+|Name or alias for a column in a relation, CTE or derived table
 |===
 
 [[fblangref50-dml-select-from-table-view]]
@@ -639,12 +645,19 @@ The result set of the statement acts as a virtual table which the enclosing stat
 .Syntax
 [listing,subs=+quotes]
 ----
-(<select-query>)
-  [[AS] _derived-table-alias_]
-  [(<derived-column-aliases>)]
+(<query-expression>) [<correlation-or-recognition>]
 
-<derived-column-aliases> := _column-alias_ [, _column-alias_ ...]
+<correlation-or-recognition> ::=
+  [AS] _correlation-name_ [(<column-name-list>)]
+
+<column-name-list> ::= _column-name_ [, _column-name_ ...]
 ----
+
+[NOTE]
+====
+The SQL standard requires the _<correlation-or-recognition>_, and not providing one makes it hard to reference the derived table or its columns.
+For maximum compatibility and portability, we recommend always specifying an alias (correlation-name).
+====
 
 The set returned data set by this "```SELECT FROM (SELECT FROM..)```" style of statement is a virtual table that can be queried within the enclosing statement, as if it were a regular table or view.
 
@@ -950,26 +963,47 @@ Since joins can be chained, the datasets involved in a join may themselves be jo
 ----
 SELECT
    ...
-   FROM <source>
-   [<joins>]
+   FROM <table-reference> [, <table-reference> ...]
    [...]
 
-<source> ::=
-    _table_ [[AS] _alias_]
-  | _selectable-stored-procedure_ [(<args>)] [[AS] _alias_]
-  | <derived-table>
-  | LATERAL <derived-table>
+<table-reference> ::= <table-primary> | <joined-table>
 
-<joins> ::= <join> [<join> ...]
+<table-primary> ::=
+    <table-or-query-name> [[AS] _correlation-name_]
+  | [LATERAL] <derived-table> [<correlation-or-recognition>]
+  | (<joined-table>)
 
-<join> ::=
-    [<join-type>] JOIN <source> <join-condition>
-  | NATURAL [<join-type>] JOIN <source>
-  | {CROSS JOIN | ,} <source>
+<table-or-query-name> ::=
+    _table-name_
+  | _query-name_
+  | \[__package-name__.]_procedure-name_ [(<procedure-args>)]
 
-<join-type> ::= INNER | {LEFT | RIGHT | FULL} [OUTER]
+<procedure-args> ::= <value-expression [, <value-expression> ...]
 
-<join-condition> ::= ON <condition> | USING (<column-list>)
+<correlation-or-recognition> ::=
+  [AS] _correlation-name_ [(<column-name-list>)]
+
+<column-name-list> ::= _column-name_ [, _column-name_ ...]
+
+<derived-table> ::= (<query-expression>)
+
+<joined-table> ::=
+    <cross-join>
+  | <natural-join>
+  | <qualified-join>
+
+<cross-join>
+  <table-reference> CROSS JOIN <table-primary>
+
+<natural-join> ::=
+  <table-reference> NATURAL [<join-type>] JOIN <table-primary>
+
+<join-type> ::= INNER | { LEFT | RIGHT | FULL } [OUTER]
+
+<qualified-join> ::=
+  <table-reference> [<join-type>] JOIN <table-primary>
+  { ON <search-condition>
+  | USING (<column-name-list>) }
 ----
 
 [[fblangref50-dml-tbl-join]]
@@ -979,32 +1013,41 @@ SELECT
 ^| Argument
 ^| Description
 
-|table
-|Name of a table, view or CTE
+|table-name
+|Name of a table or view
 
-|selectable-stored-procedure
+|query-name
+|Name of a CTE
+
+|package-name
+|Name of a package
+
+|procedure-name
 |Name of a selectable stored procedure
 
-|args
+|procedure-args
 |Selectable stored procedure input parameter(s)
 
 |derived-table
 |Derived table query expression
 
-|alias
-|An alias for a data source (table, view, procedure, CTE, derived table)
+|correlation-name
+|The alias of a data source (table, view, procedure, CTE, derived table)
 
-|condition
+|column-name
+|Name or alias for a column in a relation, CTE or derived table
+
+|search-condition
 |Join condition (criterion)
 
-|column-list
-|The list of columns used for an equi-join
+|column-name-list
+|List of aliases of the columns of a derived table, or the list of columns used for an equi-join
 |===
 
 [[fblangref50-dml-select-joins-types]]
 ==== Inner vs. Outer Joins
 
-A join always combines data rows from two sets (usually referred to as the left set and the right set).
+A join combines data rows from two sets (usually referred to as the left set and the right set).
 By default, only rows that meet the join condition (i.e. that match at least one row in the other set when the join condition is applied) make it into the result set.
 This default type of join is called an [term]_inner join_.
 Suppose we have the following two tables:
@@ -1209,11 +1252,12 @@ This happens either explicitly in an `ON` clause or implicitly in a `USING` clau
 .Syntax
 [listing]
 ----
-<qualified-join> ::= [<join-type>] JOIN <source> <join-condition>
+<qualified-join> ::=
+  <table-reference> [<join-type>] JOIN <table-primary>
+  { ON <search-condition>
+  | USING (<column-name-list>) }
 
 <join-type> ::= INNER | {LEFT | RIGHT | FULL} [OUTER]
-
-<join-condition> ::= ON <condition> | USING (<column-list>)
 ----
 
 [[fblangref50-dml-select-joins-explicit]]
@@ -1369,7 +1413,8 @@ Natural joins are not supported in Dialect 1 databases.
 .Syntax
 [listing]
 ----
-<natural-join> ::= NATURAL [<join-type>] JOIN <source>
+<natural-join> ::=
+  <table-reference> NATURAL [<join-type>] JOIN <table-primary>
 
 <join-type> ::= INNER | {LEFT | RIGHT | FULL} [OUTER]
 ----
@@ -1426,10 +1471,13 @@ This means that it successfully matches every row in the left source to every ro
 .Syntax
 [listing]
 ----
-<cross-join> ::= {CROSS JOIN | ,} <source>
+FROM <table-reference> [, <table-reference> ...]
+
+<cross-join>
+  <table-reference> CROSS JOIN <table-primary>
 ----
 
-Please notice that the comma syntax is deprecated!
+Please notice that the comma syntax is generally considered deprecated!
 It is only supported to keep legacy code working and may disappear in some future version.
 
 Cross-joining two sets is equivalent to joining them on a tautology (a condition that is always true).
@@ -1659,7 +1707,7 @@ the library takes care of translating the named parameters to positional paramet
 The search condition may also contain local (PSQL) or host (ESQL) variable names, preceded by a colon.
 
 .Syntax
-[listing,subs=+quotes]
+[listing]
 ----
 SELECT ...
   FROM ...
@@ -1876,6 +1924,10 @@ SELECT ... FROM ...
 |===
 ^| Argument
 ^| Description
+
+|<grouping-item>
+|Expression to group on;
+in the rest of this chapter, we use _<value-expression>_ in `GROUP BY` syntax
 
 |non-aggr-expression
 |Any non-aggregating expression that is not included in the `SELECT` list, i.e. unselected columns from the source set or expressions that do not depend on the data in the set at all
@@ -2195,9 +2247,9 @@ The `WINDOW` clause defines one or more named Windows that can be referenced by 
   WINDOW <window_definition> [, <window_definition> ...]
 
 <window definition> ::=
-  _new_window_name_ AS <window_specification>
+  _new-window-name_ AS (<window-specification-details>)
 
-<window_specification> ::=
+<window-specification-details> ::=
   !! See <<fblangref50-windowfuncs,Window (Analytical) Functions>> !!
 ----
 
@@ -2233,9 +2285,9 @@ The `PLAN` clause enables the user to submit a data retrieval plan, thus overrid
 .Syntax
 [listing,subs=+quotes]
 ----
-PLAN <plan-expr>
+PLAN <plan-expression>
 
-<plan-expr> ::=
+<plan-expression> ::=
     (<plan-item> [, <plan-item> ...])
   | <sorted-item>
   | <joined-item>
@@ -2253,7 +2305,7 @@ PLAN <plan-expr>
 <hash-item> ::=
   HASH (<plan-item>, <plan-item> [, <plan-item> ...])
 
-<plan-item> ::= <basic-item> | <plan-expr>
+<plan-item> ::= <basic-item> | <plan-expression>
 
 <basic-item> ::=
   <relation> { NATURAL
@@ -2292,7 +2344,7 @@ Use `SET PLANONLY OFF` to execute the query and show the plan.
 ====
 A more detailed plan can be obtained when you enable an advanced plan.
 In _isql_ this can be done with `SET EXPLAIN ON`.
-The advanced plan displayes more detailed information about the access methods used by the optimizer, however it cannot be included in the `PLAN` clause of a statement.
+The advanced plan displays more detailed information about the access methods used by the optimizer, however it cannot be included in the `PLAN` clause of a statement.
 The description of the advanced plan is beyond the scope of this Language Reference.
 ====
 
@@ -2731,50 +2783,36 @@ By default, a union suppresses duplicate rows.
 The optional `DISTINCT` keyword makes the default behaviour explicit.
 
 .Syntax
-[listing,subs=+quotes]
+[listing]
 ----
-<union> ::=
-  <individual-select>
-  UNION [{DISTINCT | ALL}]
-  <individual-select>
-  [
-    [UNION [{DISTINCT | ALL}]
-    <individual-select>
-    ...
-  ]
-  [<union-wide-clauses>]
+<query-expression> ::=
+  [<with-clause>] <query-expression-body> [<order-by-clause>]
+    [{ <rows-clause>
+     | [<result-offset-clause>] [<fetch-first-clause>] }]
 
-<individual-select> ::=
-  SELECT
-  [TRANSACTION _name_]
-  [FIRST _m_] [SKIP _n_]
-  [{DISTINCT | ALL}] <columns>
-  [INTO <host-varlist>]
-  FROM <source> [[AS] _alias_]
-  [<joins>]
-  [WHERE <condition>]
-  [GROUP BY <grouping-list>
-  [HAVING <aggregate-condition>]]
-  [PLAN <plan-expr>]
+<query-expression-body> ::=
+    <query-term>
+  | <query-expression-body> UNION [{ DISTINCT | ALL }] <query-term>
 
-<union-wide-clauses> ::=
-  [ORDER BY <ordering-list>]
-  [{ ROWS <m> [TO <n>]
-   | [OFFSET _n_ {ROW | ROWS}]
-     [FETCH {FIRST | NEXT} [_m_] {ROW | ROWS} ONLY]
-  }]
-  [FOR UPDATE [OF <columns>]]
-  [WITH LOCK [SKIP LOCKED]]
-  [INTO <PSQL-varlist>]
+<query-term> ::= <query-primary>
+
+<query-primary> ::=
+    <query-specification>
+  | (<query-expression-body> [<order-by-clause>]
+     [<result-offset-clause>] [<fetch-first-clause>])
+
+<query-specification> ::=
+  SELECT <limit-clause> [{ ALL | DISTINCT }] <select-list>
+    FROM <table-reference> [, <table-reference> ...]
+    [WHERE <search-condition>]
+    [GROUP BY <value-expression> [, <value-expression> ...]]
+    [HAVING <search-condition>]
+    [WINDOW <window-definition> [, <window-definition> ...]]
+    [PLAN <plan-expression>]
 ----
 
-.Syntax incomplete
 [NOTE]
 ====
-Since Firebird 5.0, instead of the `<individual-select>`, Firebird also allows a parenthesized query expression which can contain `ORDER BY`, `OFFSET` and `FETCH` clauses.
-Before we can correctly incorporate this in the syntax, the documentation of the `SELECT` syntax needs to be overhauled significantly.
-Until that happens, we hope this note suffices.
-
 See also <<fblangref50-dml-select-full-syntax>> for the full syntax.
 ====
 
@@ -2877,17 +2915,22 @@ This is not something you should rely on: the order may change depending on the 
 To specify an explicit sorting order for the set specification, an `ORDER BY` clause is used.
 
 .Syntax
-[listing,subs=+quotes]
+[listing]
 ----
 SELECT ... FROM ...
 ...
-ORDER BY <ordering-item> [, <ordering-item> …]
+ORDER BY <sort-specification [, <sort-specification> ...]
 
-<ordering-item> ::=
-  {_col-name_ | _col-alias_ | _col-position_ | <expression>}
-  [COLLATE _collation-name_]
-  [ASC[ENDING] | DESC[ENDING]]
-  [NULLS {FIRST|LAST}]
+<sort-specification> ::=
+  <value-expression> [<ordering-specification>] [<null-ordering>]
+
+<ordering-specification> ::=
+    ASC  | ASCENDING
+  | DESC | DESCENDING
+
+<null-ordering> ::=
+    NULLS FIRST
+  | NULLS LAST
 ----
 
 [[fblangref50-dml-tbl-orderby]]
@@ -2897,23 +2940,12 @@ ORDER BY <ordering-item> [, <ordering-item> …]
 ^| Argument
 ^| Description
 
-|col-name
-|Full column name
-
-|col-alias
-|Column alias
-
-|col-position
-|Column position in the `SELECT` list
-
-|expression
-|Any expression
-
-|collation-name
-|Collation name (sorting order for string types)
+|value-expression
+|Any expression;
+an expression that is _only_ an integer literal represents the column position
 |===
 
-The `ORDER BY` consists of a comma-separated list of the columns on which the result data set should be sorted.
+The `ORDER BY` consists of a comma-separated list of the columns or expressions on which the result data set should be sorted.
 The sort order can be specified by the name of the column -- but only if the column was not previously aliased in the `SELECT` columns list.
 The alias must be used if it was used in the select list.
 The ordinal position number of the column in the `SELECT` column list, the alias given to the column in the `SELECT` list with the help of the `AS` keyword, or the number of the column in the `SELECT` list can be used without restriction.
@@ -2946,7 +2978,7 @@ Specifying ascending order for one column and descending order for another is al
 [[fblangref50-dml-select-orderby-collation]]
 ==== Collation Order
 
-The keyword `COLLATE` specifies the collation order for a string column if you need a collation that is different from the normal one for this column.
+Using the keyword `COLLATE` in a _<value-expression>_ specifies the collation order for a string column if you need a collation that is different from the normal one for this column.
 The normal collation order will be either the default one for the database character set, or the one set explicitly in the column's definition.
 
 [[fblangref50-dml-select-orderby-nullsposition]]
@@ -2960,15 +2992,15 @@ The keyword `NULLS` defines where NULL in the associated column will fall in the
 [[fblangref50-dml-select-orderby-unions]]
 ==== Ordering ``UNION``-ed Sets
 
-The discrete queries contributing to a `UNION` cannot take an `ORDER BY` clause.
-The only option is to order the entire output, using one `ORDER BY` clause at the end of the overall query.
+Not-parenthesized query expressions contributing to a `UNION` cannot take an `ORDER BY` clause.
+You can order the entire output, using one `ORDER BY` clause at the end of the overall query, or use parenthesized query expressions, which do allow `ORDER BY`
 
 The simplest -- and, in some cases, the only -- method for specifying the sort order is by the ordinal column position.
 However, it is also valid to use the column names or aliases, from the first contributing query _only_.
 
 The `ASC`/`DESC` and/or `NULLS` directives are available for this global set.
 
-If discrete ordering within the contributing set is required, use of derived tables or common table expressions for those sets may be a solution.
+If discrete ordering within the contributing set is required, use parenthesized query expressions, derived tables, or common table expressions for those sets.
 
 [[fblangref50-dml-select-orderby-example]]
 ==== Examples of `ORDER BY`
@@ -3069,7 +3101,7 @@ DSQL, PSQL
 SELECT <columns> FROM ...
   [WHERE ...]
   [ORDER BY ...]
-  ROWS _m_ [TO _n_]
+  ROWS <value-expression> [TO <value-expression>]
 ----
 
 [[fblangref50-dml-tbl-rows]]
@@ -3079,7 +3111,7 @@ SELECT <columns> FROM ...
 ^| Argument
 ^| Description
 
-|m, n
+|value-expression
 |Any integer expressions
 |===
 
@@ -3154,6 +3186,7 @@ If a need arises to limit the subsets returned by one or more `SELECT` statement
 
 . Use `FIRST`/`SKIP` syntax in these `SELECT` statements -- bearing in mind that an ordering clause (`ORDER BY`) cannot be applied locally to the discrete queries, but only to the combined output.
 . Convert the queries to derived tables with their own `ROWS` clauses.
+. Use parenthesized query expressions with `OFFSET`/`FETCH`
 
 [[fblangref50-dml-select-rows-example]]
 ==== Examples of `ROWS`
@@ -3229,15 +3262,16 @@ Retrieving a slice of rows from an ordered set
 DSQL, PSQL
 
 .Syntax
-[listing,subs=+quotes]
+[listing]
 ----
 SELECT <columns> FROM ...
   [WHERE ...]
   [ORDER BY ...]
-  [OFFSET <m> {ROW | ROWS}]
-  [FETCH {FIRST | NEXT} [ <n> ] { ROW | ROWS } ONLY]
+  [OFFSET <offset-fetch-expression> { ROW | ROWS }]
+  [FETCH { FIRST | NEXT }
+   [<offset-fetch-expression>] { ROW | ROWS } ONLY]
 
-<m>, <n>  ::=
+<offset-fetch-expression> ::=
     <integer-literal>
   | <query-parameter>
 ----
@@ -3261,10 +3295,10 @@ The `OFFSET` and `FETCH` clauses are an SQL:2008 compliant equivalent for `FIRST
 The `OFFSET` clause specifies the number of rows to skip.
 The `FETCH` clause specifies the number of rows to fetch.
 
-When _<n>_ is left out of the `FETCH` clause (eg `FETCH FIRST ROW ONLY`), one row will be fetched.
+When _<offset-fetch-expression>_ is left out of the `FETCH` clause (e.g. `FETCH FIRST ROW ONLY`), one row will be fetched.
 
 The choice between `ROW` or `ROWS`, or `FIRST` or `NEXT` in the clauses is just for aesthetic purposes (eg making the query more readable or grammatically correct).
-Technically there is no difference between `OFFSET 10 ROW` or `OFFSET 10 ROWS`, or `FETCH NEXT 10 ROWS ONLY` or `FETCH FIRST 10 ROWS ONLY`.
+Technically, there is no difference between `OFFSET 10 ROW` or `OFFSET 10 ROWS`, or `FETCH NEXT 10 ROWS ONLY` or `FETCH FIRST 10 ROWS ONLY`.
 
 As with `SKIP` and `FIRST`, `OFFSET` and `FETCH` clauses can be applied independently, in both top-level and nested query expressions.
 
@@ -3274,7 +3308,7 @@ As with `SKIP` and `FIRST`, `OFFSET` and `FETCH` clauses can be applied independ
 . Firebird doesn't support the `FETCH ... WITH TIES` defined in the SQL standard.
 . The `FIRST`/`SKIP` and `ROWS` clause are non-standard alternatives.
 . The `OFFSET` and/or `FETCH` clauses cannot be combined with `ROWS` or `FIRST`/`SKIP` on the same query expression.
-. Expressions, column references, etc are not allowed within either clause.
+. Expressions, column references, etc. are not allowed within either clause.
 . Contrary to the `ROWS` clause, `OFFSET` and `FETCH` are only available on `SELECT` statements.
 ====
 
@@ -3374,7 +3408,7 @@ FETCH NEXT 20 ROWS;
 ----
 SELECT ... FROM _single_table_
   [WHERE ...]
-  [FOR UPDATE [OF <column_list>]]
+  FOR UPDATE [OF <column-name-list>]
 ----
 
 `FOR UPDATE` does not do what its name suggests.
@@ -3382,10 +3416,10 @@ It's only effect currently is to disable the pre-fetch buffer.
 
 [TIP]
 ====
-It is likely to change in future: the plan is to validate cursors marked with `FOR UPDATE` if they are truly updateable and reject positioned updates and deletes for cursors evaluated as non-updateable.
+It is likely to change in a future Firebird version: the plan is to validate cursors marked with `FOR UPDATE` if they are truly updateable and reject positioned updates and deletes for cursors evaluated as non-updateable.
 ====
 
-The `OF` sub-clause does not do anything at all.
+The `OF` sub-clause does not do anything at all, and is only provided for syntax compatibility with other database systems.
 
 [[fblangref50-dml-with-lock]]
 === `WITH LOCK`
@@ -3564,14 +3598,16 @@ PSQL
 .Syntax
 In PSQL the `INTO` clause is placed at the very end of the `SELECT` statement.
 
-[listing,subs="+quotes,attributes"]
+[listing,subs=+quotes]
 ----
 SELECT [...] <column-list>
 FROM ...
 [...]
 [INTO <variable-list>]
 
-<variable-list> ::= [:{endsb}__psqlvar__ [, [:{endsb}__psqlvar__ ...]
+<variable-list> ::= <variable> [, <variable> ...]
+
+<variable> ::= _varname_ | ':' _varname_
 ----
 
 [NOTE]
@@ -3625,15 +3661,18 @@ DSQL, PSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-<cte-construct> ::=
-  <cte-defs>
-  <main-query>
+<query-expression> ::=
+  [<with-clause>] <query-expression-body> [<order-by-clause>]
+    [{ <rows-clause>
+     | [<result-offset-clause>] [<fetch-first-clause>] }]
 
-<cte-defs> ::= WITH [RECURSIVE] <cte> [, <cte> ...]
+<with-clause> ::=
+  WITH [RECURSIVE] <with-list-element> [, <with-list-element> ...]
 
-<cte> ::= _name_ [(<column-list>)] AS (<cte-stmt>)
+<with-list-element> ::=
+  _query-name_ [(<column-name-list>)] AS (<query-expression>)
 
-<column-list> ::= _column-alias_ [, _column-alias_ ...]
+<column-name-list> ::= _column-name_ [, _column-name_ ...]
 ----
 
 [[fblangref50-dml-tbl-cte]]
@@ -3643,16 +3682,10 @@ DSQL, PSQL
 ^| Argument
 ^| Description
 
-|cte-stmt
-|Any `SELECT` statement, including `UNION`
-
-|main-query
-|The main `SELECT` statement, which can refer to the CTEs defined in the preamble
-
-|name
+|query-name
 |Alias for a table expression
 
-|column-alias
+|column-name
 |Alias for a column in a table expression
 |===
 
@@ -3663,7 +3696,7 @@ __CTE__s can be recursive, i.e. self-referencing, but they cannot be nested.
 [float]
 ===== CTE Notes
 
-* A _CTE_ definition can contain any legal `SELECT` statement, as long as it doesn't have a "```WITH...```" preamble of its own (no nesting).
+* A _CTE_ definition can contain any legal query-expression, as long as it doesn't have a "```WITH...```" preamble of its own (no nesting).
 * __CTE__s defined for the same main query can reference each other, but care should be taken to avoid loops.
 * __CTE__s can be referenced from anywhere in the main query.
 * Each _CTE_ can be referenced multiple times in the main query, using different aliases if necessary.
@@ -3850,12 +3883,14 @@ Following is the full syntax.
 
 [NOTE]
 ====
-Where possible, the syntax below uses syntax names from the SQL standard, which do not necessarily match the syntax names in the Firebird source, nor those used in previous sections of this chapter.
+Where possible, the syntax below uses syntax names from the SQL standard, which do not necessarily match the syntax names in the Firebird source.
 In some cases, syntax productions have been collapsed, because the production in the SQL standard are very verbose as they are also used to add additional rules or definitions to a syntax element.
 
-Although this is intended as the full syntax, some productions are not shown (e.g. `<value-expression>`) and assumed to be clear for the reader, and in some cases we take shortcuts like using `__query-name__` or `__column-alias__` fpr identifiers in a syntax production.
+Although this is intended as the full syntax, some productions are not shown (e.g. _<value-expression>_) and assumed to be clear for the reader, and in some cases we take shortcuts like using `__query-name__` or `__column-alias__` for identifiers in a syntax production.
 
 If you come across situations where these shortcuts do result in lack of clarity or other issues, let us know on https://github.com/FirebirdSQL/firebird-documentation[^] or on https://groups.google.com/g/firebird-devel[firebird-devel^].
+
+The syntax below does not include the PSQL `SELECT ... INTO` syntax, which is essentially `<cursor-specification> INTO <variable-list>`.
 ====
 
 [listing,subs="+quotes,attributes"]
@@ -3889,7 +3924,7 @@ If you come across situations where these shortcuts do result in lack of clarity
 
 <query-specification> ::=
   SELECT <limit-clause> [{ ALL | DISTINCT }] <select-list>
-    FROM <table-reference-list>
+    FROM <table-reference> [, <table-reference> ...]
     [WHERE <search-condition>]
     [GROUP BY <value-expression> [, <value-expression> ...]]
     [HAVING <search-condition>]
@@ -3903,13 +3938,11 @@ If you come across situations where these shortcuts do result in lack of clarity
   | <query-parameter>
   | (<value-expression>)
 
-<select-list> ::= { * | <select-sublist> [, <select-sublist> ...] }
+<select-list> ::= * | <select-sublist> [, <select-sublist> ...]
 
 <select-sublist> ::=
     __table-alias__.*
   | <value-expression> [[AS] _column-alias_]
-
-<table-reference-list> ::= <table-reference> [, <table-reference> ...]
 
 <table-reference> ::= <table-primary> | <joined-table>
 
@@ -3928,8 +3961,7 @@ If you come across situations where these shortcuts do result in lack of clarity
 <correlation-or-recognition> ::=
   [AS] _correlation-name_ [(<column-name-list>)]
 
-<derived-table> ::=
-  (<query-expression>)
+<derived-table> ::= (<query-expression>)
 
 <joined-table> ::=
     <cross-join>
@@ -3942,9 +3974,7 @@ If you come across situations where these shortcuts do result in lack of clarity
 <natural-join> ::=
   <table-reference> NATURAL [<join-type>] JOIN <table-primary>
 
-<join-type> ::= INNER | <outer-join-type> [OUTER]
-
-<outer-join-type> :: = LEFT | RIGHT | FULL
+<join-type> ::= INNER | { LEFT | RIGHT | FULL } [OUTER]
 
 <qualified-join> ::=
   <table-reference> [<join-type>] JOIN <table-primary>
@@ -3967,10 +3997,17 @@ If you come across situations where these shortcuts do result in lack of clarity
   ORDER BY <sort-specification [, <sort-specification> ...]
 
 <sort-specification> ::=
-  <value-expression> [{ ASC | DESC }] [NULLS { FIRST | LAST }]
+  <value-expression> [<ordering-specification>] [<null-ordering>]
 
-<window-frame-clause> ::=
-  { RANGE | ROWS } <window-frame-extent>
+<ordering-specification> ::=
+    ASC  | ASCENDING
+  | DESC | DESCENDING
+
+<null-ordering> ::=
+    NULLS FIRST
+  | NULLS LAST
+
+<window-frame-clause> ::= { RANGE | ROWS } <window-frame-extent>
 
 <window-frame-extent> ::=
     <window-frame-start>
@@ -3997,7 +4034,8 @@ If you come across situations where these shortcuts do result in lack of clarity
   | <query-parameter>
 
 <fetch-first-clause> ::=
-  [FETCH { FIRST | NEXT } [<offset-fetch-expression>] { ROW | ROWS } ONLY]
+  [FETCH { FIRST | NEXT }
+   [<offset-fetch-expression>] { ROW | ROWS } ONLY]
 
 <updatability-clause> ::= FOR UPDATE [OF <column-name-list>]
 
