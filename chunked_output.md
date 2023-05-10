@@ -13,6 +13,23 @@ NOTE: Creating chunked output is experimental.
    ./gradlew asciidocDocbook --baseName=refdocs --docId=fblangref40
    ```
 4. Generate chunked HTML from Docbook: (note: trial & error, work in progress; PowerShell syntax; paths based on my setup)
+
+   Firebird 5.0 Language Reference
+   ```
+   docker run `
+    -v D:\Development\firebird-documentation\build\docs\chunk:/output `
+    -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
+    docbook-xslt `
+    /input/en/refdocs/fblangref50/firebird-50-language-reference.xml `
+    chunk-output-base-uri=/output/en/refdocs/fblangref50/ `
+    chunk=firebird-50-language-reference.html `
+    resource-base-uri=../../../ `
+    --resources:/output `
+    -- `
+    "-xsl:/input/custom.xsl"      
+   ``` 
+
+   Firebird 4.0 Language Reference
    ```
    docker run `
     -v D:\Development\firebird-documentation\build\docs\chunk:/output `
@@ -21,6 +38,21 @@ NOTE: Creating chunked output is experimental.
     /input/en/refdocs/fblangref40/firebird-40-language-reference.xml `
     chunk-output-base-uri=/output/en/refdocs/fblangref40/ `
     chunk=firebird-40-language-reference.html `
+    resource-base-uri=../../../ `
+    --resources:/output `
+    -- `
+    "-xsl:/input/custom.xsl"      
+   ```
+   
+   Firebird 3.0 Language Reference
+   ```
+   docker run `
+    -v D:\Development\firebird-documentation\build\docs\chunk:/output `
+    -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
+    docbook-xslt `
+    /input/en/refdocs/fblangref30/firebird-30-language-reference.xml `
+    chunk-output-base-uri=/output/en/refdocs/fblangref30/ `
+    chunk=firebird-30-language-reference.html `
     resource-base-uri=../../../ `
     --resources:/output `
     -- `
