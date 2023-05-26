@@ -1,14 +1,16 @@
 [[fblangref50-functions]]
 = Built-in Scalar Functions
 
+Unless explicitly mentioned otherwise in an "`Available in`" section, functions are available in DSQL and PSQL.
+Availability in ESQL is not tracked by this Language Reference.
+
 [[fblangref50-functions-workcontext]]
 == Context Functions
 
 [[fblangref50-scalarfuncs-get-context]]
 === `RDB$GET_CONTEXT()`
 
-.Available in
-DSQL, PSQL{nbsp}* As a declared UDF it should be available in ESQL
+Retrieves the value of a context variable from a namespace
 
 .Result type
 `VARCHAR(255)`
@@ -33,24 +35,21 @@ RDB$GET_CONTEXT ('<namespace>', <varname>)
 |Namespace
 
 |varname
-|Variable name.
-Case-sensitive.
-Maximum length is 80 characters
+|Variable name;
+case-sensitive with a maximum length of 80 characters
 |===
-
-Retrieves the value of a context variable from one of the namespaces `SYSTEM`, `USER_SESSION` and `USER_TRANSACTION`.
 
 .The namespaces
 The `USER_SESSION` and `USER_TRANSACTION` namespaces are initially empty.
-The user can create and set variables in them with `RDB$SET_CONTEXT()` and retrieve them with `RDB$GET_CONTEXT()`.
+A user can create and set variables with `RDB$SET_CONTEXT()` and retrieve them with `RDB$GET_CONTEXT()`.
 The `SYSTEM` namespace is read-only.
 The `DDL_TRIGGER` namespace is only valid in DDL triggers, and is read-only.
-It contains a number of predefined variables, shown below.
+The `SYSTEM` and `DDL_TRIGGER` namespaces contain a number of predefined variables, shown below.
 
 .Return values and error behaviour
 If the polled variable exists in the given namespace, its value will be returned as a string of max. 255 characters.
-If the namespace doesn't exist or if you try to access a non-existing variable in the `SYSTEM` namespace, an error is raised.
-If you request a non-existing variable in one of the other namespaces, `NULL` is returned.
+If the namespace doesn't exist or if you try to access a non-existing variable in the `SYSTEM` or `DDL_TRIGGER` namespace, an error is raised.
+If you request a non-existing variable in one of the user namespaces, `NULL` is returned.
 Both namespace and variable names must be given as single-quoted, case-sensitive, non-``NULL`` strings.
 
 [[fblangref50-funcs-tbl-rdbgetcontext-system]]
@@ -118,7 +117,7 @@ The isolation level of the current transaction: ``'READ COMMITTED'``, ``'SNAPSHO
 Lock timeout of the current transaction.
 
 `NETWORK_PROTOCOL`::
-The protocol used for the connection: ``'TCPv4'``, ``'WNET'``, ``'XNET'`` or `NULL`.
+The protocol used for the connection: ``'TCPv4'``, ``'TCPv6'``, ``'XNET'`` or `NULL`.
 
 `READ_ONLY`::
 Returns ``'TRUE'`` if current transaction is read-only and ``'FALSE'`` otherwise.
@@ -214,8 +213,7 @@ insert into MyTable (TestField)
 [[fblangref50-scalarfuncs-set-context]]
 === `RDB$SET_CONTEXT()`
 
-.Available in
-DSQL, PSQL{nbsp}* As a declared UDF it should be available in ESQL
+Creates, sets or clears a variable in one of the user-writable namespaces
 
 .Result type
 `INTEGER`
@@ -250,14 +248,15 @@ Maximum length is 80 characters
 |Data of any type provided it can be cast to `VARCHAR(255)`
 |===
 
-Creates, sets or unsets a variable in one of the user-writable namespaces `USER_SESSION` and `USER_TRANSACTION`.
-
 .The namespaces
 The `USER_SESSION` and `USER_TRANSACTION` namespaces are initially empty.
-The user can create and set variables in them with `RDB$SET_CONTEXT()` and retrieve them with `RDB$GET_CONTEXT()`.
-The `USER_SESSION` context is bound to the current connection.
-Variables in `USER_TRANSACTION` only exist in the transaction in which they have been set.
-When the transaction ends, the context and all the variables defined in it are destroyed.
+A user can create and set variables with `RDB$SET_CONTEXT()` and retrieve them with `RDB$GET_CONTEXT()`.
+The `USER_SESSION` context is bound to the current connection, the `USER_TRANSACTION` context to the current transaction.
+
+.Lifecycle
+When a transaction ends, its `USER_TRANSACTION` context is cleared.
+When a connection is closed, its `USER_SESSION` context is cleared.
+When a connection is reset using <<fblangref50-management-session-reset-alter,`ALTER SESSION RESET`>>, the `USER_TRANSACTION` and `USER_SESSION` contexts are cleared.
 
 .Return values and error behaviour
 The function returns `1` when the variable already existed before the call and `0` when it didn't.
@@ -268,9 +267,11 @@ Both namespace and variable names must be entered as single-quoted, case-sensiti
 [NOTE]
 ====
 * The maximum number of variables in any single context is 1000.
-* All `USER_TRANSACTION` variables will survive a <<fblangref50-transacs-rollback-options,`ROLLBACK RETAIN`>>  (see `ROLLBACK` Options) or <<fblangref50-transacs-rollback-tosavepoint,`ROLLBACK TO SAVEPOINT`>> unaltered, no matter at which point during the transaction they were set.
+* All `USER_TRANSACTION` variables survive a <<fblangref50-transacs-rollback-options,`ROLLBACK RETAIN`>>  (see `ROLLBACK` Options) or <<fblangref50-transacs-rollback-tosavepoint,`ROLLBACK TO SAVEPOINT`>> unaltered, no matter at which point during the transaction they were set.
 * Due to its UDF-like nature, `RDB$SET_CONTEXT` can -- in PSQL only -- be called like a void function, without assigning the result, as in the second example above.
 Regular internal functions don't allow this type of use.
+* `ALTER SESSION RESET` clears both `USER_TRANSACTION` and `USER_SESSION` contexts;
+the `USER_TRANSACTION` context is reset because -- if executed in an active transaction -- this will effectively roll back the transaction, and start a new transaction with the same transaction handle.
 ====
 
 .Examples
@@ -293,11 +294,10 @@ select rdb$set_context('USER_TRANSACTION', 'Savepoints', 'Yes')
 [[fblangref50-scalarfuncs-abs]]
 === `ABS()`
 
-.Available in
-DSQL, PSQL
+Absolute value
 
 .Result type
-Numerical
+Numerical, matching input type
 
 .Syntax
 [listing,subs=+quotes]
@@ -316,13 +316,10 @@ ABS (_number_)
 |An expression of a numeric type
 |===
 
-Returns the absolute value of the argument.
-
 [[fblangref50-scalarfuncs-acos]]
 === `ACOS()`
 
-.Available in
-DSQL, PSQL
+Arc cosine
 
 .Result type
 `DOUBLE PRECISION`
@@ -344,8 +341,6 @@ ACOS (_number_)
 |An expression of a numeric type within the range [-1, 1]
 |===
 
-Returns the arc cosine of the argument.
-
 * The result is an angle in the range [0, pi].
 
 .See also
@@ -354,8 +349,7 @@ Returns the arc cosine of the argument.
 [[fblangref50-scalarfuncs-acosh]]
 === `ACOSH()`
 
-.Available in
-DSQL, PSQL
+Inverse hyperbolic cosine
 
 .Result type
 `DOUBLE PRECISION`
@@ -377,8 +371,6 @@ ACOSH (_number_)
 |Any non-``NULL`` value in the range [1, INF].
 |===
 
-Returns the inverse hyperbolic cosine of the argument.
-
 * The result is in the range [0, INF].
 
 .See also
@@ -387,8 +379,7 @@ Returns the inverse hyperbolic cosine of the argument.
 [[fblangref50-scalarfuncs-asin]]
 === `ASIN()`
 
-.Available in
-DSQL, PSQL
+Arc sine
 
 .Result type
 `DOUBLE PRECISION`
@@ -410,8 +401,6 @@ ASIN (_number_)
 |An expression of a numeric type within the range [-1, 1]
 |===
 
-Returns the arc sine of the argument.
-
 * The result is an angle in the range [-pi/2, pi/2].
 
 .See also
@@ -420,8 +409,7 @@ Returns the arc sine of the argument.
 [[fblangref50-scalarfuncs-asinh]]
 === `ASINH()`
 
-.Available in
-DSQL, PSQL
+Inverse hyperbolic sine
 
 .Result type
 `DOUBLE PRECISION`
@@ -443,8 +431,6 @@ ASINH (_number_)
 |Any non-``NULL`` value in the range [-INF, INF].
 |===
 
-Returns the inverse hyperbolic sine of the argument.
-
 * The result is in the range [-INF, INF].
 
 .See also
@@ -453,8 +439,7 @@ Returns the inverse hyperbolic sine of the argument.
 [[fblangref50-scalarfuncs-atan]]
 === `ATAN()`
 
-.Available in
-DSQL, PSQL
+Arc tangent
 
 .Result type
 `DOUBLE PRECISION`
@@ -476,8 +461,7 @@ ATAN (_number_)
 |An expression of a numeric type
 |===
 
-The function `ATAN` returns the arc tangent of the argument.
-The result is an angle in the range ++<-pi/2, pi/2>++.
+* The result is an angle in the range ++<-pi/2, pi/2>++.
 
 .See also
 <<fblangref50-scalarfuncs-atan2>>, <<fblangref50-scalarfuncs-tan>>, <<fblangref50-scalarfuncs-acos>>, <<fblangref50-scalarfuncs-asin>>
@@ -485,8 +469,7 @@ The result is an angle in the range ++<-pi/2, pi/2>++.
 [[fblangref50-scalarfuncs-atan2]]
 === `ATAN2()`
 
-.Available in
-DSQL, PSQL
+Two-argument arc tangent
 
 .Result type
 `DOUBLE PRECISION`
@@ -531,8 +514,7 @@ This also makes it obvious that `ATAN2(0, 0)` is undefined.
 [[fblangref50-scalarfuncs-atanh]]
 === `ATANH()`
 
-.Available in
-DSQL, PSQL
+Inverse hyperbolic tangent
 
 .Result type
 `DOUBLE PRECISION`
@@ -554,8 +536,6 @@ ATANH (_number_)
 |Any non-``NULL`` value in the range ++<-1, 1>++.
 |===
 
-Returns the inverse hyperbolic tangent of the argument.
-
 * The result is a number in the range [-INF, INF].
 
 .See also
@@ -564,11 +544,10 @@ Returns the inverse hyperbolic tangent of the argument.
 [[fblangref50-scalarfuncs-ceil]]
 === `CEIL()`, `CEILING()`
 
-.Available in
-DSQL, PSQL
+Ceiling of a number
 
 .Result type
-`BIGINT` for exact numeric _number_, or `DOUBLE PRECISION` for floating point _number_
+`BIGINT` or `INT128` for exact numeric _number_, or `DOUBLE PRECISION` or `DECFLOAT` for floating point _number_
 
 .Syntax
 [listing,subs=+quotes]
@@ -595,8 +574,7 @@ Returns the smallest whole number greater than or equal to the argument.
 [[fblangref50-scalarfuncs-cos]]
 === `COS()`
 
-.Available in
-DSQL, PSQL
+Cosine
 
 .Result type
 `DOUBLE PRECISION`
@@ -618,9 +596,6 @@ COS (_angle_)
 |An angle in radians
 |===
 
-Returns an angle's cosine.
-The argument must be given in radians. 
-
 * Any non-``NULL`` result is in the range [-1, 1].
 
 .See also
@@ -629,8 +604,7 @@ The argument must be given in radians.
 [[fblangref50-scalarfuncs-cosh]]
 === `COSH()`
 
-.Available in
-DSQL, PSQL
+Hyperbolic cosine
 
 .Result type
 `DOUBLE PRECISION`
@@ -652,8 +626,6 @@ COSH (_number_)
 |A number of a numeric type
 |===
 
-Returns the hyperbolic cosine of the argument.
-
 * Any non-``NULL`` result is in the range [1, INF].
 
 .See also
@@ -662,8 +634,7 @@ Returns the hyperbolic cosine of the argument.
 [[fblangref50-scalarfuncs-cot]]
 === `COT()`
 
-.Available in
-DSQL, PSQL
+Cotangent
 
 .Result type
 `DOUBLE PRECISION`
@@ -685,17 +656,13 @@ COT (_angle_)
 |An angle in radians
 |===
 
-Returns an angle's cotangent.
-The argument must be given in radians.
-
 .See also
 <<fblangref50-scalarfuncs-cos>>, <<fblangref50-scalarfuncs-sin>>, <<fblangref50-scalarfuncs-tan>>
 
 [[fblangref50-scalarfuncs-exp]]
 === `EXP()`
 
-.Available in
-DSQL, PSQL
+Natural exponent
 
 .Result type
 `DOUBLE PRECISION`
@@ -725,11 +692,10 @@ Returns the natural exponential, _e_^`number`^
 [[fblangref50-scalarfuncs-floor]]
 === `FLOOR()`
 
-.Available in
-DSQL, PSQL
+Floor of a number
 
 .Result type
-`BIGINT` for exact numeric _number_, or `DOUBLE PRECISION` for floating point _number_
+`BIGINT` or `INT128` for exact numeric _number_, or `DOUBLE PRECISION` or `DECFLOAT` for floating point _number_
 
 .Syntax
 [listing,subs=+quotes]
@@ -756,8 +722,7 @@ Returns the largest whole number smaller than or equal to the argument.
 [[fblangref50-scalarfuncs-ln]]
 === `LN()`
 
-.Available in
-DSQL, PSQL
+Natural logarithm
 
 .Result type
 `DOUBLE PRECISION`
@@ -779,8 +744,6 @@ LN (_number_)
 |An expression of a numeric type
 |===
 
-Returns the natural logarithm of the argument.
-
 * An error is raised if the argument is negative or 0.
 
 .See also
@@ -789,8 +752,7 @@ Returns the natural logarithm of the argument.
 [[fblangref50-scalarfuncs-log]]
 === `LOG()`
 
-.Available in
-DSQL, PSQL
+Logarithm with variable base
 
 .Result type
 `DOUBLE PRECISION`
@@ -819,7 +781,6 @@ An expression of a numeric type
 Returns the __x__-based logarithm of _y_.
 
 * If either argument is 0 or below, an error is raised.
-(Before 2.5, this would result in `NaN`, `+/-INF` or 0, depending on the exact values of the arguments.)
 * If both arguments are 1, `NaN` is returned.
 * If _x_ = 1 and _y_ < 1, `-INF` is returned.
 * If _x_ = 1 and _y_ > 1, `INF` is returned.
@@ -830,8 +791,7 @@ Returns the __x__-based logarithm of _y_.
 [[fblangref50-scalarfuncs-log10]]
 === `LOG10()`
 
-.Available in
-DSQL, PSQL
+Decimal (base-10) logarithm
 
 .Result type
 `DOUBLE PRECISION`
@@ -853,10 +813,7 @@ LOG10 (_number_)
 |An expression of a numeric type
 |===
 
-Returns the 10-based logarithm of the argument.
-
 * An error is raised if the argument is negative or 0.
-(In versions prior to 2.5, such values would result in `NaN` and `-INF`, respectively.)
 
 .See also
 <<fblangref50-scalarfuncs-power>>, <<fblangref50-scalarfuncs-ln>>, <<fblangref50-scalarfuncs-log>>
@@ -864,8 +821,7 @@ Returns the 10-based logarithm of the argument.
 [[fblangref50-scalarfuncs-mod]]
 === `MOD()`
 
-.Available in
-DSQL, PSQL
+Remainder
 
 .Result type
 `SMALLINT`, `INTEGER` or `BIGINT` depending on the type of _a_.
@@ -895,12 +851,14 @@ Returns the remainder of an integer division.
 
 * Non-integer arguments are rounded before the division takes place.
 So, "```mod(7.5, 2.5)```" gives 2 ("```mod(8, 3)```"), not 0.
+* Do not confuse `MOD()` with the mathematical modulus operator;
+e.g. mathematically, `-21 mod 4` is 3, while Firebird's `MOD(-21, 4)` is -1.
+In other words, `MOD()` behaves as `%` in languages like C and Java
 
 [[fblangref50-scalarfuncs-pi]]
 === `PI()`
 
-.Available in
-DSQL, PSQL
+Approximation of _pi_.
 
 .Result type
 `DOUBLE PRECISION`
@@ -911,13 +869,10 @@ DSQL, PSQL
 PI ()
 ----
 
-Returns an approximation of the value of _pi_.
-
 [[fblangref50-scalarfuncs-power]]
 === `POWER()`
 
-.Available in
-DSQL, PSQL
+Power
 
 .Result type
 `DOUBLE PRECISION`
@@ -950,8 +905,7 @@ Returns _x_ to the power of _y_ (_x^y^_).
 [[fblangref50-scalarfuncs-rand]]
 === `RAND()`
 
-.Available in
-DSQL, PSQL
+Generates a random number
 
 .Result type
 `DOUBLE PRECISION`
@@ -967,11 +921,9 @@ Returns a random number between 0 and 1.
 [[fblangref50-scalarfuncs-round]]
 === `ROUND()`
 
-.Available in
-DSQL, PSQL
-
 .Result type
-`INTEGER`, (scaled) `BIGINT` or `DOUBLE PRECISION`
+single argument: integer type, `DOUBLE PRECISION` or `DECFLOAT`; +
+two arguments: numerical, matching first argument
 
 .Syntax
 [listing,subs=+quotes]
@@ -1033,8 +985,7 @@ ROUND(45.1212) -- returns 45
 [[fblangref50-scalarfuncs-sign]]
 === `SIGN()`
 
-.Available in
-DSQL, PSQL
+Sign or signum
 
 .Result type
 `SMALLINT`
@@ -1056,13 +1007,16 @@ SIGN (_number_)
 |An expression of a numeric type
 |===
 
-Returns the sign of the argument: -1, 0 or 1.
+Returns the sign of the argument: -1, 0 or 1
+
+* `__number__ < 0` -> `-1`
+* `__number__ = 0` -> `0`
+* `__number__ > 0` -> `1`
 
 [[fblangref50-scalarfuncs-sin]]
 === `SIN()`
 
-.Available in
-DSQL, PSQL
+Sine
 
 .Result type
 `DOUBLE PRECISION`
@@ -1084,9 +1038,6 @@ SIN (_angle_)
 |An angle, in radians
 |===
 
-Returns an angle's sine.
-The argument must be given in radians. 
-
 * Any non-`NULL` result is in the range [-1, 1].
 
 .See also
@@ -1095,8 +1046,7 @@ The argument must be given in radians.
 [[fblangref50-scalarfuncs-sinh]]
 === `SINH()`
 
-.Available in
-DSQL, PSQL
+Hyperbolic sine
 
 .Result type
 `DOUBLE PRECISION`
@@ -1118,16 +1068,13 @@ SINH (_number_)
 |An expression of a numeric type
 |===
 
-Returns the hyperbolic sine of the argument.
-
 .See also
 <<fblangref50-scalarfuncs-asinh>>, <<fblangref50-scalarfuncs-cosh>>, <<fblangref50-scalarfuncs-tanh>>
 
 [[fblangref50-scalarfuncs-sqrt]]
 === `SQRT()`
 
-.Available in
-DSQL, PSQL
+Square root
 
 .Result type
 `DOUBLE PRECISION`
@@ -1149,8 +1096,6 @@ SQRT (_number_)
 |An expression of a numeric type
 |===
 
-Returns the square root of the argument.
-
 * If _number_ is negative, an error is raised.
 
 .See also
@@ -1159,8 +1104,7 @@ Returns the square root of the argument.
 [[fblangref50-scalarfuncs-tan]]
 === `TAN()`
 
-.Available in
-DSQL, PSQL
+Tangent
 
 .Result type
 `DOUBLE PRECISION`
@@ -1182,17 +1126,13 @@ TAN (_angle_)
 |An angle, in radians
 |===
 
-Returns an angle's tangent.
-The argument must be given in radians.
-
 .See also
 <<fblangref50-scalarfuncs-atan>>, <<fblangref50-scalarfuncs-atan2>>, <<fblangref50-scalarfuncs-cos>>, <<fblangref50-scalarfuncs-cot>>, <<fblangref50-scalarfuncs-sin>>, <<fblangref50-scalarfuncs-tan>>
 
 [[fblangref50-scalarfuncs-tanh]]
 === `TANH()`
 
-.Available in
-DSQL, PSQL
+Hyperbolic tangent
 
 .Result type
 `DOUBLE PRECISION`
@@ -1214,8 +1154,6 @@ TANH (_number_)
 |An expression of a numeric type
 |===
 
-Returns the hyperbolic tangent of the argument.
-
 * Due to rounding, any non-`NULL` result is in the range [-1, 1] (mathematically, it's ++<-1, 1>++).
 
 .See also
@@ -1224,11 +1162,11 @@ Returns the hyperbolic tangent of the argument.
 [[fblangref50-scalarfuncs-trunc]]
 === `TRUNC()`
 
-.Available in
-DSQL, PSQL
+Truncate number
 
 .Result type
-`INTEGER`, (scaled) `BIGINT` or `DOUBLE PRECISION`
+single argument: integer type, `DOUBLE PRECISION` or `DECFLOAT`; +
+two arguments: numerical, matching first argument
 
 .Syntax
 [listing,subs=+quotes]
@@ -1256,7 +1194,7 @@ a|An integer specifying the number of decimal places toward which truncating is 
 * -2 for truncating to the nearest multiple of 100
 |===
 
-Returns the integer part of a number.
+The single argument variant returns the integer part of a number.
 With the optional _scale_ argument, the number can be truncated to powers-of-ten multiples (tens, hundreds, tenths, hundredths, etc.).
 
 [NOTE]
@@ -1283,8 +1221,7 @@ If you are used to the behaviour of the https://www.firebirdsql.org/file/documen
 [[fblangref50-scalarfuncs-ascii-char]]
 === `ASCII_CHAR()`
 
-.Available in
-DSQL, PSQL
+Character from ASCII code
 
 .Result type
 `CHAR(1) CHARACTER SET NONE`
@@ -1319,8 +1256,7 @@ Returns the ASCII character corresponding to the number passed in the argument.
 [[fblangref50-scalarfuncs-ascii-val]]
 === `ASCII_VAL()`
 
-.Available in
-DSQL, PSQL
+ASCII code from string
 
 .Result type
 `SMALLINT`
@@ -1348,8 +1284,6 @@ Returns the ASCII code of the character passed in.
 * If the argument is an empty string, 0 is returned.
 * If the argument is `NULL`, `NULL` is returned.
 * If the first character of the argument string is multi-byte, an error is raised.
-(A bug in Firebird 2.1 - 2.1.3 and 2.5.0 causes an error to be raised if _any_ character in the string is multi-byte.
-This is fixed in versions 2.1.4 and 2.5.1.)
 
 .See also
 <<fblangref50-scalarfuncs-ascii-char>>, <<fblangref50-scalarfuncs-unicode-val>>
@@ -1357,8 +1291,7 @@ This is fixed in versions 2.1.4 and 2.5.1.)
 [[fblangref50-scalarfuncs-base64decode]]
 === `BASE64_DECODE()`
 
-.Available in
-DSQL, PSQL
+Decodes a base64 string to binary
 
 .Result type
 `VARBINARY` or `BLOB`
@@ -1405,8 +1338,7 @@ Test base64
 [[fblangref50-scalarfuncs-base64encode]]
 === `BASE64_ENCODE()`
 
-.Available in
-DSQL, PSQL
+Encodes a (binary) value to a base64 string
 
 .Result type
 `VARCHAR CHARACTER SET ASCII` or `BLOB SUB_TYPE TEXT CHARACTER SET ASCII`
@@ -1453,8 +1385,7 @@ VGVzdCBiYXNlNjQ=
 [[fblangref50-scalarfuncs-bit-length]]
 === `BIT_LENGTH()`
 
-.Available in
-DSQL, PSQL
+String or binary length in bits
 
 .Result type
 `INTEGER`
@@ -1485,9 +1416,6 @@ With arguments of type `CHAR`, this function takes the entire formal string leng
 If you want to obtain the "`logical`" bit length, not counting the trailing spaces, right-<<fblangref50-scalarfuncs-trim,`TRIM`>> the argument before passing it to `BIT_LENGTH`.
 ====
 
-.`BLOB` support
-Since Firebird 2.1, this function fully supports text ``BLOB``s of any length and character set.
-
 [[fblangref50-scalarfuncs-bit-length-exmpl]]
 ==== `BIT_LENGTH` Examples
 
@@ -1516,8 +1444,7 @@ from rdb$database
 [[fblangref50-scalarfuncs-blob-append]]
 === `BLOB_APPEND()`
 
-.Available in
-DSQL, PSQL
+Efficient concatenation of blobs
 
 .Result type
 `BLOB`
@@ -1622,8 +1549,7 @@ end
 [[fblangref50-scalarfuncs-char-length]]
 === `CHAR_LENGTH()`, `CHARACTER_LENGTH()`
 
-.Available in
-DSQL, PSQL
+String length in characters
 
 .Result type
 `INTEGER`
@@ -1682,8 +1608,7 @@ from rdb$database
 [[fblangref50-scalarfuncs-crypthash]]
 === `CRYPT_HASH()`
 
-.Available in
-DSQL, PSQL
+Cryptographic hash
 
 .Result type
 `VARBINARY`
@@ -1742,11 +1667,10 @@ select crypt_hash(x using sha512) from y;
 [[fblangref50-scalarfuncs-hash]]
 === `HASH()`
 
-.Available in
-DSQL, PSQL
+Non-cryptographic hash
 
 .Result type
-`INTEGER`,`BIGINT`
+`INTEGER`, `BIGINT`
 
 .Syntax
 [listing,subs=+quotes]
@@ -1810,15 +1734,13 @@ select hash(x using crc32) from y;
 select hash(x) from y;
 ----
 
-
 .See also
 <<fblangref50-scalarfuncs-crypthash>>
 
 [[fblangref50-scalarfuncs-hexdecode]]
 === `HEX_DECODE()`
 
-.Available in
-DSQL, PSQL
+Decode a hexadecimal string to binary
 
 .Result type
 `VARBINARY` or `BLOB`
@@ -1865,8 +1787,7 @@ Hexadecimal
 [[fblangref50-scalarfuncs-hexencode]]
 === `HEX_ENCODE()`
 
-.Available in
-DSQL, PSQL
+Encodes a (binary) value to a hexadecimal string
 
 .Result type
 `VARCHAR CHARACTER SET ASCII` or `BLOB SUB_TYPE TEXT CHARACTER SET ASCII`
@@ -1912,8 +1833,7 @@ HEX_ENCODE
 [[fblangref50-scalarfuncs-left]]
 === `LEFT()`
 
-.Available in
-DSQL, PSQL
+Extracts the leftmost part of a string
 
 .Result type
 `VARCHAR` or `BLOB`
@@ -1936,11 +1856,8 @@ LEFT (_string_, _length_)
 
 |length
 |Integer expression.
-Defines the number of characters to return
+The number of characters to return
 |===
-
-Returns the leftmost part of the argument string.
-The number of characters is given in the second argument. 
 
 * This function fully supports text ``BLOB``s of any length, including those with a multi-byte character set.
 * If _string_ is a `BLOB`, the result is a `BLOB`.
@@ -1954,8 +1871,7 @@ Otherwise, the result is a `VARCHAR(__n__)` with _n_ the length of the input str
 [[fblangref50-scalarfuncs-lower]]
 === `LOWER()`
 
-.Available in
-DSQL, ESQL, PSQL
+Converts a string to lowercase
 
 .Result type
 `(VAR)CHAR`, `(VAR)BINARY` or `BLOB`
@@ -1977,11 +1893,10 @@ LOWER (_string_)
 |An expression of a string type
 |===
 
-Returns the lower-case equivalent of the input string.
+Returns the lowercase equivalent of the input string.
 The exact result depends on the character set.
 With `ASCII` or `NONE` for instance, only ASCII characters are lowercased;
 with character set `OCTETS`/`(VAR)BINARY`, the entire string is returned unchanged.
-Since Firebird 2.1 this function also fully supports text ``BLOB``s of any length and character set.
 
 [[fblangref50-scalarfuncs-lower-exmpl]]
 ==== `LOWER` Examples
@@ -1998,8 +1913,7 @@ select Sheriff from Towns
 [[fblangref50-scalarfuncs-lpad]]
 === `LPAD()`
 
-.Available in
-DSQL, PSQL
+Left-pads a string
 
 .Result type
 `VARCHAR` or `BLOB`
@@ -2036,12 +1950,6 @@ Otherwise, the result is a `VARCHAR(__endlen__)`.
 * If _padstr_ is given and equals `''` (empty string), no padding takes place.
 * If _endlen_ is less than the current string length, the string is truncated to _endlen_, even if _padstr_ is the empty string.
 
-[NOTE]
-====
-In Firebird 2.1-2.1.3, all non-``BLOB`` results were of type `VARCHAR(32765)`, which made it advisable to cast them to a more modest size.
-This is no longer the case.
-====
-
 [WARNING]
 ====
 When used on a `BLOB`, this function may need to load the entire object into memory.
@@ -2069,8 +1977,7 @@ lpad ('Hello', 2, '')            -- returns 'He'
 [[fblangref50-scalarfuncs-octet-length]]
 === `OCTET_LENGTH()`
 
-.Available in
-DSQL, PSQL
+Length in bytes (octets) of a string or binary value
 
 .Result type
 `INTEGER`
@@ -2101,9 +2008,6 @@ With arguments of type `CHAR` or `BINARY`, this function takes the entire formal
 If you want to obtain the "`logical`" byte length, not counting the trailing spaces, right-<<fblangref50-scalarfuncs-trim,`TRIM`>> the argument before passing it to `OCTET_LENGTH`.
 ====
 
-.`BLOB` support
-Since Firebird 2.1, this function fully supports text ``BLOB``s of any length and character set.
-
 [[fblangref50-scalarfuncs-octet-length-exmpl]]
 ==== `OCTET_LENGTH` Examples
 
@@ -2132,8 +2036,7 @@ from rdb$database
 [[fblangref50-scalarfuncs-overlay]]
 === `OVERLAY()`
 
-.Available in
-DSQL, PSQL
+Overwrites part of, or inserts into, a string
 
 .Result type
 `VARCHAR` or `BLOB`
@@ -2164,7 +2067,6 @@ OVERLAY (_string_ PLACING _replacement_ FROM _pos_ [FOR _length_])
 |The number of characters that are to be overwritten
 |===
 
-`OVERLAY()` overwrites part of a string with another string.
 By default, the number of characters removed from (overwritten in) the host string equals the length of the replacement string.
 With the optional fourth argument, a different number of characters can be specified for removal. 
 
@@ -2214,8 +2116,7 @@ overlay ('' placing 'Hello' from 4 for 20)   -- returns 'Hello'
 [[fblangref50-scalarfuncs-position]]
 === `POSITION()`
 
-.Available in
-DSQL, PSQL
+Finds the position of the first or next occurrence of a substring in a string
 
 .Result type
 `INTEGER`
@@ -2259,9 +2160,6 @@ Therefore, if _substr_ is `''` (empty string) and _string_ is not `NULL`, the re
 ** _startpos_ if _startpos_ lies within _string_;
 ** 0 if _startpos_ lies beyond the end of _string_.
 --
-+ 
-**Notice:** A bug in Firebird 2.1 - 2.1.3 and 2.5.0 causes `POSITION` to _always_ return 1 if _substr_ is the empty string.
-This is fixed in 2.1.4 and 2.5.1.
 * This function fully supports text ``BLOB``s of any size and character set.
 ====
 
@@ -2290,8 +2188,7 @@ position ('be' in 'Alas, poor Yorick!')   -- returns 0
 [[fblangref50-scalarfuncs-replace]]
 === `REPLACE()`
 
-.Available in
-DSQL, PSQL
+Replaces all occurrences of a substring in a string
 
 .Result type
 `VARCHAR` or `BLOB`
@@ -2318,8 +2215,6 @@ REPLACE (_str_, _find_, _repl_)
 |repl
 |The replacement string
 |===
-
-Replaces all occurrences of a substring in a string.
 
 * This function fully supports text ``BLOB``s of any length and character set.
 * If any argument is a `BLOB`, the result is a `BLOB`.
@@ -2354,8 +2249,7 @@ replace ('Billy Wilder',    '', 'abc') -- returns 'Billy Wilder'
 [[fblangref50-scalarfuncs-reverse]]
 === `REVERSE()`
 
-.Available in
-DSQL, PSQL
+Reverses a string
 
 .Result type
 `VARCHAR`
@@ -2376,8 +2270,6 @@ REVERSE (_string_)
 |string
 |An expression of a string type
 |===
-
-Returns a string backwards.
 
 [[fblangref50-scalarfuncs-reverse-exmpl]]
 ==== `REVERSE` Examples
@@ -2404,8 +2296,7 @@ select * from people
 [[fblangref50-scalarfuncs-right]]
 === `RIGHT()`
 
-.Available in
-DSQL, PSQL
+Extracts the rightmost part of a string
 
 .Result type
 `VARCHAR` or `BLOB`
@@ -2428,11 +2319,8 @@ RIGHT (_string_, _length_)
 
 |length
 |Integer.
-Defines the number of characters to return
+The number of characters to return
 |===
-
-Returns the rightmost part of the argument string.
-The number of characters is given in the second argument. 
 
 * This function supports text ``BLOB``s of any length, but has a bug in versions 2.1 - 2.1.3 and 2.5.0 that makes it fail with text ``BLOB``s larger than 1024 bytes that have a multi-byte character set.
 This has been fixed in versions 2.1.4 and 2.5.1.
@@ -2453,8 +2341,7 @@ This may affect performance if huge ``BLOB``s are involved.
 [[fblangref50-scalarfuncs-rpad]]
 === `RPAD()`
 
-.Available in
-DSQL, PSQL
+Right-pads a string
 
 .Result type
 `VARCHAR` or `BLOB`
@@ -2491,12 +2378,6 @@ Otherwise, the result is a `VARCHAR(_endlen_)`.
 * If _padstr_ is given and equals `''` (empty string), no padding takes place.
 * If _endlen_ is less than the current string length, the string is truncated to _endlen_, even if _padstr_ is the empty string.
 
-[NOTE]
-====
-In Firebird 2.1-2.1.3, all non-``BLOB`` results were of type `VARCHAR(32765)`, which made it advisable to cast them to a more modest size.
-This is no longer the case.
-====
-
 [WARNING]
 ====
 When used on a `BLOB`, this function may need to load the entire object into memory.
@@ -2524,8 +2405,7 @@ rpad ('Hello', 2, '')            -- returns 'He'
 [[fblangref50-scalarfuncs-substring]]
 === `SUBSTRING()`
 
-.Available in
-DSQL, PSQL
+Extracts a substring by position and length, or by SQL regular expression
 
 .Result types
 `VARCHAR` or `BLOB`
@@ -2659,8 +2539,7 @@ substring('abcabc' similar '#"abc#"' escape '#')     -- <null>
 [[fblangref50-scalarfuncs-trim]]
 === `TRIM()`
 
-.Available in
-DSQL, PSQL
+Trims leading and/or trailing spaces or other substrings from a string
 
 .Result type
 `VARCHAR` or `BLOB`
@@ -2691,11 +2570,10 @@ TRIM ([<adjust>] _str_)
 
 |what
 |The substring that should be removed (multiple times if there are several matches) from the beginning, the end, or both sides of the input string _str_.
-By default it is space (`' '`)
+By default, it is space (`' '`)
 |===
 
 Removes leading and/or trailing spaces (or optionally other strings) from the input string.
-Since Firebird 2.1 this function fully supports text ``BLOB``s of any length and character set.
 
 [NOTE]
 ====
@@ -2735,8 +2613,7 @@ select trim ('la' from 'Lalala I love you Ella') from rdb$database
 [[fblangref50-scalarfuncs-unicode-char]]
 === `UNICODE_CHAR()`
 
-.Available in
-DSQL, PSQL
+Character from Unicode code point
 
 .Result type
 `CHAR(1) CHARACTER SET UTF8`
@@ -2766,8 +2643,7 @@ Returns the character corresponding to the Unicode code point passed in the argu
 [[fblangref50-scalarfuncs-unicode-val]]
 === `UNICODE_VAL()`
 
-.Available in
-DSQL, PSQL
+Unicode code point from string
 
 .Result type
 `INTEGER`
@@ -2801,8 +2677,7 @@ Returns the Unicode code point (range 0...0x10FFFF) of the character passed in.
 [[fblangref50-scalarfuncs-upper]]
 === `UPPER()`
 
-.Available in
-DSQL, ESQL, PSQL
+Converts a string to uppercase
 
 .Result type
 `(VAR)CHAR`, `(VAR)BINARY` or `BLOB`
@@ -2824,11 +2699,10 @@ UPPER (_str_)
 |An expression of a string type
 |===
 
-Returns the upper-case equivalent of the input string.
+Returns the uppercase equivalent of the input string.
 The exact result depends on the character set.
 With `ASCII` or `NONE` for instance, only ASCII characters are uppercased;
 with character set `OCTETS`/`(VAR)BINARY`, the entire string is returned unchanged.
-Since Firebird 2.1 this function also fully supports text ``BLOB``s of any length and character set.
 
 [[fblangref50-scalarfuncs-upper-exmpl]]
 ==== `UPPER` Examples
@@ -2853,8 +2727,7 @@ from rdb$database
 [[fblangref50-scalarfuncs-dateadd]]
 === `DATEADD()`
 
-.Available in
-DSQL, PSQL
+Adds or subtracts datetime units from a datetime value
 
 .Result type
 `DATE`, `TIME` or `TIMESTAMP`
@@ -2937,8 +2810,7 @@ T                        MS
 [[fblangref50-scalarfuncs-datediff]]
 === `DATEDIFF()`
 
-.Available in
-DSQL, PSQL
+Difference between two datetime values in a datetime unit
 
 .Result type
 `BIGINT`, or `NUMERIC(18,1)` for `MILLISECOND`
@@ -3010,8 +2882,7 @@ datediff (day from current_date to cast(? as date))
 [[fblangref50-scalarfuncs-extract]]
 === `EXTRACT()`
 
-.Available in
-DSQL, ESQL, PSQL
+Extracts a datetime unit from a datetime value
 
 .Result type
 `SMALLINT` or `NUMERIC`
@@ -3124,7 +2995,7 @@ If you try to extract a part that isn't present in the date/time argument (e.g. 
 [[fblangref50-scalarfuncs-extract-millisecond]]
 ===== `MILLISECOND`
 
-Firebird 2.1 and up support extraction of the millisecond from a `TIME` or `TIMESTAMP`.
+Extracts the millisecond value from a `TIME` or `TIMESTAMP`.
 The data type returned is `NUMERIC(9,1)`.
 
 [NOTE]
@@ -3136,7 +3007,7 @@ Extract from `CURRENT_TIME(3)` or <<fblangref50-contextvars-current-timestamp>> 
 [[fblangref50-scalarfuncs-extract-week]]
 ===== `WEEK`
 
-Firebird 2.1 and up support extraction of the ISO-8601 week number from a `DATE` or `TIMESTAMP`.
+Extracts the ISO-8601 week number from a `DATE` or `TIMESTAMP`.
 ISO-8601 weeks start on a Monday and always have the full seven days.
 Week 1 is the first week that has a majority (at least 4) of its days in the new year.
 The first 1-3 days of the year may belong to the last week (52 or 53) of the previous year.
@@ -3159,8 +3030,7 @@ Please also notice that `WEEKDAY` is _not_ ISO-8601 compliant: it returns 0 for 
 [[fblangref50-scalarfuncs-firstday]]
 === `FIRST_DAY()`
 
-.Available in
-DSQL, PSQL
+Returns the first day of a time period containing a datetime value
 
 .Result Type
 `DATE`, `TIMESTAMP` (with or without time zone)
@@ -3205,8 +3075,7 @@ select first_day(of week from date '2017-11-01') from rdb$database;
 [[fblangref50-scalarfuncs-lastday]]
 === `LAST_DAY()`
 
-.Available in
-DSQL, PSQL
+Returns the last day of a time period containing a datetime value
 
 .Result Type
 `DATE`, `TIMESTAMP` (with or without time zone)
@@ -3254,8 +3123,7 @@ select last_day(of week from date '2017-11-01') from rdb$database;
 [[fblangref50-scalarfuncs-cast]]
 === `CAST()`
 
-.Available in
-DSQL, ESQL, PSQL
+Converts a value from one data type to another
 
 .Result type
 As specified by _target_type_
@@ -3359,7 +3227,7 @@ Also, the fact that types are ``CAST``-compatible is in itself no guarantee that
 [[fblangref50-scalarfuncs-cast-params]]
 ==== Casting Parameters
 
-Since Firebird 2.0, you can cast statement parameters to a data type:
+You can also cast statement parameters to a data type:
 
 [source]
 ----
@@ -3372,7 +3240,7 @@ Please notice that with statement parameters, you always need a full-syntax cast
 [[fblangref50-scalarfuncs-cast-domain]]
 ==== Casting to a Domain or its Type
 
-Firebird 2.1 and above support casting to a domain or its base type.
+Casting to a domain or its base type are supported.
 When casting to a domain, any constraints (`NOT NULL` and/or `CHECK`) declared for the domain must be satisfied, or the cast will fail.
 Please be aware that a `CHECK` passes if it evaluates to `TRUE` _or_ `NULL`!
 So, given the following statements:
@@ -3426,7 +3294,7 @@ See the note <<fblangref50-appx01-supp-rdb-validblr,[ref]_The RDB$VALID_BLR fiel
 [[fblangref50-scalarfuncs-cast-coltype]]
 ==== Casting to a Column's Type
 
-In Firebird 2.5 and above, it is possible to cast expressions to the type of an existing table or view column.
+It is also possible to cast expressions to the type of an existing table or view column.
 Only the type itself is used;
 in the case of string types, this includes the character set but not the collation.
 Constraints and default values of the source column are not applied.
@@ -3490,11 +3358,10 @@ select cast('today' as date) - 7 from rdb$database
 [[fblangref50-scalarfuncs-bin-and]]
 === `BIN_AND()`
 
-.Available in
-DSQL, PSQL
+Bitwise _AND_
 
 .Result type
-`SMALLINT`, `INTEGER` or `BIGINT`
+integer type (the widest type of the arguments)
 
 [NOTE]
 ====
@@ -3516,7 +3383,7 @@ BIN_AND (_number_, _number_ [, _number_ ...])
 ^| Description
 
 |number
-|Any integer number (literal, smallint/integer/bigint, numeric/decimal with scale 0)
+|A number of an integer type
 |===
 
 Returns the result of the bitwise _AND_ operation on the argument(s).
@@ -3527,11 +3394,10 @@ Returns the result of the bitwise _AND_ operation on the argument(s).
 [[fblangref50-scalarfuncs-bin-not]]
 === `BIN_NOT()`
 
-.Available in
-DSQL, PSQL
+Bitwise _NOT_
 
 .Result type
-`SMALLINT`, `INTEGER` or `BIGINT`
+integer type matching the argument
 
 [NOTE]
 ====
@@ -3553,7 +3419,7 @@ BIN_NOT (_number_)
 ^| Description
 
 |number
-|Any integer number (literal, smallint/integer/bigint, numeric/decimal with scale 0)
+|A number of an integer type
 |===
 
 Returns the result of the bitwise _NOT_ operation on the argument, i.e. _one's complement_.
@@ -3564,11 +3430,10 @@ Returns the result of the bitwise _NOT_ operation on the argument, i.e. _one's c
 [[fblangref50-scalarfuncs-bin-or]]
 === `BIN_OR()`
 
-.Available in
-DSQL, PSQL
+Bitwise _OR_
 
 .Result type
-`SMALLINT`, `INTEGER` or `BIGINT`
+integer type (the widest type of the arguments)
 
 [NOTE]
 ====
@@ -3590,7 +3455,7 @@ BIN_OR (_number_, _number_ [, _number_ ...])
 ^| Description
 
 |number
-|Any integer number (literal, smallint/integer/bigint, numeric/decimal with scale 0)
+|A number of an integer type
 |===
 
 Returns the result of the bitwise _OR_ operation on the argument(s).
@@ -3601,11 +3466,10 @@ Returns the result of the bitwise _OR_ operation on the argument(s).
 [[fblangref50-scalarfuncs-bin-shl]]
 === `BIN_SHL()`
 
-.Available in
-DSQL, PSQL
+Bitwise left-shift
 
 .Result type
-`BIGINT`
+`BIGINT` or `INT128` depending on the first argument
 
 .Syntax
 [listing,subs=+quotes]
@@ -3635,11 +3499,10 @@ Returns the first argument bitwise left-shifted by the second argument, i.e. `a 
 [[fblangref50-scalarfuncs-bin-shr]]
 === `BIN_SHR()`
 
-.Available in
-DSQL, PSQL
+Bitwise right-shift with sign extension
 
 .Result type
-`BIGINT`
+`BIGINT` or `INT128` depending on the first argument
 
 .Syntax
 [listing,subs=+quotes]
@@ -3663,7 +3526,13 @@ BIN_SHR (_number_, _shift_)
 
 Returns the first argument bitwise right-shifted by the second argument, i.e. `a >> b` or `a/2^b^`.
 
-* The operation performed is an arithmetic right shift (SAR), meaning that the sign of the first operand is always preserved.
+* The operation performed is an arithmetic right shift (x86 SAR), meaning that the sign of the first operand is always preserved.
+
+[NOTE]
+====
+Currently, `BIN_SHR` does not apply sign extension for `INT128`.
+See https://github.com/FirebirdSQL/firebird/issues/7603[firebird#7603^].
+====
 
 .See also
 <<fblangref50-scalarfuncs-bin-shl>>
@@ -3671,11 +3540,10 @@ Returns the first argument bitwise right-shifted by the second argument, i.e. `a
 [[fblangref50-scalarfuncs-bin-xor]]
 === `BIN_XOR()`
 
-.Available in
-DSQL, PSQL
+Bitwise _XOR_
 
 .Result type
-`SMALLINT`, `INTEGER` or `BIGINT`
+integer type (the widest type of the arguments)
 
 [NOTE]
 ====
@@ -3697,7 +3565,7 @@ BIN_XOR (_number_, _number_ [, _number_ ...])
 ^| Description
 
 |number
-|Any integer number (literal, smallint/integer/bigint, numeric/decimal with scale 0)
+|A number of an integer type
 |===
 
 Returns the result of the bitwise _XOR_ operation on the argument(s).
@@ -3711,8 +3579,7 @@ Returns the result of the bitwise _XOR_ operation on the argument(s).
 [[fblangref50-scalarfuncs-char-to-uuid]]
 === `CHAR_TO_UUID()`
 
-.Available in
-DSQL, PSQL
+Converts a string UUID to its binary representation
 
 .Result type
 `BINARY(16)`
@@ -3757,8 +3624,7 @@ select char_to_uuid('A0bF4E45-3029-2A44-X493-4998c9b439A3') from rdb$database
 [[fblangref50-scalarfuncs-gen-uuid]]
 === `GEN_UUID()`
 
-.Available in
-DSQL, PSQL
+Generates a random binary UUID
 
 .Result type
 `BINARY(16)`
@@ -3786,8 +3652,7 @@ select gen_uuid() from rdb$database
 [[fblangref50-scalarfuncs-uuid-to-char]]
 === `UUID_TO_CHAR()`
 
-.Available in
-DSQL, PSQL
+Converts a binary UUID to its string representation
 
 .Result type
 `CHAR(36)`
@@ -3835,8 +3700,7 @@ select uuid_to_char('Firebird swings!') from rdb$database
 [[fblangref50-scalarfuncs-gen-id]]
 === `GEN_ID()`
 
-.Available in
-DSQL, ESQL, PSQL
+Increments a sequence (generator) value and returns its new value
 
 .Result type
 `BIGINT` -- dialect 2 and 3 +
@@ -3856,22 +3720,20 @@ GEN_ID (_generator-name_, _step_)
 ^| Description
 
 |generator-name
-|Name of a generator (sequence) that exists.
-If it has been defined in double quotes with a case-sensitive identifier, it must be used in the same form unless the name is all upper-case.
+|Identifier name of a generator (sequence)
 
 |step
-|An integer expression
+|An integer expression of the increment
 |===
 
-Increments a generator or sequence and returns its new value.
 If step equals 0, the function will leave the value of the generator unchanged and return its current value.
  
-* From Firebird 2.0 onward, the SQL-compliant <<fblangref50-commons-nxtvlufor,`NEXT VALUE FOR`>> syntax is preferred, except when an increment other than 1 is needed.
+* The SQL-compliant <<fblangref50-commons-nxtvlufor,`NEXT VALUE FOR`>> syntax is preferred, except when an increment other than the configured increment of the sequence is needed.
 
 [WARNING]
 ====
 If the value of the step parameter is less than zero, it will decrease the value of the generator.
-Attention! You should be cautious with such manipulations in the database, as they could compromise data integrity.
+You should be cautious with such manipulations in the database, as they could compromise data integrity.
 ====
 
 [NOTE]
@@ -3896,8 +3758,7 @@ new.rec_id = gen_id(gen_recnum, 1);
 [[fblangref50-scalarfuncs-coalesce]]
 === `COALESCE()`
 
-.Available in
-DSQL, PSQL
+Returns the first non-``NULL`` argument
 
 .Result type
 Depends on input
@@ -3916,7 +3777,7 @@ COALESCE (<exp1>, <exp2> [, <expN> ... ])
 ^| Description
 
 |exp1, exp2 ... expN
-|A list of expressions of any compatible types
+|A list of expressions of compatible types
 |===
 
 The `COALESCE` function takes two or more arguments and returns the value of the first non-``NULL`` argument.
@@ -3946,8 +3807,7 @@ from Persons
 [[fblangref50-scalarfuncs-decode]]
 === `DECODE()`
 
-.Available in
-DSQL, PSQL
+Shorthand "`simple ``CASE```"-equivalent function
 
 .Result type
 Depends on input
@@ -3959,17 +3819,6 @@ DECODE(<testexpr>,
   <expr1>, <result1>
   [<expr2>, <result2> ...]
   [, <defaultresult>])
-----
-
-The equivalent `CASE` construct:
-
-[listing]
-----
-CASE <testexpr>
-  WHEN <expr1> THEN <result1>
-  [WHEN <expr2> THEN <result2> ...]
-  [ELSE <defaultresult>]
-END
 ----
 
 [[fblangref50-funcs-tbl-decode]]
@@ -3994,8 +3843,18 @@ END
 
 `DECODE` is a shorthand for the so-called <<fblangref50-commons-conditional-case-simple,"`simple ``CASE```" construct>>, in which a given expression is compared to a number of other expressions until a match is found.
 The result is determined by the value listed after the matching expression.
-If no match is found, the default result is returned, if present.
-Otherwise, `NULL` is returned.
+If no match is found, the default result is returned, if present, otherwise `NULL` is returned.
+
+The equivalent `CASE` construct:
+
+[listing]
+----
+CASE <testexpr>
+  WHEN <expr1> THEN <result1>
+  [WHEN <expr2> THEN <result2> ...]
+  [ELSE <defaultresult>]
+END
+----
 
 [CAUTION]
 ====
@@ -4023,8 +3882,7 @@ from people
 [[fblangref50-scalarfuncs-iif]]
 === `IIF()`
 
-.Available in
-DSQL, PSQL
+Ternary conditional function
 
 .Result type
 Depends on input
@@ -4056,11 +3914,11 @@ IIF (<condition>, _ResultT_, _ResultF_)
 If the first evaluates to `true`, the second argument is returned;
 otherwise the third is returned.
 
-`IIF` could be likened to the ternary "```?:```" operator in C-like languages.
+`IIF` could be likened to the ternary "```<condition> ? __resultT__ : __resultF__```" operator in C-like languages.
 
 [NOTE]
 ====
-`IIF(<Cond>, __Result1__, __Result2__)` is a shorthand for "```CASE WHEN <Cond> THEN __Result1__ ELSE __Result2__ END```".
+`IIF(<condition>, __resultT__, __resultF__)` is a shorthand for "```CASE WHEN <condition> THEN __resultT__ ELSE __resultF__ END```".
 ====
 
 [[fblangref50-scalarfuncs-iif-exmpl]]
@@ -4077,8 +3935,7 @@ select iif( sex = 'M', 'Sir', 'Madam' ) from Customers
 [[fblangref50-scalarfuncs-maxvalue]]
 === `MAXVALUE()`
 
-.Available in
-DSQL, PSQL
+Returns the maximum value of its arguments
 
 .Result type
 Varies according to input -- result will be of the same data type as the first expression in the list (_expr1_).
@@ -4121,8 +3978,7 @@ SELECT MAXVALUE(PRICE_1, PRICE_2) AS PRICE
 [[fblangref50-scalarfuncs-minvalue]]
 === `MINVALUE()`
 
-.Available in
-DSQL, PSQL
+Returns the minimum value of its arguments
 
 .Result type
 Varies according to input -- result will be of the same data type as the first expression in the list (_expr1_).
@@ -4165,8 +4021,7 @@ SELECT MINVALUE(PRICE_1, PRICE_2) AS PRICE
 [[fblangref50-scalarfuncs-nullif]]
 === `NULLIF()`
 
-.Available in
-DSQL, PSQL
+Conditional `NULL` function
 
 .Result type
 Depends on input
@@ -4216,8 +4071,7 @@ A plain `AVG(Weight)` would include the -1 weights, thus skewing the result.
 [[fblangref50-scalarfuncs-comparedecfloat]]
 === `COMPARE_DECFLOAT()`
 
-.Available in
-DSQL, PSQL
+Compares two `DECFLOAT` values to be equal, different or unordered
 
 .Result type
 `SMALLINT`
@@ -4239,7 +4093,6 @@ COMPARE_DECFLOAT (_decfloat1_, _decfloat2_)
 |Value or expression of type `DECFLOAT`, or cast-compatible with `DECFLOAT`
 |===
 
-`COMPARE_DECFLOAT` compares two `DECFLOAT` values to be equal, different or unordered.
 The result is a `SMALLINT` value, as follows:
 
 [horizontal]
@@ -4256,8 +4109,7 @@ Unlike the comparison operators ('```<```', '```=```', '```>```', etc.), compari
 [[fblangref50-scalarfuncs-normalizedecfloat]]
 === `NORMALIZE_DECFLOAT()`
 
-.Available in
-DSQL, PSQL
+Returns the simplest, normalized form of a `DECFLOAT`
 
 .Result type
 `DECFLOAT`
@@ -4279,8 +4131,7 @@ NORMALIZE_DECFLOAT (_decfloat_value_)
 |Value or expression of type `DECFLOAT`, or cast-compatible with `DECFLOAT`
 |===
 
-`NORMALIZE_DECFLOAT` takes a single `DECFLOAT` argument and returns it in its simplest form.
-That means that for any non-zero value, trailing zeroes are removed with appropriate correction of the exponent.
+For any non-zero value, trailing zeroes are removed with appropriate correction of the exponent.
 
 [[fblangref50-scalarfuncs-normalizedecfloat-exmpl]]
 ==== Examples of `NORMALIZE_DECFLOAT`
@@ -4299,10 +4150,10 @@ from rdb$database;
 [[fblangref50-scalarfuncs-quantize]]
 === `QUANTIZE()`
 
-.Available in
-DSQL, PSQL
+Returns a value that is equal in value -- except for rounding -- to the first argument, but with the same exponent as the second argument
 
 .Result type
+`DECFLOAT`
 
 .Syntax
 [listing,subs=+quotes]
@@ -4336,7 +4187,8 @@ This is not necessarily the same as the exponent displayed in tools like _isql_.
 For example, the value `1.23E+2` is coefficient `123` and exponent `0`, while `1.2` is coefficient `12` and exponent `-1`.
 ====
 
-If the exponent of _decfloat_value_ is greater than the one of _exp_value_, the coefficient of _decfloat_value_ is multiplied by a power of ten, and its exponent decreased, if the exponent is smaller, then its coefficient is rounded using the current decfloat rounding mode, and its exponent is increased.
+If the exponent of _decfloat_value_ is greater than the one of _exp_value_, the coefficient of _decfloat_value_ is multiplied by a power of ten, and its exponent decreased.
+If the exponent is smaller, then its coefficient is rounded using the current decfloat rounding mode, and its exponent is increased.
 
 When it is not possible to achieve the target exponent because the coefficient would exceed the target precision (16 or 34 decimal digits), either a "`__Decfloat float invalid operation__`" error is raised or `NaN` is returned (depending on the current decfloat traps configuration).
 
@@ -4368,8 +4220,7 @@ select v, pic, quantize(v, pic) from examples;
 [[fblangref50-scalarfuncs-totalorder]]
 === `TOTALORDER()`
 
-.Available in
-DSQL, PSQL
+Determines the total or linear order of its arguments
 
 .Result type
 `SMALLINT`
@@ -4415,8 +4266,7 @@ For `TOTALORDER` comparisons, `DECFLOAT` values are ordered as follows:
 [[fblangref50-scalarfuncs-decrypt]]
 === `DECRYPT()`
 
-.Available in
-DSQL, PSQL
+Decrypts data using a symmetric cipher
 
 .Result type
 `VARBINARY` or `BLOB`
@@ -4446,8 +4296,6 @@ DECRYPT ( _encrypted_input_
 2+| See <<fblangref50-scalarfuncs-tbl-encrypt>> for other parameters
 |===
 
-`DECRYPT` decrypts data using a symmetric cipher.
-
 [NOTE]
 ====
 * Sizes of data strings (like _encrypted_input_, _key_ and _iv_) must meet the requirements of the selected algorithm and mode.
@@ -4474,8 +4322,7 @@ select decrypt(secret_field using aes mode ofb key '0123456701234567' iv init_ve
 [[fblangref50-scalarfuncs-encrypt]]
 === `ENCRYPT()`
 
-.Available in
-DSQL, PSQL
+Encrypts data using a symmetric cipher
 
 .Result type
 `VARBINARY` or `BLOB`
@@ -4542,8 +4389,6 @@ only for `CHACHA20`.
 Default is `0`.
 |===
 
-`ENCRYPT` can encrypt data using a symmetric cipher.
-
 [NOTE]
 ====
 * This function returns `BLOB SUB_TYPE BINARY` when the first argument is a `BLOB`, and `VARBINARY` for all other text and binary types.
@@ -4569,10 +4414,13 @@ We recommend searching the internet for further details on the algorithms.
 |AES
 |16, 24, 32
 |16
-|{nbsp}
+a|Key size determines the AES variant: +
+16 bytes -> AES-128 +
+24 bytes -> AES-192 +
+32 bytes -> AES-256
 
 |ANUBIS
-|16 - 40, in steps of 4
+|16 - 40, in steps of 4 (4__x__)
 |16
 |{nbsp}
 
@@ -4645,8 +4493,7 @@ select encrypt('897897' using sober128 key 'AbcdAbcdAbcdAbcd' iv '01234567')
 [[fblangref50-scalarfuncs-rsadecrypt]]
 === `RSA_DECRYPT()`
 
-.Available in
-DSQL, PSQL
+Decrypts data using an RSA private key and removes OAEP or PKCS 1.5 padding
 
 .Result type
 `VARBINARY`
@@ -4683,7 +4530,7 @@ If the tag does not match what was used during encryption, `RSA_DECRYPT` will no
 default is `SHA256`.
 |===
 
-`RSA_DECRYPT` decrypts _encrypted_input_ using the RSA private key and then OAEP de-pads the resulting data.
+`RSA_DECRYPT` decrypts _encrypted_input_ using the RSA private key and then removes padding from the resulting data.
 
 By default, OAEP padding is used.
 The `PKCS_1_5` option will switch to the less secure PKCS 1.5 padding.
@@ -4696,7 +4543,7 @@ For security reasons, it should *not* be used in new projects.
 
 [NOTE]
 ====
-* This function returns VARBINARY`.
+* This function returns `VARBINARY`.
 * When the encrypted data was text, it must be explicitly cast to a string type of appropriate character set.
 ====
 
@@ -4721,8 +4568,7 @@ from rdb$database;
 [[fblangref50-scalarfuncs-rsaencrypt]]
 === `RSA_ENCRYPT()`
 
-.Available in
-DSQL, PSQL
+Pads data using OAEP or PKCS 1.5 and then encrypts it with an RSA public key
 
 .Result type
 `VARBINARY`
@@ -4758,7 +4604,7 @@ default is `NULL`.
 default is `SHA256`.
 |===
 
-`RSA_ENCRYPT` pads _input_ using the https://en.wikipedia.org/wiki/Optimal_asymmetric_encryption_padding[OAEP padding scheme^] and then encrypts it using the specified RSA public key.
+`RSA_ENCRYPT` pads _input_ using the https://en.wikipedia.org/wiki/Optimal_asymmetric_encryption_padding[OAEP^] or PKCS 1.5 padding scheme and then encrypts it using the specified RSA public key.
 This function is normally used to encrypt short symmetric keys which are then used in block ciphers to encrypt a message.
 
 By default, OAEP padding is used.
@@ -4790,8 +4636,7 @@ select rdb$set_context('USER_SESSION', 'msg', rsa_encrypt('Some message'
 [[fblangref50-scalarfuncs-rsaprivate]]
 === `RSA_PRIVATE()`
 
-.Available in
-DSQL, PSQL
+Generates an RSA private key
 
 .Result type
 `VARBINARY`
@@ -4843,8 +4688,7 @@ SYSDBA and users with the role `RDB$ADMIN` or the system privilege `MONITOR_ANY_
 [[fblangref50-scalarfuncs-rsapublic]]
 === `RSA_PUBLIC()`
 
-.Available in
-DSQL, PSQL
+Generates an RSA public key
 
 .Result type
 `VARBINARY`
@@ -4888,8 +4732,7 @@ select rdb$set_context('USER_SESSION', 'public_key',
 [[fblangref50-scalarfuncs-rsasignhash]]
 === `RSA_SIGN_HASH()`
 
-.Available in
-DSQL, PSQL
+PSS encodes a message hash and signs it with an RSA private key
 
 .Result type
 `VARBINARY`
@@ -4945,7 +4788,7 @@ For security reasons, it should *not* be used in new projects.
 [CAUTION]
 ====
 This function expects the hash of a message (or message digest), not the actual message.
-The _hash_ argument should specify the algorithm that was also used to generate that hash.
+The _hash_ argument should specify the algorithm that was used to generate that hash.
 
 A function that accepts the actual message to hash might be introduced in a future version of Firebird.
 ====
@@ -4977,8 +4820,7 @@ select rdb$set_context('USER_SESSION', 'msg',
 [[fblangref50-scalarfuncs-rsaverifyhash]]
 === `RSA_VERIFY_HASH()`
 
-.Available in
-DSQL, PSQL
+Verifies a message hash against a signature using an RSA public key
 
 .Result type
 `BOOLEAN`
@@ -5037,7 +4879,7 @@ For security reasons, it should *not* be used in new projects.
 [CAUTION]
 ====
 This function expects the hash of a message (or message digest), not the actual message.
-The _hash_ argument should specify the algorithm that was also used to generate that hash.
+The _hash_ argument should specify the algorithm that was used to generate that hash.
 
 A function that accepts the actual message to hash might be introduced in a future version of Firebird.
 ====
@@ -5070,8 +4912,7 @@ Functions that don't fit in any other category.
 [[fblangref50-scalarfuncs-makedbkey]]
 === `MAKE_DBKEY()`
 
-.Available in
-DSQL, PSQL
+Creates a DBKEY value
 
 .Result type
 `BINARY(8)`
@@ -5173,6 +5014,8 @@ and rdb$db_key < make_dbkey('SOMETABLE', 0, 1, 5)
 [[fblangref50-scalarfuncs-rdberror]]
 === `RDB$ERROR()`
 
+Returns PSQL error information inside a `WHEN ... DO` block
+
 .Available in
 PSQL
 
@@ -5240,8 +5083,7 @@ END
 [[fblangref50-scalarfuncs-gettransactioncn]]
 === `RDB$GET_TRANSACTION_CN()`
 
-.Available in
-DSQL, PSQL
+Returns the commit number ("`CN`") of a transaction
 
 .Result type
 `BIGINT`
@@ -5262,8 +5104,6 @@ RDB$GET_TRANSACTION_CN (_transaction_id_)
 |transaction_id
 |Transaction id
 |===
-
-`RDB$GET_TRANSACTION_CN` returns the commit number ("`CN`") of the supplied transaction.
 
 If the return value is greater than 1, it is the actual _CN_ of the transaction if it was committed after the database was started.
 
@@ -5293,8 +5133,7 @@ select rdb$get_transaction_cn(123) from rdb$database;
 [[fblangref50-scalarfuncs-roleinuse]]
 === `RDB$ROLE_IN_USE()`
 
-.Available in
-DSQL, PSQL
+Checks if a role is active for the current connection
 
 .Result type
 `BOOLEAN`
@@ -5337,8 +5176,7 @@ where rdb$role_in_use(rdb$role_name);
 [[fblangref50-scalarfuncs-syspriv]]
 === `RDB$SYSTEM_PRIVILEGE()`
 
-.Available in
-DSQL, PSQL
+Checks if the authorization of the current connection has a system privilege
 
 .Result type
 `BOOLEAN`
@@ -5363,7 +5201,9 @@ RDB$SYSTEM_PRIVILEGE (<sys_privilege>)
 |System privilege
 |===
 
-`RDB$SYSTEM_PRIVILEGE` accepts a system privilege name and returns TRUE if the current attachment has the given system privilege, and FALSE otherwise.
+`RDB$SYSTEM_PRIVILEGE` accepts a system privilege name and returns TRUE if the current connection has the given system privilege, and FALSE otherwise.
+
+The authorization of the current connection is determined by privileges of the current user, the user `PUBLIC`, and the currently active roles (explicitly set or activated by default).
 
 [[fblangref50-scalarfuncs-syspriv-exmpl]]
 ==== `RDB$SYSTEM_PRIVILEGE` Examples

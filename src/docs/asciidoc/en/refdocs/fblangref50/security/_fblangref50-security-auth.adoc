@@ -19,35 +19,36 @@ The maximum password length depends on the user manager plugin (parameter `UserM
 Passwords are case-sensitive.
 The default user manager is the first plugin in the `UserManager` list, but this can be overridden in the SQL user management statements.
 For the `Srp` plugin, the maximum password length is 255 characters, for an effective length of 20 bytes (see also <<fblangref50-security-auth-effective-20-bytes>>).
-For the `Legacy_UserManager` plugin only the first eight bytes are significant;
+For the `Legacy_UserManager` plugin only the first eight bytes of a password are significant;
 whilst it is valid to enter a password longer than eight bytes for `Legacy_UserManager`, any subsequent characters are ignored.
 
 [[fblangref50-security-auth-effective-20-bytes]]
 .Why is the effective password length of SRP 20 bytes?
 ****
-The SRP plugin does not actually have a 20 byte limit on password length, and longer passwords can be used.
+The SRP plugin does not actually have a 20 byte limit on password length, and longer passwords can be used (with an implementation limit of 255 characters).
 Hashes of different passwords longer than 20 bytes are also -- usually -- different.
 This effective limit comes from the limited hash length in SHA1 (used inside Firebird's SRP implementation), 20 bytes or 160 bits, and the https://en.wikipedia.org/wiki/Pigeonhole_principle["`pigeonhole principle`"^].
 Sooner or later, there will be a shorter (or longer) password that has the same hash (e.g. in a brute force attack).
 That is why often the effective password length for the SHA1 algorithm is said to be 20 bytes.
 ****
 
-The embedded version of the server does not use authentication.
+The embedded version of the server does not use authentication;
+for embedded, the filesystem permissions to open the database file are used as authorization to access the database.
 However, the username, and -- if necessary -- the role, must be specified in the connection parameters, as they control access to database objects.
 
-SYSDBA or the owner of the database get unrestricted access to all objects of the database.
-Users with the `RDB$ADMIN` role get similar unrestricted access if they specify the role when connecting.
+SYSDBA or the owner of the database have unrestricted access to all objects of the database.
+Users with the `RDB$ADMIN` role have similar unrestricted access if they specify that role when connecting or with <<fblangref50-management-role-set,`SET ROLE`>>.
 
 [[fblangref50-security-auth-special]]
 == Specially Privileged Users
 
-In Firebird, the SYSDBA account is a "`Superuser`" that exists beyond any security restrictions.
+In Firebird, the SYSDBA account is a "`superuser`" that exists beyond any security restrictions.
 It has complete access to all objects in all regular databases on the server, and full read/write access to the accounts in the security database `{secdb}`.
-No user has access to the metadata of the security database.
+No user has remote access to the metadata of the security database.
 
 For `Srp`, the SYSDBA account does not exist by default;
 it will need to be created using an embedded connection.
-For `Legacy_Auth`, the default SYSDBA password on Windows and MacOS is "`masterkey`" -- or "`masterke`", to be exact, because of the 8-character length limit.
+For `Legacy_Auth`, the default SYSDBA password on Windows and macOS is "`masterkey`" -- or "`masterke`", to be exact, because of the 8-character length limit.
 
 [WARNING]
 ====
@@ -55,18 +56,18 @@ The default password "`masterkey`" is known across the universe.
 It should be changed as soon as the Firebird server installation is complete.
 ====
 
-Other users can acquire elevated privileges in several ways, some of which are dependent on the operating system platform.
+Other users can acquire elevated privileges in several ways, some of which depend on the operating system platform.
 These are discussed in the sections that follow and are summarised in <<fblangref50-security-administrators>> and <<fblangref50-security-sys-privs>>.
 
 [[fblangref50-security-auth-special-posix]]
 === POSIX Hosts
 
-On POSIX systems, including MacOS, the POSIX username will be used as the Firebird Embedded username if username is not explicitly specified.
+On POSIX systems, including macOS, the POSIX username will be used as the Firebird Embedded username if username is not explicitly specified.
 
 [[fblangref50-security-auth-sysdba-posix]]
 ==== The `SYSDBA` User on POSIX
 
-On POSIX hosts, other than MacOSX, the SYSDBA user does not have a default password.
+On POSIX hosts, other than macOS, the SYSDBA user does not have a default password.
 If the full installation is done using the standard scripts, a one-off password will be created and stored in a text file in the same directory as `{secdb}`, commonly `/opt/firebird/`.
 The name of the password file is `SYSDBA.password`.
 
@@ -84,7 +85,7 @@ Firebird will treat *root* as though it were SYSDBA, and it provides access to a
 [[fblangref50-security-auth-special-windows]]
 === Windows Hosts
 
-On Windows server-capable operating systems, operating system accounts can be used.
+On the Windows Server operating systems, operating system accounts can be used.
 Windows authentication (also known as "`trusted authentication`") can be enabled by including the `Win_Sspi` plugin in the `AuthServer` list in `firebird.conf`.
 The plugin must also be present in the `AuthClient` setting at the client-side.
 
@@ -105,11 +106,6 @@ The "`owner`" of a database is either the user who was `CURRENT_USER` at the tim
 
 "`Owner`" is not a username.
 The user who is the owner of a database has full <<fblangref50-security-administrators,administrator privileges>> with respect to that database, including the right to drop it, to restore it from a backup and to enable or disable the <<fblangref50-security-autoadminmapping>> capability.
-
-[NOTE]
-====
-Prior to Firebird 2.1, the owner had no automatic privileges over any database objects that were created by other users.
-====
 
 === Users with the `USER_MANAGEMENT` System Privilege
 
@@ -156,7 +152,7 @@ Assigning the `RDB$ADMIN` role to a regular user in a database grants that user 
 
 The elevated privileges take effect when the user is logged in to that regular database under the `RDB$ADMIN` role, and gives full control over all objects in that database.
 
-Being granted the `RDB$ADMIN` role in the security database confers the authority to create, edit and delete user accounts.
+Being granted the `RDB$ADMIN` role in the security database confers the authority to create, alter and drop user accounts.
 
 In both cases, the user with the elevated privileges can assign `RDB$ADMIN` role to any other user.
 In other words, specifying `WITH ADMIN OPTION` is unnecessary because it is built into the role.
@@ -234,11 +230,11 @@ Depending on the administrative status of the current user, more parameters may 
 [[fblangref50-security-rdbadmin05]]
 ==== Using the `RDB$ADMIN` Role in the Security Database
 
-To manage user accounts through SQL, the grantee must specify the `RDB$ADMIN` role when connecting or through `SET ROLE`.
-No user can connect to the security database remotely, so the solution is that the user connects to a regular database where they also have `RDB$ADMIN` rights, supplying the `RDB$ADMIN` role in their login parameters.
+To manage user accounts through SQL, the user must have the `RDB$ADMIN` role in the security database.
+No user can connect to the security database remotely, so the solution is that the user connects to a regular database.
 From there, they can submit any SQL user management command.
 
-If there is no regular database where the user has the `RDB$ADMIN` role, then account management via SQL queries is not possible, unless they connect directly to the security database using an embedded connection.
+Contrary to Firebird 3.0 or earlier, the user does not need to specify the `RDB$ADMIN` role on connect, nor do they need to have the `RDB$ADMIN` role in the database used to connect.
 
 [[fblangref50-security-rdbadmin0]]
 ===== Using _gsec_ with `RDB$ADMIN Rights`
@@ -252,9 +248,9 @@ In a regular database, the `RDB$ADMIN` role is granted and revoked with the usua
 
 [listing,subs=+quotes]
 ----
-GRANT [ROLE] RDB$ADMIN TO _username_
+GRANT [DEFAULT] RDB$ADMIN TO _username_
 
-REVOKE [ROLE] RDB$ADMIN FROM _username_
+REVOKE [DEFAULT] RDB$ADMIN FROM _username_
 ----
 
 [[fblangref50-security-tbl-rdbadmin0]]
@@ -276,13 +272,13 @@ To grant and revoke the `RDB$ADMIN` role, the grantor must be logged in as an <<
 [[fblangref50-security-rdbadmin02]]
 ==== Using the `RDB$ADMIN` Role in a Regular Database
 
-To exercise their `RDB$ADMIN` privileges, the grantee has to include the role in the connection attributes when connecting to the database, or specify it later using `SET ROLE`.
+To exercise their `RDB$ADMIN` privileges, the grantee has to include the role in the connection attributes when connecting to the database, or specify it later using `SET ROLE`, unless the role was granted as a default role.
 
 [[fblangref50-security-autoadminmapping]]
 === `AUTO ADMIN MAPPING`
 
-Windows Administrators are not automatically granted `RDB$ADMIN` privileges when connecting to a database (if `Win_Sspi` is enabled, of course)
-The `AUTO ADMIN MAPPING` switch now determines whether Administrators have automatic `RDB$ADMIN` rights, on a database-by-database basis.
+Windows Administrators are not automatically granted `RDB$ADMIN` privileges when connecting to a database (when `Win_Sspi` is enabled).
+The `AUTO ADMIN MAPPING` switch determines whether Administrators have automatic `RDB$ADMIN` rights, on a database-by-database basis.
 By default, when a database is created, it is disabled.
 
 If `AUTO ADMIN MAPPING` is enabled in the database, it will take effect whenever a Windows Administrator connects:
@@ -394,8 +390,8 @@ Even in an interactive _gsec_ session, the new flag setting takes effect immedia
 [[fblangref50-security-administrators]]
 == Administrators
 
-As a general description, an administrator is a user that has sufficient rights to read, write to, create, alter or delete any object in a database to which that user's administrator status applies.
-The table summarises how "`Superuser`" privileges are enabled in the various Firebird security contexts.
+An administrator is a user that has sufficient rights to read, write to, create, alter or delete any object in a database to which that user's administrator status applies.
+The table summarises how "`superuser`" privileges are enabled in the various Firebird security contexts.
 
 [[fblangref50-security-tbl-admins]]
 .Administrator ("`Superuser`") Characteristics
@@ -423,12 +419,10 @@ Firebird Embedded only.
 
 |Windows Administrator
 |Set as `CURRENT_ROLE` if login succeeds
-a|Exactly like `SYSDBA` if all of the following are true:
+a|Exactly like `SYSDBA` if the following are all true:
 
 * In `firebird.conf` file, `AuthServer` includes `Win_Sspi`, and `Win_Sspi` is present in the client-side plugins (`AuthClient`) configuration
-
 * In databases where `AUTO ADMIN MAPPING` is enabled, or an equivalent mapping of the predefined group `DOMAIN_ANY_RID_ADMINS` for the role `RDB$ADMIN` exists
-
 * No role is specified at login
 
 |Database owner
@@ -437,12 +431,12 @@ a|Exactly like `SYSDBA` if all of the following are true:
 
 |Regular user
 |Must be previously granted;
-must be supplied at login
+must be supplied at login or have been granted as a default role
 |Like `SYSDBA`, but only in the databases where the role is granted
 
 |POSIX OS user
 |Must be previously granted;
-must be supplied at login
+must be supplied at login or have been granted as a default role
 |Like `SYSDBA`, but only in the databases where the role is granted.
 Firebird Embedded only.
 
@@ -492,7 +486,7 @@ The following table lists the names of the valid system privileges that can be g
 `TRACE_ANY_ATTACHMENT`:: Trace other users' attachments
 `MONITOR_ANY_ATTACHMENT`:: Monitor (tables `MON$`) other users' attachments
 `ACCESS_SHUTDOWN_DATABASE`:: Access database when it is shut down
-`CREATE_DATABASE`:: Create new databases (given in security.db)
+`CREATE_DATABASE`:: Create new databases (given in the security database)
 `DROP_DATABASE`:: Drop this database
 `USE_GBAK_UTILITY`:: Use _gbak_ utility
 `USE_GSTAT_UTILITY`:: Use _gstat_ utility
@@ -511,4 +505,3 @@ The following table lists the names of the valid system privileges that can be g
 `MODIFY_EXT_CONN_POOL`:: Use command `ALTER EXTERNAL CONNECTIONS POOL`
 `REPLICATE_INTO_DATABASE`:: Use replication API to load change sets into database
 `PROFILE_ANY_ATTACHMENT`:: Profile attachments of other users
-

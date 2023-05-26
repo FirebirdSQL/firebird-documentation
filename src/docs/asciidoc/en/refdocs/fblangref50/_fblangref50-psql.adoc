@@ -2,15 +2,15 @@
 = Procedural SQL (PSQL) Statements
 
 Procedural SQL (PSQL) is a procedural extension of SQL.
-This language subset is used for writing stored procedures, triggers, and PSQL blocks.
+This language subset is used for writing PSQL modules: stored procedures, stored functions, triggers, and PSQL blocks.
 
-PSQL provides all the basic constructs of traditional structured programming languages, and also includes DML statements (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, etc.), with a slight modified syntax in some cases.
+PSQL provides all the basic constructs of traditional structured programming languages, and also includes DML statements (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, etc.), with a slightly modified syntax in some cases.
 
 [[fblangref50-psql-elements]]
 == Elements of PSQL
 
-A procedural extension may contain declarations of local variables, routines and cursors, assignments, conditional statements, loops, statements for raising custom exceptions, error handling and sending messages (events) to client applications.
-Triggers have access to special context variables, two arrays that store, respectively, the `NEW` values for all columns during insert and update activity, and the `OLD` values during update and delete work.
+A PSQL module may contain declarations of local variables, routines and cursors, assignments, conditional statements, loops, statements for raising custom exceptions, error handling and sending messages (events) to client applications.
+DML triggers have access to special context variables, two "`records`" that store, respectively, the `NEW` values for all columns during insert and update activity, and the `OLD` values during update and delete work, and three Boolean variables -- `INSERTING`, `UPDATING` and `DELETING` -- to determine the event that fired the trigger.
 
 Statements that modify metadata (DDL) are not available in PSQL.
 
@@ -47,9 +47,9 @@ These statements begin with a verb (`CREATE`, `ALTER`, `DROP`, `RECREATE`, `CREA
 The header provides the module name and defines any input and output parameters or -- for functions -- the return type.
 Stored procedures and PSQL blocks may have input and output parameters.
 Functions may have input parameters and must have a scalar return type.
-Triggers do not have either input or output parameters.
+Triggers do not have either input or output parameters, but DML triggers do have the `NEW` and `OLD` "`records`", and `INSERTING`, `UPDATING` and `DELETING` variables.
 
-The header of a trigger indicates the database event (insert, update or delete, or a combination) and the phase of operation (`BEFORE` or `AFTER` that event) that will cause it to "`fire`".
+The header of a trigger indicates the DML event (insert, update or delete, or a combination) or DDL or database event and the phase of operation (`BEFORE` or `AFTER` that event) that will cause it to "`fire`".
 
 [[fblangref50-psql-elements-body]]
 ==== The Module Body
@@ -144,7 +144,7 @@ A string literal that can be used by UDRs for various purposes.
 [[fblangref50-psql-elements-body-psql]]
 ===== The PSQL Module Body
 
-The PSQL body starts with an optional section that declares variables and subroutines, followed by a block of statements that run in a logical sequence, like a program.
+The PSQL module body starts with an optional section that declares variables and subroutines, followed by a block of statements that run in a logical sequence, like a program.
 A block of statements -- or compound statement -- is enclosed by the `BEGIN` and `END` keywords, and is executed as a single unit of code.
 The main `BEGIN...END` block may contain any number of other `BEGIN...END` blocks, both embedded and sequential.
 Blocks can be nested to a maximum depth of 512 blocks.
@@ -160,8 +160,7 @@ Here we digress a little, to explain how to switch the terminator character in t
 [float]
 ==== isql Command `SET TERM`
 
-.Used for
-Changing the terminator character(s) to avoid conflict with the terminator character in PSQL statements
+Sets the terminator character(s) to avoid conflict with the terminator character in PSQL statements
 
 .Available in
 ISQL only
@@ -234,12 +233,14 @@ A procedure that calls itself is known as __recursive__.
 
 Stored procedures have the following advantages: 
 
-[horizontal]
-Modularity:: applications working with the database can use the same stored procedure, thereby reducing the size of the application code and avoiding code duplication.
+Modularity::
+applications working with the database can use the same stored procedure, thereby reducing the size of the application code and avoiding code duplication.
 
-Simpler Application Support:: when a stored procedure is modified, changes appear immediately to all host applications, without the need to recompile them if the parameters were unchanged.
+Simpler Application Support::
+when a stored procedure is modified, changes appear immediately to all host applications, without the need to recompile them if the parameters were unchanged.
 
-Enhanced Performance:: since stored procedures are executed on a server instead of at the client, network traffic is reduced, which improves performance.
+Enhanced Performance::
+since stored procedures are executed on a server instead of at the client, network traffic is reduced, which improves performance.
 
 [[fblangref50-psql-storedprocs-types]]
 === Types of Stored Procedures
@@ -363,15 +364,16 @@ See <<fblangref50-dml-execblock,`EXECUTE BLOCK`>> for details.
 [[fblangref50-psql-package]]
 == Packages
 
-A package is a group of stored procedures and function defined as a single database object.
+A package is a group of stored procedures and functions defined as a single database object.
 
 Firebird packages are made up of two parts: a header (`PACKAGE` keyword) and a body (`PACKAGE BODY` keywords).
-This separation is similar to Delphi modules, the header corresponds to the interface part, and the body corresponds to the implementation part.
+This separation is similar to Delphi modules;
+the header corresponds to the interface part, and the body corresponds to the implementation part.
 
 [[fblangref50-psql-pkg-benefits]]
 === Benefits of Packages
 
-The notion of "`packaging`" the code components of a database operation addresses has several advantagrs:
+The notion of "`packaging`" the code components of a database operation addresses has several advantages:
 
 Modularisation::
 Blocks of interdependent code are grouped into logical modules, as done in other programming languages.
@@ -392,7 +394,7 @@ Since the dependency on other objects only exists for the package body, and not 
 When the body is dropped, the header remains, allowing you to recreate its body once the changes related to the removed object are done.
 
 Simplify permission management::
-As Firebird runs routines with the caller privileges, it is necessary also to grant resource usage to each routine when these resources would not be directly accessible to the caller.
+As Firebird -- by default -- runs routines with the caller (invoker) privileges, it is necessary also to grant resource usage to each routine when these resources would not be directly accessible to the caller.
 Usage of each routine needs to be granted to users and/or roles.
 +
 Packaged routines do not have individual privileges.
@@ -436,7 +438,7 @@ For information on deleting a package, see <<fblangref50-ddl-pkg-drop,`DROP PACK
 
 A trigger is another form of executable code that is stored in the metadata of the database for execution by the server.
 A trigger cannot be called directly.
-It is called automatically ("`fired`") when data-changing events involving one particular table or view occur, or on a specific database event.
+It is called automatically ("`fired`") when data-changing events involving one particular table or view occur, or on a specific database or DDL event.
 
 A trigger applies to exactly one table or view or database event, and only one _phase_ in an event (`BEFORE` or `AFTER` the event).
 A single DML trigger might be written to fire only when one specific data-changing event occurs (`INSERT`, `UPDATE` or `DELETE`), or it might be written to apply to more than one of those.
@@ -448,7 +450,7 @@ For triggers that respond to database events, the rule is different: for DDL tri
 === Firing Order (Order of Execution)
 
 More than one trigger can be defined for each phase-event combination.
-The order in which they are executed (known as "`firing order`" can be specified explicitly with the optional `POSITION` argument in the trigger definition.
+The order in which they are executed -- also known as "`firing order`" -- can be specified explicitly with the optional `POSITION` argument in the trigger definition.
 You have 32,767 numbers to choose from.
 Triggers with the lowest position numbers fire first.
 
@@ -500,8 +502,8 @@ The Boolean context variables <<fblangref50-contextvars-inserting,`INSERTING`>>,
 [[fblangref50-psql-oldnew]]
 ==== `OLD` and `NEW` Context Variables
 
-For DML triggers, the Firebird engine provides access to sets of `OLD` and `NEW` context variables.
-Each is an array of the values of the entire row: one for the values as they are before the data-changing event (the `BEFORE` phase) and one for the values as they will be after the event (the `AFTER` phase).
+For DML triggers, the Firebird engine provides access to sets of `OLD` and `NEW` context variables (or, "`records`").
+Each is a record of the values of the entire row: one for the values as they are before the data-changing event (the `BEFORE` phase) and one for the values as they will be after the event (the `AFTER` phase).
 They are referenced in statements using the form `NEW.__column_name__` and `OLD.__column_name__`, respectively.
 The _column_name_ can be any column in the table's definition, not just those that are being updated.
 
@@ -624,11 +626,7 @@ Since Firebird 3.0, the colon prefix can also be used for the `NEW` and `OLD` co
 [[fblangref50-psql-coding-assign]]
 === Assignment Statements
 
-.Used for
-Assigning a value to a variable
-
-.Available in
-PSQL
+Assigns a value to a variable
 
 .Syntax
 [listing,subs=+quotes]
@@ -651,7 +649,7 @@ _varname_ = <value_expr>;
 |===
 
 PSQL uses the equal symbol ('```=```') as its assignment operator.
-The assignment statement assigns an SQL expression value on the right to the variable on the left of the operator.
+The assignment statement assigns a SQL expression value on the right to the variable on the left of the operator.
 The expression can be any valid SQL expression: it may contain literals, internal variable names, arithmetic, logical and string operations, calls to internal functions, stored functions or external functions (UDFs).
 
 [[fblangref50-psql-coding-assign-exmpl]]
@@ -677,8 +675,7 @@ BEGIN
   c = a + b;
   str = name || CAST(b AS VARCHAR(10));
   SUSPEND;
-  -- assigning expression value
-  -- built by a query
+  -- assigning expression value built by a query
   c = (SELECT 1 FROM rdb$database);
   -- assigning a value from a context variable
   str = CURRENT_USER;
@@ -722,6 +719,7 @@ end
 [CAUTION]
 ====
 Although useful as a workaround, using `ON CONNECT` triggers to configure bind and time zone is usually not the right approach.
+Alternatives are handling this through `DefaultTimeZone` in `firebird.conf` and `DataTypeCompatibility` in `firebird.conf` or `databases.conf`, or `isc_dpb_session_time_zone` or `isc_dpb_set_bind` in the DPB.
 ====
 
 .See also
@@ -730,11 +728,7 @@ Although useful as a workaround, using `ON CONNECT` triggers to configure bind a
 [[fblangref50-psql-declare-variable]]
 === `DECLARE VARIABLE`
 
-.Used for
-Declaring a local variable
-
-.Available in
-PSQL
+Declares a local variable
 
 .Syntax
 [listing,subs="+quotes,macros"]
@@ -760,7 +754,7 @@ DECLARE [VARIABLE] _varname_
 |Name of the local variable
 
 |collation
-|Collation sequence
+|Collation
 
 |initvalue
 |Initial value for this variable
@@ -773,7 +767,6 @@ DECLARE [VARIABLE] _varname_
 |===
 
 The statement `DECLARE [VARIABLE]` is used for declaring a local variable.
-The keyword `VARIABLE` can be omitted.
 One `DECLARE [VARIABLE]` statement is required for each local variable.
 Any number of `DECLARE [VARIABLE]` statements can be included and in any order.
 The name of a local variable must be unique among the names of local variables and input and output parameters declared for the module.
@@ -792,7 +785,7 @@ A local variable can be of any SQL type other than an array.
 the variable will inherit all of its attributes.
 * If the `TYPE OF __domain__` clause is used instead, the variable will inherit only the domain's data type, and, if applicable, its character set and collation attributes.
 Any default value or constraints such as `NOT NULL` or `CHECK` constraints are not inherited.
-* If the `TYPE OF COLUMN __relation__.__column__>` option is used to "`borrow`" from a column in a table or view, the variable will inherit only the column's data type, and, if applicable, its character set and collation attributes.
+* If the `TYPE OF COLUMN __relation__.__column__` option is used to "`borrow`" from a column in a table or view, the variable will inherit only the column's data type, and, if applicable, its character set and collation attributes.
 Any other attributes are ignored.
 
 [[fblangref50-psql-variable-notnull]]
@@ -805,15 +798,15 @@ For other forms, including use of a domain that is nullable, the `NOT NULL` cons
 [[fblangref50-psql-variable-charsetcollate]]
 ==== `CHARACTER SET` and `COLLATE` clauses
 
-Unless specified, the character set and collation sequence of a string variable will be the database defaults.
+Unless specified, the character set and collation of a string variable will be the database defaults.
 A `CHARACTER SET` clause can be included, if required, to handle string data that is going to be in a different character set.
-A valid collation sequence (`COLLATE` clause) can also be included, with or without the character set clause.
+A valid collation (`COLLATE` clause) can also be included, with or without the character set clause.
 
 [[fblangref50-psql-variable-default]]
 ==== Initializing a Variable
 
 Local variables are `NULL` when execution of the module begins.
-They can be initialized so that a starting or default value is available when they are first referenced.
+They can be explicitly initialized so that a starting or default value is available when they are first referenced.
 The initial value can be specified in two ways, `DEFAULT <initvalue>` and `= <initvalue>`.
 The value can be any type-compatible literal or context variable, including `NULL`.
 
@@ -854,11 +847,7 @@ END
 [[fblangref50-psql-declare-cursor]]
 === `DECLARE .. CURSOR`
 
-.Used for
-Declaring a named cursor
-
-.Available in
-PSQL
+Declares a named cursor
 
 .Syntax
 [listing,subs=+quotes]
@@ -1054,11 +1043,7 @@ END
 [[fblangref50-psql-declfunc]]
 === `DECLARE FUNCTION`
 
-.Used for
-Declaring a sub-function
-
-.Available in
-PSQL
+Declares a sub-function
 
 .Syntax
 [listing,subs="+quotes,macros"]
@@ -1111,7 +1096,7 @@ Subroutines are only supported in top-level PSQL modules (stored procedures, sto
 This restriction is not enforced by the syntax, but attempts to create nested sub-functions will raise an error "`__feature is not supported__`" with detail message "`__nested sub function__`".
 * Currently, a sub-function has no direct access to use cursors from its parent module.
 
-A sub-function can be forward declared to resolve mutual dependencies between subroutine, and must be followed by its actual definition.
+A sub-function can be forward declared to resolve mutual dependencies between subroutines, and must be followed by its actual definition.
 When a sub-function is forward declared and has parameters with default values, the default values should only be specified in the forward declaration, and should not be repeated in _subfunc_def_.
 
 [NOTE]
@@ -1129,7 +1114,7 @@ The `END` of its main `BEGIN ... END` block is considered its terminator.
 [[fblangref50-psql-declfunc-exmpl]]
 ==== Examples of Sub-Functions
 
-. Subfunction within a stored function
+. Sub-function within a stored function
 +
 [source]
 ----
@@ -1182,11 +1167,7 @@ end
 [[fblangref50-psql-declproc]]
 === `DECLARE PROCEDURE`
 
-.Used for
-Declaring a sub-procedure
-
-.Available in
-PSQL
+Declares a sub-procedure
 
 .Syntax
 [listing,subs="+quotes,macros"]
@@ -1332,11 +1313,7 @@ end
 [[fblangref50-psql-beginend]]
 === `BEGIN ... END`
 
-.Used for
-Delimiting a block of statements
-
-.Available in
-PSQL
+Delimits a block of statements
 
 .Syntax
 [listing]
@@ -1350,11 +1327,11 @@ PSQL
 ----
 
 The `BEGIN ... END` construct is a two-part statement that wraps a block of statements that are executed as one unit of code.
-Each block starts with the half-statement `BEGIN` and ends with the other half-statement `END`.
+Each block starts with the keyword `BEGIN` and ends with the keyword `END`.
 Blocks can be nested a maximum depth of 512 nested blocks.
 A block can be empty, allowing them to act as stubs, without the need to write dummy statements.
 
-The `BEGIN` and `END` statements have no line terminators (semicolon).
+The `BEGIN ... END` itself should not be followed by a line terminator (semicolon).
 However, when defining or altering a PSQL module in the _isql_ utility, that application requires that the last `END` statement be followed by its own terminator character, that was previously switched -- using `SET TERM` -- to a string other than a semicolon.
 That terminator is not part of the PSQL syntax.
 
@@ -1367,7 +1344,7 @@ What the final `END` statement does in a stored procedure depends on the type of
 [[fblangref50-psql-beginend-exmpl]]
 ==== `BEGIN ... END` Examples
 
-.A sample procedure from the `employee.fdb` database, showing simple usage of `BEGIN...END` blocks:
+.A sample procedure from the `employee.fdb` database, showing simple usage of `BEGIN ... END` blocks:
 [source]
 ----
 SET TERM ^;
@@ -1417,11 +1394,7 @@ SET TERM ;^
 [[fblangref50-psql-ifthen]]
 === `IF ... THEN ... ELSE`
 
-.Used for
 Conditional branching
-
-.Available in
-PSQL
 
 .Syntax
 [listing]
@@ -1523,11 +1496,7 @@ This specific example can be replaced with a <<fblangref50-commons-conditional-c
 [[fblangref50-psql-while]]
 === `WHILE ... DO`
 
-.Used for
-Looping constructs
-
-.Available in
-PSQL
+Looping construct
 
 .Syntax
 [listing,subs=+quotes]
@@ -1601,11 +1570,7 @@ S
 [[fblangref50-psql-break]]
 === `BREAK`
 
-.Used for
-Exiting a loop
-
-.Available in
-PSQL
+Exits a loop
 
 .Syntax
 [listing,subs=+quotes]
@@ -1652,11 +1617,7 @@ Code continues to be executed from the first statement after the terminated loop
 [[fblangref50-psql-leave]]
 === `LEAVE`
 
-.Used for
-Exiting a loop
-
-.Available in
-PSQL
+Exits a loop
 
 .Syntax
 [listing,subs=+quotes]
@@ -1754,11 +1715,7 @@ END
 [[fblangref50-psql-continue]]
 === `CONTINUE`
 
-.Used for
-Continuing with the next iteration of a loop
-
-.Available in
-PSQL
+Continues with the next iteration of a loop
 
 .Syntax
 [listing,subs=+quotes]
@@ -1794,7 +1751,7 @@ END
 |A logical condition returning TRUE, FALSE or UNKNOWN
 |===
 
-The `CONTINUE` statement skips the remainer of the current block of a loop and starts the next iteration of the current `WHILE` or `FOR` loop.
+The `CONTINUE` statement skips the remainder of the current block of a loop and starts the next iteration of the current `WHILE` or `FOR` loop.
 Using the optional _label_ parameter, `CONTINUE` can also start the next iteration of an outer loop, that is, the loop labelled with _label_.
 
 [[fblangref50-psql-continue-exmpl]]
@@ -1819,11 +1776,7 @@ END
 [[fblangref50-psql-exit]]
 === `EXIT`
 
-.Used for
-Terminating module execution
-
-.Available in
-PSQL
+Terminates execution of a module
 
 .Syntax
 [listing]
@@ -1861,11 +1814,7 @@ END
 [[fblangref50-psql-suspend]]
 === `SUSPEND`
 
-.Used for
-Passing output to the buffer and suspending execution while waiting for caller to fetch it
-
-.Available in
-PSQL
+Passes output to the buffer and suspends execution while waiting for caller to fetch it
 
 .Syntax
 [listing]
@@ -1873,7 +1822,7 @@ PSQL
 SUSPEND;
 ----
 
-The `SUSPEND` statement is used in a selectable stored procedure to pass the values of output parameters to a buffer and suspend execution.
+The `SUSPEND` statement is used in selectable stored procedures to pass the values of output parameters to a buffer and suspend execution.
 Execution remains suspended until the calling application fetches the contents of the buffer.
 Execution resumes from the statement directly after the `SUSPEND` statement.
 In practice, this is likely to be a new iteration of a looping process. 
@@ -1918,11 +1867,7 @@ END
 [[fblangref50-psql-execstmt]]
 === `EXECUTE STATEMENT`
 
-.Used for
-Executing dynamically created SQL statements
-
-.Available in
-PSQL
+Executes dynamically created SQL statements
 
 .Syntax
 [listing,subs="+quotes,attributes,macros"]
@@ -2232,7 +2177,7 @@ Additionally, `AS USER` is considered absent if its value is equal to `CURRENT_U
 
 . There is no way to validate the syntax of the enclosed statement
 . There are no dependency checks to discover whether tables or columns have been dropped
-. Even though the performance in loops has been significantly improved in Firebird 2.5, execution is still considerably slower than when the same statements are executed directly
+. Execution is considerably slower than when the same statements are executed directly
 . Return values are strictly checked for data type to avoid unpredictable type-casting exceptions.
 For example, the string `'1234'` would convert to an integer, 1234, but `'abc'` would give a conversion error
 
@@ -2245,11 +2190,7 @@ If you can achieve the same result with PSQL and/or DSQL, it will almost always 
 [[fblangref50-psql-forselect]]
 === `FOR SELECT`
 
-.Used for
-Looping row-by-row through a selected result set
-
-.Available in
-PSQL
+Loops row-by-row through a query result set
 
 .Syntax
 [listing,subs=+quotes]
@@ -2289,7 +2230,7 @@ In each iteration of the loop, the field values of the current row are copied in
 Including the `AS CURSOR` clause enables positioned deletes and updates to be performed -- see notes below
 * can embed other `FOR SELECT` statements
 * can contain named parameters that must be previously declared in the `DECLARE VARIABLE` statement or exist as input or output parameters of the procedure
-* requires an `INTO` clause at the end of the `SELECT ... FROM ...` specification.
+* requires an `INTO` clause at the end of the `SELECT ... FROM ...` specification if `AS CURSOR` is absent
 In each iteration of the loop, the field values of the current row are copied to the list of variables specified in the `INTO` clause.
 The loop repeats until all rows are retrieved, after which it terminates
 * can be terminated before all rows are retrieved by using a `BREAK`, `LEAVE` or `EXIT` statement
@@ -2461,11 +2402,7 @@ END
 [[fblangref50-psql-forexec]]
 === `FOR EXECUTE STATEMENT`
 
-.Used for
-Executing dynamically created SQL statements that return a row set
-
-.Available in
-PSQL
+Executes dynamically created SQL statements and loops over its result set
 
 .Syntax
 [listing,subs=+quotes]
@@ -2489,7 +2426,7 @@ Follows the rules for identifiers.
 |An `EXECUTE STATEMENT` statement
 
 |compound_statement
-|A single statement, or a block of statements wrapped in `BEGIN...END`, that performs all the processing for this `FOR` loop
+|A single statement, or a block of statements wrapped in `BEGIN ... END`, that performs all the processing for this `FOR` loop
 |===
 
 The statement `FOR EXECUTE STATEMENT` is used, in a manner analogous to `FOR SELECT`, to loop through the result set of a dynamically executed query that returns multiple rows.
@@ -2527,11 +2464,7 @@ END
 [[fblangref50-psql-open]]
 === `OPEN`
 
-.Used for
-Opening a declared cursor
-
-.Available in
-PSQL
+Opens a declared cursor
 
 .Syntax
 [listing,subs=+quotes]
@@ -2556,7 +2489,7 @@ An `OPEN` statement opens a previously declared cursor, executes its declared `S
 
 [NOTE]
 ====
-If the `SELECT` statement of the cursor has parameters, they must be declared as local variables or exist as input or output parameters before the cursor is declared.
+If the `SELECT` statement of the cursor has parameters, they must be declared as local variables, or input or output parameters before the cursor is declared.
 When the cursor is opened, the parameter is assigned the current value of the variable.
 ====
 
@@ -2667,11 +2600,7 @@ END
 [[fblangref50-psql-fetch]]
 === `FETCH`
 
-.Used for
-Fetching successive records from a data set retrieved by a cursor
-
-.Available in
-PSQL
+Fetches a record from a cursor
 
 .Syntax
 [listing,subs="+quotes,attributes"]
@@ -2681,8 +2610,7 @@ FETCH [<fetch_scroll> FROM] _cursor_name_
 
 <fetch_scroll> ::=
     NEXT | PRIOR | FIRST | LAST
-  | RELATIVE _n_
-  | ABSOLUTE _n_
+  | RELATIVE _n_ | ABSOLUTE _n_
 ----
 
 [[fblangref50-psql-tbl-fetch]]
@@ -2738,7 +2666,7 @@ A value of zero (`0`) will position before the first row.
 The optional `INTO` clause gets data from the current row of the cursor and loads them into PSQL variables.
 If fetch moved beyond the bounds of the result set, the variables will be set to `NULL`.
 
-It is also possible to use the cursor name as a variable of a row type (similar to `OLD` and `NEW` in triggers), allowing access to the columns of the result set (i.e. __cursor_name__.__columnname__).
+It is also possible to use the cursor name as a variable of a record type (similar to `OLD` and `NEW` in triggers), allowing access to the columns of the result set (i.e. __cursor_name__.__columnname__).
 
 // When updating also update the same list in fblangref50-psql-undeclaredcursor
 .Rules for Cursor Variables
@@ -2905,11 +2833,7 @@ END
 [[fblangref50-psql-close]]
 === `CLOSE`
 
-.Used for
-Closing a declared cursor
-
-.Available in
-PSQL
+Closes a declared cursor
 
 .Syntax
 [listing,subs=+quotes]
@@ -2944,11 +2868,7 @@ See <<fblangref50-psql-fetch-exmpl>>
 [[fblangref50-psql-inauton]]
 === `IN AUTONOMOUS TRANSACTION`
 
-.Used for
-Executing a statement or a block of statements in an autonomous transaction
-
-.Available in
-PSQL
+Executes a statement or a block of statements in an autonomous transaction
 
 .Syntax
 [listing]
@@ -3009,16 +2929,12 @@ END
 ----
 
 .See also
-<<fblangref50-transacs,`Transaction Control`>>
+<<fblangref50-transacs,Transaction Control>>
 
 [[fblangref50-psql-postevent]]
 === `POST_EVENT`
 
-.Used for
-Notifying listening clients about database events in a module
-
-.Available in
-PSQL
+Posts an event for notification to registered clients on commit
 
 .Syntax
 [listing,subs=+quotes]
@@ -3038,7 +2954,7 @@ POST_EVENT _event_name_;
 |===
 
 The `POST_EVENT` statement notifies the event manager about the event, which saves it to an event table.
-When the transaction is committed, the event manager notifies applications that are signalling their interest in the event.
+When the transaction is committed, the event manager notifies applications that have registered their interest in the event.
 
 The event name can be a code, or a short message: the choice is open as it is a string of up to 127 bytes.
 Keep in mind that the application listening for an event must use the exact event name when registering.
@@ -3063,11 +2979,7 @@ END
 [[fblangref50-psql-return]]
 === `RETURN`
 
-.Used for
-Return a value from a stored function
-
-.Available in
-PSQL
+Returns a value from a stored function
 
 .Syntax
 [listing,subs=+quotes]
@@ -3135,11 +3047,7 @@ For details, see <<fblangref50-ddl-exception-create,`CREATE EXCEPTION`>>.
 [[fblangref50-psql-exception]]
 === `EXCEPTION`
 
-.Used for
-Throwing a user-defined exception or re-throwing an exception
-
-.Available in
-PSQL
+Throws a user-defined exception or rethrows an exception
 
 .Syntax
 [listing,subs=+quotes]
@@ -3201,11 +3109,11 @@ As an example:
 [source]
 ----
 CREATE EXCEPTION ex1
-  'something wrong in @ 1 @ 2 @ 3 @ 4 @ 5 @ 6 @ 7 @ 8 @ 9 @ 10 @ 11';
+  'something wrong in @1@2@3@4@5@6@7@8@9@10@11';
 SET TERM ^;
 EXECUTE BLOCK AS
 BEGIN
-  EXCEPTION ex1 USING ( 'a' , 'b' , 'c' , 'd' , 'e' , 'f' , 'g' , 'h' , 'i' );
+  EXCEPTION ex1 USING ('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i');
 END^
 ----
 
@@ -3216,7 +3124,7 @@ This will produce the following output
 Statement failed, SQLSTATE = HY000
 exception 1
 -EX1
--something wrong in abcdefghi a0 a1
+-something wrong in abcdefghia0a1
 ----
 ====
 
@@ -3347,11 +3255,7 @@ END
 [[fblangref50-psql-when]]
 === `WHEN ... DO`
 
-.Used for
-Catching an exception and handling the error
-
-.Available in
-PSQL
+Catches an exception for error handling
 
 .Syntax
 [listing,subs=+quotes]
@@ -3397,7 +3301,7 @@ The `WHEN ... DO` block must be located at the end of a block of statements, bef
 
 The keyword `DO` is followed by a statement, or a block of statements inside a `BEGIN ... END` block, that handles the exception.
 The `SQLCODE`, `GDSCODE`, and `SQLSTATE` context variables are available in the context of this statement or block.
-The <<fblangref50-scalarfuncs-rdberror,`RDB$ERROR`>> function can be used the obtain the SQLCODE, GDSCODE, SQLSTATE, custom exception name and exception message.
+Use the <<fblangref50-scalarfuncs-rdberror,`RDB$ERROR`>> function to obtain the SQLCODE, GDSCODE, SQLSTATE, custom exception name and exception message.
 The `EXCEPTION` statement, without parameters, can also be used in this context to re-throw the error or exception.
 
 [[fblangref50-psql-when-gdscode]]
@@ -3405,7 +3309,7 @@ The `EXCEPTION` statement, without parameters, can also be used in this context 
 ****
 The argument for the `WHEN GDSCODE` clause is the symbolic name associated with the internally-defined exception, such as `grant_obj_notfound` for GDS error 335544551.
 
-In statement or block of statements of the `DO` clause, a `GDSCODE` context variable, containing the numeric code, becomes available.
+In a statement or block of statements of the `DO` clause, a `GDSCODE` context variable, containing the numeric code, becomes available.
 That numeric code is required if you want to compare a `GDSCODE` exception with a targeted error.
 To compare it with a specific error, you need to use a numeric values, for example `335544551` for `grant_obj_notfound`.
 
@@ -3430,7 +3334,7 @@ Read an interesting discussion of the phenomenon in Firebird Tracker ticket http
 ==== Scope of a `WHEN ... DO` Statement
 
 A `WHEN ... DO` statement catches errors and exceptions in the current block of statements.
-It also catches similar exceptions in nested blocks, if those exceptions have not been handled in those nested blocks.
+It also catches exceptions from nested blocks, if those exceptions have not been handled in those blocks.
 
 All changes made before the statement that caused the error are visible to a `WHEN ... DO` statement.
 However, if you try to log them in an autonomous transaction, those changes are unavailable, because the transaction where the changes took place is not committed at the point when the autonomous transaction is started.

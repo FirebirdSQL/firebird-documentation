@@ -1,35 +1,38 @@
 [[fblangref50-transacs]]
 = Transaction Control
 
-Everything in Firebird happens in transactions.
+Almost all operations in Firebird occur in the context of a transaction.
 Units of work are isolated between a start point and end point.
 Changes to data remain reversible until the moment the client application instructs the server to commit them.
+
+Unless explicitly mentioned otherwise in an "`Available in`" section, transaction control statements are available in DSQL.
+Availability in ESQL is -- bar some exceptions -- not tracked by this Language Reference.
+Transaction control statements are not available in PSQL.
 
 [[fblangref50-transacs-statements]]
 == Transaction Statements
 
-Firebird has a small lexicon of SQL statements that are used by client applications to start, manage, commit and reverse (roll back) the transactions that form the boundaries of all database tasks:
+Firebird has a small lexicon of SQL statements that are used by client applications to start, manage, commit and reverse (roll back) the transactions that form the boundaries of most database tasks:
 
 <<fblangref50-transacs-settransac,SET TRANSACTION>>::
-for configuring and starting a transaction
+configures and starts a transaction
 
 <<fblangref50-transacs-commit,COMMIT>>::
-to signal the end of a unit of work and write changes permanently to the database
+signals the end of a unit of work and writes changes permanently to the database
 
 <<fblangref50-transacs-rollback,ROLLBACK>>::
-to reverse the changes performed in the transaction
+undoes the changes performed in the transaction or to a savepoint
 
 <<fblangref50-transacs-savepoint,SAVEPOINT>>::
-to mark a position in the log of work done, in case a partial rollback is needed
+marks a position in the log of work done, in case a partial rollback is needed
 
 <<fblangref50-transacs-releasesp,RELEASE SAVEPOINT>>::
-to erase a savepoint
+erases a savepoint
 
 [[fblangref50-transacs-settransac]]
 === `SET TRANSACTION`
 
-.Used for
-Configuring and starting a transaction
+Configures and starts a transaction
 
 .Available in
 DSQL, ESQL
@@ -109,14 +112,13 @@ Available only in ESQL
 Available only in ESQL
 |===
 
-The `SET TRANSACTION` statement configures the transaction and starts it.
 Generally, only client applications start transactions.
 Exceptions are when the server starts an autonomous transaction, and transactions for certain background system threads/processes, such as sweeping.
 
 A client application can start any number of concurrently running transactions.
 A single connection can have multiple concurrent active transactions (though not all drivers or access components support this).
-A limit does exist, for the total number of running transactions in all client applications working with one particular database from the moment the database was restored from its backup copy or from the moment the database was created originally.
-The limit is 2^48^ -- 281,474,976,710,656 -- in Firebird 3.0 and higher, and 2^31^-1 -- or 2,147,483,647 -- in earlier versions.
+A limit does exist, for the total number of transactions in all client applications working with one particular database from the moment the database was restored from its backup copy or from the moment the database was created originally.
+The limit is 2^48^ -- 281,474,976,710,656.
 
 All clauses in the `SET TRANSACTION` statement are optional.
 If the statement starting a transaction has no clauses specified, the transaction will be started with default values for access mode, lock resolution mode and isolation level, which are:
@@ -141,7 +143,9 @@ This number can be retrieved in SQL using the context variable `CURRENT_TRANSACT
 
 [NOTE]
 ====
-Some database drivers -- or their governing specifications -- require that you configure and start transaction through API methods. In that case, using `SET TRANSACTION` is either not supported, or may result in unspecified behaviour. An example of this is JDBC and the Firebird JDBC driver Jaybird.
+Some database drivers -- or their governing specifications -- require that you configure and start transaction through API methods.
+In that case, using `SET TRANSACTION` is either not supported, or may result in unspecified behaviour.
+An example of this is JDBC and the Firebird JDBC driver Jaybird.
 
 Check the documentation of your driver for details.
 ====
@@ -152,7 +156,7 @@ The `NAME` and `USING` clauses are only valid in ESQL.
 ==== Transaction Name
 
 The optional `NAME` attribute defines the name of a transaction.
-Use of this attribute is available only in Embedded SQL.
+Use of this attribute is available only in Embedded SQL (ESQL).
 In ESQL applications, named transactions make it possible to have several transactions active simultaneously in one application.
 If named transactions are used, a host-language variable with the same name must be declared and initialized for each named transaction.
 This is a limitation that prevents dynamic specification of transaction names and thus rules out transaction naming in DSQL.
@@ -168,7 +172,7 @@ The main parameters of a transaction are:
 +
 [NOTE]
 ====
-The `READ UNCOMMITTED` isolation level is a synonym for `READ COMMITTED`, and provided only for syntax compatibility.
+The `READ UNCOMMITTED` isolation level is a synonym for `READ COMMITTED`, and is provided only for syntax compatibility.
 It provides the exact same semantics as `READ COMMITTED`, and does not allow you to view uncommitted changes of other transactions.
 ====
 * a mechanism for reserving or releasing tables (the `RESERVING` clause)
@@ -253,8 +257,7 @@ Changes made by autonomous transactions are not seen in the context of the `SNAP
 
 Using `SNAPSHOT AT NUMBER _snaphot_number_`, a `SNAPSHOT` transaction can be started sharing the snapshot of another transaction.
 With this feature it's possible to create parallel processes (using different attachments) reading consistent data from a database.
-For example, a backup process may create multiple threads reading data from the database in parallel.
-Or a web service may dispatch distributed sub-services doing processing in parallel.
+For example, a backup process may create multiple threads reading data from the database in parallel, or a web service may dispatch distributed sub-services doing processing in parallel.
 
 Alternatively, this feature can also be used via the API, using Transaction Parameter Buffer item `isc_tpb_at_snapshot_number`.
 
@@ -264,7 +267,7 @@ The _snapshot_number_ passed to the new transaction must be a snapshot of a curr
 [NOTE]
 ====
 To share a stable view between transactions, the other transaction also needs to have isolation level `SNAPSHOT`.
-With `READ COMMITTED`, the snapshot number will move forward
+With `READ COMMITTED`, the snapshot number will move forward.
 ====
 
 .Example
@@ -293,18 +296,19 @@ The `SNAPSHOT TABLE STABILITY` isolation level is also known as "`__consistency_
 The `READ COMMITTED` isolation level allows all data changes that other transactions have committed since it started to be seen immediately by the uncommitted current transaction.
 Uncommitted changes are not visible to a `READ COMMITTED` transaction.
 
-To retrieve the updated list of rows in the table you are interested in -- "`refresh`" -- the `SELECT` statement needs to be requested again, whilst still in the uncommitted `READ COMMITTED` transaction.
+To retrieve the updated list of rows in the table you are interested in -- "`refresh`" -- the `SELECT` statement needs to be executed again, whilst still in the uncommitted `READ COMMITTED` transaction.
 
 [float]
 [[fblangref50-transacs-settransac-readcommit-opts]]
 ====== Variants of `READ COMMITTED`
 
 One of three modifying parameters can be specified for `READ COMMITTED` transactions, depending on the kind of conflict resolution desired: `READ CONSISTENCY`, `RECORD_VERSION` or `NO RECORD_VERSION`.
-When the `ReadConsistency` setting is set to `1` in `firebird.conf` (the default) or in `databases.conf`, these variants are effectively ignored and behave as `READ CONSISTENCY`. Otherwise, these variants are mutually exclusive.
+When the `ReadConsistency` setting is set to `1` in `firebird.conf` (the default) or in `databases.conf`, these variants are effectively ignored and behave as `READ CONSISTENCY`.
+Otherwise, these variants are mutually exclusive.
 
 * `NO RECORD_VERSION` (the default if `ReadConsistency = 0`) is a kind of two-phase locking mechanism: it will make the transaction unable to write to any row that has an update pending from another transaction.
-** if `NO WAIT` is the lock resolution strategy specified, it will throw a lock conflict error immediately
-** with `WAIT` specified, it will wait until the other transaction either commits or is rolled back.
+** with `NO WAIT` specified, it will throw a lock conflict error immediately
+** with `WAIT` specified, it will wait until the other transaction is either committed or rolled back.
 If the other transaction is rolled back, or if it is committed and its transaction ID is older than the current transaction's ID, then the current transaction's change is allowed.
 A lock conflict error is returned if the other transaction was committed and its ID was newer than that of the current transaction.
 * With `RECORD_VERSION` specified, the transaction reads the latest committed version of the row, regardless of other pending versions of the row.
@@ -355,11 +359,12 @@ Also, due to _READ CONSISTENCY_ nature, the modified record set remains consiste
 * `UPDATE`/`DELETE` triggers fire multiple times for the same record if the statement execution was restarted and record is updated/deleted again.
 * Statement restart is usually fully transparent to client applications and no special actions should be taken by developers to handle it in any way.
 The only exception is the code with side effects that are outside the transactional control, for example:
-
++
+--
 ** usage of external tables, sequences or context variables
-** sending e-mails using UDF
+** sending e-mails using UDF or UDR
 ** usage of autonomous transactions or external queries
-
+--
 +
 and so on.
 Beware that such code could be executed more than once if update conflict happens.
@@ -378,7 +383,6 @@ They are left to be mopped up later by garbage collection.
 `NO AUTO UNDO` might be useful when a lot of separate statements are executed that change data in conditions where the transaction is likely to be committed successfully most of the time.
 
 The `NO AUTO UNDO` option is ignored for transactions where no changes are made.
-
 
 [[fblangref50-transacs-settransac-restartreqs]]
 ===== `RESTART REQUESTS`
@@ -507,8 +511,7 @@ A `USING` clause in `SET TRANSACTION` syntax is not supported in DSQL.
 [[fblangref50-transacs-commit]]
 === `COMMIT`
 
-.Used for
-Committing a transaction
+Commits a transaction
 
 .Available in
 DSQL, ESQL
@@ -551,7 +554,6 @@ In ESQL applications, named transactions make it possible to have several transa
 If named transactions are used, a host-language variable with the same name must be declared and initialized for each named transaction.
 This is a limitation that prevents dynamic specification of transaction names and thus, rules out transaction naming in DSQL.
 ====
-* The optional keyword `WORK` is supported for compatibility with other relational database management systems that require it.
 * The keyword `RELEASE` is available only in Embedded SQL and enables disconnection from all databases after the transaction is committed.
 `RELEASE` is retained in Firebird only for compatibility with legacy versions of InterBase.
 It has been superseded in ESQL by the `DISCONNECT` statement.
@@ -559,7 +561,7 @@ It has been superseded in ESQL by the `DISCONNECT` statement.
 The transaction is committed, but some server resources are retained and a new transaction is restarted transparently with the same Transaction ID.
 The state of row caches and cursors remains as it was before the soft commit.
 + 
-For soft-committed transactions whose isolation level is `SNAPSHOT` or `SNAPSHOT TABLE STABILITY`, the view of database state does not update to reflect changes by other transactions, and the user of the application instance continues to have the same view as when the transaction started originally.
+For soft-committed transactions whose isolation level is `SNAPSHOT` or `SNAPSHOT TABLE STABILITY`, the view of database state does not update to reflect changes by other transactions, and the user of the application instance continues to have the same view as when the original transaction started.
 Changes made during the life of the retained transaction are visible to that transaction, of course.
 
 .Recommendation
@@ -574,8 +576,7 @@ Use of the `COMMIT` statement in preference to `ROLLBACK` is recommended for end
 [[fblangref50-transacs-rollback]]
 === `ROLLBACK`
 
-.Used for
-Rolling back a transaction
+Rolls back a transaction or to a savepoint
 
 .Available in
 DSQL, ESQL
@@ -623,7 +624,6 @@ In ESQL applications, named transactions make it possible to have several transa
 If named transactions are used, a host-language variable with the same name must be declared and initialized for each named transaction.
 This is a limitation that prevents dynamic specification of transaction names and thus, rules out transaction naming in DSQL.
 ====
-* The optional keyword `WORK` is supported for compatibility with other relational database management systems that require it.
 * The keyword `RETAIN` keyword specifies that, although all work of the transaction is to be rolled back, the transaction context is to be retained.
 Some server resources are retained, and the transaction is restarted transparently with the same Transaction ID.
 The state of row caches and cursors is kept as it was before the "`soft`" rollback.
@@ -638,7 +638,7 @@ Changes that were made and soft-committed during the life of the retained transa
 [[fblangref50-transacs-rollback-tosavepoint]]
 ==== `ROLLBACK TO SAVEPOINT`
 
-The alternative `ROLLBACK TO SAVEPOINT` statement specifies the name of a savepoint to which changes are to be rolled back.
+The `ROLLBACK TO SAVEPOINT` statement specifies the name of a savepoint to which changes are to be rolled back.
 The effect is to roll back all changes made within the transaction, from the specified savepoint forward until the point when `ROLLBACK TO SAVEPOINT` is requested.
 
 `ROLLBACK TO SAVEPOINT` performs the following operations: 
@@ -649,7 +649,7 @@ User variables set with `RDB$SET_CONTEXT()` remain unchanged.
 Savepoints earlier than the one named are preserved, along with the named savepoint itself.
 Repeated rollbacks to the same savepoint are thus allowed.
 * All implicit and explicit record locks that were acquired since the savepoint are released.
-Other transactions that have requested access to rows locked after the savepoint must continue to wait until the transaction is committed or rolled back.
+Other transactions that have requested access to rows locked after the savepoint are not notified and will continue to wait until the transaction is committed or rolled back.
 Other transactions that have not already requested the rows can request and access the unlocked rows immediately.
 
 .See also
@@ -658,11 +658,7 @@ Other transactions that have not already requested the rows can request and acce
 [[fblangref50-transacs-savepoint]]
 === `SAVEPOINT`
 
-.Used for
-Creating a savepoint
-
-.Available in
-DSQL
+Creates a savepoint
 
 .Syntax
 [listing,subs=+quotes]
@@ -682,9 +678,9 @@ SAVEPOINT _sp_name_
 Available only in DSQL
 |===
 
-The `SAVEPOINT` statement creates an SQL:99-compliant savepoint that acts as a marker in the "`stack`" of data activities within a transaction.
+The `SAVEPOINT` statement creates an SQL-compliant savepoint that acts as a marker in the "`stack`" of data activities within a transaction.
 Subsequently, the tasks performed in the "`stack`" can be undone back to this savepoint, leaving the earlier work and older savepoints untouched.
-Savepoint mechanisms are sometimes characterised as "`nested transactions`".
+Savepoints are sometimes called "`nested transactions`".
 
 If a savepoint already exists with the same name as the name supplied for the new one, the existing savepoint is released, and a new one is created using the supplied name.
 
@@ -720,11 +716,7 @@ SELECT * FROM TEST; -- returns one row
 [[fblangref50-transacs-releasesp]]
 === `RELEASE SAVEPOINT`
 
-.Used for
-Erasing a savepoint
-
-.Available in
-DSQL
+Releases a savepoint
 
 .Syntax
 [listing,subs=+quotes]
@@ -763,7 +755,7 @@ When the volume of changes performed under a transaction-level savepoint is gett
 [TIP]
 ====
 If you expect the volume of changes in your transaction to be large, you can specify the `NO AUTO UNDO` option in your `SET TRANSACTION` statement to block the creation of the transaction-level savepoint.
-Using the API instead, you would set the TPB flag `isc_tpb_no_auto_undo`.
+Using the API, you can set this with the TPB flag `isc_tpb_no_auto_undo`.
 ====
 
 [[fblangref50-transacs-psqlandsp]]

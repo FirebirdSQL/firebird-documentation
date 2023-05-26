@@ -19,18 +19,18 @@ The SQL subsets in Firebird's language implementation are:
 * Embedded SQL (ESQL)
 * Interactive SQL (ISQL)
 
-_Dynamic SQL_ is the major part of the language which corresponds to the Part 2 (SQL/Foundation) part of the SQL specification.
+_Dynamic SQL_ is the major part of the language which corresponds to Part 2 (SQL/Foundation) of the SQL specification.
 DSQL represents statements passed by client applications through the public Firebird API and processed by the database engine.
 
 _Procedural SQL_ augments Dynamic SQL to allow compound statements containing local variables, assignments, conditions, loops and other procedural constructs.
-PSQL corresponds to the Part 4 (SQL/PSM) part of the SQL specifications.
-Originally, PSQL extensions were available in persistent stored modules (procedures and triggers) only, but in more recent releases they were surfaced in Dynamic SQL as well (see <<fblangref50-dml-execblock,`EXECUTE BLOCK`>>).
+PSQL corresponds to Part 4 (SQL/PSM) of the SQL specifications.
+PSQL extensions are available in persistent stored modules (procedures, functions and triggers), and in Dynamic SQL as well (see <<fblangref50-dml-execblock,`EXECUTE BLOCK`>>).
 
 _Embedded SQL_ defines the DSQL subset supported by Firebird _gpre_, the application which allows you to embed SQL constructs into your host programming language (C, C++, Pascal, Cobol, etc.) and preprocess those embedded constructs into the proper Firebird API calls.
 
 [NOTE]
 ====
-Only a portion of the statements and expressions implemented in DSQL are supported in ESQL.
+Only a subset of the statements and expressions implemented in DSQL are supported in ESQL.
 ====
 
 _Interactive ISQL_ refers to the language that can be executed using Firebird _isql_, the command-line application for accessing databases interactively.
@@ -47,26 +47,27 @@ _SQL dialect_ is a term that defines the specific features of the SQL language t
 SQL dialects can be defined at the database level and specified at the connection level.
 Three dialects are available:
 
-* _Dialect 1_ is intended solely to allow backward compatibility with legacy databases from old InterBase versions, v.5 and below.
+* _Dialect 1_ is intended solely to allow backward compatibility with legacy databases from old InterBase versions, version 5 and below.
 Dialect 1 databases retain certain language features that differ from Dialect 3, the default for Firebird databases.
 ** Date and time information are stored in a `DATE` data type.
 A `TIMESTAMP` data type is also available, that is identical to this `DATE` implementation.
 ** Double quotes may be used as an alternative to apostrophes for delimiting string data.
 This is contrary to the SQL standard -- double quotes are reserved for a distinct syntactic purpose both in standard SQL and in Dialect 3.
 Double-quoting strings is therefore to be avoided strenuously.
-** The precision for `NUMERIC` and `DECIMAL` data types is smaller than in Dialect 3 and, if the precision of a fixed decimal number is greater than 9, Firebird stores it internally as a long floating point value.
+** The precision for `NUMERIC` and `DECIMAL` data types is smaller than in Dialect 3 and, if the precision of a fixed decimal number is greater than 9, Firebird stores it internally as a double-precision floating point value.
 ** The `BIGINT` (64-bit integer) data type is not supported.
 ** Identifiers are case-insensitive and must always comply with the rules for regular identifiers -- see the section <<fblangref50-structure-identifiers>> below.
 ** Although generator values are stored as 64-bit integers, a Dialect 1 client request, `SELECT GEN_ID (MyGen, 1)`, for example, will return the generator value truncated to 32 bits.
 * _Dialect 2_ is available only on the Firebird client connection and cannot be set in the database.
 It is intended to assist debugging of possible problems with legacy data when migrating a database from dialect 1 to 3.
 * In _Dialect 3_ databases,
-** numbers (`DECIMAL` and `NUMERIC` data types) are stored internally as long fixed point values (scaled integers) when the precision is greater than 9.
-** The `TIME` data type is available for storing time-of-day data only.
+** numbers (`DECIMAL` and `NUMERIC` data types) are stored as fixed-point values (scaled integers) for all precisions;
+depending on the type and precision, they are stored as a `SMALLINT`, `INTEGER`, `BIGINT` or `INT128`.
+** The `TIME` data type is available for storing time-of-day data.
 ** The `DATE` data type stores only date information.
 ** The 64-bit integer data type `BIGINT` is available.
 ** Double quotes are reserved for delimiting non-regular identifiers, enabling object names that are case-sensitive or that do not meet the requirements for regular identifiers in other ways.
-** All strings must be delimited with single quotes (apostrophes).
+** Strings must be delimited with single quotes (apostrophes) or using <<fblangref50-commons-qstrings,Q-strings>>.
 ** Generator values are stored as 64-bit integers.
 
 [IMPORTANT]
@@ -98,7 +99,7 @@ The `ORDER BY` clause specifies how the output data -- result set -- should be s
 Options::
 Options, being the simplest constructs, are specified in association with specific keywords to provide qualification for clause elements.
 Where alternative options are available, it is usual for one of them to be the default, used if nothing is specified for that option.
-For instance, the `SELECT` statement will return all of the rows that match the search criteria unless the `DISTINCT` option restricts the output to non-duplicated rows.
+For instance, the `SELECT` statement will return all rows that match the search criteria unless the `DISTINCT` option restricts the output to non-duplicated rows.
 
 Keywords::
 All words that are included in the SQL lexicon are keywords.
@@ -156,6 +157,7 @@ FULLNAME
 FuLlNaMe
 FullName
 ----
+* Regular identifiers are stored in uppercase
 
 .Regular name syntax
 [listing]
@@ -182,7 +184,7 @@ Identifiers are stored in character set `UTF8`, which means characters outside t
 * The entire string must be enclosed in double-quotes, e.g. `"anIdentifier"`
 * It may contain any character from the `UTF8` character set, including accented characters, spaces and special characters
 * An identifier can be a reserved word
-* Delimited identifiers are case-sensitive in all contexts
+* Delimited identifiers are stored as-is and are case-sensitive in all contexts
 * Trailing spaces in delimited names are removed, as with any string constant
 * Delimited identifiers are available in Dialect 3 only.
 For more details on dialects, see <<fblangref50-structure-dialects>>
@@ -212,7 +214,7 @@ Examples of standard types of literals are:
 integer        - 0, -34, 45, 0X080000000;
 fixed-point    - 0.0, -3.14
 floating-point - 3.23e-23;
-string         - 'text', 'don''t!';
+string         - 'text', 'don''t!', Q'{don't!}';
 binary string  - x'48656C6C6F20776F726C64'
 date           - DATE '2018-01-19';
 time           - TIME '15:12:56';
@@ -266,12 +268,11 @@ Comments may be present in SQL scripts, SQL statements and PSQL modules.
 A comment can be any text specified by the code writer, usually used to document how particular parts of the code work.
 The parser ignores the text of comments.
 
-Firebird supports two types of comments: _block_  and _in-line_.
+Firebird supports two types of comments: _block_ and _in-line_.
 
 .Syntax
 [listing]
 ----
-
 <comment> ::= <block comment> | <single-line comment>
 
 <block comment> ::=
