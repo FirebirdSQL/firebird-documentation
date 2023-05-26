@@ -16,7 +16,7 @@ NOTE: Creating chunked output is experimental.
 
    Firebird 5.0 Language Reference
    ```
-   docker run `
+   docker run --rm `
     -v D:\Development\firebird-documentation\build\docs\chunk:/output `
     -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
     docbook-xslt `
@@ -31,7 +31,7 @@ NOTE: Creating chunked output is experimental.
 
    Firebird 4.0 Language Reference
    ```
-   docker run `
+   docker run --rm `
     -v D:\Development\firebird-documentation\build\docs\chunk:/output `
     -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
     docbook-xslt `
@@ -46,7 +46,7 @@ NOTE: Creating chunked output is experimental.
    
    Firebird 3.0 Language Reference
    ```
-   docker run `
+   docker run --rm `
     -v D:\Development\firebird-documentation\build\docs\chunk:/output `
     -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
     docbook-xslt `
