@@ -53,6 +53,6 @@ If you have any questions, *first* get the Docbuilding Howto at:
   https://www.firebirdsql.org/en/reference-manuals/
 
 If your question isn't answered there, post a message to the Firebird
-docwriters' list. You can use this page to subscribe:
+Development list. You can use this page to subscribe:
 
-  https://lists.sourceforge.net/lists/listinfo/firebird-docs
+  https://groups.google.com/g/firebird-devel
