@@ -58,3 +58,18 @@ NOTE: Creating chunked output is experimental.
     -- `
     "-xsl:/input/custom.xsl"      
    ```
+
+   Firebird 2.5 Language Reference
+   ```
+   docker run --rm `
+    -v D:\Development\firebird-documentation\build\docs\chunk:/output `
+    -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
+    docbook-xslt `
+    /input/en/refdocs/fblangref25/firebird-25-language-reference.xml `
+    chunk-output-base-uri=/output/en/refdocs/fblangref25/ `
+    chunk=firebird-25-language-reference.html `
+    resource-base-uri=../../../ `
+    --resources:/output `
+    -- `
+    "-xsl:/input/custom.xsl"      
+   ```
