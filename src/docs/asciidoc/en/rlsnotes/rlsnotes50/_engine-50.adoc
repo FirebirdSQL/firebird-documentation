@@ -30,15 +30,17 @@ There are two ways to enable parallelism in a user attachment:
 . set the default number of parallel workers using new setting _ParallelWorkers_ in firebird.conf.
 
 The _gfix_ utility has a new command-line switch, _-parallel_, that allows to set the number of parallel workers for the sweep task.
-For example:
+
+For example, the following will run sweep on the given database and asks the engine to use 4 workers:
 
 [listing]
 ----
 gfix -sweep -parallel 4 <database>
 ----
 
-will run sweep on the given database and asks the engine to use 4 workers.
 _gfix_ uses DPB tag _isc_dpb_parallel_workers_ when attaches to <database>, if switch _-parallel_ is present.
+
+A similar option was also added to _gbak_.
 
 The new firebird.conf setting _ParallelWorkers_ sets the default number of parallel workers that can be used by any user attachment running parallelizable task.
 The default value is 1 and means no use of additional parallel workers.
@@ -47,10 +49,10 @@ The value in the DPB has a higher priority than the setting in firebird.conf.
 To control the number of additional workers that can be created by the engine, there are two new settings in firebird.conf:
 
 ParallelWorkers::
-Sets default number of parallel workers that used by user attachments.
+Sets the default number of parallel workers used by a user attachments.
 Can be overridden by attachment using tag _isc_dpb_parallel_workers_ in DPB.
 MaxParallelWorkers::
-Limits the number of simultaneously used workers for the given database and Firebird process.
+Limits the maximum number of simultaneously used workers for the given database and Firebird process.
 
 Internal worker attachments are created and managed by the engine itself.
 The engine maintains per-database pools of worker attachments.
@@ -58,29 +60,29 @@ The number of threads in each pool is limited by the value of the _MaxParallelWo
 The pools are created by each Firebird process independently.
 
 In SuperServer architecture worker attachments are implemented as light-weight system attachments, while in Classic and SuperClassic they look like usual user attachments.
-All worker attachments are embedded into creating server process.
-Thus, in Classic architectures there is no additional server processes.
+All worker attachments are embedded into the creating server process.
+Thus, in Classic architectures there are no additional server processes.
 Worker attachments are present in monitoring tables.
 Idle worker attachments are destroyed after 60 seconds of inactivity.
-Also, in Classic architectures, worker attachments are destroyed immediately after last user connection detaches the from database.
+Also, in Classic architectures, worker attachments are destroyed immediately after the last user connection detaches from the database.
 
 Examples:
 
 Set in firebird.conf _ParallelWorkers = 4, MaxParallelWorkers = 8_ and restart Firebird server.
 
-. Connect to test database not using _isc_dpb_parallel_workers_ in DPB and execute `CREATE INDEX ...` SQL statement.
-On commit, the index will be actually created and engine will use 3 additional worker attachments.
-In total, 4 attachments in 4 threads will work on index creation.
+. Connect to test database not using _isc_dpb_parallel_workers_ in DPB and execute a `CREATE INDEX ...` SQL statement.
+On commit, the index will be created and the engine will use three additional worker attachments.
+In total, four attachments in four threads will work on index creation.
 
 . Ensure auto-sweep is enabled for test database.
-When auto-sweep will run on that database, it also will use 3 additional workers (and run within 4 threads).
+When auto-sweep runs on that database, it will also use three additional workers (and run within four threads).
 
-. More than one single task at time can be parallelized: make 2 attachments and execute `CREATE INDEX ...` in each of them (of course indices to be built should be different).
-Each index will be created using 4 attachments (1 user and 3 worker) and 4 threads.
+. More than one task at a time can be parallelized: make two attachments and execute a `CREATE INDEX ...` in each of them (of course indices to be built should be different).
+Each index will be created using four attachments (one user and three worker) and four threads.
 
-. Run _gfix -sweep <database>_ without specifying switch _-parallel_: sweep will run using 4 attachments in 4 threads.
+. Run _gfix -sweep <database>_ without specifying switch _-parallel_: sweep will run using four attachments in four threads.
 
-. Run _gfix -sweep -parallel 2 <database>_: sweep will run using 2 attachments in 2 threads.
+. Run _gfix -sweep -parallel 2 <database>_: sweep will run using two attachments in two threads.
 This shows that value in DPB tag _isc_dpb_parallel_workers_ overrides value of setting _ParallelWorkers_.
 
 
@@ -94,15 +96,14 @@ This feature allows to upgrade the existing database to the newest ODS version w
 
 For example, a database created by Firebird 4.0 uses ODS 13.0 and thus can be upgraded to the ODS 13.1 used by Firebird 5.0.
 
-Notes:
+.Notes
+* The upgrade must be done manually, using _gfix -upgrade_ command
+* It requires exclusive access to the database, an error is thrown otherwise
+* The system privilege `USE_GFIX_UTILITY` is required
+* An upgrade is transactional, all changes are reverted if any error happens
+* After the upgrade, Firebird 4.0 can no longer open the database
 
-* Upgrade must be done manually, using _gfix -upgrade_ command
-* It requires exclusive access to the database, error is thrown otherwise
-* `USE_GFIX_UTILITY` system privilege is required
-* Upgrade is transactional, all changes are reverted if any error happens
-
-Usage:
-
+.Usage
 [listing]
 ----
 gfix -upgrade <database>
@@ -128,6 +129,7 @@ Both legacy and detailed plans now also include information about cursor's posit
 
 Examples:
 
+.Legacy plan
 [listing]
 ----
 -- line 23, column 2
@@ -136,6 +138,7 @@ PLAN (DISTRICT INDEX (DISTRICT_PK))
 PLAN JOIN (CUSTOMER INDEX (CUSTOMER_PK), WAREHOUSE INDEX(WAREHOUSE_PK))
 ----
 
+.Detailed plan
 [listing]
 ----
 Select Expression (line 23, column 2)
@@ -157,7 +160,8 @@ Select Expression (line 28, column 2)
                         -> Index "WAREHOUSE_PK" Unique Scan
 ----
 
-Line/column numbers (as well as PSQL declared cursors) cannot be seen directly in the plan for user-specified SQL queries, except if the query is EXECUTE BLOCK. However, they are accessible in the `MON$EXPLAINED_PLAN` column in either `MON$STATEMENTS` or `MON$COMPILED_STATEMENTS` tables.
+Line/column numbers (as well as PSQL declared cursors) cannot be seen directly in the plan for user-specified SQL queries, except if the query is EXECUTE BLOCK.
+However, they are accessible in the `MON$EXPLAINED_PLAN` column in either `MON$STATEMENTS` or `MON$COMPILED_STATEMENTS` tables.
 
 [[rnfb50-engine-rle]]
 == Denser compression of records
@@ -348,7 +352,8 @@ If `PLUGIN_NAME` is `NULL` (the default), it uses the database configuration `De
 * `PLUGIN_NAME` type `VARCHAR(255) CHARACTER SET UTF8 default NULL`
 * `PLUGIN_OPTIONS` type `VARCHAR(255) CHARACTER SET UTF8 default NULL`
 
-Return type: `BIGINT NOT NULL`.
+.Return type
+`BIGINT NOT NULL`
 
 ==== Procedure `PAUSE_SESSION`
 
@@ -707,11 +712,12 @@ The advantage over `BLOB_APPEND` is that it's possible to set custom `SEGMENTED`
 
 The BLOB returned from this function, even when `TEMP_STORAGE = FALSE`, may be used with `BLOB_APPEND` for appending data.
 
-.Input parameters:
+.Input parameters
 * `SEGMENTED` type `BOOLEAN NOT NULL`
 * `TEMP_STORAGE` type `BOOLEAN NOT NULL`
 
-Return type: `BLOB SUB_TYPE BINARY NOT NULL`.
+.Return type
+`BLOB SUB_TYPE BINARY NOT NULL`
 
 ==== Function `OPEN_BLOB`
 
@@ -723,7 +729,8 @@ Handles which are not explicitly closed are closed automatically when the transa
 .Input parameter
 * `BLOB` type `BLOB NOT NULL`
 
-Return type: `INTEGER NOT NULL`.
+.Return type
+`INTEGER NOT NULL`
 
 ==== Function `IS_WRITABLE`
 
@@ -732,7 +739,8 @@ Return type: `INTEGER NOT NULL`.
 .Input parameter
 * `BLOB` type `BLOB NOT NULL`
 
-Return type: `BOOLEAN NOT NULL`.
+.Return type:
+`BOOLEAN NOT NULL`
 
 ==== Function `READ_DATA`
 
@@ -747,7 +755,8 @@ If `LENGTH` is `NULL` it returns just a segment of the BLOB with a maximum lengt
 * `HANDLE` type `INTEGER NOT NULL`
 * `LENGTH` type `INTEGER`
 
-Return type: `VARBINARY(32765)`.
+.Return type
+`VARBINARY(32765)`
 
 ==== Function `SEEK`
 
@@ -762,7 +771,8 @@ When `MODE` is `2`, `OFFSET` should be zero or negative.
 * `MODE` type `INTEGER NOT NULL`
 * `OFFSET` type `INTEGER NOT NULL`
 
-Return type: `INTEGER NOT NULL`.
+.Return type
+`INTEGER NOT NULL`
 
 [NOTE]
 ====
