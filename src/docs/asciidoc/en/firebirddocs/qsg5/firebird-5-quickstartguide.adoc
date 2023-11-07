@@ -725,7 +725,7 @@ Connecting to the security database used to be forbidden in recent versions of F
 [[qsg5-config-gsec-addadmin]]
 ==== Appointing co-administrators(((Administrators)))(((RDB$ADMIN role,in the security database)))
 
-[NOTE]
+[TIP]
 ====
 What follows here is not essential knowledge for beginners.
 You can skip it if you like and go on to the <<qsg5-config-security>> section.
@@ -748,7 +748,7 @@ To revoke administrator privileges from an account, use `ALTER USER ... REVOKE A
 [NOTE]
 ====
 * `GRANT ADMIN ROLE` and `REVOKE ADMIN ROLE` are not `GRANT` and `REVOKE` statements, although they look that way.
-They are parameters to the `CREATE` and `ALTER USER` statements.
+They are clauses of the `CREATE` and `ALTER USER` statements.
 The actual role name involved here is `RDB$ADMIN`.
 This role also exists in regular databases;
 more about that in a minute.
@@ -765,7 +765,7 @@ grant rdb$admin to littlejohn
 [[qsg5-config-gsec-addadmin-diff]]
 ===== Differences between co-administrators and `SYSDBA`
 
-* Co-admins can create, alter and drop users, but they have no automatic privileges in regular databases, like `SYSDBA` has.
+* Co-admins can create, alter and drop users, but contrary to `SYSDBA` they have no automatic privileges in regular databases.
 * Unlike `SYSDBA`, co-admins must specify the `RDB$ADMIN` role explicitly if they want to exert their rights as system administrator:
 +
 [source]
@@ -776,20 +776,10 @@ connect security.db user bigbill password bigsekrit7foryou role rdb$admin
 (((RDB$ADMIN role, in regular databases)))
 For reasons explained elsewhere in this guide, connecting to the security database like this may fail if a Superserver is running.
 On Windows, you may circumvent this by prepending `xnet://` to the database path or alias, but on POSIX, you're stuck.
-The only solution there is to grant the co-admin the `RDB$ADMIN` role in at least one regular database as well.
-(A database that uses the security database in question, of course.)
-This is done in the usual way that roles are granted:
+The only solution there is to connect to a regular database through the server, for example using `localhost:employee`.
+(This must be a database that uses the security database in question.)
 +
-[source]
-----
-grant rdb$admin to bigbill
-----
-+
-Grantors can be the database owner, `SYSDBA`, and every other user who has the `RDB$ADMIN` role in that database and has specified it while connecting.
-Every `RDB$ADMIN` member in a database can pass the role on to others, so again there is no `WITH ADMIN
-OPTION`.
-Once the co-admin has obtained the role, they can connect to the (regular) database with it and use the SQL user management commands.
-It's not the most elegant of solutions, but it works.
+Since Firebird 4.0, a co-admin no longer needs to have the `RDB$ADMIN` privileges in the regular database to be able to execute user management statements against the security database, their privileges in the security database are sufficient.
 +
 .Please remember
 [NOTE]
@@ -801,12 +791,21 @@ The `RDB$ADMIN` role in a database gives the grantee `SYSDBA` rights _in that da
 
 Of course, it is possible to grant a user the `RDB$ADMIN` role in several databases, including the security database.
 ====
+* To grant a user admin rights in a regular database you can use the usual way that roles are granted:
++
+[source]
+----
+grant rdb$admin to bigbill
+----
++
+Grantors can be the database owner, `SYSDBA`, and every other user who has the `RDB$ADMIN` role in that database and has specified it while connecting.
+Every `RDB$ADMIN` member in a database can pass the role on to others, so again there is no `WITH ADMIN
+OPTION`.
 
 [[qsg5-config-security]]
 === Security(((Security)))(((Databases,security)))
 
 Firebird 5 offers a number of security options, designed to make unauthorised access as difficult as possible.
-Be warned however that some configurable security features default to the old, "`insecure`" behaviour inherited from InterBase and earlier Firebird versions, in order not to break existing applications.
 
 It pays to familiarise yourself with Firebird's security-related configuration parameters.
 You can significantly enhance your system's security if you raise the protection level wherever possible.
@@ -827,7 +826,7 @@ As discussed before, if your Firebird server is reachable from the network and t
 `SYSDBA` is a very powerful account, with full (destructive) access rights to all your Firebird databases.
 Its password should be known to a few trusted database administrators only.
 Therefore, you shouldn't use this super-account to create and populate regular databases.
-Instead, generate normal user accounts, and provide their account names and passwords to your users as needed.
+Instead, generate normal user accounts and grant them the `CREATE DATABASE` privilege, and provide their account names and passwords to your users as needed.
 You can do this with the SQL user management commands as shown above, or with any decent third-party Firebird administration tool.
 
 Protect databases on the filesystem level::
@@ -919,28 +918,31 @@ Firebird supports three authentication methods when connecting to databases:
 +
 --
 . _Srp (Secure Remote Password):_ The user must identify themselves with a Firebird username and password, which the server checks against the security database.
-The maximum effective password length is around 20 bytes, although you may specify longer passwords.
+The maximum effective password length is around 20 bytes, although you may specify longer passwords up to 255 characters.
 Wire encryption is used.
 The server supports various `Srp` authentication plugins, with `Srp256` as the default (which uses SHA256 for the user proof).
 . _Win_Sspi (Windows Security Support Provider Interface):_ The user is logged in automatically with their Windows account name.
+Wire encryption is used.
 . _Legacy_Auth:_ Insecure method used in previous Firebird versions.
 Passwords have a maximum length of 8 bytes and are sent unencrypted across the wire.
 Avoid this method if possible.
+Wire encryption is *not* supported.
 --
 +
 Two configuration parameters control Firebird's authentication behaviour:
 +
 --
 * `AuthServer` determines how a user can connect to the local server.
-It is usually "```Srp256```" or, on Windows machines, "```Srp256, Win_Sspi```".
+It defaults to "```Srp256```", or -- on Windows -- "```Srp256, Win_Sspi```".
 In the latter case, the user will be authenticated with their Windows login if they fail to supply user credentials (causing the `Srp256` method, which is tried first, to fail).
 * `AuthClient` defines how the local client tries to authenticate the user when making a connection.
 It is usually "```Srp256, Srp, Win_Sspi, Legacy_Auth```", allowing the user to connect to pre-Firebird-3 servers on remote machines.
 --
 +
-If `Win_Sspi` and/or `Legacy_Auth` are allowed on the server side, you must also set the `WireCrypt` parameter to `Enabled` or `Disabled`, but not `Required`.
+If `Legacy_Auth` is allowed on the server side, you must also set the `WireCrypt` parameter to `Enabled` or `Disabled`, but not `Required`.
 +
 If `Legacy_Auth` is enabled, you will also want to change the `UserManager` setting to `Srp, Legacy_UserManager` (or `Legacy_UserManager, Srp` if you want to manage legacy accounts by default and/or through _gsec_).
+In user management statements, you can use the `USING PLUGIN __name__` clause to specify the user manager to use (only user managers listed in `UserManager` are allowed).
 +
 The `AuthServer`, `AuthClient`, `WireCrypt` and `UserManager` parameters are all set in `firebird.conf` en can be overridden per database in `databases.conf`.
 +
@@ -957,7 +959,7 @@ Missing security context for employee
 In other words: "`We know who you are (because the `Win_Sspi` plugin identified you), but you can't
 come in.`"
 +
-The solution is to create, as `SYSDBA`, a global mapping that gives any Windows account access to databases -- but no special privileges -- under the same name.
+The solution is to create, as `SYSDBA` or a co-admin, a global mapping that gives any Windows account access to databases -- but no special privileges -- under the same name.
 This is done with the following command:
 +
 [source]
@@ -1067,7 +1069,10 @@ One of them, `isql`, has already been introduced to you.
 The range of excellent GUI tools available for use with a Windows client machine is too numerous to describe here.
 At least one of them, _FlameRobin_, is also available for Linux.
 
-Explore the https://www.ibphoenix.com/download/tools/admin[Download > Tools > Administration page] at https://www.ibphoenix.com for more options.
+Explore the following sites for more options:
+
+* https://firebirdsql.org/en/third-party-tools/[Downloads > Third-party Tools & Drivers^] at https://firebirdsql.org[^]
+* https://www.ibphoenix.com/download/tools/admin[Download > Tools > Administration page^] at https://www.ibphoenix.com[^] for more options.
 
 [NOTE]
 ====
