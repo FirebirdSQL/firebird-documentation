@@ -11,10 +11,13 @@
 
   <xsl:import href="https://cdn.docbook.org/release/xsltng/current/xslt/docbook.xsl"/>
 
-  <xsl:param name="css-links" select="'css/firebird.css css/firebird-screen.css'"/>
-  <xsl:param name="persistent-toc-css" select="'css/firebird-toc.css'"/>
+<!--  <xsl:param name="user-css-links" select="'css/firebird.css'"/>-->
+  <xsl:param name="user-css-links" select="'css/firebird.min.css'"/>
+<!--  <xsl:param name="persistent-toc-css" select="'css/firebird-toc.css'"/>-->
+  <xsl:param name="persistent-toc-css" select="'css/firebird-toc.min.css'"/>
+  <xsl:param name="use-docbook-css" select="'false'"/>
   <xsl:param name="persistent-toc" select="'true'"/>
-  <xsl:param name="component-numbers-inherit" as="xs:string" select="'true'"/>
+  <xsl:param name="sections-inherit-from" select="'component section'"/>
   <xsl:param name="lists-of-figures" as="xs:string" select="'false'"/>
   <xsl:param name="lists-of-tables" as="xs:string" select="'false'"/>
   <xsl:param name="lists-of-examples" as="xs:string" select="'false'"/>
