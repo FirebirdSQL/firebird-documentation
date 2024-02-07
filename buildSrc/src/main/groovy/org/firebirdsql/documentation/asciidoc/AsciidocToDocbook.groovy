@@ -83,7 +83,7 @@ class AsciidocToDocbook extends AsciidoctorTask implements DocConfigurable {
     AsciidocToDocbook(WorkerExecutor we) {
         super(we)
 
-        configuredOutputOptions.backends = ['docbook']
+        outputOptions.backends = ['docbook']
     }
 
     /**
