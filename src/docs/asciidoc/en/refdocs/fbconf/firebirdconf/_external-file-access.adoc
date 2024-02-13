@@ -1,0 +1,77 @@
+[#fbconf-external-file-access]
+= `ExternalFileAccess`
+
+Configures paths allowed for external table files.
+
+.Configuration
+Global and per-database
+
+.Syntax
+[listing,subs=+quotes]
+----
+ExternalFileAccess = <external-file-access-config>
+
+<external-file-access-config> ::=
+    None
+  | Full
+  | Restrict <path-list>
+
+<path-list> ::= _path_ [; _path_ ...]
+----
+
+.Default
+None
+
+.Supported values
+`None`::
+No paths are allowed as external table file.
+
+`Full`::
+All paths are allowed as an external table file.
+
+`Restrict <path-list>`::
+Files with a path rooted in the directories listed in `<path-list>` (that is, the file is in a listed directory or in a subdirectory of a listed directory) are allowed as an external table file.
++
+The `<path-list>` is a semicolon-separated list of directories.
+It is possible to use absolute paths (e.g. Windows -- `C:\ExternalFiles`, Linux -- `/externalfiles`), and relative paths.
+Relative paths are resolved against the root directory of Firebird.
+Given relative paths are not always obvious, it is recommended to use absolute paths.
+
+This setting does not prevent creation of an external table with a disallowed path, but attempts to query the external table or insert into the external table will fail if the path is not allowed.
+
+Attempts to access (select or insert) an external table file not allowed by the configuration will produce error "`Use of external file at location __<filename>__ is not allowed by server configuration`" (error code `335544831` or `isc_conf_access_denied`).
+
+.Security recommendation
+[CAUTION]
+====
+Never use `Full` for `ExternalFileAccess`, and be careful with the paths listed in `Restrict`.
+
+External tables use a binary format, and a carefully crafted external table (or multiple external tables) can be used to read any file, or append data to any file.
+For example, an external table with a `BINARY(1)` column can be used to read a file one byte per row, and append one byte to a file per insert.
+Such a method can be used to exfiltrate data from _any_ file the server allows you to read, or append data to any file the server can write (either corrupting files, or adding data that didn't previously exist).
+
+Obviously, this requires that the user can create an external table in a database, and that the user running the Firebird server process can read and/or write these files, so there are limits to exploitability, but nevertheless, this is a scenario you need to consider when setting `ExternalFileAccess` to anything other than `None`.
+
+For this reason we also recommend to ensure that there is no overlap with the directories listed in <<fbconf-database-access>> or <<fbconf-udf-access>>.
+That is, directories listed in `ExternalFileAccess` should not be the same as, be contained in, or contain the directories listed in `DatabaseAccess` or `UdfAccess`.
+
+Overlap between the `DatabaseAccess` and `ExternalFileAccess` settings may allow an unprivileged user to copy database files by selecting from an external table pointing to the database file, or to create databases by inserting into an external table.
+
+Overlap between the `UdfAccess` and `ExternalFileAccess` settings may allow a user to copy your UDF libraries (and for example look for vulnerabilities), or to add UDF libraries.
+The latter may compromise your system if this location is searched before another location for UDFs, loading a modified UDF library, or if the user has privileges to create UDFs in a database, they can now use this newly introduced UDF library.
+
+Where possible, configure `ExternalFileAccess` per database, and ensure that databases cannot access each others external files, unless that is intended functionality (e.g. to share data between databases).
+====
+
+.Examples
+[listing]
+----
+# No access
+ExternalFileAccess = None
+# Full access (DO NOT USE!)
+ExternalFileAccess = Full
+# Restricted (Windows)
+ExternalFileAccess = Restrict C:\ExternaFiles;D:\Temp\ExternalFiles
+# Restricted (Linux)
+ExternalFilesAccess = /var/externalfiles;/tmp/externalfiles
+----

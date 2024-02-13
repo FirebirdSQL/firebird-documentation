@@ -1,0 +1,216 @@
+[#fbconf-overview]
+= An overview of Firebird configuration
+
+The configuration of Firebird is distributed over a number of files and other configuration methods.
+In broad strokes, the configuration is split over:
+
+<<fbconf-firebird,`firebird.conf`>>::
+Global configuration of Firebird server and/or the client library
+
+<<fbconf-databases,`databases.conf`>>::
+Database aliases, and per-database configuration
+
+`plugins.conf`::
+Plugin configuration
+
+`replication.conf`::
+Global and per-database replication configuration
+
+Trace configuration::
+Global and per-database configuration trace configuration (system configuration by default in `fbtrace.conf`, users may start traces using the services API using the same syntax)
+
+Environment variables::
+Configuration of file locations for the server process
+
+Database file::
+Some per-database configuration is stored in the database header or in system tables of a specific database
+
+//`plugins/udr_engine.conf`::
+//UDR engine configuration
+
+The following chapters will cover each file in detail.
+
+[#fbconf-syntax]
+== Shared syntax of configuration files
+
+The configuration files (`{asterisk}.conf`) share a common syntax, though not all files use all available syntax options.
+
+// TODO Verify if I am not assuming too much commonality here
+
+[#fbconf-syntax-kv]
+=== Key-value
+
+In its most basic form, configuration is expressed as a list of key-value pairs:
+
+.Syntax
+[listing,subs=+quotes]
+----
+_key-name_ = _value_
+----
+
+.Example
+[listing]
+----
+DatabaseAccess = None
+----
+
+Allowed _values_ depend on the specific key, but broadly has the following types:
+
+Integer::
+Integer values, or integers followed by `K` (1024), `M` (1024^2^) or `G` (1024^3^).
+Boolean::
+Truth values, where `0` is false and `1` (or any other non-zero integer value) is true.
+We recommend always using `0`/`1` for Boolean values.
+Strings `y`, `yes` and `true` are also interpreted as true.
+String::
+String values;
+individual properties may require a specific syntax in their string values, or a limited set of values, etc.
+List::
+List of values;
+a list is a string value with values separated by a space ('``` ```'), comma ('```,```'), or semicolon ('```;```').
+The order is usually important.
+Some lists may use only a subset of separators;
+this will be mentioned explicitly if relevant.
+Complex scoped values::
+Some configuration files (e.g. `databases.conf`, `plugins.conf`) allow keys with a string value followed by additional key-value pairs enclosed in braces.
++
+.For example (from `databases.conf`):
+[listing]
+----
+security.db = $(dir_secDb)/security4.fdb
+{
+	RemoteAccess = false
+	DefaultDbCachePages = 256
+}
+----
++
+In this example, the configuration options `RemoteAccess` and `DefaultDbCachePages` are specific to the security database (alias `security.db`).
+
+// TODO Case-sensitivity of keys and values
+
+[#fbconf-syntax-scope]
+=== Scope
+
+Some configuration files use scopes.
+Scopes are key-value pairs enclosed in braces (`++{++` and `++}++`.
+Their exact usage and syntax depend on the specific configuration file.
+
+For example, `databases.conf` and `plugins.conf` have __complex scoped values__footnote:complex-scoped[The terms _complex scoped value_ and _scoped configuration item_ are specific to this document, other Firebird documentation doesn't use these names (yet)]:
+
+[listing]
+----
+security.db = $(dir_secDb)/security4.fdb
+{
+	RemoteAccess = false
+	DefaultDbCachePages = 256
+}
+----
+
+In this example, `security.db` is the _key_, and the string `$(dir_secDb)/security4.fdb` *and* the key-value pairs between braces are the value of `security.db`.
+
+As another example, _trace configuration_ and `replication.conf` have __scoped configuration items__footnote:complex-scoped[]:
+
+[listing]
+----
+database = /your/db.fdb
+{
+  journal_source_directory = /your/db/source
+}
+----
+
+Here `database = /your/db.fdb` identifies this as database configuration specific to the database `/your/db.fdb`, with the actual configuration listed within the braces.
+
+[#fbconf-syntax-comment]
+=== Comments
+
+Lines starting with `#` are comments.
+They are ignored by the configuration parser.
+// TODO Check exact behaviour, e.g. what if lines have whitespace before #, or if # is in the middle
+
+Comments are used in the default configuration file content to document behaviour, and to show default values without explicitly configuring those values.
+
+For your own use, you can use comments to temporarily disable a configuration item or revert to the default.
+You can also use comments to record why a specific configuration value was chosen (e.g. by specifying a rationale, or a link to an external document, etc.).
+
+[#fbconf-syntax-macro]
+=== Macro substitution
+
+Firebird provides a number of predefined macros which can be used in configuration values to substitute directory locations.
+
+The syntax to use these macros is `$(__macro-name_)` (e.g. `$(dir_plugins)`).
+
+.Available configuration macros
+[horizontal]
+`root`::
+root of the Firebird instance
+`install`::
+directory where Firebird is installed
+`this`::
+directory containing the current configuration file
+`dir_conf`::
+directory containing `firebird.conf` and `databases.conf`
+`dir_secDb`::
+directory containing the default security database
+`dir_plugins`::
+directory containing the plugins
+`dir_udf`::
+default directory containing UDFs
+// TODO Does this macro still exist now Firebird 5 no longer includes UDFs?
+`dir_sample`::
+sample directory
+`dir_sampleDb`::
+directory containing the sample DB (`employee.fdb`)
+`dir_intl`::
+directory containing international modules
+`dir_msg`::
+directory containing the messages file (`firebird.msg`)
+
+The macro names are case-insensitive.
+
+It is not possible to define or specify your own custom macros.
+
+[#fbconf-syntax-include]
+=== Include
+
+The `include` statement allows you to include the content of another file when the configuration file is read.
+
+.Syntax
+[listing,subs=+quotes]
+----
+include _path-expression_
+----
+
+Where _path-expression_ is a string identifying the file or files to include.
+The _path-expression_ supports:
+
+* Relative paths (resolved against the current configuration file)
+* Absolute paths
+* <<fbconf-syntax-macro>>
+* Wildcards (`{asterisk}` for zero or more characters, and `?` for one character)
+
+.Examples
+----
+# Relative path
+include some_file.conf
+
+# Which is equivalent to
+include $(this)/some_file.conf
+
+# Absolute path (Windows)
+include C:\Firebird\default.conf
+
+# Absolute path (Linux)
+include /opt/firebird/default.conf
+
+# Path with macro substitution
+include $(dir_plugins)/some_file.conf
+
+# Wildcard to include multiple files
+include databases/*.conf
+----
+
+[TIP]
+====
+On Windows you can use either `\` or `/` as the path separator.
+On Linux you can only use `/`.
+====
