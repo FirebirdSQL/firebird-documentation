@@ -684,7 +684,7 @@ Specifically, use `-r o` or `-recreate_database overwrite` for the exact equival
 ====
 
 [#gbak-cmdline-buffers]
-==== `-BUFFERS`
+==== `-BU[FFERS]`
 
 Configure the database page buffer (cache size).
 
@@ -1063,7 +1063,10 @@ The more difficult you make things for the bad people on your network, the bette
 The following recipes show examples of backup and restore tasks using `gbak`.
 These are probably the commonest cases that you will encounter as a DBA.
 All the examples use the `employee` database supplied with Firebird and the actual location is correctly configured in `aliases.conf`.
+
 Each of the following recipes is run with the assumption that the environment variables `ISC_USER` and `ISC_PASSWORD` have been given suitable values.
+If you don't have these set, you will need to supply the appropriate options <<gbak-cmdline-user>> and <<gbak-cmdline-password>>, or <<gbak-cmdline-trusted>> -- Windows-only, on the commandline.
+
 
 [[gbak-recipies-prereqs]]
 === Backup & Restore Prerequisites
@@ -1078,7 +1081,7 @@ tux> gfix -shut -tran 60 employee
 
 The example above prevents any new transaction from being started which prevents new queries being executed or new sessions connecting to the database.
 It will wait for up to 60 seconds for everyone to logout and for all current transactions to complete before shutting down the database.
-If any long running transactions have not completed by the end of 60 seconds, the shutdown will timeout and the database will remain open.
+If any long-running transactions have not completed by the end of 60 seconds, the shutdown will timeout and the database will remain open.
 
 [NOTE]
 ====
@@ -1089,7 +1092,7 @@ After the restore of the database has completed, the database will automatically
 === A Simple Backup & Restore
 
 This example takes a backup, then immediately overwrites the original database using the new backup.
-This is not normally a good idea as the first action of a restore is to wipe out the database.
+This is not normally a good idea as the first action of the `-recreate overwrite` is to wipe out the database.
 
 ----
 tux> # Backup the database.
@@ -1097,7 +1100,7 @@ tux> gbak -backup employee /backups/employee.fbk
 
 tux> # Restore the database.
 tux> gfix -shut -tran 60 employee
-tux> gbak -replace /backups/employee.fbk employee
+tux> gbak -recreate overwrite /backups/employee.fbk employee
 ----
 
 [[gbak-recipies-metadata]]
@@ -1115,7 +1118,7 @@ tux> gbak -backup -meta_data employee employee.meta.fbk
 When the above backup file is restored on the production server, only the metadata will be present.
 
 There is another way to create a database with no data and only the metadata.
-Simply restore from an existing backup which contains the data and supply the `-m[eta_data]` switch to the restore command line.
+Simply restore from an existing backup which contains the data and supply the <<gbak-cmdline-meta-data>> switch to the restore command line.
 The database will be restored but none of the original data will be present.
 
 ----
@@ -1123,7 +1126,7 @@ tux> #Restore only the database metadata.
 tux> gbak -create employee.fbk mytest.fdb -meta_data
 ----
 
-The `-m[eta_data]` switch can be used on either a backup or a restore to facilitate the creation of a clone database (or overwrite an existing one) with no actual data.
+The <<gbak-cmdline-meta-data>> switch can be used on either a backup or a restore to facilitate the creation of a clone database (or overwrite an existing one) with no actual data.
 
 [[gbak-recipies-splitting]]
 === Splitting The Backup
@@ -1148,21 +1151,21 @@ A backup file is only ever created when it must be.
 The size of the final backup file will be quietly ignored if the database has grown too large to allow a truncated backup to complete.
 If, in the example above, the backup needs a total of 1500M, then the last file would be written to a final size of 900m rather than the 600m specified.
 
-To restore such a multi-file backup requires that you specify all of the filenames in the backup and in _the correct order_.
+To restore such a multi-file backup requires that you specify all filenames in the backup and in _the correct order_.
 The following example shows the employee database above being restored from the two files backed up above:
 
 ----
 tux> # Restore the database from multiple files.
 tux> gfix -shut -tran 60 employee
-tux> gbak -replace /backups/employee.a.fbk /backups/employee.b.fbk employee
+tux> gbak -r o /backups/employee.a.fbk /backups/employee.b.fbk employee
 ----
 
 [[gbak-recipies-ods]]
-=== Change The ODS
+=== Changing The ODS
 
 Normally the ODS used is the one in force by the version of Firebird used to restore the database.
 So, the examples above will actually change the ODS when the database is restored.
-The backup should be taken using the `gbak` utility supplied by the old ODS version of InterBase or Firebird.
+The backup should be taken using the `gbak` utility supplied by the old ODS version of Firebird.
 The restore should be carried out using `gbak` from the newer version of Firebird.
 
 ----
@@ -1190,13 +1193,13 @@ tux> gstat -h employee|grep ODS
 
 After the above, the old 2.0 Firebird database will have been recreated -- wiping out the old database -- as a Firebird 2.1 database with the corresponding upgrade to the ODS from 11.0 to 11.1.
 
-The script `setenv_firebird` is not supplied with Firebird and simply sets `PATH` etc to use the correct version of Firebird as per the supplied parameter.
+The script `setenv_firebird` is not supplied with Firebird and simply sets `PATH`, etc., to use the correct version of Firebird as per the supplied parameter.
 
 [[gbak-recipies-cache]]
-=== Change The Cache Size
+=== Changing The Cache Size
 
-The default database cache is created when the database is created, or subsequently by using `gfix`.
-`Gbak` can restore a database and reset the default cache size as well.
+The default database cache (page buffer) is set when the database is created, or subsequently by using `gfix -b[uffers] <number-of-pages>`.
+`Gbak` can restore a database and set the default cache size as well.
 The process is as follows:
 
 ----
@@ -1206,7 +1209,7 @@ tux> gstat -h employee | grep -i buffer
 
 tux> # Restore the database & change the cache size.
 tux> gfix -shut -tran 60 employee
-tux> gbak -replace -buffer 200 /backups/employee.fbk employee
+tux> gbak -r o -buffer 200 /backups/employee.fbk employee
 
 tux> # Check the new cache size (as root user!)
 tux> gstat -h employee | grep -i buffer
@@ -1219,7 +1222,7 @@ The default cache size is used when the number of buffers is zero, as in the fir
 You must use `gfix` to do this.
 
 [[gbak-recipies-page]]
-=== Change The Page Size
+=== Changing The Page Size
 
 Similar to the example above to change the default database cache size, the database page size can also be changed using `gbak`.
 
@@ -1230,7 +1233,7 @@ tux> gstat -h employee | grep -i "page size"
  
 tux> # Restore the database & change the page size.
 tux> gfix -shut -tran 60 employee
-tux> gbak -replace -page_size 8192 /backups/employee.fbk employee
+tux> gbak -r o -page_size 8192 /backups/employee.fbk employee
 
 tux> # Check the new page size (as root user!)
 tux> gstat -h employee | grep -i "page size"
@@ -1238,11 +1241,11 @@ tux> gstat -h employee | grep -i "page size"
 ----
 
 [[gbak-recipies-read-only]]
-=== Create A Read-Only Database Clone
+=== Creating A Read-Only Database Clone
 
 Sometimes you do not want your reporting staff running intensive queries against your production database.
 To this end, you can quite easily create a clone of your production database on a daily basis, and make it read-only.
-This allows the reporting team to run as many intensive reports as they wish with no ill effects on the production database and it prevents them from inadvertently making changes.
+This allows the reporting team to run as many intensive reports as they wish with no ill effects on the production database, and it prevents them from inadvertently making changes.
 
 The following example shows the production employee database running on Linux server _tux_, being cloned to the reporting team's Linux server named _tuxrep_.
 First on the production _tux_ server:
@@ -1263,7 +1266,7 @@ employee.fbk              |         19 kB |  19.3 kB/s | ETA: 00:00:00 | 100%
 
 tuxrep> # Restore the employee database as read-only.
 tuxrep> gfix -shut -tran 60 employee
-tuxrep> gbak -replace -mode read_only employee.fbk employee
+tuxrep> gbak -r o -mode read_only employee.fbk employee
 
 tuxrep> # Check database mode (as root user)
 tuxrep> gstat -h employee|grep -i attributes
@@ -1271,14 +1274,14 @@ tuxrep> gstat -h employee|grep -i attributes
 ----
 
 [[gbak-recipies-clone-nodump]]
-=== Create a Database Clone Without a Backup File.
+=== Creating a Database Clone Without a Backup File.
 
 You may use `gbak` to create a clone of a database, on the same server, without needing to create a potentially large backup file.
 To do this, you pipe the output of a `gbak` backup directly to the input of a `gbak` restore, as follows.
 
 ----
 tux> # Clone a test database to the same server, without requiring a backup file.
-tux> gbak -backup emptest stdout | gbak -replace stdin emptest_2
+tux> gbak -backup emptest stdout | gbak -r o stdin emptest_2
 ----
 
 You will notice that the output filename for the backup is `stdout` and the input filename for the restore is `stdin`.
@@ -1286,14 +1289,12 @@ This ability to pipe standard output of one process to the standard input of ano
 The commands above assume that there are suitable alias names set up for both emptest and emptest_2.
 If not, you will need to supply the full path to the two databases rather than the alias.
 
-The `-replace` option on the restore process will overwrite the database name specified -- as an alias or as a full path -- if it exists and will create it anew if it doesn't.
-You may also use the `-recreate overwrite` option as an alternative.
-Both have the same result.
+The `-r o` option on the restore process will overwrite the database name specified -- as an alias or as a full path -- if it exists and will create it anew if it doesn't.
 
-If you don't want to overwrite any existing databases, use `-create` which will only create a database if it doesn't already exist, and will exit with an error if it does.
+If you don't want to overwrite any existing databases, use <<gbak-cmdline-create-database>> which will only create a database if it doesn't already exist, and will exit with an error if it does.
 In POSIX compatible systems, the error code in `$?` is 1 in this case.
 
-Further examples of backing up and restoring remote databases over ssh, using the stdin and stdout filenames, can be seen below.
+Further examples of backing up and restoring remote databases over ssh, using the `stdin` and `stdout` filenames, can be seen below.
 
 [[gbak-recipies-shadows]]
 === Backup & Restore With & Without Shadow Files.
@@ -1382,7 +1383,7 @@ tux> gbak -replace -mode read_only -service tuxrep:service_mgr \
 
 [NOTE]
 ====
-The above example uses the handy Unix ability to split a long line over many shorter ones using a back slash as the _final_ character on the line.
+The above example uses the handy Unix ability to split a long line over many shorter ones using a backslash as the _final_ character on the line.
 ====
 
 As ever, you are advised to beware of replacing a database in case there are problems during the restore.
@@ -1404,43 +1405,84 @@ tux> # Restore the employee database on this server, but pseudo-remotely!
 tux> gbak -replace -service tux:service_mgr /backups/remote_backup.fbk employee
 ----
 
-The format of the parameter used for the `-service` switch is different according to the nature of the network protocol in use:
+The format of the parameter used for the `-service` switch is different according to the nature of the network protocol and the connection string in use:
 
 TCP::
-When using TCP networks, the parameter separator is a colon, as in `-service server_name:service_mgr`.
+Legacy connection string: `<hostname>[/<port>]:service_mgr`
+Firebird 3.0 and higher connection strings:
++
+[listing]
+----
+# TCP/IP (v4 and v6)
+INET://[<hostname>[:<port]]/service_mgr
+# TCP/IP (v4 only)
+INET4://[<hostname>[:<port]]/service_mgr
+# TCP/IP (v6 only)
+INET6://[<hostname>[:<port]]/service_mgr
+----
++
+If port is not specified, port `3050` is used.
+If hostname is not specified, `localhost` is used.
+It is not possible to specify a port without hostname.
++
+To use a IPv6 IP address it must be enclosed in square brackets (e.g. `inet://[::1]/service_mgr`).
 
-Named pipes::
-When using named pipes, the parameter requires two leading back slashes and the separator is another back slash, as in `-service \\server_name\service_mgr`.
+XNET::
+Legacy connection string: `service_mgr` (this may also use TCP/IP to localhost instead)
+Firebird 3.0 and higher connection string: `xnet://service_mgr`
++
+XNET is only supported on Windows.
+
+Named pipes/WNET::
+Legacy connection string: `\\<hostname>[@<port>]\service_mgr`
+Firebird 3.0 and 4.0 connection string: `WNET://[<hostname>[:<port>]]/service_mgr`
++
+Support for named pipes (a.k.a. WNET) was removed in Firebird 5.0, and in earlier versions only available on Windows.
+
+[NOTE]
+====
+Since Firebird 4.0, the `service_mgr` name is no longer required and may now be left out of the connection string.
+
+That means that the minimum connection strings to use the service manager are now:
+
+* `.` or effectively anything that is not interpreted as one of the other connection strings (using XNET or TCP/IP)
+* `xnet://`
+* `inet://`, `inet4://`, `inet6:://` (using localhost)
+* `wnet://` (using localhost)
+
+Be aware that not specifying a value for <<gbak-cmdline-service>> is not possible.
+If the commandline has any other options or values after `-se`, this will be silently ignored and instead consume the next commandline option as its value, effectively ignoring that value.
+====
 
 [[gbak-recipies-remote-ssh]]
 === Remote Backups and Restores Using SSH
 
-As shown above, you can use the special filenames stdin and stdout to backup and restore a database to a separate database on the same server.
+As shown above, you can use the special filenames `stdin` and `stdout` to backup and restore a database to a separate database on the same server.
 However, you can also use the same tools, over an SSH connection to a remote server, and pass the backup of one database directly to a restoration of a separate one.
 
 The first example copies a local database to a remote server where Firebird is running and the firebird user has its environment set up so that the gbak tool is on `$PATH` by default, on login.
 
 [NOTE]
 ====
-In each of the following examples, the `-user sysdba` and `-password whatever` parameters on the command lines have been replaced by {...}.
-When executing these commands, any remote `gbak` commands will require to have them specified unless the firebird user on the remote database(s) has `ISC_USER` and `ISC_PASSWORD` defined in the `.profile` or `.bashrc `(or equivalent) login files.
+In each of the following examples, the `-user sysdba` and `-password whatever` parameters on the command lines have been replaced by `++{...}++`.
+When executing these commands, any remote `gbak` commands will require to have them specified unless the firebird user on the remote database(s) has `ISC_USER` and `ISC_PASSWORD` defined in the `.profile` or `.bashrc` (or equivalent) login files.
 However, that is a _seriously_ bad idea and incredibly insecure.
 ====
 
 ----
 tux> # Clone a test database to a different server, without requiring a backup file.
 tux> gbak -backup employee stdout | \
-ssh firebird@tuxrep "gbak {...} -replace stdin emptest"
+ssh firebird@tuxrep "gbak {...} -r o stdin emptest"
 ----
 
 When the above is executed, you will be prompted for a password for the remote firebird user on server _tuxrep_, assuming that you don't have a proper SSH key-pair already set up and active.
-The command will replace the local database according to the alias name `emptest` but you can, if required, supply full path names for the databases.
+The command will replace the local database according to the alias name `emptest`, but you can, if required, supply full path names for the databases.
 The following shows an example of the above being executed.
 
 ----
 tux> # Clone a test database to a different server, without requiring a backup file.
 tux> gbak -backup employee stdout | \
-ssh firebird@tuxrep "gbak {...} -replace stdin emptest"
+ssh firebird@tuxrep "gbak {...} -r o stdin emptest"
 
 firebird@tuxrep's password:
 ----
@@ -1506,8 +1548,8 @@ employee.fdb  tuxrep_empqa.fdb
 They have been extensively tested and know the internals of the database and how it works, so the chances of these tools corrupting your valuable data are very slim.
 However, some DBAs still like to use external tools (those not supplied with Firebird) to make backups for whatever reason.
 
-Because it is not possible for external tools to know where a database is to be found, given the alias name, the script writer and/or DBA must explicitly find out the correct location of the database file(s) and supply these to the external tool.
-To make this simpler for script writers, my own installation uses a standard in my `aliases.conf` file as follows:
+Because it is not possible for external tools to know where a database is to be found, given the alias name, the scriptwriter and/or DBA must explicitly find out the correct location of the database file(s) and supply these to the external tool.
+To make this simpler for scriptwriters, my own installation uses a standard in my `aliases.conf` file as follows:
 
 * The database alias must start in column one.
 * There must be a single space before the equals sign (=).
@@ -1567,14 +1609,15 @@ If you do not specify a mode switch such as `-b[ackup]` or `-c[reate]` etc, then
 
 [WARNING]
 ====
-This detection of whether you are attempting a backup or a restore means that if you use the `-z` command line switch to view `gbak` information, then you _will_ create a backup -- and overwrite the backup file you supply -- if the command line also has a database name and a backup filename present.
+This detection of whether you are attempting a backup or a restore means that if you use the `-z` command line switch to view `gbak` information, then you _will_ create a backup -- and in Firebird 1.5 and older, overwrite the backup file you supply -- if the command line also has a database name and a backup filename present.
 This assumes that there is a way for `gbak` to determine the username and password to be used -- either as command line parameters or via defined environment variables.
 ====
 
 [[gbak-caveats-normal-privileged]]
 === Normal Versus Privileged Users
 
-Only a SYSDBA or the owner of a database can take a backup of the database, however, _any_ authenticated user can restore a database backup using the `-c[reate]` switch.
+Only a SYSDBA, a user with the `RDB$ADMIN` role, the owner of a database, or a user with the `USE_GBAK_UTILITY` system privilege can take a backup of the database.
+However, _any_ authenticated user can restore a database backup using the `-c[reate]` switch (in Firebird 3.0 and higher, this user will need the `CREATE DATABASE` DDL privilege).
 This means that you must make sure you prevent your backup files from falling into the wrong hands because there is nothing then to stop unauthorised people from seeing your data by the simple process of restoring _your_ backups onto _their_ server.
 
 The database restore will fail, of course, if the user carrying it out is not the database owner and a database with the same filename already exists.
@@ -1590,7 +1633,7 @@ It is possible that this problem was introduced at version 2 for Firebird, becau
 Using this (shorter) option does work as intended and the output is indeed suppressed.
 
 [[gbak-caveats-logfile]]
-=== Gbak log file Cannot Be Overwritten
+=== Gbak Log File Cannot Be Overwritten
 
 If you specify a log filename with the `-y <log file>` switch, and the file already exists, then even though the firebird user owns the file, and has write permissions to it, `gbak` cannot overwrite it.
 You must always specify the name of a log file that doesn't exist.
@@ -1609,23 +1652,22 @@ The above is quite useful in as much as it prevents you from overwriting previou
 The downside is that you now need to introduce a housekeeping system to tidy away old, unwanted backups to prevent your backup area filling up.
 
 [[gbak-caveats-stdin-stdout]]
-=== Use of 'stdin' or 'stdout' Filenames
+=== Use of `stdin` or `stdout` Filenames
 
-`Gbak` recognizes the literal strings 'stdin' and 'stdout' as source or destination filenames.
+`Gbak` recognizes the literal strings `stdin` and `stdout` as source or destination filenames.
 In POSIX systems, when the standard input and/or standard output channels are used, it is not permitted to execute seek operations on these channels.
-Using 'stdin' or 'stdout' as filenames with `gbak` will force `gbak` to use processing that will not seek on the input or output channels, making them suitable for use in pipes -- as per the examples in the recipes section above.
+Using `stdin` or `stdout` as filenames with `gbak` will force `gbak` to use processing that will not seek on the input or output channels, making them suitable for use in pipes -- as per the examples in the recipes section above.
 
 These filenames, while they appear to be POSIX names, are definitely not synonyms for `/dev/stdin` or `/dev/stdout`, they are simply literals that `gbak` checks for while processing its parameters.
 Do not attempt to use names `/dev/stdin` or `/dev/stdout` in a piped process as it will most likely fail.
 
-If you wish to create a backup file actually named either stdin or stdout, then you should specify the filename as a full, or relative, path name such as `./stdin` or `./stdout`, which causes `gbak` to treat them as a literal filename rather than a special filename that causes different to normal processing.during the backup or restore process.
+If you wish to create a backup file actually named either `stdin` or `stdout`, then you should specify the filename as a full, or relative, path name such as `./stdin` or `./stdout`, which causes `gbak` to treat them as a literal filename rather than a special filename that causes different to normal processing during the backup or restore process.
 
 :sectnums!:
 
 [appendix]
 [[gbak-dochist]]
 == Document history
-
 
 The exact file history is recorded in the firebird-documentation git repository; see https://github.com/FirebirdSQL/firebird-documentation
 
@@ -1640,9 +1682,10 @@ a|* Reordered document history so most recent changes are on the top
 * Some copy-editing and formatting of the document history
 * Added common options added in Firebird 3.0, 4.0, and 5.0, and some from 2.5 that weren't documented yet (documented with minimal information, will be expanded later)
 * Removed common options repeated with "see above" in the backup and restore options
-* Reordered restore options to put the main restore options first
+* Reordered restore options to put the main restore options (`-CREATE_DATABASE` and `-RECREATE_DATABASE [OVERWRITE]`) first
 * Misc. copy-editing of commandline options
 * Convert commandline options from definition lists to sections
+* Replaced usage of `-REPLACE_DATABASE` (or its abbreviations) in examples with `-RECREATE_DATABASE OVERWRITE` (or abbreviations)
 
 |1.12
 |18 Jun 2020
