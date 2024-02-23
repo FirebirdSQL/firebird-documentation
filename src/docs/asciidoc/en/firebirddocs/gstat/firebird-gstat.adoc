@@ -25,7 +25,7 @@ toc::[]
 `Gstat` is one of the database utilities supplied with Firebird.
 It is used to display statistical details about the contents of a database.
 `Gstat` does not connect to the database as other utilities do, instead it opens the database file(s) directly and reads through the raw data.
-Because of this, `gstat` is not transactionally aware and some of the statistics it gathers may include data that have been deleted, for example, by normal database transactions.
+Because of this, `gstat` is not transactionally aware, and some of the statistics it gathers may include data that has been deleted, for example, by normal database transactions.
 
 In this manual, we will discuss:
 
@@ -33,6 +33,13 @@ In this manual, we will discuss:
 * `gstat` commands and their parameters.
 * Running `gstat` and interpreting the results.
 * Some caveats, gotchas and foibles of `gstat`.
+
+[NOTE]
+====
+Given `gstat` reads the database directly or using the embedded engine, it may not be able to access a database that is currently opened by a server running in SuperServer (or `ThreadedDedicated`) mode.
+
+In that case, to use `gstat`, you will need to terminate any open connections, or use the equivalent commands via the service manager (e.g. through `fbsvcmgr`).
+====
 
 [[gstat-cmdline]]
 == Command-line Switches
@@ -48,19 +55,21 @@ Even members of the firebird group have no read access by default.
 gstat _database_name_ [_switches_]
 ----
 
-Some documentation advises that `gstat` can be called as follows:
+The usage instructions shows that `gstat` can also be called as follows:
 
 [listing,subs=+quotes]
 ----
 gstat [_switches_] _database_name_
 ----
 
-However, although it does work this way, problems arise when the `-t[able]` switch is used.
+In practice, switches can occur both before _and_ after the database name.
+However, the <<gstat-cmdline-table>> switch can only be used with multiple table names if it is placed _after_ the database name.
 
 The database name cannot be a remote database, it must be local, but it can be an alias for a local database.
-The reason that it must be local is because `gstat` works at the _physical file_ level as opposed to making a database connection to the server -- it reads the database file directly.
+The reason that it must be local is that some operations of `gstat` work at the _physical file_ level as opposed to making a database connection to the server -- it reads the database file directly.
+Depending on the Firebird version and OS platform, other operations may connect to the local server or use the embedded engine to gather information.
 
-If `gstat` is called with an invalid switch, or with the new `-?` switch from Firebird 2.5 onwards, the following is displayed to remind you of the valid ones.
+If `gstat` is called with an invalid switch, or with the <<gstat-cmdline-help>>, the following is displayed to remind you of the valid switches.
 Only the short form of the switches is displayed, unfortunately.
 
 ----
@@ -86,7 +95,7 @@ option -t accepts several table names only if used after <database>
 
 [NOTE]
 ====
-In Firebird versions prior to 2.0, the `-l[og]` switch could also be used.
+In Firebird 1.5 and earlier, the `-l[og]` switch could also be used.
 This reported on the details of the logging page(s) within the database.
 The logging pages have not been used for some time and the switch has now been removed from `gstat`.
 ====
@@ -94,15 +103,13 @@ The logging pages have not been used for some time and the switch has now been r
 [NOTE]
 ====
 The <<gstat-cmdline-fetch-password,`-FETCH`>> (or `-FE[TCH_PASSWORD]`) switch is only available in Firebird 2.5 and higher.
-The <<gstat-cmdline-encryption>>, <<gstat-cmdline-role,`-ROLE`>> (or `-r[ole]`) and <<gstat-cmdline-trusted>> switches are only available in Firebird 3.0 and higher.
+The <<gstat-cmdline-encryption>>, <<gstat-cmdline-role,`-ROLE`>> (or `-R[OLE]`) and <<gstat-cmdline-trusted>> switches are only available in Firebird 3.0 and higher.
 ====
 
 The `gstat` usage instructions only displays abbreviated forms of switches.
-Below, we will show the full command, with the optional part in square brackets ('```[```' and '```]```').
-For example, for `-a[ll]`, this means that you can enter `-a`, `-al` and `-all`.
+Below, we will show the full switch, with the optional part in square brackets ('```[```' and '```]```').
+For example, for <<gstat-cmdline-all>>, this means that you can enter `-A`, `-AL` and `-ALL`.
 Switch names are case-insensitive.
-
-These switches are described in the following sections.
 
 [#gstat-cmdline-all]
 === `-A[LL]`
@@ -167,7 +174,7 @@ NOTE: Introduced in Firebird 3.0.
 [#gstat-cmdline-header]
 === `-H[EADER]`
 
-This switch displays statistics about the database itself, then exits.
+This switch displays statistics about the database itself, or more specifically, information from the database header page, and then exits.
 The header information is also displayed when any other switch is used -- so you always get database header details in your output.
 
 [#gstat-cmdline-index]
@@ -228,7 +235,13 @@ NOTE: Introduced in Firebird 3.0.
 
 This switch allows you to analyse a table, or list of tables, and any indices belonging to the specified tables.
 
-.Syntax
+.Syntax when placed *before* the database name
+[listing,subs=+quotes]
+----
+-T[ABLE] _table_name_
+----
+
+.Syntax when placed *after* the database name
 [listing,subs=+quotes]
 ----
 -T[ABLE] _table_name_ [_table_name_ ...]
@@ -287,6 +300,14 @@ This need not be supplied if the `ISC_PASSWORD` environment variable exists and 
 ----
 -P[ASSWORD] _password_
 ----
+
+[NOTE]
+====
+Providing a username and password is not necessary when only specifying <<gstat-cmdline-header>>.
+
+Since Firebird 3.0, providing a password is usually not necessary.
+In most cases, `gstat` commands other than `-h` will use the embedded engine to access the database, removing the need for a password.
+====
 
 [#gstat-cmdline-fetch-password]
 === `-FE[TCH_PASSWORD]`
@@ -356,7 +377,7 @@ This section contains frequently executed statistics gatherings and explains the
 [[gstat-example-header]]
 === Database Header[[d0e32928]]
 
-This option produces the least amount of output -- unless you specify a single nonexistent table name with the `-t[able]` switch -- and is included with all other switches, so it is discussed first.
+This option produces the least amount of output -- unless you specify a single nonexistent table name with the <<gstat-cmdline-table>> switch -- and is included with all other switches, so it is discussed first.
 
 ----
 tux> gstat employee -header
@@ -414,12 +435,12 @@ The generation number is incremented each and every time this page is rewritten 
 
 Page size::
 The page size of the entire database.
-As the database file has to be split into various pages, the SYSDBA can, at creation time, specify how big a page size he or she desires.
+As the database file has to be split into various pages, the SYSDBA can, at creation time, specify how big a page size they desire.
 Every page in the database will be the same size.
 
 ODS version::
-The On-Disc Structure of a database defines, possibly along with the SQL dialect, which features of the Firebird database system are available to users of that database.
-These features may be present in the version of Firebird that you are running, but if the database ODS is older, some of the new features will not be available.
+The On-Disk Structure of a database defines, possibly along with the SQL dialect, which features of the Firebird database system are available to users of that database.
+These features may be present in the version of Firebird that you are running, but if the database ODS is older, some new features will not be available.
 +
 Values you may currently see here are:
 +
@@ -432,12 +453,15 @@ Values you may currently see here are:
 * 11.0 for Firebird 2.0
 * 11.1 for Firebird 2.1
 * 11.2 for Firebird 2.5
+* 12.0 for Firebird 3.0
+* 13.0 for Firebird 4.0
+* 13.1 for Firebird 5.0
 
 Transaction details::
 There are a number of different transaction details in the report; these are:
 +
 --
-Oldest transaction::::
+Oldest transaction:::
 The transaction ID of what is known as _Oldest Interesting Transaction_ or OIT.
 This is simply the ID of the longest running transaction that has so far not been completed by way of a _hard_ commit.
 It may have been rolled back, or be in limbo, but if it has been committed, it is no longer interesting.
@@ -451,12 +475,12 @@ Commit retaining leaves the transaction as still interesting.
 Some database utilities and/or tools that commit actually perform a commit retaining which can leave your database with a lot of still interesting transactions.
 ====
 
-Oldest active::::
+Oldest active:::
 The ID of the oldest _active_ transaction, or OAT.
 This value shows the transaction ID (TID) of the oldest transaction that is still running.
 A transaction is considered active if it has not been _hard_ committed, is not in a state of limbo and has not been rolled back.
 
-Oldest snapshot::::
+Oldest snapshot:::
 The ID of the oldest transaction which is currently not eligible to be garbage-collected.
 Any transaction with this or a higher ID cannot, yet, have old record versions removed by a sweep, for example.
 Normally, this is the same as the OAT above.
@@ -464,25 +488,28 @@ The difference between _this_ value and the OIT, if greater than the database sw
 +
 [NOTE]
 ====
-Many web sites, books, manuals (previously including this one) explain that the automatic sweep is activated when OAT - OIT is greater than the sweep interval.
+Many websites, books, manuals (previously including this one) explain that the automatic sweep is activated when OAT - OIT is greater than the sweep interval.
 This is _not_ the case as explained by Vlad Khorsun, one of the Firebird developers, who explained that it is when OST -- OIT is greater than the threshold that the sweep is activated.
 ====
 
-Next transaction::::
+Next transaction:::
 The next transaction started on the database will have this ID number.
 
-Bumped transaction::::
-Always 1, no longer used.
+Bumped transaction:::
+Always `1`, no longer used, and removed from the output in Firebird 3.0
 --
 +
 If you discover that the difference between the OAT and the Next Transaction ID seems to be growing larger and larger, something in your database is not committing properly and as such, an increasing number of garbage records may be building up.
 Eventually, you will see that the database startup times take longer and longer and the performance becomes slower and slower.
 Check the figures and if a problem is detected, you may be wise to run `gfix` to manually run a database sweep to clear out the garbage and restore normal working to the database.
 +
-You may wish to consult with the section entitled _Limbo Transaction Management_ in the `gfix` manual for details on how to detect and treat transactions in limbo.
+You may wish to consult with the section entitled
+ifdef::backend-pdf[https://firebirdsql.org/file/documentation/pdf/en/firebirddocs/gfix/firebird-gfix.pdf#gfix-transactions[_Limbo Transaction Management_^]]
+ifndef::backend-pdf[https://firebirdsql.org/file/documentation/html/en/firebirddocs/gfix/firebird-gfix.html#gfix-transactions[_Limbo Transaction Management_]]
+in the `gfix` manual for details on how to detect and treat transactions in limbo.
 These may well be affecting the ability of the database sweep process in clearing out old redundant data from older uninteresting transactions.
 Limbo transactions are caused when a two-phase commit across multiple databases, fails for some reason.
-Limbo transactions are still interesting to the database and need to be committed or rolled back using `gfix` as the sweep processing cannot tell whether or not it is safe to do so without human intervention.
+Limbo transactions are still interesting to the database and need to be committed or rolled back using `gfix` as the sweep processing cannot tell whether it is safe to do so without human intervention.
 
 Sequence number::
 Always zero.
@@ -491,10 +518,11 @@ This was the sequence number of the database header page, but is no longer used.
 Next attachment ID::
 The ID number of the next attachment to this database.
 Every time an application connects to the database, this number goes up by one.
-Starting up and shutting down the database increases this number too. `Gstat` connections do not alter the id as they do not connect in a normal manner.
+Starting up and shutting down the database increases this number too.
+`Gstat` also alters this ID, except for _only_ the `-h` option as that does not connect in a normal manner.
 
 Implementation ID::
-When the database was created, it may have been created on a different system -- hardware, operating system etc -- to the one on which it is now running.
+When the database was created, it may have been created on a different system -- hardware, operating system, etc. -- to the one on which it is now running.
 The implementation ID shows you which hardware architecture the database was _originally_ created on.
 +
 The implementation ID is used to determine if the database can actually be used on the hardware it is currently running on, or if there is some feature of the original hardware, where the database was created, that makes it incompatible with the current host system.
@@ -515,8 +543,7 @@ On Firebird Superserver 2.1, this setting is the `DefaultDbCachePages` in the co
 You may use `gfix` to change this without editing the configuration file.
 
 Database dialect::
-The database's SQL dialect number.
-Normally 1 or 3.
+The database's SQL dialect number, normally 1 or 3.
 This setting can be changed using `gfix` and, alongside the ODS value, helps determine what features of Firebird are available for use when applications use the database.
 
 Creation date::
@@ -533,7 +560,7 @@ All pages will be filled to 100% and will be most useful on read-only databases.
 No space is reserved in each page for updates and/or deletions.
 
 force write::::
-Disc writes are not cached.
+Disk writes are not cached.
 They are written out to the hardware at the time of the write request.
 This is used mainly on Windows databases where the cache management system can lead to lost writes and database corruption.
 
@@ -548,7 +575,8 @@ The database is closed for maintenance.
 Multiple connections are allowed by SYSDBA or the database owner only.
 
 single-user maintenance::::
-The database is closed for maintenance. Only one SYSDBA or database owner connection is allowed.
+The database is closed for maintenance.
+Only one SYSDBA or database owner connection is allowed.
 --
 +
 Other values may appear here, depending on the version of Firebird in use and, of course, future releases.
@@ -581,7 +609,7 @@ The command to analyse only user tables in the database is:
 gstat employee -data >employee.gst
 ----
 
-And the results output from this command will list the user tables in alphabetical order.
+The output from this command will list the user tables in alphabetical order.
 No indices will be analysed or listed regardless of how many may exist within the database.
 
 Once the report has been completed, the results can be analysed as follows, looking at one table in particular.
@@ -598,8 +626,8 @@ CONFIGREVISIONSTORE (213)
         80 - 99% = 2042
 ----
 
-The extract, above, from the report begins by displaying the table name -- `CONFIGREVISIONSTORE` -- and the table id -- 213.
-The table's id is actually the column `RDB$RELATION_ID` in the system table `RDB$RELATIONS`, as the following `isql` session shows:
+The extract, above, from the report begins by displaying the table name -- `CONFIGREVISIONSTORE` -- and the table ID -- 213.
+The table's ID is actually the column `RDB$RELATION_ID` in the system table `RDB$RELATIONS`, as the following `isql` session shows:
 
 ----
 SQL> select rdb$relation_name 
@@ -667,18 +695,18 @@ CONFIGREVISIONSTORE (213)
             80 - 99% = 36
 ----
 
-The above extract from the report begins by displaying the table name -- `CONFIGREVISIONSTORE` -- and the table id -- 213 as described above.
+The above extract from the report begins by displaying the table name -- `CONFIGREVISIONSTORE` -- and the table ID -- 213 as described above.
 
-Following the table's details -- and only the name and id are displayed -- the index details are shown.
-As above, the index name and its id are displayed.
-This time, the id refers to the index's position in the list of all indices created on the table.
-Id zero is the first index created, id 1 is the next and so on.
-The output from `gstat` may not list the indices in id order and if any indices were created but subsequently dropped, there may be gaps in the id sequence.
+Following the table's details -- and only the name and ID are displayed -- the index details are shown.
+As above, the index name and its ID are displayed.
+This time, the ID refers to the index's position in the list of all indices created on the table.
+ID zero is the first index created, ID 1 is the next and so on.
+The output from `gstat` may not list the indices in ID order and if any indices were created but subsequently dropped, there may be gaps in the ID sequence.
 
-The next two lines, after the index name and id, show the overall statistics for this index.
+The next two lines, after the index name and ID, show the overall statistics for this index.
 
 Depth::
-This statistic displays the number of pages that have to be accessed in order to get at an index entry.
+This statistic displays the number of pages that have to be accessed to get at an index entry.
 In this example we have to read three separate pages into the buffer cache before we can use the index details to access the row we want in the table.
 This is often referred to as index indirection.
 +
@@ -686,7 +714,7 @@ This is often referred to as index indirection.
 Depth: 3
 ----
 +
-On disc, there is a top level _Index Root Page_ which is created at the same time as the database.
+On disk, there is a top level _Index Root Page_ which is created at the same time as the database.
 This page holds a list of pointers to the top (apex) page for each index -- one page per index.
 For any given index, this page holds a list of pointers to either:
 +
@@ -732,7 +760,10 @@ If this is not the case, simply repeat the process above using an even bigger pa
 ====
 The above command to restore the backup _overwrites_ the original database file.
 This works by deleting the original file and recreating it, so you really need to be sure that your database backup actually works and that the backup file produced is usable _before_ attempting to overwrite a database.
-See the `gbak` manual for more details.
+See the
+ifdef::backend-pdf[https://firebirdsql.org/file/documentation/pdf/en/firebirddocs/gbak/firebird-gbak.pdf[`gbak` manual^]]
+ifndef::backend-pdf[https://firebirdsql.org/file/documentation/html/en/firebirddocs/gbak/firebird-gbak.html[`gbak` manual]]
+for more details.
 ====
 
 Leaf buckets::
@@ -755,7 +786,7 @@ However, it is possible -- because `gstat` doesn't work in a transaction-aware m
 nodes: 62372
 ----
 +
-Because of the above, it is advisable to carry out a sweep, or a database backup & restore, prior to running `gstat` to ensure that the statistics gathered are accurate and reflect the true position of the database.
+Because of the above, it is advisable to carry out a sweep, or a database backup and restore, prior to running `gstat` to ensure that the statistics gathered are accurate and reflect the true position of the database.
 
 Average data length::
 This statistic indicates the average length of the key column(s) in bytes.
@@ -763,7 +794,7 @@ This statistic indicates the average length of the key column(s) in bytes.
 Average data length: 2.58
 ----
 +
-This is most likely less that the actual sum of the column sizes as Firebird uses index compression to reduce the amount of data held in an index leaf page.
+This is most likely less than the actual sum of the column sizes as Firebird uses index compression to reduce the amount of data held in an index leaf page.
 
 Duplicates::
 Duplicates are not permitted in a primary key or unique index.
@@ -783,7 +814,8 @@ CON> GROUP BY IDX;
            3            1
 ----
 +
-From the above we see a total of 15 rows, of which there are 14 duplicated values (all those with a 1 or 2 in the IDX column). The following is the extract for the duplicates for this table:
+From the above we see a total of 15 rows, of which there are 14 duplicated values (all those with a 1 or 2 in the IDX column).
+The following is the extract for the duplicates for this table:
 +
 ----
 Index NORMANX (0)
@@ -792,7 +824,7 @@ Index NORMANX (0)
 ----
 +
 Total dup is the total number of duplicates in the index.
-Note from the above that only 12 duplicates are listed but we already know that there are 14 duplicates rows in the index.
+Note from the above that only 12 duplicates are listed, but we already know that there are 14 duplicates rows in the index.
 How is this possible?
 +
 The first occurrence of a 1 and the first occurrence of a 2 are not counted, by `gstat`, as duplicates.
@@ -845,12 +877,12 @@ The sum of all these pages should add up to the same figure shown above for leaf
 This index shows reasonably good space usage as the majority of pages are well filled.
 Ideally, you would like to see all the pages being filled to between 80 and 99%. If, on the other hand, the report showed that the pages were all lightly filled -- say less than 60% -- the index would be a good candidate for a rebuild exercise.
 +
-Be sure to consider the total number of nodes before starting a rebuild -- if there are only a small number of nodes in the index, then rebuilding will not help the space usage as there may not be enough records to actually fill the index pages.
+Be sure to consider the total number of nodes before starting a rebuild -- if there are only a few nodes in the index, then rebuilding will not help the space usage as there may not be enough records to actually fill the index pages.
 
 [[gstat-example-tables]]
 === Selecting Tables To Analyse
 
-If you wish to include a specific list of tables in the analysis, rather than all user tables, then you can use the `-table` switch to specify the ones you wish to include.
+If you wish to include a specific list of tables in the analysis, rather than all user tables, then you can use the <<gstat-cmdline-table>> switch to specify the ones you wish to include.
 Note that specifying table names in this manner also analyses all indices associated with those tables.
 
 ----
@@ -872,19 +904,19 @@ CON> art_name ....);
 SQL> COMMIT;
 ----
 
-$$...$$ then you must supply the table names in double quotes and in _exactly_ the same letter case as the name of the table within the database:
+++...++ then you must supply the table names in _exactly_ the same letter case as the name of the table within the database:
 
 ----
-gstat mymusic -t "MyMusic_Titles" "MyMusic_Artists" > MyMusic.gst
+gstat mymusic -t MyMusic_Titles MyMusic_Artists > MyMusic.gst
 ----
 
-If you supply a non-existing table name, or get the name in the wrong case etc, `gstat` simply ignores it.
+If you supply a non-existing table name, or get the name in the wrong case, etc., `gstat` simply ignores it.
 
 [[gstat-example-systemtables]]
 === Including The System Tables & Indices
 
 Normal use of `gstat` doesn't include the system tables and indices in the output.
-Calling `gstat` with the `-system` switch causes these tables to be included in the analysis.
+Calling `gstat` with the <<gstat-cmdline-system>> switch causes these tables to be included in the analysis.
 
 ----
 gstat employee -system >employee.gst
@@ -895,7 +927,7 @@ The interpretation of the results for the various system tables and indices is e
 [[gstat-example-recordversion]]
 === Record & Version Details
 
-When you run `gstat` with either the default switches, or `-d[ata]` or `-t[able]` and add the `-r[record]` switch, you get additional information in the report that shows the average record length and average version details for the table(s) in question:
+When you run `gstat` with either the default switches, or <<gstat-cmdline-data>> or <<gstat-cmdline-table>> and add the <<gstat-cmdline-record>> switch, you get additional information in the report that shows the average record length and average version details for the table(s) in question:
 
 ----
 Average record length: 96.55, total records: 62372
@@ -1035,15 +1067,23 @@ By collecting them all here in one place, you should be able to find out what's 
 [[gstat-caveats-tableswitch]]
 === The `-t[able]` Switch Can Cause Problems
 
-The `-t[able]` switch expects a list of table names (in upper case) to be supplied.
-Unfortunately, if you supply the database name _after_ a table name, it is assumed to be a table name and you are prompted for a database name.
+The <<gstat-cmdline-table>> switch expects a list of table names to be supplied.
+
+In older versions, if you supply the database name _after_ a table name, it is assumed to be a table name, and you are prompted for a database name.
 
 ----
 tux> gstat -t EMPLOYEE JOB employee
 please retry, giving a database name
 ----
 
-For this reason, always call `gstat` with the database name as the very _first_ parameter:
+In Firebird 2.5 and higher, using `-t` before the database name accepts only one table name, and a second table name is interpreted as the database name, resulting in an error when the actual database name is encountered.
+
+----
+> gstat -u sysdba -t EMPLOYEE JOB employee
+database name was already specified
+----
+
+For this reason, call `gstat` with the database name as the very _first_ parameter, or at least put the `-t[able]` option _after_ the database name:
 
 ----
 tux> gstat employee -t EMPLOYEE JOB
@@ -1059,7 +1099,8 @@ Analyzing database pages ...
 ...
 ----
 
-Alternatively, supply an additional switch _after_ the last table name and _before_ the database name:
+In Firebird 2.1 and earlier, you can supply an additional switch _after_ the last table name and _before_ the database name.
+This trick no longer works in Firebird 2.5 and higher.
 
 ----
 tux> gstat -t EMPLOYEE JOB -z employee
@@ -1139,6 +1180,9 @@ The exact file history is recorded in the firebird-documentation git repository;
 a|* Reordered document history so most recent changes are on the top
 * Convert commandline options from definition list to sections
 * Add switches: `-?`, `-encryption`, `-nocreation`, `-role`, and `-trusted`
+* Misc. copy editing, and updating information for newer version
+* Add some links to gfix and gbak documentation
+* Cross-links between sections
 
 |1.6
 |19 Jun 2020
