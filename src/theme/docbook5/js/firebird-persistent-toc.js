@@ -308,9 +308,9 @@
   toc.innerHTML = tocScript.innerHTML;
 
   tocOpen.style.display = "inline";
-  tocOpen.style.zIndex = 3;
+  tocOpen.style.zIndex = 101;
 
-  toc.style.zIndex = 4;
+  toc.style.zIndex = 102;
 
   if (window.location.search === "?toc") {
     showToC(null);
