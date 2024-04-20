@@ -15,6 +15,7 @@
   <xsl:param name="user-css-links" select="'css/firebird.min.css'"/>
 <!--  <xsl:param name="persistent-toc-css" select="'css/firebird-toc.css'"/>-->
   <xsl:param name="persistent-toc-css" select="'css/firebird-toc.min.css'"/>
+  <xsl:param name="persistent-toc-js" select="'js/firebird-persistent-toc.js'"/>
   <xsl:param name="use-docbook-css" select="'false'"/>
   <xsl:param name="persistent-toc" select="'true'"/>
   <xsl:param name="sections-inherit-from" select="'component section'"/>

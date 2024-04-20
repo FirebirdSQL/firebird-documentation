@@ -3,7 +3,10 @@ How to generate chunked output
 
 NOTE: Creating chunked output is experimental.
 
-1. Download and unzip latest docbook-xsltng from https://github.com/docbook/xslTNG/releases
+1. Download and unzip latest docbook-xsltng from https://github.com/docbook/xslTNG/releases \
+   When a new release is used, check if `css/firebird.css`, `css/firebird-toc.css` and 
+   `js/firebird-persistent-toc.js` in `src/theme/dockbook5` need to be changed (e.g. by 
+   diff-ing the files they are based on in the previous and current version).
 2. Go to the docker directory and run
    ```
    docker build -t docbook-xslt .
