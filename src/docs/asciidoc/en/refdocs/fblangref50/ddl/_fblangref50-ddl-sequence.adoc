@@ -1,11 +1,11 @@
 [[fblangref50-ddl-sequence]]
 = `SEQUENCE` (`GENERATOR`)
 
-A sequence -- or generator -- is a database object used to get unique number values to fill a series.
+A sequence  -- or generator -- is a database object used to get unique number values to fill a series.
 "`Sequence`" is the SQL-compliant term for the same thing which -- in Firebird -- has traditionally been known as "`generator`".
 Firebird has syntax for both terms.
 
-Sequences are always stored as 64-bit integers, regardless of the SQL dialect of the database.
+Sequences are stored as 64-bit integers, regardless of the SQL dialect of the database.
 
 [CAUTION]
 ====
@@ -20,7 +20,7 @@ This section describes how to create, alter, set and drop sequences.
 [[fblangref50-ddl-sequence-create]]
 == `CREATE SEQUENCE`
 
-Creates a `SEQUENCE` (`GENERATOR`)
+Creates a sequence
 
 .Available in
 DSQL, ESQL
@@ -41,40 +41,41 @@ CREATE {SEQUENCE | GENERATOR} _seq_name_
 ^| Description
 
 |seq_name
-|Sequence (generator) name.
+|Sequence name.
 The maximum length is 63 characters
 
 |start_value
-|Initial value of the sequence.
-Default is 1.
+|First value produced by `NEXT VALUE FOR __seq_name__`.
+A 64-bit integer from -2^-63^ to 2^63^-1.
+Default is `1`.
 
 |increment
-|Increment of the sequence (when using `NEXT VALUE FOR __seq_name__`);
+|Increment of the sequence when using `NEXT VALUE FOR __seq_name__`;
 cannot be `0`.
-Default is 1.
+Default is `1`.
 |===
 
-The statements `CREATE SEQUENCE` and `CREATE GENERATOR` are synonymous -- both create a new sequence.
-Either can be used, but `CREATE SEQUENCE` is recommended as that is the syntax defined in the SQL standard.
-
-When a sequence is created, its current value is set so that the next value obtained from <<fblangref50-commons-nxtvlufor,`NEXT VALUE FOR __seq_name__`>> is equal to _start_value_.
+When a sequence is created, its current value is set so that the next value produced by `NEXT VALUE FOR __seq_name__` is equal to _start_value_.
 In other words, the current value of the sequence is set to (`__start_value__ - __increment__`).
-By default, the _start_value_ is 1 (one).
 
-The optional `INCREMENT [BY]` clause allows you to specify an increment for the `NEXT VALUE FOR _seq_name_` expression.
-By default, the increment is 1 (one).
-The increment cannot be set to 0 (zero).
-The `GEN_ID(seq_name, <step>)` function can be called instead, to "`step`" the series by a different integer number.
-The increment specified through `INCREMENT [BY]` is not used for `GEN_ID`.
+The optional `INCREMENT [BY]` clause allows you to specify a non-zero increment for the <<fblangref50-commons-nxtvlufor,`NEXT VALUE FOR __seq_name__`>> expression.
+
+The <<fblangref50-scalarfuncs-gen-id,`GEN_ID(seq_name, __step__)`>> function can be called instead, to "`step`" the sequence by a different increment.
+The increment specified through `INCREMENT [BY]` is not used by `GEN_ID`.
+Using both `NEXT VALUE FOR` and `GEN_ID`, especially when the sequence has an increment other than `1`, may result in values you did not expect.
+For example, if you execute `CREATE SEQUENCE x START WITH 10 INCREMENT BY 10`, and then use `GEN_ID(x, 1)`, the value returned is `1`, and if you then call `NEXT VALUE FOR x`, you get `11`.
 
 .Non-standard behaviour for negative increments
 [NOTE]
 ====
 The SQL standard specifies that sequences with a negative increment should start at the maximum value of the sequence (2^63^ - 1) and count down.
-Firebird does not do that, and instead starts at `1`.
+Firebird does not do that, and instead starts at `1` unless you specify a `START WITH` value.
 
 This may change in a future Firebird version.
 ====
+
+The statements `CREATE SEQUENCE` and `CREATE GENERATOR` are synonymous -- both create a new sequence.
+Either can be used, but `CREATE SEQUENCE` is recommended as that is the syntax defined in the SQL standard.
 
 [[fblangref50-ddl-sequence-create-who]]
 === Who Can Create a Sequence?
@@ -84,7 +85,7 @@ The `CREATE SEQUENCE` (`CREATE GENERATOR`) statement can be executed by:
 * <<fblangref50-security-administrators,Administrators>>
 * Users with the `CREATE SEQUENCE` (`CREATE GENERATOR`) privilege
 
-The user executing the `CREATE SEQUENCE` (`CREATE GENERATOR`) statement becomes its owner.
+The user executing `CREATE SEQUENCE` (`CREATE GENERATOR`) becomes its owner.
 
 [[fblangref50-ddl-sequence-create-example]]
 === Examples of `CREATE SEQUENCE`
@@ -135,7 +136,7 @@ DSQL
 [listing,subs=+quotes]
 ----
 ALTER {SEQUENCE | GENERATOR} _seq_name_
-  [RESTART [WITH _newvalue_]]
+  [RESTART [WITH _start_value_]]
   [INCREMENT [BY] _increment_]
 ----
 
@@ -147,43 +148,43 @@ ALTER {SEQUENCE | GENERATOR} _seq_name_
 ^| Description
 
 |seq_name
-|Sequence (generator) name
+|Sequence name
 
-|newvalue
-|New sequence (generator) value.
+|start_value
+|Next value produced by `NEXT VALUE FOR __seq_name__`.
 A 64-bit integer from -2^-63^ to 2^63^-1.
+Default is the start value in the metadata.
 
 |increment
 |Increment of the sequence (when using `NEXT VALUE FOR __seq_name__`);
 cannot be `0`.
 |===
 
-The `ALTER SEQUENCE` statement sets the current value of a sequence to the specified value
-and/or changes the increment of the sequence.
+The `ALTER SEQUENCE` statement sets the next value of the sequence, and/or changes the increment of the sequence.
 
-The `RESTART WITH __newvalue__` clause allows you to set the next value generated by `NEXT VALUE FOR __seq_name__`.
-To achieve this, the current value of the sequence is set to (`__newvalue__ - __increment__`) with _increment_ either as specified in the statement, or stored in the metadata of the sequence.
-The `RESTART` clause (without `WITH`) restarts the sequence with the initial value stored in the metadata of the sequence.
+The `RESTART WITH __start_value__` clause sets the current value of the sequence so that the next value obtained from <<fblangref50-commons-nxtvlufor,`NEXT VALUE FOR __seq_name__`>> is equal to _start_value_.
+To achieve this, the current value of the sequence is set to (`__start_value__ - __increment__`) with _increment_ either as specified in the statement, or from the metadata of the sequence.
+The `RESTART` clause without `WITH __start_value__` behaves as if `WITH __start_value__` is specified with the start value from the metadata of the sequence.
 
 [NOTE]
 ====
-Contrary to Firebird 3.0, since Firebird 4.0 `RESTART WITH __newvalue__` only restarts the sequence with the specified value, and does not store _newvalue_ as the new initial value of the sequence.
-A subsequent `ALTER SEQUENCE RESTART` will use the initial value specified when the sequence was created, and not the _newvalue_ of this statement.
+Contrary to Firebird 3.0, since Firebird 4.0 `RESTART WITH __start_value__` only restarts the sequence with the specified value, and does not store _start_value_ as the new start value of the sequence.
+A subsequent `ALTER SEQUENCE RESTART` will use the start value specified when the sequence was created, and not the _start_value_ of this statement.
 This behaviour is specified in the SQL standard.
 
-It is currently not possible to change the initial value stored in the metadata.
+It is currently not possible to change the start value stored in the metadata.
 ====
 
 [WARNING]
 ====
-Incorrect use of the `ALTER SEQUENCE` statement (changing the current value of the sequence or generator) is likely to break the logical integrity of data, or result in primary key or unique constraint violations.
+Incorrect use of `ALTER SEQUENCE` -- changing the current value of the sequence -- is likely to break the logical integrity of data, or result in primary key or unique constraint violations.
 ====
 
 `INCREMENT [BY]` allows you to change the sequence increment for the `NEXT VALUE FOR` expression.
 
 Changing the increment value takes effect for all queries that run after the transaction commits.
 Procedures that are called for the first time after changing the commit, will use the new value if they use `NEXT VALUE FOR`.
-Procedures that were already used (and cached in the metadata cache) will continue to use the old increment.
+Procedures that were already cached in the metadata cache will continue to use the old increment.
 You may need to close all connections to the database for the metadata cache to clear, and the new increment to be used.
 Procedures using `NEXT VALUE FOR` do not need to be recompiled to see the new increment.
 Procedures using `GEN_ID(gen, expression)` are not affected when the increment is changed.
@@ -206,7 +207,7 @@ The `ALTER SEQUENCE` (`ALTER GENERATOR`) statement can be executed by:
 ----
 ALTER SEQUENCE EMP_NO_GEN RESTART WITH 145;
 ----
-. Resetting the base value of the sequence `EMP_NO_GEN` to the initial value stored in the metadata
+. Resetting the sequence `EMP_NO_GEN` to the start value stored in the metadata
 +
 [source]
 ----
@@ -246,23 +247,24 @@ CREATE OR ALTER {SEQUENCE | GENERATOR} _seq_name_
 ^| Description
 
 |seq_name
-|Sequence (generator) name.
+|Sequence name.
 The maximum length is 63 characters
 
 |start_value
-|Initial value of the sequence.
-Default is 1.
+|First or next value produced by `NEXT VALUE FOR __seq_name__`.
+A 64-bit integer from -2^-63^ to 2^63^-1.
+Default is `1`.
 
 |increment
-|Increment of the sequence (when using `NEXT VALUE FOR __seq_name__`);
+|Increment of the sequence when using `NEXT VALUE FOR __seq_name__`;
 cannot be `0`.
-Default is 1.
+Default is `1`.
 |===
 
-If the sequence does not exist, it will be created.
+If the sequence does not exist, it will be created as documented under <<fblangref50-ddl-sequence-create>>.
 An existing sequence will be changed:
 
-- If `RESTART` is specified, the sequence will restart with the initial value stored in the metadata
+- If `RESTART` is specified, the sequence is restarted with the start value stored in the metadata
 - If the `START WITH` clause is specified, the sequence is restarted with _start_value_, but the _start_value_ is not stored.
 In other words, it behaves as `RESTART WITH` in <<fblangref50-ddl-sequence-alter>>.
 - If the `INCREMENT [BY]` clause is specified, _increment_ is stored as the increment in the metadata, and used for subsequent calls to `NEXT VALUE FOR`
@@ -284,7 +286,7 @@ CREATE OR ALTER SEQUENCE EMP_NO_GEN
 [[fblangref50-ddl-sequence-drop]]
 == `DROP SEQUENCE`
 
-Drops a `SEQUENCE` (`GENERATOR`)
+Drops a sequence
 
 .Available in
 DSQL, ESQL
@@ -303,14 +305,14 @@ DROP {SEQUENCE | GENERATOR} _seq_name_
 ^| Description
 
 |seq_name
-|Sequence (generator) name.
+|Sequence name.
 The maximum length is 63 characters
 |===
 
-The statements `DROP SEQUENCE` and `DROP GENERATOR` statements are equivalent: both drop (delete) an existing sequence (generator).
+The statements `DROP SEQUENCE` and `DROP GENERATOR` are equivalent: both drop (delete) an existing sequence.
 Either is valid but `DROP SEQUENCE`, being defined in the SQL standard, is recommended.
 
-The statements will fail if the sequence (generator) has dependencies.
+The statements will fail if the sequence has dependencies.
 
 [[fblangref50-ddl-tbl-dropseq-who]]
 === Who Can Drop a Sequence?
@@ -336,7 +338,7 @@ DROP SEQUENCE EMP_NO_GEN;
 [[fblangref50-ddl-sequence-recr]]
 == `RECREATE SEQUENCE`
 
-Drops a sequence if it exists, and creates a sequence (generator)
+Drops a sequence if it exists, and creates a sequence
 
 .Available in
 DSQL, ESQL
@@ -357,15 +359,18 @@ RECREATE {SEQUENCE | GENERATOR} _seq_name_
 ^| Description
 
 |seq_name
-|Sequence (generator) name.
+|Sequence name.
 The maximum length is 63 characters
 
 |start_value
-|Initial value of the sequence
+|First value produced by `NEXT VALUE FOR __seq_name__`.
+A 64-bit integer from -2^-63^ to 2^63^-1.
+Default is `1`.
 
 |increment
 |Increment of the sequence (when using `NEXT VALUE FOR __seq_name__`);
-cannot be `0`
+cannot be `0`.
+Default is `1`.
 |===
 
 See <<fblangref50-ddl-sequence-create>> for the full syntax of `CREATE SEQUENCE` and descriptions of defining a sequences and its options.
@@ -391,7 +396,7 @@ RECREATE SEQUENCE EMP_NO_GEN
 [[fblangref50-ddl-sequence-setgen]]
 == `SET GENERATOR`
 
-Sets the current value of a sequence (generator)
+Sets the current value of a sequence
 
 .Available in
 DSQL, ESQL
@@ -410,14 +415,14 @@ SET GENERATOR _seq_name_ TO _new_val_
 ^| Description
 
 |seq_name
-|Generator (sequence) name
+|Sequence name
 
 |new_val
-|New sequence (generator) value.
+|New sequence value.
 A 64-bit integer from -2^-63^ to 2^63^-1.
 |===
 
-The `SET GENERATOR` statement sets the current value of a sequence or generator to the specified value.
+The `SET GENERATOR` statement sets the current value of a sequence to the specified value.
 
 [NOTE]
 ====
@@ -431,7 +436,7 @@ Use of the standards-compliant `ALTER SEQUENCE` is recommended.
 The `SET GENERATOR` statement can be executed by:
 
 * <<fblangref50-security-administrators,Administrators>>
-* The owner of the sequence (generator)
+* The owner of the sequence
 * Users with the `ALTER ANY SEQUENCE` (`ALTER ANY GENERATOR`) privilege
 
 [[fblangref50-ddl-sequence-setgen-example]]
