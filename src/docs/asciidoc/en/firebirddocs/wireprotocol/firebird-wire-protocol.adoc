@@ -1,7 +1,7 @@
 [[wireprotocol]]
 = Firebird Wire Protocol
 Carlos Guzman Alvarez; Mark Rotteveel
-0.15, 26 December 2021
+0.16, 13 April 2025
 :doctype: book
 :sectnums:
 :sectanchors:
@@ -11,6 +11,11 @@ Carlos Guzman Alvarez; Mark Rotteveel
 :icons: font
 :experimental:
 :imagesdir: ../../images
+:jaybird-url: https://github.com/FirebirdSQL/jaybird
+:jaybird-repo: {jaybird-url}[Jaybird]
+:net-provider-url: https://github.com/FirebirdSQL/NETProvider
+:net-provider-repo: {net-provider-url}[Firebird .NET Data Provider]
+:firebird-site: https://firebirdsql.org
 
 toc::[]
 
@@ -18,19 +23,23 @@ toc::[]
 == Introduction
 
 This document describes the Firebird wire protocol.
-Most of the information was obtained by studying the Firebird source code and implementing the wire protocol in the Firebird .NET provider and Jaybird (Firebird JDBC driver).
+Most of the information was obtained by studying the Firebird source code and implementing the wire protocol in the {net-provider-url}[Firebird .NET provider] and {jaybird-url}[Jaybird (Firebird JDBC driver)].
 
 The protocol is described in the form of the message sent by the client and received from the server.
 The described protocol is Firebird/Interbase protocol version 10.
 Earlier (Interbase) versions of the protocol are not in scope for this document.
-Changes in later protocol versions are described in notes below the description of the relevant version 10 message (currently only version 11 is partially described).
+Changes in later protocol versions are described in notes below the description of the relevant version 10 message (currently higher versions are only partially described).
 
 This document is not complete.
-It is advisable to consult the [ref]_Interbase 6.0 API Guide_ for additional information on subjects like parsing the status vector, information request items, and the meaning of operations.
+It is advisable to consult the _InterBase 6 API Guide_ for additional information on subjects like parsing the status vector, information request items, and the meaning of operations.
+You can find this manual under "`InterBase 6.0 Manuals`" in the {firebird-site}/en/reference-manuals/[Reference Manuals] section of the Firebird website.
 
 Unless otherwise indicated, a client request must be flushed to the server for processing.
 For some operations the flush can be deferred, so it is sent together with a different operation.
 Versions 11 and higher of the wire protocol explicitly support (or even require) deferring of operations, including deferring the read of the response.
+
+In the protocol descriptions below, we include the names of the fields of the structs used in the Firebird sources;
+this can make it easier to search for how it's used in Firebird itself.
 
 [[wireprotocol-responses]]
 == Responses
@@ -43,84 +52,128 @@ The meaning and content depend on the operation that initiated the response.
 [[wireprotocol-responses-generic]]
 === Generic response
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code
 
 If operation equals `op_response`:
 
-`Int32`::
+`Int32` -- `p_resp_object`::
 Object handle
++
+Although 32-bit, valid handle values are always between 0 and 65535 (0xFFFF), with the "`normal`" range between 0 and 65000, where `0` either represents the connection itself, or means "`no value`".
 
-`Int64`::
+`Int64` -- `p_resp_blob_id`::
 Object ID
 
-`Buffer`::
+`Buffer` -- `p_resp_data`::
 Data (meaning depends on the operation).
 
-`Byte[]`::
+`Byte[]` -- `p_resp_status_vector`::
 Status vector
++
+The format of the status vector is basically `++<tag><value>[{tag><value>} ...]<end>++`, with `<tag>` an `Int32`, and where parsing of `<value>` depends on `<tag>`;
+`<end>` is `Int32` `isc_arg_end` -- `0`.
+The length can only be determined by correctly parsing the status vector.
+The first 8 bytes are always an `Int32` tag (`isc_arg_gds` or `isc_arg_warning`) and an `Int32` value.
++
+--
+* If the status vector starts with `Int32` `isc_arg_gds` -- `1` *and* the second `Int32` is non-zero, it is a failure response.
+* If it starts with `Int32` `isc_arg_warning` -- `18` *and* the second `Int32` is non-zero, it is a success response with warning(s).
+* Otherwise, if the second `Int32` is zero, it is a success response
+--
 +
 [IMPORTANT]
 ====
-Information about parsing the status vector can be found in the [ref]_Interbase 6.0 API Guide_ in the documentation set.
-It might also be advantageous to look at the sources of the Firebird .NET provider or Jaybird.
+Information about parsing the status vector can be found in the _Interbase 6 API Guide_ in the documentation set.
+It might also be advantageous to look at the sources of {net-provider-repo} or {jaybird-repo}.
 ====
 
 [[wireprotocol-responses-sql]]
 === SQL response
 
-`Int32`::
+Success response to `op_execute2` (see <<wireprotocol-statements-execute>>) or `op_executeimmediate2` (not yet documented).
+
+`Int32` -- `p_operation`::
 Operation code
 
 If operation equals `op_sql_response`:
 
-`Int32`::
-Message count
+`Int32` -- `p_sqldata_messages`::
+Count of rows following response (in practice, only `1` or `0`)
 
-`Buffer`::
-Response data (meaning depends on the operation).
+Row data::
+The row data is not in a buffer like described in <<wireprotocol-appendix-types>>, but as a sequence (0..1) of data rows with a special format, see <<wireprotocol-reading-row-data>>.
++
+You can also consider the row data not a part of the SQL response, but something that is sent *after* the SQL response.
 
 [[wireprotocol-responses-fetch]]
 === Fetch response
 
-`Int32`::
+Success response to `op_fetch` (see <<wireprotocol-statements-fetch>>) and `op_fetch_scroll` (not yet documented).
+
+`Int32` -- `p_operation`::
 Operation code
 
 If operation equals `op_fetch_response`:
 
-`Int32`::
+`Int32` -- `p_sqldata_status`::
 Status
 +
-[IMPORTANT]
-====
-A value of `0` is the success value.
+--
+* `0` -- success
+* `100` -- end of cursor
+--
 
-End of cursor is indicated with a non-zero status.
-
-A status with value of `100` means that there are no more rows.
-====
-
-`Int32`::
-Count of rows following response
+`Int32` -- `p_sqldata_messages`::
+Count of rows following response (in practice, only `1` or `0`)
 +
-[IMPORTANT]
-====
-The data rows are not in a buffer as described in <<wireprotocol-appendix-types>>, but as a sequence of data rows, see <<wireprotocol-reading-row-data>>.
-====
+A value of `0` indicates end-of-batch (fetch complete).
+Together with status `100`, it also means end-of-cursor, otherwise there are more rows available for a next fetch.
+
+Row data::
+The row data is not in a buffer like described in <<wireprotocol-appendix-types>>, but as a sequence (0..1) of data rows with a special format, see <<wireprotocol-reading-row-data>>.
++
+You can also consider the row data not a part of the fetch response, but something that is sent *after* the fetch response.
+
+The success response to <<wireprotocol-statements-fetch>> is not a single of `op_fetch_response`, but a sequence of `op_fetch_response` and row data.
+That is:
+
+----
+<op-fetch-response (status = 0, count = 1)>
+<row-data>
+<op-fetch-response (status = 0, count = 1)>
+<row-data>
+...
+if end-of-cursor:
+  <op-fetch-response (status = 100, count = 0)>
+else:
+  <op-fetch-response (status = 0, count = 0)>
+----
+
+Firebird may return fewer rows than requested in <<wireprotocol-statements-fetch>>.
 
 [[wireprotocol-responses-slice]]
 === Slice response
 
-`Int32`::
+Success response to <<wireprotocol-arrays-getslice>>.
+
+[CAUTION]
+====
+This documentation might not reflect actual encoding in the protocol.
+====
+
+Response to <<wireprotocol-arrays-getslice>>.
+
+`Int32` -- `p_operation`::
 Operation code
 
 If operation equals `op_slice`:
 
-`Int32`::
+`Int32` -- `p_slr_length`::
 Slice length
 
 `Int32`::
-Slice length
+Slice length (possibly a buffer?, needs verification)
 
 `Buffer`::
 Slice data
@@ -131,93 +184,160 @@ Slice data
 [[wireprotocol-databases-attach]]
 === Attach
 
-Attachments to a database are done in two steps, first identification (connect) to the server, then attachment to a database.
+Attachments to a database are done in two steps, first identification (connect) to the server, then attach to a database.
 
 [[wireprotocol-databases-attach-identification]]
 ==== Identification
+
+[CAUTION]
+====
+The identification and attach handshake changed significantly in protocol 13 (Firebird 3.0), and is not yet documented.
+====
 
 Performs the initial handshake and protocol selection.
 
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_connect`)
 
-`Int32`::
-Operation code (`op_attach`)
+`Int32` -- `p_cnct_operation`::
+Operation code;
+unused in practice, can always be `0`.
+Some implementations use `op_attach` (`19`) for historic(?) reasons.
 
-`Int32`::
-Version (`CONNECT_VERSION2`)
+`Int32` -- `p_cnct_cversion`::
+Connect version:
++
+--
+[horizontal]
+`CONNECT_VERSION2` -- `2`:: user identification encoding is undefined (Firebird 1.0 -- Firebird 2.5)
+`CONNECT_VERSION3` -- `3`:: user identification is UTF-8 encoded (since Firebird 3.0 and higher, but backwards compatible as the version wasn't checked before Firebird 3.0)
+--
 
-`Int32`::
+`Int32` -- `p_cnct_client`::
 Architecture type (e.g. `arch_generic` = `1`).
 
-`String`::
+`String` -- `p_cnct_file`::
 Database path or alias
++
+The encoding of this is undefined, which can lead to problems with non-ASCII paths if the server and client use a different encoding.
 
-`Int32`::
-Count of protocol versions understood (e.g. `1`)
+`Int32` -- `p_cnct_count`::
+Count of protocol versions understood (e.g. `1`).
 
-`Buffer`::
+`Buffer` -- `p_cnct_user_id`::
 User identification
++
+TODO: Needs further description
 
 [IMPORTANT]
 ====
 The next block of data declares the protocol(s) that the client is willing or able to support.
-It should be sent as many times as protocols are supported (and specified as _Count of protocol versions understood_), values depend on the protocol.
+It should be sent as many times as protocols are supported (and specified in `p_cnct_count` above).
+Values depend on the protocol.
+
+If a client sends more than 10 (Firebird 5.0 and older) or 11 (Firebird 6.0) protocols, the surplus are ignored.
 ====
 
-`Int32`::
+`Int32` -- `p_cnct_version`::
 Protocol version (`PROTOCOL_VERSION10`)
 
-`Int32`::
+`Int32` -- `p_cnct_architecture`::
 Architecture type (e.g. `arch_generic` = `1`)
++
+It is possible to use a different architecture value, but then connection is only possible with a server of the same architecture.
+In addition, it changes how responses and/or data needs to be parsed or encoded (the authors don't know the exact details).
+In short, use `arch_generic`.
 
-`Int32`::
-Minimum type (e.g. `ptype_rpc` = `2`)
+`Int32` -- `p_cnct_min_type`::
+Minimum type (e.g. `ptype_batch_send` = `3`)
++
+Possible values:
++
+--
+[horizontal]
+`ptype_page` -- `1`:: Page server protocol (never supported in Firebird)
+`ptype_rpc` -- `2` :: Simple remote procedure call (not supported since Firebird 3.0)
+`ptype_batch_send` -- `3`:: Batch sends, no asynchrony
+`ptype_out_of_band` -- `4`:: Batch sends w/ out of band notification (semantics not documented in this manual)
+`ptype_lazy_send` -- `5`:: Deferred packets delivery
+--
 
-`Int32`::
-Maximum type (e.g. `ptype_batch_send` = `3`)
+`Int32` -- `p_cnct_max_type`::
+Maximum type (e.g. `ptype_lazy_send` -- `5`)
++
+If the client wants to set up wire compression, this `ptype`-code must be OR'ed with `pflag_compress` (`0x100`).
+See also discussion below for server response.
 
-`Int32`::
-Preference weight (e.g. `2`)
+`Int32` -- `p_cnct_weight`::
+Preference weight (e.g. `2`).
+Higher values have higher preference.
+For equal weights, the last supported occurrence will be selected.
 
 [float]
 ===== Server
 
-`Int32`::
+Success response:
+
+`Int32` -- `p_operation`::
 Operation code
 
 If operation equals `op_accept`:
 
-`Int32`::
+`Int32` -- `p_acpt_version`::
 Protocol version number accepted by server
 
-`Int32`::
+`Int32` -- `p_acpt_architecture`::
 Architecture for protocol
 
-`Int32`::
-Minimum type
+`Int32` -- `p_acpt_type`::
+Accepted type and additional flags.
+Obtain the type by masking with `0xFF`.
++
+Known flags:
++
+--
+[horizontal]
+`pflag_compress` -- `0x100`:: Turn on compression
++
+In the request from client to server, it signals a request to use wire compression. +
+In the response from the server to client, it is an acknowledgement, and wire compression *must* be enabled _after_ processing this response.
+
+`pflag_win_sspi_nego` -- `0x200`:: Win_SSPI supports Negotiate security package
++
+Only sent from server to client.
+--
+
+Failure response: <<wireprotocol-responses-generic>>
 
 [[wireprotocol-databases-attach-attachment]]
 ==== Attachment
 
+// TODO Write a common section for attach/create database and attach service and point to it
+
 Attaches to a database.
+Attach is the same as <<wireprotocol-databases-create>> (`op_create`), but using `op_attach` instead of `op_create`.
 
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_attach`)
 
-`Int32`::
-Database object id (`0`)
+`Int32` -- `p_atch_database`::
+Database object id;
+unused in practice, can always be `0`.
 
-`String`::
+`String` -- `p_atch_file`::
 Database path or alias
++
+If `isc_dpb_utf8_filename` is present in the database parameter buffer below, the encoding is UTF-8;
+otherwise, the encoding is undefined.
+The `isc_dpb_utf8_filename` item is supported since Firebird 2.5.
 
-`Buffer`::
+`Buffer` -- `p_atch_dpb`::
 Database parameter buffer
 +
 [[wireprotocol-databases-attach-attachment-dpb-content]]
@@ -273,7 +393,7 @@ Database parameter buffer
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where the _Object handle_ is the database handle.
+<<wireprotocol-responses-generic>>
 
 [[wireprotocol-databases-detach]]
 === Detach
@@ -284,11 +404,11 @@ After detach the connection is still open, to disconnect use <<wireprotocol-data
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_detach`)
 
-`Int32`::
-Database handle
+`Int32` -- `p_rlse_object`::
+Database handle (always `0`)
 
 [float]
 ===== Server
@@ -298,28 +418,45 @@ Database handle
 [[wireprotocol-databases-create]]
 === Create
 
+// TODO Write a common section for attach/create database and attach service and point to it
+
 Create a database.
-Create is similar to <<wireprotocol-databases-attach-attachment>> (`op_attach`).
+Create is the same as <<wireprotocol-databases-attach-attachment>> (`op_attach`), but using `op_create` instead of `op_attach`.
 
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_create`)
 
-`Int32`::
-Database object id (0)
+`Int32` -- `p_atch_database`::
+Database object id;
+unused in practice, can always be `0`.
 
-`String`::
-Database path
+`String` -- `p_atch_file`::
+Database path or alias
++
+If `isc_dpb_utf8_filename` is present in the database parameter buffer below, the encoding is UTF-8;
+otherwise, the encoding is undefined.
+The `isc_dpb_utf8_filename` item is supported since Firebird 2.5.
++
+There are a number of DPB items to configure the newly created database, including page size (`isc_dpb_page_size`) -- which cannot be modified after creation.
 
-`Buffer`::
+`Buffer` -- `p_atch_dpb`::
 Database parameter buffer
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where the _Object handle_ is the database handle.
+<<wireprotocol-responses-generic>>
+
+[float]
+===== The `CREATE DATABASE` statement
+
+Although Firebird has a https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref50-ddl.html#fblangref50-ddl-db-create[`CREATE DATABASE`] statement, the documented syntax is not fully supported by Firebird server.
+Part of the syntax (e.g. database name, user, password, page size) are parsed by _fbclient_ to execute the `op_create` (or equivalent for embedded).
+
+After the database is successfully created, _fbclient_ then uses execute immediate (`op_execute_immediate`) without transaction to execute a reduced `CREATE DATABASE` statement for additional configuration of the database.
 
 [[wireprotocol-databases-drop]]
 === Drop
@@ -329,10 +466,10 @@ Drops the currently attached database.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_drop_database`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Database handle
 
 [float]
@@ -343,32 +480,43 @@ Database handle
 [[wireprotocol-databases-information]]
 === Database information request
 
+// TODO Write a common section for info requests and point to it
+
 Requests database or server information.
 
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_info_database`)
 
-`Int32`::
-Database handle
+`Int32` -- `p_info_object`::
+Database handle;
+unused in practice, can always be `0`.
 
-`Int32`::
+`Int32` -- `p_info_incarnation`::
 Incarnation of object (`0`)
++
+TODO: Usage and meaning?
 
-`Buffer`::
+`Buffer` -- `p_info_items`::
 Requested information items
++
+Values of enum `db_info_types` in Firebird's `inf_pub.h`.
 
-`Int32`::
-Length of buffer available for receiving response (too small may lead to receiving a truncated buffer, which necessitates requesting information again).
+`Int32` -- `p_info_buffer_length`::
+Length of buffer available for receiving response
++
+Too small may lead to receiving a truncated buffer, which necessitates requesting information again with a larger size.
 +
 The buffer in the response is sized to the actual length of the response (upto the declared available length), so specifying a larger than necessary size does not inflate the response on the wire.
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Data_ holds the requested information.
+<<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
++
+A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
 [[wireprotocol-databases-disconnect]]
 === Disconnect
@@ -376,10 +524,12 @@ The buffer in the response is sized to the actual length of the response (upto t
 [float]
 ==== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_disconnect`)
 
 No response, remote socket close.
+
+Closing the connection (socket) without sending an `op_disconnect` will result in "`Connection reset by peer`" (error `10054` (Windows) or `104` (Linux)) in `firebird.log`.
 
 [[wireprotocol-transactions]]
 == Transactions
@@ -392,19 +542,28 @@ Starts a transaction with the transaction options specified in the transaction p
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_transaction`)
 
-`Int32`::
-Database handle
+`Int32` -- `p_sttr_database`::
+Database handle;
+unused in practice, can always be `0`.
 
-`Buffer`::
+`Buffer` -- `p_sttr_tpb`::
 Transaction parameter buffer
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Object handle_ is the new transaction handle.
+<<wireprotocol-responses-generic>> -- on success, `p_resp_object` is the new transaction handle.
+
+[float]
+===== The `SET TRANSACTION` statement
+
+Instead of using `op_transaction` to start a transaction, it is also possible to use the https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref50-transacs.html#fblangref50-transacs-settransac[`SET TRANSACTION`] statement.
+
+This statement needs to be executed with execute immediate (`op_execute_immediate`) without transaction.
+On success, the `p_resp_object` holds the transaction handle.
 
 [[wireprotocol-transactions-commit]]
 === Commit transaction
@@ -414,10 +573,10 @@ Commits an active or prepared transaction.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_commit`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Transaction handle
 
 [float]
@@ -433,10 +592,10 @@ Rolls back an active or prepared transaction.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_rollback`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Transaction handle
 
 [float]
@@ -452,16 +611,16 @@ Commits an active or prepared transaction, retaining the transaction context.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_commit_retaining`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Transaction handle
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>>.
+<<wireprotocol-responses-generic>>
 
 [[wireprotocol-transactions-rollbackretain]]
 === Rollback retaining
@@ -471,10 +630,10 @@ Rolls back an active or prepared transaction, retaining the transaction context.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_rollback_retaining`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Transaction handle
 
 [float]
@@ -494,10 +653,10 @@ After prepare, a transaction is _in-limbo_ until committed or rolled back.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_prepare`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Transaction handle
 
 [float]
@@ -514,13 +673,13 @@ This information is stored in `RDB$TRANSACTIONS` and can be used for recovery pu
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_prepare2`)
 
-`Int32`::
+`Int32` -- `p_prep_transaction`::
 Transaction handle
 
-`Buffer`::
+`Buffer` -- `p_prep_data`::
 Recovery information
 
 [float]
@@ -531,27 +690,42 @@ Recovery information
 [[wireprotocol-transactions-info]]
 === Transaction information request
 
+// TODO Write a common section for info requests and point to it
+
 This is similar to <<wireprotocol-databases-information>>.
 
 [float]
 ===== Client
 
-`Int32`::
-Operation code (`op_transaction_info`)
+`Int32` -- `p_operation`::
+Operation code (`op_info_transaction`)
 
-`Int32`::
-Database handle
+`Int32` -- `p_info_object`::
+Transaction handle
 
-`Int32`::
+`Int32` -- `p_info_incarnation`::
 Incarnation of object (`0`)
++
+TODO: Usage and meaning?
 
-`Buffer`::
+`Buffer` -- `p_info_items`::
 Requested information items
++
+Values of constants in Firebird's `inf_pub.h` starting with `isc_info_tra_` or `fbinfo_tra_`.
 
-`Int32`::
-Length of buffer available for receiving response (too small may lead to receiving truncated buffer).
+`Int32` -- `p_info_buffer_length`::
+Length of buffer available for receiving response
++
+Too small may lead to receiving a truncated buffer, which necessitates requesting information again with a larger size.
++
+The buffer in the response is sized to the actual length of the response (upto the declared available length), so specifying a larger than necessary size does not inflate the response on the wire.
 
-<<wireprotocol-responses-generic>> -- where _Data_ holds the requested information.
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
++
+A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
 [[wireprotocol-statements]]
 == Statements
@@ -564,21 +738,26 @@ Allocates a statement handle on the server.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_allocate_statement`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Database handle
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Object handle_ is the allocated statement handle.
+<<wireprotocol-responses-generic>> -- on success, `p_resp_object` is the allocated statement handle.
 
 [[wireprotocol-statements-allocate-v11]]
 ==== Deviations for protocol version 11
 
-An _allocate_ can only be sent together with a <<wireprotocol-statements-prepare>> operation.
+An `op_allocate_statement` can only be sent together with a <<wireprotocol-statements-prepare>> operation.
+
+[CAUTION]
+====
+This may not be entirely correct, and needs further verification.
+====
 
 [[wireprotocol-statements-free]]
 === Free
@@ -588,24 +767,31 @@ Frees resources held by the statement.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_free_statement`)
 
-`Int32`::
+`Int32` -- `p_sqlfree_statement`::
 Statement handle
 
-`Int32`:: {empty}
+`Int32` -- `p_sqlfree_option`:: {empty}
 +
 [%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
 |===
 |Option
 |Description
 
-|DSQL_close
+|DSQL_close -- `1`
 |Closes the cursor opened after statement execute.
 
-|DSQL_drop
+|DSQL_drop -- `2`
 |Releases the statement handle.
+
+|DSQL_unprepare -- `4`
+a|_Firebird 2.5 or higher_ +
+Close resources associated with statement handle, and unprepares the currently allocated statement text.
+The statement handle itself is retained.
++
+It is not necessary to unprepare before preparing a new statement on the same handle.
 |===
 
 [float]
@@ -616,7 +802,10 @@ Statement handle
 [[wireprotocol-statements-free-v11]]
 ==== Deviations for protocol version 11
 
-Request flushing and response processing must be deferred.
+Request flushing and response processing can be deferred for `ptype_batch_send` or higher.
+
+For `DSQL_drop` and `DSQL_unprepare`, we recommend flushing immediately so the server at least processes the request, which will prevent longer than necessary retention of metadata locks.
+The response processing can then still be deferred until receiving the response of another action.
 
 [[wireprotocol-statements-prepare]]
 === Prepare
@@ -624,22 +813,24 @@ Request flushing and response processing must be deferred.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_prepare_statement`)
 
-`Int32`::
+`Int32` -- `p_sqlst_transaction`::
 Transaction handle
 
-`Int32`::
+`Int32` -- `p_sqlst_statement`::
 Statement handle
 
-`Int32`::
-SQL dialect
+`Int32` -- `p_sqlst_SQL_dialect`::
+SQL dialect (`1` or `3`)
++
+This should generally match the connection dialect.
 
-`String`::
+`String` -- `p_sqlst_SQL_str`::
 Statement to be prepared
 
-`Buffer`::
+`Buffer` -- `p_sqlst_items`::
 Describe and describe bind information items
 +
 --
@@ -655,13 +846,17 @@ Describe and describe bind information items
 * `isc_info_sql_relation`
 --
 
-`Int32`::
+`Int32` -- `p_sqlst_buffer_length`::
 Target buffer length (`32768`)
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Data_ holds the statement description (matching the requested information items)
+<<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the statement description (matching the requested information items)
+
+For statements with a lot of columns and/or parameters, it may be necessary to handle truncation of the buffer by repeating the describe and/or describe bind information request using <<wireprotocol-statements-information>> and using `isc_info_sql_sqlda_start` to inform the server from which column or parameter to continue.
+
+For an example, see Jaybird's https://github.com/FirebirdSQL/jaybird/blob/c152a12d8dec10a3f7bf4013b4b39ad5dfed85b6/src/main/org/firebirdsql/gds/ng/StatementInfoProcessor.java#L71[`StatementInfoProcessor.handleTruncatedInfo(...)`].
 
 [[wireprotocol-statements-prepare-v11]]
 ==== Deviations for protocol version 11
@@ -676,7 +871,7 @@ Once a statement handle has been allocated, it can be reused by sending a _prepa
 [[wireprotocol-statements-describe]]
 === Describe
 
-Describe of output parameters of a query is done using the <<wireprotocol-statements-information,statement information request message>>
+Requesting a description of output parameters (columns) of a query is done using the <<wireprotocol-statements-information,statement information request message>>
 
 .Example of requested information items
 * `isc_info_sql_select`
@@ -688,6 +883,9 @@ Describe of output parameters of a query is done using the <<wireprotocol-statem
 * `isc_info_sql_scale`
 * `isc_info_sql_field`
 * `isc_info_sql_relation`
+
+The initial request can be done as part of <<wireprotocol-statements-prepare>>.
+The information can be requested together with <<wireprotocol-statements-describe-bind>>.
 
 [[wireprotocol-statements-describe-bind]]
 === Describe bind (input parameters)
@@ -705,13 +903,16 @@ Describe of input parameters of a query is done using the <<wireprotocol-stateme
 * `isc_info_sql_field`
 * `isc_info_sql_relation`
 
+The initial request can be done as part of <<wireprotocol-statements-prepare>>.
+The information can be requested together with <<wireprotocol-statements-describe>>.
+
 [[wireprotocol-statements-execute]]
 === Execute
 
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code
 +
 [%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
@@ -720,69 +921,91 @@ Operation code
 |Usage
 
 |op_execute
-|DDL and DML statements.
+|DDL and DML statements
 
 |op_execute2
-|Stored procedures.
+|Executable stored procedures, or singleton `RETURNING` (i.e. statements described as `isc_info_sql_stmt_exec_procedure`)
 |===
 
-`Int32`::
+`Int32` -- `p_sqldata_statement`::
 Statement handle
 
-`Int32`::
+`Int32` -- `p_sqldata_transaction`::
 Transaction handle
 
-If the statement has input parameters:
-
-`Buffer`::
+`Buffer` -- `p_sqldata_blr`::
 Parameters in BLR format
++
+If there are no parameters, send a zero-length buffer.
 
-`Int32`::
-Message number (0) ??
+`Int32` -- `p_sqldata_message_number`::
+Message number;
+unused, always use `0`
 
-`Int32`::
-Number of messages (1) ??
+`Int32` -- `p_sqldata_messages`::
+Number of messages -- `1` if there are parameters, `0` if there are no parameters
 
-`Buffer`::
+`Buffer` -- _no name_::
 Parameter values
++
+If `p_sqldata_messages` is `0`, this buffer must not be sent (not even as a zero-length buffer)
++
+TODO: Might not even be a buffer, verify.
 
-If not statement has no input parameters:
+If using `op_execute2` (the statement is a stored procedure and there are output parameters):
 
-`Buffer`::
-Empty (length only 0)
-
-`Int32`::
-Message number (0) ??
-
-`Int32`::
-Number of messages (0) ??
-
-If the statement is a stored procedure and there are output parameters:
-
-`Buffer`::
+`Buffer` -- `p_sqldata_out_blr`::
 Output parameters in BLR format
 
-`Int32`::
+`Int32` -- `p_sqldata_out_message_number`::
 Output message number (0) ??
+
+[float]
+====== Additions in protocol 16 and higher
+
+`UInt32` -- `p_sqldata_timeout`::
+Statement timeout value in milliseconds (`0` -- use connection-level statement timeout)
+
+[float]
+====== Additions in protocol 18 and higher
+
+`UInt32` -- `p_sqldata_cursor_flags`::
+Cursor flags
++
+--
+[horizontal]
+`CURSOR_TYPE_SCROLLABLE` -- `0x01`:: request scrollable cursor
+--
+
+[float]
+====== Additions in protocol 19 and higher
+
+`UInt32`-- `p_sqldata_inline_blob_size`::
+Maximum inline blob size
++
+A value of `0` disables inline blobs.
+The server may use a lower limit than requested.
+In the Firebird 5.0.3 and Firebird 6 implementation at the time of writing, the server has a maximum of 65535 bytes.
++
+TODO: Describe `op_inline_blob` somewhere
 
 [float]
 ===== Server
 
-`Int32`::
-Operation code
-
-If operation equals `op_sql_response`:
-
-<<wireprotocol-responses-sql>>
-
-if not:
+For `op_execute`:
 
 <<wireprotocol-responses-generic>>
+
+For `op_execute2`:
+
+Success response: <<wireprotocol-responses-sql>> followed by <<wireprotocol-responses-generic>>
+
+Failure response: only <<wireprotocol-responses-generic>>
 
 [[wireprotocol-statements-rowsaffected]]
 === Rows affected by query execution
 
-Obtain the rows affected by a query is done using the <<wireprotocol-statements-information,statement information request message>>
+Obtaining the rows affected by a query is done using the <<wireprotocol-statements-information,statement information request message>>
 
 .List of requested information items
 * `isc_info_sql_records`
@@ -793,34 +1016,34 @@ Obtain the rows affected by a query is done using the <<wireprotocol-statements-
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_fetch`)
 
-`Int32`::
+`Int32` -- `p_sqldata_statement`::
 Statement handle
 
-`Buffer`::
+`Buffer` -- `p_sqldata_blr`::
 Output parameters in BLR format
++
+Only needs to be sent on first fetch;
+subsequent fetches can send a zero-length buffer.
 
-`Int32`::
-Message number
+`Int32` -- `p_sqldata_message_number`::
+Message number (always `0`)
 
-`Int32`::
-Message count/Fetch size (`200`)
+`Int32` -- `p_sqldata_messages`::
+Message count/fetch size (e.g. `200`)
++
+The server may decide to return fewer rows than requested, even if the end-of-cursor wasn't reached yet.
 
 [float]
 ===== Server
 
-`Int32`::
-Operation code
+Success response: one or more <<wireprotocol-responses-fetch>>
 
-If operation equals `op_fetch_response`:
+Failure response: <<wireprotocol-responses-generic>> -- with an error in `p_resp_status_vector`
 
-<<wireprotocol-responses-fetch>>.
-
-If not:
-
-<<wireprotocol-responses-generic>>.
+It is possible to receive <<wireprotocol-responses-generic>> with an error in the status vector after one or more fetch responses.
 
 [[wireprotocol-statements-cursorname]]
 === Set cursor name
@@ -828,22 +1051,19 @@ If not:
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_set_cursor`)
 
-`Int32`::
+`Int32` -- `p_sqlcur_statement`::
 Statement handle
 
-`String`::
-Cursor name (null terminated)
+`String` -- `p_sqlcur_cursor_name`::
+Cursor name (null terminated!)
 
-`Int32`::
-Cursor type (0).
+`Int32` -- `p_sqlcur_type`::
+Cursor type
 +
-[IMPORTANT]
-====
-Reserved for future use
-====
+Reserved for future use, always use `0`.
 
 [float]
 ===== Server
@@ -853,34 +1073,46 @@ Reserved for future use
 [[wireprotocol-statements-information]]
 === Information request
 
+// TODO Write a common section for info requests and point to it
+
 This is similar to <<wireprotocol-databases-information>>.
 
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_info_sql`)
 
-`Int32`::
+`Int32` -- `p_info_object`::
 Statement handle
 
-`Int32`::
+`Int32` -- `p_info_incarnation`::
 Incarnation of object (`0`)
++
+TODO: Usage and meaning?
 
-`Buffer`::
+`Buffer` -- `p_info_items`::
 Requested information items
++
+Values of constants in Firebird's `inf_pub.h` starting with `isc_info_sql_`.
 
-`Int32`::
-Requested information items buffer length
+`Int32` -- `p_info_buffer_length`::
+Length of buffer available for receiving response
++
+Too small may lead to receiving a truncated buffer, which necessitates requesting information again with a larger size.
++
+The buffer in the response is sized to the actual length of the response (upto the declared available length), so specifying a larger than necessary size does not inflate the response on the wire.
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Data_ holds the requested information.
+<<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
++
+A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
 [IMPORTANT]
 ====
-Information about how to parse the information buffer sent by the Firebird server can be found in the Interbase 6.0 documentation set
+Information about how to parse the information buffer sent by the Firebird server can be found in the InterBase 6.0 documentation set
 ====
 
 [[wireprotocol-blobs]]
@@ -892,7 +1124,7 @@ Information about how to parse the information buffer sent by the Firebird serve
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code
 +
 [%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
@@ -913,23 +1145,33 @@ Operation code
 |Opens an existing blob with a blob parameter buffer
 |===
 
-`Buffer`::
-Blob parameter buffer (_not allowed with `op_create_blob` and `op_open_blob`, required with `op_create_blob2` and ``op_open_blob2``_)
+`Buffer` -- `p_blob_bpb`::
+Blob parameter buffer
++
+Only sent for `op_create_blob2` and `op_open_blob2`
 
-`Int32`::
+`Int32` -- `p_blob_transaction`::
 Transaction handle
 
-`Int64`::
+`Int64` -- `p_blob_id`::
 Blob ID
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where:
-
+<<wireprotocol-responses-generic>> -- on success
++
 [loweralpha]
-. _Object handle_ is the blob handle
-. _Object id_ is the blob id (_only for `op_create_blob` / `op_create_blob2`, garbage for `op_open_blob` / ``op_open_blob2``_)
+. `p_resp_object` is the blob handle
+. `p_resp_blob_id` is the blob id (for `op_create_blob` / `op_create_blob2` only)
+
+[[wireprotocol-blobs-create-v11]]
+==== Deviations for protocol version 11
+
+Request flushing and response processing can be deferred.
+
+If `ptype_batch_send` or higher is used, other blob operations can be sent immediately after the open/create.
+They can use the _invalid object_ handle 0xFFFF instead of the -- not yet received -- blob handle.
 
 [[wireprotocol-blobs-getsegment]]
 === Get segment
@@ -937,22 +1179,34 @@ Blob ID
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_get_segment`)
 
-`Int32`::
+`Int32` -- `p_sgmt_blob`::
 Blob handle
 
-`Int32`::
-Segment length (__max length = 32768__)
+`Int32` -- `p_sgmt_length`::
+Segment length
++
+Maximum length is 32767 for Firebird 2.5 and older, 65535 for Firebird 3.0 and higher.
 
-`Int32`::
-Data segment (`0`)
+`Buffer` -- `p_sgmt_segment`::
+Always a zero-length buffer
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Data_ is the blob segment.
+<<wireprotocol-responses-generic>> -- on success,  `p_resp_data` is the blob segment
+
+The response buffer in `p_resp_data` contains zero or more segments.
+Each segment starts with 2-bytes for the length (little-endian), followed by that length of data.
+
+[[wireprotocol-blobs-getsegment-v11]]
+==== Deviations for protocol version 11
+
+Request flushing and response processing can be deferred.
+
+If `ptype_batch_send` or higher is used, `op_get_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
 
 [[wireprotocol-blobs-putsegment]]
 === Put segment
@@ -960,42 +1214,108 @@ Data segment (`0`)
 [float]
 ===== Client
 
-`Int32`::
-Operation code (`op_batch_segments`)
+`Int32` -- `p_operation`::
+Operation code (`op_put_segment`)
 
-`Int32`::
+`Int32` -- `p_sgmt_blob`::
 Blob handle
 
-`Buffer`::
-Blob Segments
+`Int32` -- `p_sgmt_length`::
+Length of segment data (effectively ignored; possibly only in recent Firebird versions)
+
+`Buffer` -- `p_sgmt_segment`::
+Blob segment
++
+If the blob was created as a segmented blob, the maximum length is 32765 (Firebird 2.5 and older) or 65533 (Firebird 3.0 and higher).
++
+For stream blobs, there is no length limitation other than the maximum buffer length (TODO: verify, might only be for recent versions).
 
 [float]
 ===== Server
 
 <<wireprotocol-responses-generic>>
 
-[[wireprotocol-blobs-seek]]
-=== Seek
+[[wireprotocol-blobs-putsegment-v11]]
+==== Deviations for protocol version 11
+
+Request flushing and response processing can be deferred.
+
+If `ptype_batch_send` or higher is used, `op_put_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+
+[[wireprotocol-blobs-batchsegment]]
+=== Batch segments
+
+Similar to <<wireprotocol-blobs-putsegment>>, but allows to send multiple segments.
 
 [float]
 ===== Client
 
-`Int32`::
-Operation code (`op_seek_blob`)
+`Int32` -- `p_operation`::
+Operation code (`op_batch_segments`)
 
-`Int32`::
+`Int32` -- `p_sgmt_blob`::
 Blob handle
 
-`Int32`::
-Seek mode (`0`)
+`Int32` -- `p_sgmt_length`::
+Length of segment data (effectively ignored; possibly only in recent Firebird versions)
 
-`Int32`::
+`Buffer` -- `p_sgmt_segment`::
+Blob segments
++
+The buffer can contain one or more segments, which are prefixed with 2 bytes of length (little endian), followed by the data.
+The maximum length per segment is 32765 (Firebird 2.5 and older) or 65533 (Firebird 3.0 and higher).
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-blobs-batchsegment-v11]]
+==== Deviations for protocol version 11
+
+Request flushing and response processing can be deferred.
+
+If `ptype_batch_send` or higher is used, `op_batch_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+
+[[wireprotocol-blobs-seek]]
+=== Seek
+
+Seek is only supported for blobs that were created as a stream blob.
+Seek is not fully supported for blobs longer than 2 GiB (4 GiB?).
+
+[float]
+===== Client
+
+`Int32` -- `p_operation`::
+Operation code (`op_seek_blob`)
+
+`Int32` -- `p_seek_blob`::
+Blob handle
+
+`Int32` -- `p_seek_mode`::
+Seek mode
++
+--
+[horizontal]
+`blb_seek_from_head` -- `0`:: absolute seek from start of blob
+`blb_seek_relative` -- `1`:: relative seek from current position
+`blb_seek_from_tail` -- `2`:: absolute seek from end of blob
+--
+
+`Int32` -- `p_seek_offset`::
 Offset
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Object handle_ is the current position.
+<<wireprotocol-responses-generic>> -- on success, `p_resp_object` is the current position.
+
+[[wireprotocol-blobs-seek-v11]]
+==== Deviations for protocol version 11
+
+Request flushing and response processing can be deferred.
+
+If `ptype_batch_send` or higher is used, `op_seek_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
 
 [[wireprotocol-blobs-cancel]]
 === Cancel
@@ -1006,21 +1326,24 @@ If this was a newly created blob, the blob is disposed.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_cancel_blob`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Blob handle
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- no useful information in response
+<<wireprotocol-responses-generic>>
 
 [[wireprotocol-blobs-cancel-v11]]
 ==== Deviations for protocol version 11
 
-Request flushing and response processing must be deferred.
+Request flushing and response processing can be deferred.
+
+If `ptype_batch_send` or higher is used, `op_cancel_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+Though doing this probably makes little sense for `op_cancel_blob`.
 
 [[wireprotocol-blobs-close]]
 === Close
@@ -1030,21 +1353,23 @@ Closes and invalidates the blob handle.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_close_blob`)
 
-`Int32`::
+`Int32` -- `p_rlse_object`::
 Blob handle
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- no useful information in response
+<<wireprotocol-responses-generic>>
 
 [[wireprotocol-blobs-close-v11]]
 ==== Deviations for protocol version 11
 
-Request flushing and response processing must be deferred.
+Request flushing and response processing can be deferred.
+
+If `ptype_batch_send` or higher is used, `op_close_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
 
 [[wireprotocol-arrays]]
 == Arrays
@@ -1055,31 +1380,33 @@ Request flushing and response processing must be deferred.
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_get_slice`)
 
-`Int32`::
+`Int32` -- `p_slc_transaction`::
 Transaction handle
 
-`Int64`::
+`Int64` -- `p_slc_id`::
 Array handle
 
-`Int32`::
+`Int32` -- `p_slc_length`::
 Slice length
 
-`Buffer`::
+`Buffer` -- `p_slc_sdl`::
 Slice descriptor (SDL)
 
-`String`::
-Slice parameters (Always an empty string)
+`Buffer` -- `p_slc_parameters`::
+Slice parameters (always empty?, needs verification)
 
-`Buffer`::
-Slice (Always empty)
+`Buffer` -- `p_slc_slice`::
+Slice data (always empty)
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-slice>>
+Success response: <<wireprotocol-responses-slice>>
+
+Failure response: <<wireprotocol-responses-generic>>
 
 [[wireprotocol-arrays-putslice]]
 === Put slice
@@ -1087,39 +1414,36 @@ Slice (Always empty)
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_put_slice`)
 
-`Int32`::
+`Int32` -- `p_slc_transaction`::
 transaction handle
 
-`Int64`::
-Array handle (`0`)
+`Int64` -- `p_slc_id`::
+Array handle
 
-`Int32`::
+`Int32` -- `p_slc_length`::
 Slice length
 
-`Buffer`::
+`Buffer` -- `p_slc_sdl`::
 Slice descriptor (SDL)
 
-`String`::
-Slice parameters (Always an empty string)
+`Buffer` -- `p_slc_parameters`::
+Slice parameters (always empty?, needs verification)
 
-`Int32`::
-Slice length
-
-`Buffer`::
+`Buffer`` -- `p_slc_slice`::
 Slice data
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Object id_ is the array handle.
+<<wireprotocol-responses-generic>> -- on success, `p_resp_blob_id` is the array handle.
 
 [[wireprotocol-batches]]
 == Batches
 
-Statement batches were introduced in protocol v16 (Firebird 4.0).
+Statement batches were introduced in protocol 16 (Firebird 4.0).
 
 [[wireprotocol-batches-create]]
 === Create
@@ -1127,20 +1451,22 @@ Statement batches were introduced in protocol v16 (Firebird 4.0).
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_create`)
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
-`Buffer`::
+`Buffer` -- `p_batch_blr`::
 BLR format of batch messages
 
-`Int32`::
+`UInt32` -- `p_batch_msglen`::
 Message length
 
-`Buffer`::
+`Buffer` -- `p_batch_pb`::
 Batch parameters buffer
+
+If `ptype_lazy` or higher, flushing and response processing can be deferred.
 
 [float]
 ===== Server
@@ -1153,16 +1479,16 @@ Batch parameters buffer
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_msg`)
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
-`Int32`::
+`UInt32` -- `p_batch_messages`::
 Number of messages
 
-`Buffer`::
+`Buffer` -- `p_batch_data`::
 Batched values (formatted message repeats 'Number of messages' times)
 
 [float]
@@ -1176,55 +1502,61 @@ Batched values (formatted message repeats 'Number of messages' times)
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_exec`)
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
-`Int32`::
+`Int32` -- `p_batch_transaction`::
 Transaction handle
 
 [float]
 ===== Server
 
-`Int32`::
+Success response:
+
+`Int32` -- `p_operation`::
 Operation code
 
 If operation equals `op_batch_cs`:
 
 *Batch completion state*
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
-`Int32`::
+`UInt32` -- `p_batch_reccount`::
 Total records count
 
-`Int32`::
+`UInt32` -- `p_batch_updates`::
 Number of update counters (records updated per each message)
 
-`Int32`::
+`UInt32` -- `p_batch_vectors`::
 Number of per-message error blocks (message number in batch and status vector of an error processing it)
 
-`Int32`::
+`UInt32` -- `p_batch_errors`::
 Number of simplified per-message error blocks (message number in batch without status vector)
 
-`Buffer`::
-Update counters (records updated per each message), array of `Int32`, length is equal to "Number of update counters" field in packet.
+`Byte[]`::
+Update counters (records updated per each message), array of `Int32`, length is equal to `p_batch_updates`
++
+Length is `p_batch_updates * 4` bytes long.
 
-`Buffer`::
+`Byte[]`::
 Detailed info about errors in batch (for each error server sends number of message (`Int32`) and status vector in standard way (exactly like in op_response).
-Number of such pairs is equal to "Number of per-message error blocks" field in packet.
+Number of such pairs is equal to `p_batch_vectors`.
++
+Length can only be determined by correctly parsing the `<Int32><statusvector>` pairs.
 
-`Buffer`::
+`Byte[]`::
 Simplified error blocks (for each error server sends number of message (`Int32`) w/o status vector).
 Used when too many errors took place.
-Number of elements is equal to "Number of simplified per-message error blocks" field in packet.
+Number of elements is equal to `p_batch_errors`.
++
+Length is `p_batch_errors * 4` bytes.
 
-Otherwise:
-
-<<wireprotocol-responses-generic>>
+Failure response: <<wireprotocol-responses-generic>>
 
 [[wireprotocol-batches-release]]
 === Release batch
@@ -1232,10 +1564,10 @@ Otherwise:
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_rls`)
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
 [float]
@@ -1249,10 +1581,10 @@ Statement handle
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_cancel`)
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
 [float]
@@ -1263,12 +1595,14 @@ Statement handle
 [[wireprotocol-batches-sync]]
 === Sync batch
 
-Introduced in v17 (Firebird 4.0.2).
+Introduced in protocol 17 (Firebird 4.0.2).
+
+Used to force the server to acknowledge previously sent lazy intermediate operations (e.g. `op_batch_msg`, `op_batch_regblob`, `op_batch_blob_stream` and possibly others).
 
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_sync`)
 
 [float]
@@ -1282,14 +1616,14 @@ Operation code (`op_batch_sync`)
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_set_bpb`)
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
-`Buffer`::
-Default BLOB parameters buffer
+`Buffer` -- `p_batch_blob_bpb`::
+Default BLOB parameter buffer
 
 [float]
 ===== Server
@@ -1302,17 +1636,17 @@ Default BLOB parameters buffer
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_regblob`)
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
-`Int64`::
+`Int64` -- `p_batch_exist_id`::
 Existing BLOB ID
 
-`Int64`::
-Batch temporal BLOB ID
+`Int64` -- `p_batch_blob_id`::
+Batch temporary BLOB ID
 
 [float]
 ===== Server
@@ -1322,41 +1656,52 @@ Batch temporal BLOB ID
 [[wireprotocol-batches-blobstream]]
 === Stream of BLOB data
 
+[CAUTION]
+====
+This description needs further verification and possibly correction.
+For example, it seems to mix up Buffer and Byte[].
+We're also not able to match some fields to the implementation.
+For example, the repeated "Record length" seems to be absent, or may actually refer to the `p_batch_blob_data` buffer length.
+====
+
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_batch_blob_stream`)
 
-`Int32`::
+`Int32` -- `p_batch_statement`::
 Statement handle
 
-`Buffer`::
+`Buffer[]` -- `p_batch_blob_data`::
 BLOB stream
 +
-This stream is a sequence of blob records. Each blob records contains:
-
-`Int32`::
+This stream is a sequence of blob records.
+Each blob records contains:
++
+--
+`UInt32`::
 Record length
 +
 The following three fields are called *BLOB header*
 
 `Int64`::
-Batch temporal BLOB ID
+Batch temporary BLOB ID
 
-`Int32`::
+`UInt32`::
 BLOB size
 
-`Int32`::
+`UInt32`::
 BLOB parameters buffer size
 
 `Buffer`::
 BLOB parameters buffer
 
 `Buffer`::
-BLOB data (length - BLOB size bytes)
+BLOB data (length - BLOB size bytes) (_what does this mean?_)
 +
 BLOB headers and records in a stream need not match, i.e. one record may contain many BLOBs and BLOB may stretch from one record to next.
+--
 
 [float]
 ===== Server
@@ -1371,29 +1716,37 @@ BLOB headers and records in a stream need not match, i.e. one record may contain
 [[wireprotocol-services-attach]]
 === Attach
 
+// TODO Write a common section for attach/create database and attach service and point to it
+
+This is essentially the same as <<wireprotocol-databases-attach-attachment,database attach>>, but with `op_service_attach`.
+
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_service_attach`)
 
-`Int32`::
-Database object ID (`0`)
+`Int32` -- `p_atch_database`::
+Database object id;
+currently always `0`
 
-`String`::
+`String` -- `p_atch_file`::
 Service name
 +
-For local connections: `service_mgr`
+Current Firebird versions only support one service: `service_mgr`.
+Since Firebird 3.0, this can also be an empty string (empty buffer) with the same meaning.
 +
-For remote connections: `hostname:service_mgr`
+The encoding is unspecified, but given the only valid name is either ASCII or empty, use of ASCII or an ASCII-compatible encoding (e.g. UTF-8 or extended ANSI code pages) should always work.
 
-`Buffer`::
+`Buffer` -- `p_atch_dpb`::
 Service parameter buffer
++
+Similar to the database parameter buffer of database attach/create, but using `isc_spb_` tags instead of `isc_dpb_`.
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Object handle_ is the services manager attachment handle.
+<<wireprotocol-responses-generic>>
 
 [[wireprotocol-services-detach]]
 === Detach
@@ -1401,11 +1754,11 @@ Service parameter buffer
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_service_detach`)
 
-`Int32`::
-Services manager attachment handle
+`Int32` -- `p_rlse_object`::
+Service manager attachment handle (always `0`)
 
 [float]
 ===== Server
@@ -1418,17 +1771,19 @@ Services manager attachment handle
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_service_start`)
 
-`Int32`::
-Services manager attachment handle
+`Int32` -- `p_info_object`::
+Service manager attachment handle (always `0`)
 
-`Int32`::
+`Int32` -- `p_info_incarnation`::
 Incarnation of object (`0`)
++
+TODO: Usage and meaning?
 
-`Buffer`::
-Services parameter buffer
+`Buffer` -- `p_info_items`::
+Service parameter buffer
 
 [float]
 ===== Server
@@ -1441,28 +1796,30 @@ Services parameter buffer
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_service_info`)
 
-`Int32`::
-Services manager attachment handle
+`Int32` -- `p_info_object`::
+Service manager attachment handle
 
-`Int32`::
+`Int32` -- `p_info_incarnation`::
 Incarnation of object (`0`)
++
+TODO: Usage and meaning?
 
-`Buffer`::
-Services parameter buffer
+`Buffer` -- `p_info_items`::
+Service parameter buffer
 
-`Buffer`::
+`Buffer` -- `p_info_recv_items`::
 Requested information items
 
-`Int32`::
+`Int32` -- `p_info_buffer_length`::
 Requested information items buffer length
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Data_ contains the requested information.
+<<wireprotocol-responses-generic>> -- on success, `p_resp_data` contains the requested information.
 
 [[wireprotocol-events]]
 == Events
@@ -1473,63 +1830,43 @@ Requested information items buffer length
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_connect_request`)
 
-`Int32`::
-Connection type (`P_REQ_async`)
+`Int32` -- `p_req_type`::
+Unused, but always use `P_REQ_async` (`1`) for backwards compatibility
 
-`Int32`::
-Partner identification (`0`)
+`Int32` -- `p_req_object`::
+Unused, always use `0`
+
+`Int32` -- `p_req_partner`::
+Unused, always use `0`
 
 [float]
 ===== Server
 
-`Int32`::
-Attachment handle
+<<wireprotocol-responses-generic>> -- with on success:
 
+`p_resp_data`::
+Aux connection information
++
+[IMPORTANT]
+====
+This is part of the `sockaddr_in` structure.
+
+It is not in XDR format
+====
++
+--
 `Int16`::
-Port number
-+
-[IMPORTANT]
-====
-This is part of the `sockaddr_in` structure.
-
-It is not in XDR format
-====
-
+Socket family (can be ignored)
 `Int16`::
-Socket family
-+
-[IMPORTANT]
-====
-This is part of the `sockaddr_in` structure.
+Aux connection port
+Remaining bytes::
+To be ignored: always use the hostname or IP address of the original connection.
+--
 
-It is not in XDR format
-====
-
-`Byte[4]`::
-IP Address
-[IMPORTANT]
-====
-This is part of the `sockaddr_in` structure.
-
-It is not in XDR format
-====
-
-`Byte[8]`::
-Zeroes
-+
-[IMPORTANT]
-====
-This is part of the `sockaddr_in` structure.
-
-It is not in XDR format
-====
-
-`Byte[4]`::
-Garbage
-
+After a successful response, the client needs to create a connection to the specified port.
 
 [[wireprotocol-events-que-events]]
 === Queue events
@@ -1537,28 +1874,30 @@ Garbage
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_que_events`)
 
-`Int32`::
+`Int32` -- `p_event_database`::
 Database handle
 
-`Buffer`::
+`Buffer` -- `p_event_items`::
 Events parameter buffer
 
-`Int32`::
-Ast function address
+`Int32` -- `p_event_ast`::
+Unused, always set `0`
 
-`Int32`::
-Ast parameters function address
+`Int32` -- `p_event_arg`::
+Unused, always set `0`
 
-`Int32`::
+`Int32` -- `p_event_rid`::
 Local event id
 
 [float]
 ===== Server
 
-<<wireprotocol-responses-generic>> -- where _Object handle_ holds the remote event id.
+<<wireprotocol-responses-generic>> -- on success, `p_resp_object` holds the remote event id.
+
+// TODO Document receiving events
 
 [[wireprotocol-events-cancel-events]]
 === Cancel events
@@ -1566,13 +1905,13 @@ Local event id
 [float]
 ===== Client
 
-`Int32`::
+`Int32` -- `p_operation`::
 Operation code (`op_cancel_events`)
 
-`Int32`::
-Database handle
+`Int32` -- `p_event_database`::
+Database handle (always `0`)
 
-`Int32`::
+`Int32` -- `p_event_rid`::
 Local event id
 
 [float]
@@ -1603,29 +1942,46 @@ The Firebird wire protocol uses XDR for exchange messages between client and ser
 
 `Int32`::
 Integer 32-bits
++
+In some cases -- e.g. object handles, and _some_ lengths -- this is actually a 16-bit short encoded as a 32-bit int with the high bits zero.
+
+`UInt32`::
+Unsigned integer 32-bits
 
 `Int64`::
 Integer 64-bits
-
-`Buffer`:: {empty}
 +
-[%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
-|===
-|Type
-|Description
+Alternatively, especially for blob and arrays ids, can be interpreted as two `Int32`, a.k.a. a "`quad`".
+Interpretation as a 64-bit integer -- even for blob and array ids -- is generally simpler, and should not make a difference.
 
-|Int32
-|Length
+`Buffer`::
+Composed of
++
+--
+`Int32`::
+Length of buffer data *without* padding
 
-|Byte[]
-|Buffer data
-|===
+`Byte[]`::
+Buffer data
+
+`Byte[]`::
+Padding of 0 to 3 bytes to align the message to a multiple of 4 (e.g. calculated as `(4 - length) & 3)`).
++
+That is, for some `N >= 0`, when the buffer length is:
++
+* `N * 4` bytes -> no padding
+* `N * 4 + 1` bytes -> 3 bytes padding
+* `N * 4 + 2` bytes -> 2 bytes padding
+* `N * 4 + 3` bytes -> 1 byte padding
+--
 
 `Byte[]`::
 An array of bytes
++
+Length follows from another field in the message, from correct parsing of the value, or from other specifics of the message.
 
 `String`::
-A text string (_Read/Written as a buffer_)
+A text string, read or written as a Buffer, encoded in the connection character set or some message or context specific character set
 
 :sectnums:
 
@@ -1720,6 +2076,18 @@ a|
 |26 Dec 2021
 |AP
 |Document batch execution
+
+|0.16
+|13 Apr 2025
+|MR
+a|* Added Firebird struct field names to message descriptions for reference
+* Updated, corrected and expanded field descriptions
+* Documented `op_put_segment`
+* Added missing field in `p_sgmt_length` in `op_batch_segments`
+* Documented protocol 11 batching of operations for blobs
+* Documented protocol 16 timeout (`p_sqldata_timeout`) for `op_execute`/`op_execute2`
+* Documented protocol 18 cursor flags (`p_sqldata_cursor_flags`) for `op_execute`/`op_execute2`
+* Documented protocol 19 inline blob size (`p_sqldata_inline_blob_size`) for `op_execute`/`op_execute2` (but not yet `op_inline_blob`!)
 |===
 
 :sectnums:
