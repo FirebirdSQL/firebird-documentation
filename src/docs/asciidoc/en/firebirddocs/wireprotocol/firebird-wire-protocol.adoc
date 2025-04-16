@@ -26,8 +26,8 @@ This document describes the Firebird wire protocol.
 Most of the information was obtained by studying the Firebird source code and implementing the wire protocol in the {net-provider-url}[Firebird .NET provider] and {jaybird-url}[Jaybird (Firebird JDBC driver)].
 
 The protocol is described in the form of the message sent by the client and received from the server.
-The described protocol is Firebird/Interbase protocol version 10.
-Earlier (Interbase) versions of the protocol are not in scope for this document.
+The described protocol is Firebird/InterBase protocol version 10.
+Earlier (InterBase) versions of the protocol are not in scope for this document.
 Changes in later protocol versions are described in notes below the description of the relevant version 10 message (currently higher versions are only partially described).
 
 This document is not complete.
@@ -40,6 +40,39 @@ Versions 11 and higher of the wire protocol explicitly support (or even require)
 
 In the protocol descriptions below, we include the names of the fields of the structs used in the Firebird sources;
 this can make it easier to search for how it's used in Firebird itself.
+
+[#wireprotocol-versions]
+== Protocol versions
+
+Below is a high-level overview of the changes per protocol versions.
+
+[#wireprotocol-versions-10]
+=== Protocol 10
+
+The "`baseline`" protocol of this document.
+It was introduced in InterBase 6.0, and available in Firebird 1.0 and higher.
+
+[#wireprotocol-versions-11]
+=== Protocol 11
+
+Protocol 11 was introduced in Firebird 2.1, and introduces support for batching of messages, and lazy responses.
+
+Specifically, it allows you to batch a message creating an object (e.g. a statement or blob), with subsequent operations on that object (e.g. information request, statement prepare, blob get, etc.) by using the _invalid object_ handle (`0xFFFF`) instead of the actual handle.
+This reduces latency, as you don't have to wait for the server response to the create operation -- containing the actual handle -- before you can use the object.
+
+In some cases, with `ptype_lazy_send`, the server will defer the response to an operation until a subsequent operation is performed.
+For example, the response to statement allocation (`op_allocate`) is withheld, in the expectation that a prepare (`op_prepare`) follows immediately.
+
+Similarly, freeing a statement (`op_free_statement`) will not send its response immediately.
+This means that processing the response to a free can only be done later, after sending another operation, and before processing the response to that other operation.
+
+[CAUTION]
+====
+The _invalid object_ handle refers to the latest object created.
+So, while you can batch multiple create operations with use of those objects in a single send, you cannot interleave operations on different objects.
+
+That is, "`__create object1, use object1, create object2, use object2__`" will work, but "`__create object1, create object2, use object1, use object2__`" will not work or result in unwanted effects, as after _create object2_ handle `0xFFFF` refers to _object2_, not _object1_.
+====
 
 [[wireprotocol-responses]]
 == Responses
@@ -154,6 +187,8 @@ Firebird may return fewer rows than requested in <<wireprotocol-statements-fetch
 
 [[wireprotocol-responses-slice]]
 === Slice response
+
+// TODO Move to get slice description?
 
 Success response to <<wireprotocol-arrays-getslice>>.
 
@@ -594,6 +629,15 @@ Instead of using `op_transaction` to start a transaction, it is also possible to
 This statement needs to be executed with execute immediate (`op_execute_immediate`) without transaction.
 On success, the `p_resp_object` holds the transaction handle.
 
+[#wireprotocol-transactions-start-v11]
+==== Deviations for protocol version 11
+
+Request flushing and response processing can be deferred.
+
+If `ptype_batch_send` or higher is used, other transaction operations can be sent immediately after starting the transaction.
+They can use the _invalid object_ handle (`0xFFFF`) instead of the -- not yet received -- transaction handle.
+This probably only makes sense for <<wireprotocol-transactions-info>>.
+
 [[wireprotocol-transactions-commit]]
 === Commit transaction
 
@@ -781,12 +825,10 @@ Database handle
 [[wireprotocol-statements-allocate-v11]]
 ==== Deviations for protocol version 11
 
-An `op_allocate_statement` can only be sent together with a <<wireprotocol-statements-prepare>> operation.
+In protocol 11 and higher with `ptype_lazy_send`, the response to `op_allocate_statement` is deferred;
+it requires another operation on the connection before the response is sent.
 
-[CAUTION]
-====
-This may not be entirely correct, and needs further verification.
-====
+In general, this means the _allocate_ operation should be sent together with a <<wireprotocol-statements-prepare,_prepare_>> operation using the _invalid object_ handle (`0xFFFF`).
 
 [[wireprotocol-statements-free]]
 === Free
@@ -831,10 +873,11 @@ It is not necessary to unprepare before preparing a new statement on the same ha
 [[wireprotocol-statements-free-v11]]
 ==== Deviations for protocol version 11
 
-Request flushing and response processing can be deferred for `ptype_batch_send` or higher.
+Request flushing can be deferred for `ptype_batch_send` or higher.
+For `ptype_lazy_send`, the response to `op_free_statement` is deferred;
+it requires another operation on the connection before the response is sent.
 
 For `DSQL_drop` and `DSQL_unprepare`, we recommend flushing immediately so the server at least processes the request, which will prevent longer than necessary retention of metadata locks.
-The response processing can then still be deferred until receiving the response of another action.
 
 [[wireprotocol-statements-prepare]]
 === Prepare
@@ -1200,7 +1243,7 @@ Blob ID
 Request flushing and response processing can be deferred.
 
 If `ptype_batch_send` or higher is used, other blob operations can be sent immediately after the open/create.
-They can use the _invalid object_ handle 0xFFFF instead of the -- not yet received -- blob handle.
+They can use the _invalid object_ handle (`0xFFFF`) instead of the -- not yet received -- blob handle.
 
 [[wireprotocol-blobs-getsegment]]
 === Get segment
@@ -1235,7 +1278,7 @@ Each segment starts with 2-bytes for the length (little-endian), followed by tha
 
 Request flushing and response processing can be deferred.
 
-If `ptype_batch_send` or higher is used, `op_get_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+If `ptype_batch_send` or higher is used, `op_get_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle (`0xFFFF`).
 
 [[wireprotocol-blobs-putsegment]]
 === Put segment
@@ -1269,7 +1312,7 @@ For stream blobs, there is no length limitation other than the maximum buffer le
 
 Request flushing and response processing can be deferred.
 
-If `ptype_batch_send` or higher is used, `op_put_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+If `ptype_batch_send` or higher is used, `op_put_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle (`0xFFFF`).
 
 [[wireprotocol-blobs-batchsegment]]
 === Batch segments
@@ -1304,7 +1347,7 @@ The maximum length per segment is 32765 (Firebird 2.5 and older) or 65533 (Fireb
 
 Request flushing and response processing can be deferred.
 
-If `ptype_batch_send` or higher is used, `op_batch_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+If `ptype_batch_send` or higher is used, `op_batch_segment` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle (`0xFFFF`).
 
 [[wireprotocol-blobs-seek]]
 === Seek
@@ -1344,7 +1387,7 @@ Offset
 
 Request flushing and response processing can be deferred.
 
-If `ptype_batch_send` or higher is used, `op_seek_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+If `ptype_batch_send` or higher is used, `op_seek_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle (`0xFFFF`).
 
 [[wireprotocol-blobs-cancel]]
 === Cancel
@@ -1371,7 +1414,7 @@ Blob handle
 
 Request flushing and response processing can be deferred.
 
-If `ptype_batch_send` or higher is used, `op_cancel_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+If `ptype_batch_send` or higher is used, `op_cancel_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle (`0xFFFF`).
 Though doing this probably makes little sense for `op_cancel_blob`.
 
 [[wireprotocol-blobs-close]]
@@ -1398,7 +1441,7 @@ Blob handle
 
 Request flushing and response processing can be deferred.
 
-If `ptype_batch_send` or higher is used, `op_close_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle 0xFFFF.
+If `ptype_batch_send` or higher is used, `op_close_blob` can be batched with <<wireprotocol-blobs-create>> (and other blob operations) by using the _invalid object_ handle (`0xFFFF`).
 
 [[wireprotocol-arrays]]
 == Arrays
@@ -2092,6 +2135,7 @@ a|* Reordered revision history, so latest change is at the top
 * Documented `op_dummy`
 * Documented `op_event`
 * Documented `op_exit`/`op_disconnect` on aux connection
+* Improved protocol 11 descriptions
 
 |0.16
 |13 Apr 2025
