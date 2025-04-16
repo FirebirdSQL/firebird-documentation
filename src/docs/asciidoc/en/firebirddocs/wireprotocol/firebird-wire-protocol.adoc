@@ -74,6 +74,11 @@ So, while you can batch multiple create operations with use of those objects in 
 That is, "`__create object1, use object1, create object2, use object2__`" will work, but "`__create object1, create object2, use object1, use object2__`" will not work or result in unwanted effects, as after _create object2_ handle `0xFFFF` refers to _object2_, not _object1_.
 ====
 
+[#wireprotocol-versions-12]
+=== Protocol 12
+
+Protocol 12 was introduced in Firebird 2.5, and provides asynchronous <<wireprotocol-databases-cancel,cancellation>> support.
+
 [[wireprotocol-responses]]
 == Responses
 
@@ -579,7 +584,7 @@ The buffer in the response is sized to the actual length of the response (upto t
 ===== Server
 
 <<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
-+
+
 A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
 [[wireprotocol-databases-disconnect]]
@@ -591,9 +596,56 @@ A truncated response is considered a success, and can only be determined by pars
 `Int32` -- `p_operation`::
 Operation code (`op_disconnect`)
 
+[float]
+==== Server
+
 No response, remote socket close.
 
 Closing the connection (socket) without sending an `op_disconnect` will result in "`Connection reset by peer`" (error `10054` (Windows) or `104` (Linux)) in `firebird.log`.
+
+[#wireprotocol-databases-cancel]
+=== Cancellation
+
+Protocol 12 and higher.
+
+Cancels a running operation on the server.
+
+[NOTE#wireprotocol-note-cancel-abort]
+====
+Operation `fb_cancel_abort` -- `4` should not be sent to the server, but instead simply close the socket connection.
+====
+
+[float]
+==== Client
+
+`Int32` -- `p_operation`::
+Operation code (`op_cancel`)
+
+`Int32` -- `p_co_kind`::
+Cancellation kind, one of:
++
+--
+`fb_cancel_disable` -- `1`::
+disable cancellation until `fb_cancel_enable` is sent
+
+`fb_cancel_enable` -- `2`::
+enable cancellation if it was disabled previously
+
+`fb_cancel_raise` -- `3`::
+cancel current operation
+
+`fb_cancel_abort` -- `4`::
+See <<wireprotocol-note-cancel-abort,note>> above, this _kind_ should not be sent to the server.
+--
+
+As cancellation is generally performed asynchronously to be effective, the client implementation must take special care how the operation is sent.
+
+For example, if you use a lock for socket operations, this operation will need to ignore it (running the risk of interfering/corrupting another send operation), or you need to split your locks in a lock for writing, and a lock for reading, or have some other way of detecting that another thread is not currently sending data.
+
+[float]
+==== Server
+
+No formal response, cancellation is signalled as a <<wireprotocol-responses-generic>> with a failure for the cancelled operation.
 
 [[wireprotocol-transactions]]
 == Transactions
@@ -836,7 +888,7 @@ The buffer in the response is sized to the actual length of the response (upto t
 ===== Server
 
 <<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
-+
+
 A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
 [[wireprotocol-statements]]
@@ -1218,7 +1270,7 @@ The buffer in the response is sized to the actual length of the response (upto t
 ===== Server
 
 <<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
-+
+
 A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
 [IMPORTANT]
@@ -1373,7 +1425,7 @@ Length of segment data (effectively ignored; possibly only in recent Firebird ve
 `Buffer` -- `p_sgmt_segment`::
 Blob segments
 +
-The buffer can contain one or more segments, which are prefixed with 2 bytes of length (little endian), followed by the data.
+The buffer can contain one or more segments, which are prefixed with 2 bytes of length (little-endian), followed by the data.
 The maximum length per segment is 32765 (Firebird 2.5 and older) or 65533 (Firebird 3.0 and higher).
 
 [float]
@@ -2017,7 +2069,7 @@ Length of event name
 `Byte[]`::
 Event name
 
-`Int32` (little endian)::
+`Int32` (little-endian)::
 Current known event count (`0` when first queueing, for requeueing use the count of the previous notification)
 --
 
@@ -2083,7 +2135,7 @@ Length of event name
 `Byte[]`::
 Name of the event
 
-`Int32` (little endian)::
+`Int32` (little-endian)::
 Event count
 --
 
@@ -2176,6 +2228,7 @@ a|* Reordered revision history, so latest change is at the top
 * Documented `op_exit`/`op_disconnect` on aux connection
 * Documented `op_reconnect`
 * Improved protocol 11 descriptions
+* Documented protocol 12 (`op_cancel`)
 
 |0.16
 |13 Apr 2025
