@@ -46,6 +46,9 @@ this can make it easier to search for how it's used in Firebird itself.
 
 Below is a high-level overview of the changes per protocol versions.
 
+Be aware that protocol version greater than 10 are OR'ed with `0x8000` (`FB_PROTOCOL_FLAG`) to differentiate them from newer InterBase protocol versions.
+In message exchanges like <<wireprotocol-op-connect>>, this masked version is used, while for example the database info item `fb_info_protocol_version` reports the bare version.
+
 [#wireprotocol-versions-10]
 === Protocol 10
 
@@ -55,7 +58,8 @@ It was introduced in InterBase 6.0, and available in Firebird 1.0 and higher.
 [#wireprotocol-versions-11]
 === Protocol 11
 
-Protocol 11 was introduced in Firebird 2.1, and introduces support for batching of messages, and lazy responses.
+Protocol 11 was introduced in Firebird 2.1.
+It introduces support for batching of messages, and lazy -- or deferred -- responses.
 
 Specifically, it allows you to batch a message creating an object (e.g. a statement or blob), with subsequent operations on that object (e.g. information request, statement prepare, blob get, etc.) by using the _invalid object_ handle (`0xFFFF`) instead of the actual handle.
 This reduces latency, as you don't have to wait for the server response to the create operation -- containing the actual handle -- before you can use the object.
@@ -79,7 +83,20 @@ Protocol 11 also introduced "`trusted`" authentication, which is not (yet) docum
 [#wireprotocol-versions-12]
 === Protocol 12
 
-Protocol 12 was introduced in Firebird 2.5, and provides asynchronous <<wireprotocol-databases-cancel,cancellation>> support.
+Protocol 12 was introduced in Firebird 2.5.
+It provides asynchronous <<wireprotocol-databases-cancel,cancellation>> support.
+
+[#wireprotocol-versions-13]
+=== Protocol 13
+
+Protocol 13 was introduced in Firebird 3.0.
+It provides the following new features:
+
+* Authentication plugin support
+* Wire protocol encryption
+* Wire protocol compression
+* Database encryption key callback
+* Packed (``NULL``-aware) row data
 
 [[wireprotocol-responses]]
 == Responses
@@ -95,12 +112,12 @@ The meaning and content depend on the operation that initiated the response.
 `Int32` -- `p_operation`::
 Operation code
 
-If operation equals `op_response`:
+If operation equals `op_response` -- `9`:
 
 `Int32` -- `p_resp_object`::
 Object handle
 +
-Although 32-bit, valid handle values are always between 0 and 65535 (0xFFFF), with the "`normal`" range between 0 and 65000, where `0` either represents the connection itself, or means "`no value`".
+Although 32-bit in the protocol, valid handle values are always between 0 and 65535 (0xFFFF), with the "`normal`" range between 0 and 65000, where `0` either represents the connection itself, or means "`no value`".
 
 `Int64` -- `p_resp_blob_id`::
 Object ID
@@ -136,7 +153,7 @@ Success response to `op_execute2` (see <<wireprotocol-statements-execute>>) or `
 `Int32` -- `p_operation`::
 Operation code
 
-If operation equals `op_sql_response`:
+If operation equals `op_sql_response` -- `78`:
 
 `Int32` -- `p_sqldata_messages`::
 Count of rows following response (in practice, only `1` or `0`)
@@ -154,7 +171,7 @@ Success response to `op_fetch` (see <<wireprotocol-statements-fetch>>) and `op_f
 `Int32` -- `p_operation`::
 Operation code
 
-If operation equals `op_fetch_response`:
+If operation equals `op_fetch_response` -- `66`:
 
 `Int32` -- `p_sqldata_status`::
 Status
@@ -195,7 +212,7 @@ Firebird may return fewer rows than requested in <<wireprotocol-statements-fetch
 [[wireprotocol-responses-slice]]
 === Slice response
 
-// TODO Move to get slice description?
+// TODO Move to get slice description, or at least into the array chapter?
 
 Success response to <<wireprotocol-arrays-getslice>>.
 
@@ -209,7 +226,7 @@ Response to <<wireprotocol-arrays-getslice>>.
 `Int32` -- `p_operation`::
 Operation code
 
-If operation equals `op_slice`:
+If operation equals `op_slice` -- `60`:
 
 `Int32` -- `p_slr_length`::
 Slice length
@@ -230,7 +247,7 @@ Though Firebird normally uses `SO_KEEPALIVE` (which is transparent to the client
 The appropriate action is to read and ignore this response, and continue with the next response.
 
 `Int32` -- `p_operation`::
-Operation code (`op_dummy`)
+Operation code (`op_dummy` -- `71`)
 
 [[wireprotocol-responses-exit]]
 === Exit or disconnect command (aux connection)
@@ -244,39 +261,37 @@ It is similar to the <<wireprotocol-databases-disconnect,disconnect request>> fr
 Instructs the client to close the aux connection.
 
 `Int32` -- `p_operation`::
-Operation code (`op_exit` or `op_disconnect`)
+Operation code (`op_exit` -- `2` or `op_disconnect` -- `6`)
 
 After receiving this message, the client should close the aux connection.
 It's generally only sent just before the main connection is closed.
 
-[[wireprotocol-databases]]
-== Databases
+[#wireprotocol-connect]
+== Establishing connection
+
+This chapter describes how to connect to a database or service.
+Other operations on a database or service, or information specific to connecting to a database or service are documented in <<wireprotocol-databases>> and <<wireprotocol-services>>.
 
 [[wireprotocol-databases-attach]]
-=== Attach
+=== Attaching to a database or service
 
-Attachments to a database are done in two steps, first identification (connect) to the server, then attach to a database.
+In protocol 10 and 11, attachment to a database or service is done in two steps, first identification (connect) to the server, then attach to -- or creation of -- a database, or attach to a service.
+In protocol 13, this was changed to a more complex state machine to handle multiple authentication plugins, wire protocol encryption, and database encryption key callback.
 
-[[wireprotocol-databases-attach-identification]]
-==== Identification
+In deviation of the normal description in this documentation, and previous versions of this documentation, we will first cover the individual messages, and then explain the order and logic of message exchange.
 
-[CAUTION]
-====
-The identification and attach handshake changed significantly in protocol 13 (Firebird 3.0), and is not yet documented.
-====
+[#wireprotocol-op-connect]
+=== Identification (connect) [[wireprotocol-databases-attach-identification]]
 
-Performs the initial handshake and protocol selection.
-
-[float]
-===== Client
+Requests connection to the server and specifies which protocol versions the client is willing to accept.
 
 `Int32` -- `p_operation`::
-Operation code (`op_connect`)
+Operation code (`op_connect` -- `1`)
 
 `Int32` -- `p_cnct_operation`::
-Operation code;
-unused in practice, can always be `0`.
-Some implementations use `op_attach` (`19`) for historic(?) reasons.
+unused, always use `0`
++
+Some implementations use `op_attach` -- `19`/`op_service_attach` -- `82` for historic(?) reasons.
 
 `Int32` -- `p_cnct_cversion`::
 Connect version:
@@ -288,7 +303,7 @@ Connect version:
 --
 
 `Int32` -- `p_cnct_client`::
-Architecture type (e.g. `arch_generic` = `1`).
+Architecture type (e.g. `arch_generic` -- `1`).
 
 `String` -- `p_cnct_file`::
 Database path or alias
@@ -313,17 +328,23 @@ If a client sends more than 10 (Firebird 5.0 and older) or 11 (Firebird 6.0) pro
 ====
 
 `Int32` -- `p_cnct_version`::
-Protocol version (`PROTOCOL_VERSION10`)
+Protocol version (e.g. `PROTOCOL_VERSION10` -- `10`).
++
+[IMPORTANT]
+----
+Protocol versions greater than `10` need to be OR'ed with `0x8000` for differentiation from newer InterBase protocol versions.
+For example, `PROTOCOL_VERSION11` is `0x8000 | 11` or `32779` (`0x800B`)
+----
 
 `Int32` -- `p_cnct_architecture`::
-Architecture type (e.g. `arch_generic` = `1`)
+Architecture type (e.g. `arch_generic` -- `1`)
 +
 It is possible to use a different architecture value, but then connection is only possible with a server of the same architecture.
 In addition, it changes how responses and/or data needs to be parsed or encoded (the authors don't know the exact details).
 In short, use `arch_generic`.
 
 `Int32` -- `p_cnct_min_type`::
-Minimum type (e.g. `ptype_batch_send` = `3`)
+Minimum type (e.g. `ptype_batch_send` -- `3`)
 +
 Possible values:
 +
@@ -347,15 +368,17 @@ Preference weight (e.g. `2`).
 Higher values have higher preference.
 For equal weights, the last supported occurrence will be selected.
 
-[float]
-===== Server
+[#wireprotocol-op-accept]
+=== Simple accept
 
-Success response:
+Specifies the protocol selected by the server.
+This response is -- as far as we know -- not sent if the server accepts protocol 13 or higher;
+then the extended <<wireprotocol-op-accept-data>> is sent instead.
 
 `Int32` -- `p_operation`::
 Operation code
 
-If operation equals `op_accept`:
+If operation equals `op_accept` -- `3`:
 
 `Int32` -- `p_acpt_version`::
 Protocol version number accepted by server
@@ -365,7 +388,7 @@ Architecture for protocol
 
 `Int32` -- `p_acpt_type`::
 Accepted type and additional flags.
-Obtain the type by masking with `0xFF`.
+Obtain the type by masking with `0xFF` (`p_acpt_type & 0xFF`).
 +
 Known flags:
 +
@@ -373,8 +396,8 @@ Known flags:
 [horizontal]
 `pflag_compress` -- `0x100`:: Turn on compression
 +
-In the request from client to server, it signals a request to use wire compression. +
-In the response from the server to client, it is an acknowledgement, and wire compression *must* be enabled _after_ processing this response.
+From client to server, it signals a request to use wire compression. +
+From server to client, it is an acknowledgement, and wire compression *must* be enabled _after_ reading this entire response, but _before_ reading or writing any other messages.
 
 `pflag_win_sspi_nego` -- `0x200`:: Win_SSPI supports Negotiate security package
 +
@@ -383,34 +406,189 @@ Only sent from server to client.
 
 Failure response: <<wireprotocol-responses-generic>>
 
-[[wireprotocol-databases-attach-attachment]]
-==== Attachment
+[#wireprotocol-op-accept-data]
+=== Accept with data _or_ conditional accept
 
-// TODO Write a common section for attach/create database and attach service and point to it
+Introduced in protocol 13.
 
-Attaches to a database.
-Attach is the same as <<wireprotocol-databases-create>> (`op_create`), but using `op_attach` instead of `op_create`.
+The `op_accept_data` -- `94` and `op_cond_accept` -- `98` responses start with the same fields as <<wireprotocol-op-accept>>, followed by additional fields for authentication and encryption purposes.
+
+`Int32` -- `p_operation`::
+Operation code
+
+If operation equals `op_accept_data` -- `94` or `op_cond_accept` -- `98`:
+
+`Int32` -- `p_acpt_version`::
+Protocol version number accepted by server
+
+`Int32` -- `p_acpt_architecture`::
+Architecture for protocol
+
+`Int32` -- `p_acpt_type`::
+Accepted type and additional flags.
++
+See also `p_acpt_type` in <<wireprotocol-op-accept,`op_accept` message>>
+
+`Buffer` -- `p_acpt_data`::
+Authentication plugin data
+
+`String` -- `p_acpt_plugin`::
+Authentication plugin to continue with
+
+`Int32` -- `p_acpt_authenticated`::
+Authentication complete in a single step (`0` -- false, `1` -- true)
++
+This will generally only be `1` if `Legacy_Auth` was tried first, though third-party authentication plugins might also authenticate in a single step.
+
+`Buffer` -- `p_acpt_keys`::
+"`keys`" known by the server (used for configuring authentication and wire encryption)
+
+[#wireprotocol-database-cont-auth]
+=== Continue authentication
+
+Introduced in protocol 13.
+// TODO Possibly earlier for trusted authentication purposes?
+
+This message is used both by client _and_ server to exchange authentication information.
+
+`Int32` -- `p_operation`::
+Operation code (`op_cont_auth` -- `92`)
+
+`Buffer` -- `p_data`::
+Authentication data
+
+`String` -- `p_name`::
+Name of the current authentication plugin
+
+`String` -- `p_list`::
+On first authentication from client to server: list of (remaining) plugins known by the client, including the current plugin; +
+on subsequent authentication from client to server, or from server: empty
++
+The list of plugin names can be separated by space, tab, comma or semicolon.
+
+`Buffer` -- `p_keys`::
+From client to server: empty; +
+from server to client: "`keys`" known by the server (used for configuring authentication and wire encryption)
+
+[#wireprotocol-op-trusted-auth]
+=== Trusted authentication
+
+Introduced in protocol 12(?).
+
+`Int32` -- `p_operation`::
+Operation code (`op_trusted_auth` -- `90`)
+
+`Buffer` -- `p_trau_data`::
+Trusted authentication data
+
+[#wireprotocol-op-crypt-key-callback]
+=== Database encryption key callback
+
+Introduced in protocol 13.
+
+Used to exchange information between the client and server parts of a database encryption key plugin.
+The server sends this message, and the client responds with the same message.
+Specifics of the message exchange depends on database encryption plugin.
+It is possible that multiple message of this type are exchanged.
+
+In protocol 13, this message can only occur after authentication and establishing wire protocol encryption.
+In protocol 15 and higher, it can also occur immediately after `op_connect`, if the database is its own security database _and_ is encrypted.
+
+If this message is received _before_ `op_accept`/`op_accept_data`/`op_cond_accept` (so no protocol version has been confirmed yet), you need to assume protocol 15 behaviour for this message.
+
+`Int32` -- `p_operation`::
+Operation code (`op_crypt_key_callback` -- `97`)
+
+`Buffer` -- `p_cc_data`::
+Crypt callback data
+
+[float]
+====== Additions in protocol 14 and higher
+
+`Int32` -- `p_cc_reply`::
+Maximum expected reply size (16-bit signed integer encoded as 32-bit int)
++
+Judging by the code in Firebird for protocol 14 and higher, this value may be negative, and should then be considered equivalent to `1`.
++
+From client to server, the reply size should be `0`.
+
+[[wireprotocol-connect-attach]]
+=== Attachment to database or service
+
+This message is used for:
+
+* Attaching to a database (`op_attach` -- `19`) -- see also <<wireprotocol-databases-attach-attachment>>
+* Creating a database (`op_create` -- `20`) -- see also <<wireprotocol-databases-create>>
+* Attaching to a service (`op_service_attach` -- `82`) -- see also <<wireprotocol-services-attach>>
 
 [float]
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_attach`)
+Operation code (`op_attach` -- `19`, `op_create` -- `20`, or `op_service_attach` -- `82`)
 
 `Int32` -- `p_atch_database`::
-Database object id;
-unused in practice, can always be `0`.
+unused, always use `0`
 
 `String` -- `p_atch_file`::
-Database path or alias
+Database path or alias, or service name (e.g. `service_mgr`).
 +
-If `isc_dpb_utf8_filename` is present in the database parameter buffer below, the encoding is UTF-8;
-otherwise, the encoding is undefined.
+If `isc_dpb_utf8_filename` is present in the database parameter buffer below, the encoding is UTF-8, otherwise, the encoding is undefined.
 The `isc_dpb_utf8_filename` item is supported since Firebird 2.5.
 
 `Buffer` -- `p_atch_dpb`::
-Database parameter buffer
-+
+Database or service parameter buffer
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[[wireprotocol-connect-detach]]
+=== Detach
+
+Detaches from the database (`op_detach` -- `21`) or service (`op_service_detach` -- `83`).
+After detach the connection is still open, to disconnect send <<wireprotocol-databases-disconnect>> (`op_disconnect`).
+
+[float]
+===== Client
+
+`Int32` -- `p_operation`::
+Operation code (`op_detach` -- `21`, or `op_service_detach` -- `83`)
+
+`Int32` -- `p_rlse_object`::
+Database handle (always `0`)
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
+[#wireprotocol-connect-disconnect]
+=== Disconnect
+
+[float]
+==== Client
+
+`Int32` -- `p_operation`::
+Operation code (`op_disconnect`)
+
+[float]
+==== Server
+
+No response, remote socket close.
+
+Closing the connection (socket) without sending an `op_disconnect` will result in "`Connection reset by peer`" (error `10054` (Windows) or `104` (Linux)) in `firebird.log`.
+
+[[wireprotocol-databases]]
+== Databases
+
+[[wireprotocol-databases-attach-attachment]]
+=== Attach database
+
+Attach to an existing database.
+Use message <<wireprotocol-connect-attach>> with `op_attach` -- `19`.
+
 [[wireprotocol-databases-attach-attachment-dpb-content]]
 .Example of parameters sent in the DPB
 [cols="3m,2,1,1", frame="bottom", options="header", stripes="none"]
@@ -461,65 +639,13 @@ Database parameter buffer
 |{nbsp}
 |===
 
-[float]
-===== Server
-
-<<wireprotocol-responses-generic>>
-
-[[wireprotocol-databases-detach]]
-=== Detach
-
-Detaches from the database.
-After detach the connection is still open, to disconnect use <<wireprotocol-databases-disconnect>> (`op_disconnect`).
-
-[float]
-===== Client
-
-`Int32` -- `p_operation`::
-Operation code (`op_detach`)
-
-`Int32` -- `p_rlse_object`::
-Database handle (always `0`)
-
-[float]
-===== Server
-
-<<wireprotocol-responses-generic>>
-
 [[wireprotocol-databases-create]]
-=== Create
-
-// TODO Write a common section for attach/create database and attach service and point to it
+=== Create database
 
 Create a database.
-Create is the same as <<wireprotocol-databases-attach-attachment>> (`op_attach`), but using `op_create` instead of `op_attach`.
+Create is the same request as <<wireprotocol-databases-attach-attachment>> (`op_attach`), but using `op_create` instead of `op_attach`.
 
-[float]
-===== Client
-
-`Int32` -- `p_operation`::
-Operation code (`op_create`)
-
-`Int32` -- `p_atch_database`::
-Database object id;
-unused in practice, can always be `0`.
-
-`String` -- `p_atch_file`::
-Database path or alias
-+
-If `isc_dpb_utf8_filename` is present in the database parameter buffer below, the encoding is UTF-8;
-otherwise, the encoding is undefined.
-The `isc_dpb_utf8_filename` item is supported since Firebird 2.5.
-+
 There are a number of DPB items to configure the newly created database, including page size (`isc_dpb_page_size`) -- which cannot be modified after creation.
-
-`Buffer` -- `p_atch_dpb`::
-Database parameter buffer
-
-[float]
-===== Server
-
-<<wireprotocol-responses-generic>>
 
 [float]
 ===== The `CREATE DATABASE` statement
@@ -548,6 +674,11 @@ Database handle
 
 <<wireprotocol-responses-generic>>
 
+[#wireprotocol-databases-detach]
+=== Detach and disconnect [[wireprotocol-databases-disconnect]]
+
+Send <<wireprotocol-connect-detach>> with `op_detach` -- `21`, followed by <<wireprotocol-connect-disconnect>>.
+
 [[wireprotocol-databases-information]]
 === Database information request
 
@@ -559,7 +690,7 @@ Requests database or server information.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_info_database`)
+Operation code (`op_info_database` -- `40`)
 
 `Int32` -- `p_info_object`::
 Database handle;
@@ -589,22 +720,6 @@ The buffer in the response is sized to the actual length of the response (upto t
 
 A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
-[[wireprotocol-databases-disconnect]]
-=== Disconnect
-
-[float]
-==== Client
-
-`Int32` -- `p_operation`::
-Operation code (`op_disconnect`)
-
-[float]
-==== Server
-
-No response, remote socket close.
-
-Closing the connection (socket) without sending an `op_disconnect` will result in "`Connection reset by peer`" (error `10054` (Windows) or `104` (Linux)) in `firebird.log`.
-
 [#wireprotocol-databases-cancel]
 === Cancellation
 
@@ -614,7 +729,7 @@ Cancels a running operation on the server.
 
 [NOTE#wireprotocol-note-cancel-abort]
 ====
-Operation `fb_cancel_abort` -- `4` should not be sent to the server, but instead simply close the socket connection.
+Operation `fb_cancel_abort` -- `4` should not be sent to the server, but instead the client should simply close the socket connection.
 ====
 
 [float]
@@ -661,11 +776,10 @@ Starts a transaction with the transaction options specified in the transaction p
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_transaction`)
+Operation code (`op_transaction` -- `29`)
 
 `Int32` -- `p_sttr_database`::
-Database handle;
-unused in practice, can always be `0`.
+unused, always use `0`
 
 `Buffer` -- `p_sttr_tpb`::
 Transaction parameter buffer
@@ -701,7 +815,7 @@ Commits an active or prepared transaction.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_commit`)
+Operation code (`op_commit` -- `30`)
 
 `Int32` -- `p_rlse_object`::
 Transaction handle
@@ -720,7 +834,7 @@ Rolls back an active or prepared transaction.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_rollback`)
+Operation code (`op_rollback` -- `31`)
 
 `Int32` -- `p_rlse_object`::
 Transaction handle
@@ -739,7 +853,7 @@ Commits an active or prepared transaction, retaining the transaction context.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_commit_retaining`)
+Operation code (`op_commit_retaining` -- `50`)
 
 `Int32` -- `p_rlse_object`::
 Transaction handle
@@ -758,7 +872,7 @@ Rolls back an active or prepared transaction, retaining the transaction context.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_rollback_retaining`)
+Operation code (`op_rollback_retaining` -- `86`)
 
 `Int32` -- `p_rlse_object`::
 Transaction handle
@@ -781,7 +895,7 @@ After prepare, a transaction is _in-limbo_ until committed or rolled back.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_prepare`)
+Operation code (`op_prepare` -- `32`)
 
 `Int32` -- `p_rlse_object`::
 Transaction handle
@@ -801,7 +915,7 @@ This information is stored in `RDB$TRANSACTIONS` and can be used for recovery pu
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_prepare2`)
+Operation code (`op_prepare2` -- `51`)
 
 `Int32` -- `p_prep_transaction`::
 Transaction handle
@@ -825,7 +939,7 @@ This operation can be used for recovery operations if a connection was closed or
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_reconnect`)
+Operation code (`op_reconnect` -- `33`)
 
 `Int32` -- `p_sttr_database`::
 Database handle;
@@ -864,7 +978,7 @@ This is similar to <<wireprotocol-databases-information>>.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_info_transaction`)
+Operation code (`op_info_transaction` -- `42`)
 
 `Int32` -- `p_info_object`::
 Transaction handle
@@ -905,10 +1019,10 @@ Allocates a statement handle on the server.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_allocate_statement`)
+Operation code (`op_allocate_statement` -- `62`)
 
 `Int32` -- `p_rlse_object`::
-Database handle
+unused, always use `0`
 
 [float]
 ===== Server
@@ -932,31 +1046,30 @@ Frees resources held by the statement.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_free_statement`)
+Operation code (`op_free_statement` -- `67`)
 
 `Int32` -- `p_sqlfree_statement`::
 Statement handle
 
 `Int32` -- `p_sqlfree_option`:: {empty}
 +
-[%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
-|===
-|Option
-|Description
+--
+[horizontal]
+`DSQL_close` -- `1`::
+Closes the cursor opened after statement execute.
 
-|DSQL_close -- `1`
-|Closes the cursor opened after statement execute.
+`DSQL_drop` -- `2`::
+Releases the statement handle.
 
-|DSQL_drop -- `2`
-|Releases the statement handle.
-
-|DSQL_unprepare -- `4`
-a|_Firebird 2.5 or higher_ +
-Close resources associated with statement handle, and unprepares the currently allocated statement text.
+`DSQL_unprepare` -- `4`::
+_Firebird 2.5 or higher_ +
+Close resources associated with statement handle, and unprepares the current statement text.
 The statement handle itself is retained.
 +
-It is not necessary to unprepare before preparing a new statement on the same handle.
-|===
+It is not necessary to unprepare before preparing a new statement text on the same handle.
+--
++
+The server treats these as flag values, so they can be combined with OR, but doing so makes little sense, as an _unprepare_ also closes the cursor, and a _drop_ effectively closes the cursor and unprepares the current statement text.
 
 [float]
 ===== Server
@@ -979,7 +1092,7 @@ For `DSQL_drop` and `DSQL_unprepare`, we recommend flushing immediately so the s
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_prepare_statement`)
+Operation code (`op_prepare_statement` -- `68`)
 
 `Int32` -- `p_sqlst_transaction`::
 Transaction handle
@@ -1026,9 +1139,9 @@ For an example, see Jaybird's https://github.com/FirebirdSQL/jaybird/blob/c152a1
 [[wireprotocol-statements-prepare-v11]]
 ==== Deviations for protocol version 11
 
-The statement handle can no longer be allocated separately.
+The statement handle can no longer be allocated separately (or at least, its response is deferred).
 The initial <<wireprotocol-statements-allocate>> operation *must* be sent together with the first prepare operation.
-When allocating and preparing together, the value of the statement handle of the _prepare_ must be `0xFFFF` (invalid object handle).
+When allocating and preparing together, the value of the statement handle of the _prepare_ must be `0xFFFF` (_invalid object_ handle).
 The responses must be processed in order: first _allocate_ response, then _prepare_ response.
 
 Once a statement handle has been allocated, it can be reused by sending a _prepare_ with the obtained statement handle.
@@ -1080,17 +1193,14 @@ The information can be requested together with <<wireprotocol-statements-describ
 `Int32` -- `p_operation`::
 Operation code
 +
-[%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
-|===
-|Operation
-|Usage
+--
+[horizontal]
+`op_execute` -- `62`::
+DDL and DML statements
 
-|op_execute
-|DDL and DML statements
-
-|op_execute2
-|Executable stored procedures, or singleton `RETURNING` (i.e. statements described as `isc_info_sql_stmt_exec_procedure`)
-|===
+`op_execute2` -- `76`::
+Executable stored procedures with return values, or singleton `RETURNING` (i.e. statements described as `isc_info_sql_stmt_exec_procedure`)
+--
 
 `Int32` -- `p_sqldata_statement`::
 Statement handle
@@ -1104,7 +1214,6 @@ Parameters in BLR format
 If there are no parameters, send a zero-length buffer.
 
 `Int32` -- `p_sqldata_message_number`::
-Message number;
 unused, always use `0`
 
 `Int32` -- `p_sqldata_messages`::
@@ -1117,7 +1226,7 @@ If `p_sqldata_messages` is `0`, this buffer must not be sent (not even as a zero
 +
 TODO: Might not even be a buffer, verify.
 
-If using `op_execute2` (the statement is a stored procedure and there are output parameters):
+If using `op_execute2` -- `76` (the statement is a stored procedure and there are output parameters):
 
 `Buffer` -- `p_sqldata_out_blr`::
 Output parameters in BLR format
@@ -1157,11 +1266,11 @@ TODO: Describe `op_inline_blob` somewhere
 [float]
 ===== Server
 
-For `op_execute`:
+For `op_execute` -- `63`:
 
 <<wireprotocol-responses-generic>>
 
-For `op_execute2`:
+For `op_execute2` -- `76`:
 
 Success response: <<wireprotocol-responses-sql>> followed by <<wireprotocol-responses-generic>>
 
@@ -1182,7 +1291,7 @@ Obtaining the rows affected by a query is done using the <<wireprotocol-statemen
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_fetch`)
+Operation code (`op_fetch` -- `65`)
 
 `Int32` -- `p_sqldata_statement`::
 Statement handle
@@ -1217,7 +1326,7 @@ It is possible to receive <<wireprotocol-responses-generic>> with an error in th
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_set_cursor`)
+Operation code (`op_set_cursor` -- `69`)
 
 `Int32` -- `p_sqlcur_statement`::
 Statement handle
@@ -1246,7 +1355,7 @@ This is similar to <<wireprotocol-databases-information>>.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_info_sql`)
+Operation code (`op_info_sql` -- `70`)
 
 `Int32` -- `p_info_object`::
 Statement handle
@@ -1292,28 +1401,25 @@ Information about how to parse the information buffer sent by the Firebird serve
 `Int32` -- `p_operation`::
 Operation code
 +
-[%autowidth,cols="1m,1", options="header", frame="none", grid="none", stripes="none", role="segmentedlist"]
-|===
-|Operation
-|Description
+--
+[horizontal]
+`op_create_blob` -- `34`::
+Creates a new blob
 
-|op_create_blob
-|Creates a new blob
+`op_create_blob2` -- `57`::
+Creates a new blob with a blob parameter buffer
 
-|op_create_blob2
-|Creates a new blob with a blob parameter buffer
+`op_open_blob` -- `35`::
+Opens an existing blob
 
-|op_open_blob
-|Opens an existing blob
-
-|op_open_blob2
-|Opens an existing blob with a blob parameter buffer
-|===
+`op_open_blob2` -- `56`::
+Opens an existing blob with a blob parameter buffer
+--
 
 `Buffer` -- `p_blob_bpb`::
 Blob parameter buffer
 +
-Only sent for `op_create_blob2` and `op_open_blob2`
+Only sent for `op_create_blob2` -- `57` and `op_open_blob2` -- `56`.
 
 `Int32` -- `p_blob_transaction`::
 Transaction handle
@@ -1328,7 +1434,7 @@ Blob ID
 +
 [loweralpha]
 . `p_resp_object` is the blob handle
-. `p_resp_blob_id` is the blob id (for `op_create_blob` / `op_create_blob2` only)
+. `p_resp_blob_id` is the blob id (for `op_create_blob` --`35`/ `op_create_blob2` -- `57`)
 
 [[wireprotocol-blobs-create-v11]]
 ==== Deviations for protocol version 11
@@ -1345,7 +1451,7 @@ They can use the _invalid object_ handle (`0xFFFF`) instead of the -- not yet re
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_get_segment`)
+Operation code (`op_get_segment` -- `36`)
 
 `Int32` -- `p_sgmt_blob`::
 Blob handle
@@ -1380,7 +1486,7 @@ If `ptype_batch_send` or higher is used, `op_get_segment` can be batched with <<
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_put_segment`)
+Operation code (`op_put_segment` -- `37`)
 
 `Int32` -- `p_sgmt_blob`::
 Blob handle
@@ -1416,7 +1522,7 @@ Similar to <<wireprotocol-blobs-putsegment>>, but allows to send multiple segmen
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_segments`)
+Operation code (`op_batch_segments` -- `44`)
 
 `Int32` -- `p_sgmt_blob`::
 Blob handle
@@ -1452,7 +1558,7 @@ Seek is not fully supported for blobs longer than 2 GiB (4 GiB?).
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_seek_blob`)
+Operation code (`op_seek_blob` -- `61`)
 
 `Int32` -- `p_seek_blob`::
 Blob handle
@@ -1492,7 +1598,7 @@ If this was a newly created blob, the blob is disposed.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_cancel_blob`)
+Operation code (`op_cancel_blob` -- `38`)
 
 `Int32` -- `p_rlse_object`::
 Blob handle
@@ -1519,7 +1625,7 @@ Closes and invalidates the blob handle.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_close_blob`)
+Operation code (`op_close_blob` -- `39`)
 
 `Int32` -- `p_rlse_object`::
 Blob handle
@@ -1546,7 +1652,7 @@ If `ptype_batch_send` or higher is used, `op_close_blob` can be batched with <<w
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_get_slice`)
+Operation code (`op_get_slice` -- `58`)
 
 `Int32` -- `p_slc_transaction`::
 Transaction handle
@@ -1580,7 +1686,7 @@ Failure response: <<wireprotocol-responses-generic>>
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_put_slice`)
+Operation code (`op_put_slice` -- `59`)
 
 `Int32` -- `p_slc_transaction`::
 transaction handle
@@ -1617,7 +1723,7 @@ Statement batches were introduced in protocol 16 (Firebird 4.0).
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_create`)
+Operation code (`op_batch_create` -- `99`)
 
 `Int32` -- `p_batch_statement`::
 Statement handle
@@ -1645,7 +1751,7 @@ If `ptype_lazy` or higher, flushing and response processing can be deferred.
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_msg`)
+Operation code (`op_batch_msg` -- `100`)
 
 `Int32` -- `p_batch_statement`::
 Statement handle
@@ -1668,7 +1774,7 @@ Batched values (formatted message repeats 'Number of messages' times)
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_exec`)
+Operation code (`op_batch_exec` -- `101`)
 
 `Int32` -- `p_batch_statement`::
 Statement handle
@@ -1684,7 +1790,7 @@ Success response:
 `Int32` -- `p_operation`::
 Operation code
 
-If operation equals `op_batch_cs`:
+If operation equals `op_batch_cs` -- 103`:
 
 *Batch completion state*
 
@@ -1730,7 +1836,7 @@ Failure response: <<wireprotocol-responses-generic>>
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_rls`)
+Operation code (`op_batch_rls` -- `102`)
 
 `Int32` -- `p_batch_statement`::
 Statement handle
@@ -1747,7 +1853,7 @@ Statement handle
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_cancel`)
+Operation code (`op_batch_cancel` -- `109`)
 
 `Int32` -- `p_batch_statement`::
 Statement handle
@@ -1768,7 +1874,7 @@ Used to force the server to acknowledge previously sent lazy intermediate operat
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_sync`)
+Operation code (`op_batch_sync` -- `110`)
 
 [float]
 ===== Server
@@ -1782,7 +1888,7 @@ Operation code (`op_batch_sync`)
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_set_bpb`)
+Operation code (`op_batch_set_bpb` -- `106`)
 
 `Int32` -- `p_batch_statement`::
 Statement handle
@@ -1802,7 +1908,7 @@ Default BLOB parameter buffer
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_batch_regblob`)
+Operation code (`op_batch_regblob` -- `104`)
 
 `Int32` -- `p_batch_statement`::
 Statement handle
@@ -1881,54 +1987,19 @@ BLOB headers and records in a stream need not match, i.e. one record may contain
 [[wireprotocol-services-attach]]
 === Attach
 
-// TODO Write a common section for attach/create database and attach service and point to it
-
-This is essentially the same as <<wireprotocol-databases-attach-attachment,database attach>>, but with `op_service_attach`.
+Attach to a service.
+Use message <<wireprotocol-connect-attach>> with `op_service_attach` -- `82`.
 
 [float]
-===== Client
+===== Note on `p_atch_file`:
 
-`Int32` -- `p_operation`::
-Operation code (`op_service_attach`)
-
-`Int32` -- `p_atch_database`::
-Database object id;
-currently always `0`
-
-`String` -- `p_atch_file`::
-Service name
-+
 Current Firebird versions only support one service: `service_mgr`.
 Since Firebird 3.0, this can also be an empty string (empty buffer) with the same meaning.
-+
-The encoding is unspecified, but given the only valid name is either ASCII or empty, use of ASCII or an ASCII-compatible encoding (e.g. UTF-8 or extended ANSI code pages) should always work.
-
-`Buffer` -- `p_atch_dpb`::
-Service parameter buffer
-+
-Similar to the database parameter buffer of database attach/create, but using `isc_spb_` tags instead of `isc_dpb_`.
-
-[float]
-===== Server
-
-<<wireprotocol-responses-generic>>
 
 [[wireprotocol-services-detach]]
 === Detach
 
-[float]
-===== Client
-
-`Int32` -- `p_operation`::
-Operation code (`op_service_detach`)
-
-`Int32` -- `p_rlse_object`::
-Services manager attachment handle (always `0`)
-
-[float]
-===== Server
-
-<<wireprotocol-responses-generic>>
+Send <<wireprotocol-connect-detach>> with `op_service_detach` -- `83`, followed by <<wireprotocol-connect-disconnect>>.
 
 [[wireprotocol-services-start]]
 === Start
@@ -1937,10 +2008,10 @@ Services manager attachment handle (always `0`)
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_service_start`)
+Operation code (`op_service_start` -- `85`)
 
 `Int32` -- `p_info_object`::
-Services manager attachment handle (always `0`)
+Unused, always use `0`
 
 `Int32` -- `p_info_incarnation`::
 Incarnation of object (`0`)
@@ -1962,10 +2033,10 @@ Service parameter buffer
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_service_info`)
+Operation code (`op_service_info` -- `84`)
 
 `Int32` -- `p_info_object`::
-Services manager attachment handle
+Unused, always use `0`
 
 `Int32` -- `p_info_incarnation`::
 Incarnation of object (`0`)
@@ -1996,7 +2067,7 @@ Requested information items buffer length
 ===== Client
 
 `Int32` -- `p_operation`::
-Operation code (`op_connect_request`)
+Operation code (`op_connect_request` -- `53`)
 
 `Int32` -- `p_req_type`::
 Unused, but always use `P_REQ_async` (`1`) for backwards compatibility
@@ -2051,7 +2122,7 @@ See <<wireprotocol-events-notification>> for further details.
 Must be sent on the main (database) connection.
 
 `Int32` -- `p_operation`::
-Operation code (`op_que_events`)
+Operation code (`op_que_events` -- `48`)
 
 `Int32` -- `p_event_database`::
 Database handle
@@ -2098,10 +2169,10 @@ Local event id -- generated by the client
 Must be sent on the main (database) connection.
 
 `Int32` -- `p_operation`::
-Operation code (`op_cancel_events`)
+Operation code (`op_cancel_events` -- `49`)
 
 `Int32` -- `p_event_database`::
-Database handle (always `0`)
+Unused, always use `0`
 
 `Int32` -- `p_event_rid`::
 Local event id -- same id as used to <<wireprotocol-events-que-events,queue>> the event
@@ -2117,10 +2188,10 @@ Local event id -- same id as used to <<wireprotocol-events-que-events,queue>> th
 Event notification happens on the aux connection.
 
 `Int32` -- `p_operation`::
-Operation code (`op_event`)
+Operation code (`op_event` -- `52`)
 
 `Int32` -- `p_event_database`::
-Database handle (always `0`)
+Unused, always use `0`
 
 `Buffer` -- `p_event_items`::
 Event data
@@ -2173,7 +2244,10 @@ However, some data *inside* the messages may be little-endian (also known as VAX
 `Int32`::
 Integer 32-bits
 +
-In some cases -- e.g. object handles, and _some_ lengths -- this is actually a 16-bit short encoded as a 32-bit int with the high bits zero.
+In some cases -- e.g. object handles, and _some_ lengths -- this is actually a 16-bit "`short`" encoded as a 32-bit integer with the high bits zero.
++
+Whether the number should be interpreted as signed or unsigned may depend on the context;
+when we are sure it's unsigned, we'll generally specify `UInt32` documented next.
 
 `UInt32`::
 Unsigned integer 32-bits
@@ -2183,6 +2257,8 @@ Integer 64-bits
 +
 Alternatively, especially for blob and arrays ids, can be interpreted as two `Int32`, a.k.a. a "`quad`".
 Interpretation as a 64-bit integer -- even for blob and array ids -- is generally simpler, and should not make a difference.
++
+Whether the number should be interpreted as signed or unsigned may depend on the context.
 
 `Buffer`::
 Composed of
@@ -2211,7 +2287,7 @@ An array of bytes
 Length follows from another field in the message, from correct parsing of the value, or from other specifics of the message.
 
 `String`::
-A text string, read or written as a Buffer, encoded in the connection character set or some message or context specific character set
+A text string, read or written as a `Buffer`, encoded in the connection character set or some message or context specific character set
 
 [appendix]
 [[wireprotocol-appendix-revhistory]]
@@ -2231,6 +2307,8 @@ a|* Reordered revision history, so latest change is at the top
 * Documented `op_reconnect`
 * Improved protocol 11 descriptions
 * Documented protocol 12 (`op_cancel`)
+* Documented the value next to the constant names
+* Documented protocol 13 connect/authentication/attach: `op_accept_data`, `op_cond_accept`, `op_cont_auth`
 
 |0.16
 |13 Apr 2025
