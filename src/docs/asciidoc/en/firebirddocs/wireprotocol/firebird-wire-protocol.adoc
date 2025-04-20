@@ -128,7 +128,7 @@ Data (meaning depends on the operation).
 `Byte[]` -- `p_resp_status_vector`::
 Status vector
 +
-The format of the status vector is basically `++<tag><value>[{tag><value>} ...]<end>++`, with `<tag>` an `Int32`, and where parsing of `<value>` depends on `<tag>`;
+The format of the status vector is `++<tag><value>[{tag><value>} ...]<end>++`, with `<tag>` an `Int32`, and where parsing of `<value>` depends on `<tag>`;
 `<end>` is `Int32` `isc_arg_end` -- `0`.
 The length can only be determined by correctly parsing the status vector.
 The first 8 bytes are always an `Int32` tag (`isc_arg_gds` or `isc_arg_warning`) and an `Int32` value.
@@ -218,7 +218,7 @@ Success response to <<wireprotocol-arrays-getslice>>.
 
 [CAUTION]
 ====
-This documentation might not reflect actual encoding in the protocol.
+This might not reflect actual encoding in the protocol.
 ====
 
 Response to <<wireprotocol-arrays-getslice>>.
@@ -272,7 +272,7 @@ It's generally only sent just before the main connection is closed.
 This chapter describes how to connect to a database or service.
 Other operations on a database or service, or information specific to connecting to a database or service are documented in <<wireprotocol-databases>> and <<wireprotocol-services>>.
 
-[[wireprotocol-databases-attach]]
+[#wireprotocol-connect-attaching]
 === Attaching to a database or service
 
 In protocol 10 and 11, attachment to a database or service is done in two steps, first identification (connect) to the server, then attach to -- or creation of -- a database, or attach to a service.
@@ -281,15 +281,15 @@ In protocol 13, this was changed to a more complex state machine to handle multi
 In deviation of the normal description in this documentation, and previous versions of this documentation, we will first cover the individual messages, and then explain the order and logic of message exchange.
 
 [#wireprotocol-op-connect]
-=== Identification (connect) [[wireprotocol-databases-attach-identification]]
+=== Identification (connect)
 
-Requests connection to the server and specifies which protocol versions the client is willing to accept.
+Requests connection to the server and specifies which protocol versions the client can use.
 
 `Int32` -- `p_operation`::
 Operation code (`op_connect` -- `1`)
 
 `Int32` -- `p_cnct_operation`::
-unused, always use `0`
+Unused, always use `0`
 +
 Some implementations use `op_attach` -- `19`/`op_service_attach` -- `82` for historic(?) reasons.
 
@@ -320,7 +320,7 @@ TODO: Needs further description
 
 [IMPORTANT]
 ====
-The next block of data declares the protocol(s) that the client is willing or able to support.
+The next block of data declares the protocol(s) that the client supports.
 It should be sent as many times as protocols are supported (and specified in `p_cnct_count` above).
 Values depend on the protocol.
 
@@ -361,7 +361,7 @@ Possible values:
 Maximum type (e.g. `ptype_lazy_send` -- `5`)
 +
 If the client wants to set up wire compression, this `ptype`-code must be OR'ed with `pflag_compress` (`0x100`).
-See also discussion below for server response.
+See also <<wireprotocl-p-acpt-type-flags>> below.
 
 `Int32` -- `p_cnct_weight`::
 Preference weight (e.g. `2`).
@@ -381,7 +381,7 @@ Operation code
 If operation equals `op_accept` -- `3`:
 
 `Int32` -- `p_acpt_version`::
-Protocol version number accepted by server
+Protocol version accepted by server
 
 `Int32` -- `p_acpt_architecture`::
 Architecture for protocol
@@ -390,10 +390,9 @@ Architecture for protocol
 Accepted type and additional flags.
 Obtain the type by masking with `0xFF` (`p_acpt_type & 0xFF`).
 +
-Known flags:
-+
 --
-[horizontal]
+[horizontal#wireprotocl-p-acpt-type-flags]
+.Known `p_acpt_type` flags
 `pflag_compress` -- `0x100`:: Turn on compression
 +
 From client to server, it signals a request to use wire compression. +
@@ -441,7 +440,7 @@ Authentication complete in a single step (`0` -- false, `1` -- true)
 This will generally only be `1` if `Legacy_Auth` was tried first, though third-party authentication plugins might also authenticate in a single step.
 
 `Buffer` -- `p_acpt_keys`::
-"`keys`" known by the server (used for configuring authentication and wire encryption)
+"`Keys`" known by the server (used for configuring authentication and wire encryption)
 
 [#wireprotocol-database-cont-auth]
 === Continue authentication
@@ -461,7 +460,7 @@ Authentication data
 Name of the current authentication plugin
 
 `String` -- `p_list`::
-On first authentication from client to server: list of (remaining) plugins known by the client, including the current plugin; +
+On first authentication from client to server: list of (remaining) plugins known to the client, including the current plugin; +
 on subsequent authentication from client to server, or from server: empty
 +
 The list of plugin names can be separated by space, tab, comma or semicolon.
@@ -486,15 +485,15 @@ Trusted authentication data
 
 Introduced in protocol 13.
 
-Used to exchange information between the client and server parts of a database encryption key plugin.
-The server sends this message, and the client responds with the same message.
+Used to exchange information between the client and server parts of a database encryption plugin for the encryption key.
+The server sends this message, and the client responds with the same message type.
 Specifics of the message exchange depends on database encryption plugin.
 It is possible that multiple message of this type are exchanged.
 
-In protocol 13, this message can only occur after authentication and establishing wire protocol encryption.
+In protocol 13, this message can only occur after authentication and -- optionally -- establishing wire protocol encryption.
 In protocol 15 and higher, it can also occur immediately after `op_connect`, if the database is its own security database _and_ is encrypted.
 
-If this message is received _before_ `op_accept`/`op_accept_data`/`op_cond_accept` (so no protocol version has been confirmed yet), you need to assume protocol 15 behaviour for this message.
+If this message is received _before_ `op_accept`/`op_accept_data`/`op_cond_accept` (so no protocol version has been confirmed yet), you need to assume protocol 15 behaviour for this message and the client response.
 
 `Int32` -- `p_operation`::
 Operation code (`op_crypt_key_callback` -- `97`)
@@ -517,7 +516,7 @@ From client to server, the reply size should be `0`.
 
 This message is used for:
 
-* Attaching to a database (`op_attach` -- `19`) -- see also <<wireprotocol-databases-attach-attachment>>
+* Attaching to a database (`op_attach` -- `19`) -- see also <<wireprotocol-databases-attach>>
 * Creating a database (`op_create` -- `20`) -- see also <<wireprotocol-databases-create>>
 * Attaching to a service (`op_service_attach` -- `82`) -- see also <<wireprotocol-services-attach>>
 
@@ -528,7 +527,7 @@ This message is used for:
 Operation code (`op_attach` -- `19`, `op_create` -- `20`, or `op_service_attach` -- `82`)
 
 `Int32` -- `p_atch_database`::
-unused, always use `0`
+Unused, always use `0`
 
 `String` -- `p_atch_file`::
 Database path or alias, or service name (e.g. `service_mgr`).
@@ -557,7 +556,7 @@ After detach the connection is still open, to disconnect send <<wireprotocol-dat
 Operation code (`op_detach` -- `21`, or `op_service_detach` -- `83`)
 
 `Int32` -- `p_rlse_object`::
-Database handle (always `0`)
+Unused, always use `0`
 
 [float]
 ===== Server
@@ -583,13 +582,13 @@ Closing the connection (socket) without sending an `op_disconnect` will result i
 [[wireprotocol-databases]]
 == Databases
 
-[[wireprotocol-databases-attach-attachment]]
+[[wireprotocol-databases-attach]]
 === Attach database
 
 Attach to an existing database.
 Use message <<wireprotocol-connect-attach>> with `op_attach` -- `19`.
 
-[[wireprotocol-databases-attach-attachment-dpb-content]]
+[[wireprotocol-databases-attach-dpb-content]]
 .Example of parameters sent in the DPB
 [cols="3m,2,1,1", frame="bottom", options="header", stripes="none"]
 |===
@@ -642,8 +641,8 @@ Use message <<wireprotocol-connect-attach>> with `op_attach` -- `19`.
 [[wireprotocol-databases-create]]
 === Create database
 
-Create a database.
-Create is the same request as <<wireprotocol-databases-attach-attachment>> (`op_attach`), but using `op_create` instead of `op_attach`.
+Create a database and connect to it.
+Create uses <<wireprotocol-connect-attach>> with `p_operation` `op_create` -- `20`.
 
 There are a number of DPB items to configure the newly created database, including page size (`isc_dpb_page_size`) -- which cannot be modified after creation.
 
@@ -667,7 +666,7 @@ Drops the currently attached database.
 Operation code (`op_drop_database`)
 
 `Int32` -- `p_rlse_object`::
-Database handle
+Unused, always use `0`
 
 [float]
 ===== Server
@@ -693,8 +692,7 @@ Requests database or server information.
 Operation code (`op_info_database` -- `40`)
 
 `Int32` -- `p_info_object`::
-Database handle;
-unused in practice, can always be `0`.
+Unused, always use `0`
 
 `Int32` -- `p_info_incarnation`::
 Incarnation of object (`0`)
@@ -779,7 +777,7 @@ Starts a transaction with the transaction options specified in the transaction p
 Operation code (`op_transaction` -- `29`)
 
 `Int32` -- `p_sttr_database`::
-unused, always use `0`
+Unused, always use `0`
 
 `Buffer` -- `p_sttr_tpb`::
 Transaction parameter buffer
@@ -909,7 +907,7 @@ Transaction handle
 ==== Prepare with message
 
 Associates a message (byte data) with the prepared transaction.
-This information is stored in `RDB$TRANSACTIONS` and can be used for recovery purposes.
+This information is stored in https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref-appx04-transacs.html#fblangref-appx04-transacs[`RDB$TRANSACTIONS`] and can be used for recovery purposes.
 
 [float]
 ===== Client
@@ -942,8 +940,7 @@ This operation can be used for recovery operations if a connection was closed or
 Operation code (`op_reconnect` -- `33`)
 
 `Int32` -- `p_sttr_database`::
-Database handle;
-unused in practice, can always be `0`.
+Unused, always use `0`
 
 `Buffer` -- `p_sttr_tpb`::
 Transaction id to reconnect, encoded in little-endian.
@@ -1022,7 +1019,7 @@ Allocates a statement handle on the server.
 Operation code (`op_allocate_statement` -- `62`)
 
 `Int32` -- `p_rlse_object`::
-unused, always use `0`
+Unused, always use `0`
 
 [float]
 ===== Server
@@ -1214,7 +1211,7 @@ Parameters in BLR format
 If there are no parameters, send a zero-length buffer.
 
 `Int32` -- `p_sqldata_message_number`::
-unused, always use `0`
+Unused, always use `0`
 
 `Int32` -- `p_sqldata_messages`::
 Number of messages -- `1` if there are parameters, `0` if there are no parameters
@@ -2125,7 +2122,7 @@ Must be sent on the main (database) connection.
 Operation code (`op_que_events` -- `48`)
 
 `Int32` -- `p_event_database`::
-Database handle
+Unused, always use `0`
 
 `Buffer` -- `p_event_items`::
 Event parameter buffer
@@ -2191,7 +2188,7 @@ Event notification happens on the aux connection.
 Operation code (`op_event` -- `52`)
 
 `Int32` -- `p_event_database`::
-Unused, always use `0`
+Unused, always `0`
 
 `Buffer` -- `p_event_items`::
 Event data
