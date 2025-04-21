@@ -309,6 +309,8 @@ Architecture type (e.g. `arch_generic` -- `1`).
 Database path or alias
 +
 The encoding of this is undefined, which can lead to problems with non-ASCII paths if the server and client use a different encoding.
++
+For a service connection, this value can be the service name (`service_mgr` or empty), or the "`expected database`" name (same value as `isc_spb_expected_db`).
 
 `Int32` -- `p_cnct_count`::
 Count of protocol versions understood (e.g. `1`).
@@ -346,10 +348,9 @@ In short, use `arch_generic`.
 `Int32` -- `p_cnct_min_type`::
 Minimum type (e.g. `ptype_batch_send` -- `3`)
 +
-Possible values:
-+
 --
-[horizontal]
+[horizontal#wireprotocol-ptype-values]
+.Connection type (`ptype`) values
 `ptype_page` -- `1`:: Page server protocol (never supported in Firebird)
 `ptype_rpc` -- `2` :: Simple remote procedure call (not supported since Firebird 3.0)
 `ptype_batch_send` -- `3`:: Batch sends, no asynchrony
@@ -442,10 +443,10 @@ This will generally only be `1` if `Legacy_Auth` was tried first, though third-p
 `Buffer` -- `p_acpt_keys`::
 "`Keys`" known by the server (used for configuring authentication and wire encryption)
 
-[#wireprotocol-database-cont-auth]
+[#wireprotocol-op-cont-auth]
 === Continue authentication
 
-Introduced in protocol 13.
+Introduced in protocol 13(?).
 // TODO Possibly earlier for trusted authentication purposes?
 
 This message is used both by client _and_ server to exchange authentication information.
@@ -511,6 +512,33 @@ Judging by the code in Firebird for protocol 14 and higher, this value may be ne
 +
 From client to server, the reply size should be `0`.
 
+[#wireprotocol-op-crypt]
+=== Enable wire encryption
+
+Introduced in protocol 13.
+
+Enables wire encryption by telling the server the selected plugin and key type.
+
+[float]
+===== Client
+
+`Int32` -- `p_operation`::
+Operation code (`op_crypt` -- `96`)
+
+`String` -- `p_plugin`
+Selected wire encryption plugin
+
+`String` -- `p_key`
+Selected key type
+
+After sending this message, the client must set up wire encryption both for sending and receiving data.
+Subsequent messages -- including the server response to this message -- must be sent or received with encryption enabled.
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>>
+
 [[wireprotocol-connect-attach]]
 === Attachment to database or service
 
@@ -541,13 +569,153 @@ Database or service parameter buffer
 [float]
 ===== Server
 
+In protocol 10 and 11:
+
 <<wireprotocol-responses-generic>>
+
+In protocol 13 and higher:
+
+It's complicated.
+// TODO Document
+
+[#wireprotocol-op-reject]
+=== Connection rejection
+
+Server response rejecting the connection.
+This is usually sent if `op_connect` only sent protocols the server can't support.
+
+`Int32` -- `p_operation`
+Operation code (`op_reject` -- `4`)
+
+If this message is received, the client should report error `isc_connect_reject` (`335544421`) or equivalent.
+
+[#wireprotocol-connect-handshake]
+=== Connection handshake
+
+[#wireprotocol-connect-handshake-10]
+==== Protocol 10 -- 12
+
+For protocol 10 -- 12, the connection handshake is pretty simple.
+
+. Client -> <<wireprotocol-op-connect>>
+. Server
+** <- <<wireprotocol-op-accept>> -- Server accepts and reports selected protocol, continue with step 3
+** <- <<wireprotocol-op-reject>> -- Server can't fulfill the requested protocol
+*** Report error `isc_connect_reject` (`335544421`) or equivalent
+*** Close connection
+** <- <<wireprotocol-responses-generic>> -- Error or other problem
+*** If `p_resp_status_vector` has an error, report it, otherwise report error `isc_login` (`335544472`) or equivalent
+*** Close connection
+. Client -> <<wireprotocol-connect-attach>> with `op_attach`, `op_create` or `op_service_attach`
+. Server <- <<wireprotocol-responses-generic>>
+** If `p_resp_status_vector` has no error or only a warning, connection is successful and can be used for other operations
+** Otherwise, connection is unsuccessful
+*** Report error
+*** Close connection (<<wireprotocol-connect-disconnect>>)
+
+[#wireprotocol-connect-handshake-13]
+==== Protocol 13 and higher
+
+For protocol 13 and higher, the handshake is more complex.
+
+[NOTE]
+====
+This might not be the best way to document the connection handshake.
+We're open to suggestions.
+====
+
+. Client -> <<wireprotocol-op-connect>>
++
+The `p_user_identification` should include:
++
+** `CNCT_plugin_name` with the current authentication plugin
+** `CNCT_plugin_list` with the authentication plugins supported by the client (including the current plugin);
+this list is separated by space, comma or semicolon
+** `CNCT_specific_data` with authentication plugin data (NOTE: this tag has a special "`multipart`" encoding as the data is generally longer than the 255 bytes supported for a single tag value)
+. Server
+** <- <<wireprotocol-op-crypt-key-callback>>
+*** Client -> <<wireprotocol-op-crypt-key-callback>> and continue with step 2
+** <- <<wireprotocol-op-accept>> -- Record selected protocol and type, continue with step 5 (attach)
+** <- <<wireprotocol-op-accept-data>>
++
+Record the selected protocol and type, and use that for sending and receiving subsequent messages.
+Enable wire compression if acknowledged by server.
++
+If `p_acpt_authenticated == 1`, mark authentication completed
++
+*** If `op_accept_data` -- `94`, process the data, plugin and keys, and continue with step 5 (attach)
+*** If `op_cond_accept` -- `98`, continue with step 3 (pre-attach-auth), item for `op_cond_accept`
+** <- <<wireprotocol-op-reject>> -- Server can't fulfill the requested protocol
+*** report error `isc_connect_reject` (`335544421`) or equivalent
+*** close connection
+** <- <<wireprotocol-responses-generic>> -- Error or other problem
+*** If `p_resp_status_vector` has an error, report it, otherwise report error `isc_login` (`335544472`) or equivalent
+*** close connection (end of this flow)
+. Server -- pre-attach auth
++
+If the requested authentication plugin name (`p_acpt_plugin`/`p_name`) is non-empty and different from the current authentication plugin name, switch to that authentication plugin.
++
+If the client cannot fulfill the server request for an authentication plugin or has no current authentication plugin, error `isc_login` (`335544472`) or equivalent should be reported, and the connection closed (end of this flow)
++
+If coming from step 2, treat this as if `op_cond_accept` was just received.
++
+** <- <<wireprotocol-op-accept-data,`op_cond_accept` -- `98`>>: process `p_acpt_data`, `p_acpt_plugin` and `p_acpt_keys`, and continue with step 4
+** <- <<wireprotocol-op-cont-auth,`op_cont_auth` -- `92`>>: process `p_data`, `p_name` (plugin name) and `p_keys`, and continue with step 4
+** <- <<wireprotocol-op-crypt-key-callback,`op_crypt_key_callback` -- `97`>>
+*** Client -> <<wireprotocol-op-crypt-key-callback>> and continue with step 3 (pre-attach auth)
+** <- <<wireprotocol-op-trusted-auth,`op_trusted_auth` -- `90`>> (not documented yet)
+** <- <<wireprotocol-responses-generic,`op_response` -- `9`>>
+*** If `p_resp_statusvector` has an error, report it and close the connection (end of this flow)
+*** Otherwise, this signals pre-attach auth completed
+**** Process keys from `p_resp_data`
+**** If authentication was *not* previously completed, and wire encryption is not disabled, set up wire encryption
+***** Client -> <<wireprotocol-op-crypt>>
+***** Set up wire encryption on incoming and outgoing stream
+***** Server <- <<wireprotocol-responses-generic,`op_response` -- `9`>>: if `p_resp_statusvector` has error, report it and close connection (<<wireprotocol-connect-disconnect>>), (end of flow)
+**** Mark authentication completed
+*** Continue with step 5 (attach); +
+_or_ if used as post-attach auth, connection successful (end of flow)
+. Client -- pre-attach auth -> <<wireprotocol-op-cont-auth>> with:
++
+--
+** `p_data` -- authentication plugin data
+** `p_name` -- current authentication plugin
+** `p_list` -- list of remaining authentication plugins, including current plugin (separated by space, comma, or semicolon)
++
+This only needs to be sent _once_;
+for subsequent messages an empty buffer can be sent.
+// TODO: Does it need to be sent if `CNCT_plugin_list` was sent?
+--
++
+Continue with step 3 (Server -- pre-attach auth)
+. Client -- attach -> <<wireprotocol-connect-attach>> with `op_attach`, `op_create` or `op_service_attach`
++
+If authentication was not yet complete at this point (as far as we know, only when `op_accept` -- `3` or `op_accept_data` -- `94` was received in the previous step), and protocol 13 or higher was selected, the database or service parameter buffer should include the following tags:
++
+--
+** `isc_dpb_auth_plugin_list`/`isc_spb_auth_plugin_list` -- with remaining authentication plugins (separated by space, comma or semicolon)
+** `isc_dpb_auth_plugin_name`/`isc_spb_auth_plugin_name` -- current authentication plugin
+** `isc_dpb_specific_auth_data`/`isc_spb_specific_auth_data` -- client authentication data
+--
++
+It should not include any of these tags (*if* protocol 13 or higher):
++
+--
+** `isc_dpb_password`/`isc_spb_password`
+** `isc_dpb_password_enc`/`isc_spb_password_enc`
+** `isc_dpb_trusted_auth`/`isc_spb_trusted_auth`
+--
+. Server/client -- post-attach auth
++
+This is the same as steps 3 and 4 (pre-attach auth), except `op_cond_accept` cannot occur, and its "`Continue with step 5 (attach)`" should be read as "`Connection successful (end of flow)`" (also noted there).
++
+If the pre-attach auth flow was previously entered, this will essentially be only a `op_response` with either an error or acceptance (connection success).
 
 [[wireprotocol-connect-detach]]
 === Detach
 
 Detaches from the database (`op_detach` -- `21`) or service (`op_service_detach` -- `83`).
-After detach the connection is still open, to disconnect send <<wireprotocol-databases-disconnect>> (`op_disconnect`).
+After detach the connection is still open, to disconnect send <<wireprotocol-connect-disconnect>> (`op_disconnect`).
 
 [float]
 ===== Client
