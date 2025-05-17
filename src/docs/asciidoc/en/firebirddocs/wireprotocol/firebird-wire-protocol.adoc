@@ -1,7 +1,7 @@
 [[wireprotocol]]
 = Firebird Wire Protocol
 Carlos Guzman Alvarez; Mark Rotteveel
-0.17, TBD
+0.17, 17 May 2025
 :doctype: book
 :sectnums:
 :sectanchors:
@@ -28,11 +28,13 @@ Most of the information was obtained by studying the Firebird source code and im
 The protocol is described in the form of the message sent by the client and received from the server.
 The described protocol is Firebird/InterBase protocol version 10.
 Earlier (InterBase) versions of the protocol are not in scope for this document.
-Changes in later protocol versions are described in notes below the description of the relevant version 10 message (currently higher versions are only partially described).
+Changes in later protocol versions are described in notes below the description of the relevant version 10 message (currently higher versions are only partially described), or the base message introduced in a later protocol version.
+Protocol changes to an existing message are generally additive (new fields are added to the end of a message) and cumulative (also apply for higher protocol versions), unless explicitly indicated otherwise.
 
 This document is not complete.
-It is advisable to consult the _InterBase 6 API Guide_ for additional information on subjects like parsing the status vector, information request items, and the meaning of operations.
+Consult the _InterBase 6 API Guide_ for additional information on subjects like parsing the status vector, information request items, and the meaning of operations.
 You can find this manual under "`InterBase 6.0 Manuals`" in the {firebird-site}/en/reference-manuals/[Reference Manuals] section of the Firebird website.
+We also recommend consulting the Firebird sources and other wire protocol implementations.
 
 Unless otherwise indicated, a client request must be flushed to the server for processing.
 For some operations the flush can be deferred, so it is sent together with a different operation.
@@ -46,7 +48,7 @@ this can make it easier to search for how it's used in Firebird itself.
 
 Below is a high-level overview of the changes per protocol versions.
 
-Be aware that protocol version greater than 10 are OR'ed with `0x8000` (`FB_PROTOCOL_FLAG`) to differentiate them from newer InterBase protocol versions.
+Be aware that protocol version greater than 10 are OR'ed with `0x8000` (`FB_PROTOCOL_FLAG`) to differentiate them from newer InterBase protocol versions with the same number.
 In message exchanges like <<wireprotocol-op-connect>>, this masked version is used, while for example the database info item `fb_info_protocol_version` reports the bare version.
 
 [#wireprotocol-versions-10]
@@ -98,12 +100,42 @@ It provides the following new features:
 * Database encryption key callback
 * Packed (``NULL``-aware) row data
 
+[#wireprotocol-versions-14]
+=== Protocol 14
+
+Protocol 14 was introduced in Firebird 3.0.1 to fix a bug in <<wireprotocol-op-crypt-key-callback>>.
+
+We recommend skipping separate implementation of this protocol version, and implement it as part of protocol 15.
+
+[#wireprotocol-versions-15]
+=== Protocol 15
+
+Protocol 15 was introduced in Firebird 3.0.2 and provides the following new features:
+
+* Support for <<wireprotocol-op-crypt-key-callback>> in the connect phase.
+This allows connections to encrypted databases that serve as their own security database.
+
+[#wireprotocol-versions-16]
+=== Protocol 16
+
+Protocol 16 was introduced in Firebird 4.0 and provides the following new features:
+
+* Statement timeouts
+
+[#wireprotocol-versions-17]
+=== Protocol 17
+
+Protocol 17 was introduced in Firebird 4.0.1 and provides the following new features:
+
+* <<wireprotocol-batches-sync>>
+* Batch information request (not yet documented)
+
 [[wireprotocol-responses]]
-== Responses
+== Common responses
 
 The wire protocol has a limited set of responses.
 Some operations have a specific response, which is described together with the operation.
-Most operation however use one (or more) of the responses described in this section.
+Most operation, however, use one (or more) of the responses described in this section.
 The meaning and content depend on the operation that initiated the response.
 
 [[wireprotocol-responses-generic]]
@@ -265,6 +297,68 @@ Operation code (`op_exit` -- `2` or `op_disconnect` -- `6`)
 
 After receiving this message, the client should close the aux connection.
 It's generally only sent just before the main connection is closed.
+
+[#wireprotocol-requests]
+== Common requests
+
+A few requests in the protocol have a common message format, where the operation code differs, and -- possibly -- the set of allowed values of other fields.
+
+We describe the request format here, and describe the allowed values in the section for a specific request.
+
+[#wireprotocol-requests-info]
+=== Generic information request
+
+[float]
+===== Client
+
+`Int32` -- `p_operation`::
+Operation code (value depends on the actual operation)
+
+`Int32` -- `p_info_object`::
+Object handle (e.g. statement, transaction, etc.)
+
+`Int32` -- `p_info_incarnation`::
+Incarnation of object (`0`)
++
+TODO: Usage and meaning?
+
+`Buffer` -- `p_info_items`::
+Requested information items
++
+A list of requested information items (each byte is an information item), so-called `SingleTpb` items.
+Some operations may have items that do have values (e.g. `isc_info_sql_sqlda_start` of <<wireprotocol-statements-information>>).
+Most values are specific to the operation.
++
+The list should end with `isc_info_end` -- ``1``footnote:[
+This is not required, at least not in recent Firebird versions.
+The server handles the end of the buffer without seeing `isc_info_end` as an implicit `isc_info_end`.
+However, we're not sure if that was always the case, so for potential compatibility reasons, consider it "`required`"].
+
+`Int32` -- `p_info_buffer_length`::
+Length of buffer available for receiving response
++
+In protocol 10, this is a signed Int16, encoded as Int32. +
+In protocol 11 and higher, this is an unsigned Int32.
++
+For compatibility reasons, values greater than or equal to 4,294,901,760 (i.e. 0xFFFF_0000 or greater) are masked with 0xFFFF, so only the low 16 bits are used.
++
+A too small value may lead to receiving a truncated buffer (last item is `isc_info_truncated` -- `2` instead of `isc_info_end` -- `1`), which necessitates requesting information again with a larger size.
+Some operations may have additional mechanisms to handle truncation, like
++
+The buffer in the response is sized to the actual length of the response (upto the declared available length), so specifying a larger than necessary size does not inflate the response on the wire.
+However, specifying an unnecessarily large size can lead to inefficiencies for the server.
+
+[float]
+===== Server
+
+<<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
+
+A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
+
+[IMPORTANT]
+====
+Information about how to parse the information buffer sent by the Firebird server can be found in the InterBase 6.0 documentation set
+====
 
 [#wireprotocol-connect]
 == Establishing connection
@@ -473,7 +567,7 @@ from server to client: "`keys`" known by the server (used for configuring authen
 [#wireprotocol-op-trusted-auth]
 === Trusted authentication
 
-Introduced in protocol 12(?).
+Introduced in protocol 11.
 
 `Int32` -- `p_operation`::
 Operation code (`op_trusted_auth` -- `90`)
@@ -503,7 +597,7 @@ Operation code (`op_crypt_key_callback` -- `97`)
 Crypt callback data
 
 [float]
-====== Additions in protocol 14 and higher
+====== Additions in protocol 14
 
 `Int32` -- `p_cc_reply`::
 Maximum expected reply size (16-bit signed integer encoded as 32-bit int)
@@ -599,19 +693,19 @@ For protocol 10 -- 12, the connection handshake is pretty simple.
 
 . Client -> <<wireprotocol-op-connect>>
 . Server
-** <- <<wireprotocol-op-accept>> -- Server accepts and reports selected protocol, continue with step 3
-** <- <<wireprotocol-op-reject>> -- Server can't fulfill the requested protocol
+** <- <<wireprotocol-op-accept,`op_accept` -- `3`>> -- Server accepts and reports selected protocol, continue with step 3
+** <- <<wireprotocol-op-reject,`op_reject` -- `4`>> -- Server can't fulfill the requested protocol
 *** Report error `isc_connect_reject` (`335544421`) or equivalent
 *** Close connection
-** <- <<wireprotocol-responses-generic>> -- Error or other problem
+** <- <<wireprotocol-responses-generic,`op_response` -- `9`>> -- Error or other problem
 *** If `p_resp_status_vector` has an error, report it, otherwise report error `isc_login` (`335544472`) or equivalent
 *** Close connection
 . Client -> <<wireprotocol-connect-attach>> with `op_attach`, `op_create` or `op_service_attach`
-. Server <- <<wireprotocol-responses-generic>>
+. Server <- <<wireprotocol-responses-generic,`op_response` -- `9`>>
 ** If `p_resp_status_vector` has no error or only a warning, connection is successful and can be used for other operations
 ** Otherwise, connection is unsuccessful
 *** Report error
-*** Close connection (<<wireprotocol-connect-disconnect>>)
+*** Close connection (client -> <<wireprotocol-connect-disconnect>>)
 
 [#wireprotocol-connect-handshake-13]
 ==== Protocol 13 and higher
@@ -627,16 +721,17 @@ We're open to suggestions.
 . Client -> <<wireprotocol-op-connect>>
 +
 The `p_user_identification` should include:
+// TODO: Is it required, or recommended?
 +
 ** `CNCT_plugin_name` with the current authentication plugin
 ** `CNCT_plugin_list` with the authentication plugins supported by the client (including the current plugin);
 this list is separated by space, comma or semicolon
 ** `CNCT_specific_data` with authentication plugin data (NOTE: this tag has a special "`multipart`" encoding as the data is generally longer than the 255 bytes supported for a single tag value)
 . Server
-** <- <<wireprotocol-op-crypt-key-callback>>
-*** Client -> <<wireprotocol-op-crypt-key-callback>> and continue with step 2
-** <- <<wireprotocol-op-accept>> -- Record selected protocol and type, continue with step 5 (attach)
-** <- <<wireprotocol-op-accept-data>>
+** <- <<wireprotocol-op-crypt-key-callback,`op_crypt_key_callback` -- `97`>> (read as protocol 15)
+*** Client -> <<wireprotocol-op-crypt-key-callback>> (write as protocol 15) and continue with step 2
+** <- <<wireprotocol-op-accept,`op_accept` -- `3`>> -- Record selected protocol and type, continue with step 5 (attach)
+** <- <<wireprotocol-op-accept-data,`op_accept_data` -- `94` or `op_cond_accept` -- `98`>>
 +
 Record the selected protocol and type, and use that for sending and receiving subsequent messages.
 Enable wire compression if acknowledged by server.
@@ -645,10 +740,10 @@ If `p_acpt_authenticated == 1`, mark authentication completed
 +
 *** If `op_accept_data` -- `94`, process the data, plugin and keys, and continue with step 5 (attach)
 *** If `op_cond_accept` -- `98`, continue with step 3 (pre-attach-auth), item for `op_cond_accept`
-** <- <<wireprotocol-op-reject>> -- Server can't fulfill the requested protocol
+** <- <<wireprotocol-op-reject,`op_reject` -- `4`>> -- Server can't accept any of the protocols or protocol options
 *** report error `isc_connect_reject` (`335544421`) or equivalent
 *** close connection
-** <- <<wireprotocol-responses-generic>> -- Error or other problem
+** <- <<wireprotocol-responses-generic,`op_response` -- `9`>> -- Error or other problem
 *** If `p_resp_status_vector` has an error, report it, otherwise report error `isc_login` (`335544472`) or equivalent
 *** close connection (end of this flow)
 . Server -- pre-attach auth
@@ -663,10 +758,10 @@ If coming from step 2, treat this as if `op_cond_accept` was just received.
 ** <- <<wireprotocol-op-cont-auth,`op_cont_auth` -- `92`>>: process `p_data`, `p_name` (plugin name) and `p_keys`, and continue with step 4
 ** <- <<wireprotocol-op-crypt-key-callback,`op_crypt_key_callback` -- `97`>>
 *** Client -> <<wireprotocol-op-crypt-key-callback>> and continue with step 3 (pre-attach auth)
-** <- <<wireprotocol-op-trusted-auth,`op_trusted_auth` -- `90`>> (not documented yet)
+** <- <<wireprotocol-op-trusted-auth,`op_trusted_auth` -- `90`>> (not documented yet, probably only post-attach auth with protocol 11 and 12(?))
 ** <- <<wireprotocol-responses-generic,`op_response` -- `9`>>
 *** If `p_resp_statusvector` has an error, report it and close the connection (end of this flow)
-*** Otherwise, this signals pre-attach auth completed
+*** Otherwise, this signals pre-attach auth (or post-attach auth) completed
 **** Process keys from `p_resp_data`
 **** If authentication was *not* previously completed, and wire encryption is not disabled, set up wire encryption
 ***** Client -> <<wireprotocol-op-crypt>>
@@ -674,7 +769,7 @@ If coming from step 2, treat this as if `op_cond_accept` was just received.
 ***** Server <- <<wireprotocol-responses-generic,`op_response` -- `9`>>: if `p_resp_statusvector` has error, report it and close connection (<<wireprotocol-connect-disconnect>>), (end of flow)
 **** Mark authentication completed
 *** Continue with step 5 (attach); +
-_or_ if used as post-attach auth, connection successful (end of flow)
+_or_ if used as post-attach auth, attach successfully completed (end of flow)
 . Client -- pre-attach auth -> <<wireprotocol-op-cont-auth>> with:
 +
 --
@@ -691,6 +786,8 @@ Continue with step 3 (Server -- pre-attach auth)
 . Client -- attach -> <<wireprotocol-connect-attach>> with `op_attach`, `op_create` or `op_service_attach`
 +
 If authentication was not yet complete at this point (as far as we know, only when `op_accept` -- `3` or `op_accept_data` -- `94` was received in the previous step), and protocol 13 or higher was selected, the database or service parameter buffer should include the following tags:
++
+If protocol 13 or higher is used, the "`wide`" parameter buffer variant (`isc_dpb_version2`/`isc_spb_version3` or higher) must be used given the size of the client authentication data (`..._specific_auth_data`).
 +
 --
 ** `isc_dpb_auth_plugin_list`/`isc_spb_auth_plugin_list` -- with remaining authentication plugins (separated by space, comma or semicolon)
@@ -709,7 +806,7 @@ It should not include any of these tags (*if* protocol 13 or higher):
 +
 This is the same as steps 3 and 4 (pre-attach auth), except `op_cond_accept` cannot occur, and its "`Continue with step 5 (attach)`" should be read as "`Connection successful (end of flow)`" (also noted there).
 +
-If the pre-attach auth flow was previously entered, this will essentially be only a `op_response` with either an error or acceptance (connection success).
+If the pre-attach auth flow was previously entered, this will essentially be only an <<wireprotocol-responses-generic,`op_response` -- `9`>> with either an error or acceptance (connection success).
 
 [[wireprotocol-connect-detach]]
 === Detach
@@ -849,42 +946,19 @@ Send <<wireprotocol-connect-detach>> with `op_detach` -- `21`, followed by <<wir
 [[wireprotocol-databases-information]]
 === Database information request
 
-// TODO Write a common section for info requests and point to it
-
 Requests database or server information.
 
-[float]
-===== Client
+Uses the <<wireprotocol-requests-info>> message with:
 
-`Int32` -- `p_operation`::
-Operation code (`op_info_database` -- `40`)
+[horizontal]
+`p_operation`:: 
+`op_info_database` -- `40`
 
-`Int32` -- `p_info_object`::
+`p_info_object`::
 Unused, always use `0`
 
-`Int32` -- `p_info_incarnation`::
-Incarnation of object (`0`)
-+
-TODO: Usage and meaning?
-
-`Buffer` -- `p_info_items`::
-Requested information items
-+
+`p_info_items`::
 Values of enum `db_info_types` in Firebird's `inf_pub.h`.
-
-`Int32` -- `p_info_buffer_length`::
-Length of buffer available for receiving response
-+
-Too small may lead to receiving a truncated buffer, which necessitates requesting information again with a larger size.
-+
-The buffer in the response is sized to the actual length of the response (upto the declared available length), so specifying a larger than necessary size does not inflate the response on the wire.
-
-[float]
-===== Server
-
-<<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
-
-A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
 [#wireprotocol-databases-cancel]
 === Cancellation
@@ -1135,42 +1209,19 @@ They can use the _invalid object_ handle (`0xFFFF`) instead of the -- not yet re
 [[wireprotocol-transactions-info]]
 === Transaction information request
 
-// TODO Write a common section for info requests and point to it
+Requests information on the transaction bound to the transaction handle.
 
-This is similar to <<wireprotocol-databases-information>>.
+Uses the <<wireprotocol-requests-info>> message with:
 
-[float]
-===== Client
+[horizontal]
+`p_operation`::
+`op_info_transaction` -- `42`
 
-`Int32` -- `p_operation`::
-Operation code (`op_info_transaction` -- `42`)
-
-`Int32` -- `p_info_object`::
+`p_info_object`::
 Transaction handle
 
-`Int32` -- `p_info_incarnation`::
-Incarnation of object (`0`)
-+
-TODO: Usage and meaning?
-
-`Buffer` -- `p_info_items`::
-Requested information items
-+
+`p_info_items`::
 Values of constants in Firebird's `inf_pub.h` starting with `isc_info_tra_` or `fbinfo_tra_`.
-
-`Int32` -- `p_info_buffer_length`::
-Length of buffer available for receiving response
-+
-Too small may lead to receiving a truncated buffer, which necessitates requesting information again with a larger size.
-+
-The buffer in the response is sized to the actual length of the response (upto the declared available length), so specifying a larger than necessary size does not inflate the response on the wire.
-
-[float]
-===== Server
-
-<<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
-
-A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
 
 [[wireprotocol-statements]]
 == Statements
@@ -1274,7 +1325,7 @@ This should generally match the connection dialect.
 Statement to be prepared
 
 `Buffer` -- `p_sqlst_items`::
-Describe and describe bind information items
+Statement information items, including describe and describe bind
 +
 --
 .Example of requested information items
@@ -1290,7 +1341,9 @@ Describe and describe bind information items
 --
 
 `Int32` -- `p_sqlst_buffer_length`::
-Target buffer length (`32768`)
+Target buffer length for information response
++
+See also the description of `p_info_buffer_length` in <<wireprotocol-requests-info>>.
 
 [float]
 ===== Server
@@ -1301,15 +1354,17 @@ For statements with a lot of columns and/or parameters, it may be necessary to h
 
 For an example, see Jaybird's https://github.com/FirebirdSQL/jaybird/blob/c152a12d8dec10a3f7bf4013b4b39ad5dfed85b6/src/main/org/firebirdsql/gds/ng/StatementInfoProcessor.java#L71[`StatementInfoProcessor.handleTruncatedInfo(...)`].
 
+// TODO Describe processing statement bind in more detail
+
 [[wireprotocol-statements-prepare-v11]]
 ==== Deviations for protocol version 11
 
 The statement handle can no longer be allocated separately (or at least, its response is deferred).
 The initial <<wireprotocol-statements-allocate>> operation *must* be sent together with the first prepare operation.
-When allocating and preparing together, the value of the statement handle of the _prepare_ must be `0xFFFF` (_invalid object_ handle).
+When allocating and preparing together, the value of the statement handle of the _prepare_ message must be `0xFFFF` (_invalid object_ handle).
 The responses must be processed in order: first _allocate_ response, then _prepare_ response.
 
-Once a statement handle has been allocated, it can be reused by sending a _prepare_ with the obtained statement handle.
+Once a statement handle has been allocated, it can be reused by sending a _prepare_ message with its statement handle.
 
 [[wireprotocol-statements-describe]]
 === Describe
@@ -1400,13 +1455,13 @@ Output parameters in BLR format
 Output message number (0) ??
 
 [float]
-====== Additions in protocol 16 and higher
+====== Additions in protocol 16
 
 `UInt32` -- `p_sqldata_timeout`::
 Statement timeout value in milliseconds (`0` -- use connection-level statement timeout)
 
 [float]
-====== Additions in protocol 18 and higher
+====== Additions in protocol 18
 
 `UInt32` -- `p_sqldata_cursor_flags`::
 Cursor flags
@@ -1417,7 +1472,7 @@ Cursor flags
 --
 
 [float]
-====== Additions in protocol 19 and higher
+====== Additions in protocol 19
 
 `UInt32`-- `p_sqldata_inline_blob_size`::
 Maximum inline blob size
@@ -1510,49 +1565,21 @@ Reserved for future use, always use `0`.
 <<wireprotocol-responses-generic>>
 
 [[wireprotocol-statements-information]]
-=== Information request
+=== Statement information request
 
-// TODO Write a common section for info requests and point to it
+Requests information on the statement prepared on the statement handle, including information on its input parameters and output columns or parameters, or information on the server-side statement handle itself.
 
-This is similar to <<wireprotocol-databases-information>>.
+Uses the <<wireprotocol-requests-info>> message with:
 
-[float]
-===== Client
+[horizontal]
+`p_operation`::
+`op_info_sql` -- `70`
 
-`Int32` -- `p_operation`::
-Operation code (`op_info_sql` -- `70`)
-
-`Int32` -- `p_info_object`::
+`p_info_object`::
 Statement handle
 
-`Int32` -- `p_info_incarnation`::
-Incarnation of object (`0`)
-+
-TODO: Usage and meaning?
-
-`Buffer` -- `p_info_items`::
-Requested information items
-+
+`p_info_items`::
 Values of constants in Firebird's `inf_pub.h` starting with `isc_info_sql_`.
-
-`Int32` -- `p_info_buffer_length`::
-Length of buffer available for receiving response
-+
-Too small may lead to receiving a truncated buffer, which necessitates requesting information again with a larger size.
-+
-The buffer in the response is sized to the actual length of the response (upto the declared available length), so specifying a larger than necessary size does not inflate the response on the wire.
-
-[float]
-===== Server
-
-<<wireprotocol-responses-generic>> -- on success, `p_resp_data` holds the requested information.
-
-A truncated response is considered a success, and can only be determined by parsing `p_resp_data`.
-
-[IMPORTANT]
-====
-Information about how to parse the information buffer sent by the Firebird server can be found in the InterBase 6.0 documentation set
-====
 
 [[wireprotocol-blobs]]
 == Blobs
@@ -2031,7 +2058,7 @@ Statement handle
 [[wireprotocol-batches-sync]]
 === Sync batch
 
-Introduced in protocol 17 (Firebird 4.0.2).
+Introduced in protocol 17 (Firebird 4.0.1).
 
 Used to force the server to acknowledge previously sent lazy intermediate operations (e.g. `op_batch_msg`, `op_batch_regblob`, `op_batch_blob_stream` and possibly others).
 
@@ -2144,7 +2171,20 @@ BLOB headers and records in a stream need not match, i.e. one record may contain
 
 <<wireprotocol-responses-generic>>
 
-// TODO Document op_info_batch (v17)
+[#wireprotocol-batch-info]
+=== Batch information request
+
+Uses the <<wireprotocol-requests-info>> message with:
+
+[horizontal]
+`p_operation`::
+`op_info_batch` -- `111`
+
+`p_info_object`::
+Statement handle
+
+`p_info_items`::
+Values of `INF_` constants of `IBatch` (in `IdlFbInterfaces.h`)
 
 [[wireprotocol-services]]
 == Services
@@ -2168,6 +2208,8 @@ Send <<wireprotocol-connect-detach>> with `op_service_detach` -- `83`, followed 
 
 [[wireprotocol-services-start]]
 === Start
+
+Although the message looks similar to <<wireprotocol-requests-info>>, it has different semantics.
 
 [float]
 ===== Client
@@ -2193,6 +2235,8 @@ Service parameter buffer
 
 [[wireprotocol-services-query]]
 === Query service
+
+Although the message looks similar to <<wireprotocol-requests-info>>, it has different semantics.
 
 [float]
 ===== Client
@@ -2463,7 +2507,7 @@ A text string, read or written as a `Buffer`, encoded in the connection characte
 4+|Revision History
 
 |0.17
-|TBD
+|17 May 2025
 |MR
 a|* Reordered revision history, so latest change is at the top
 * Documented `op_dummy`
@@ -2473,7 +2517,9 @@ a|* Reordered revision history, so latest change is at the top
 * Improved protocol 11 descriptions
 * Documented protocol 12 (`op_cancel`)
 * Documented the value next to the constant names
-* Documented protocol 13 connect/authentication/attach: `op_accept_data`, `op_cond_accept`, `op_cont_auth`
+* Partially documented protocol 11 `op_trusted_auth` (message, not logic)
+* Documented protocol 13 connect/authentication/attach: `op_accept_data`, `op_cond_accept`, `op_cont_auth`, `op_crypt_key_callback`, `op_crypt`, authentication and attach flow
+* Described info request message in one place
 
 |0.16
 |13 Apr 2025
