@@ -262,7 +262,7 @@ Firebird may return fewer rows than requested in <<wireprotocol-statements-fetch
 [[wireprotocol-responses-inline-blob]]
 === Inline blob response
 
-Introduced in protocol 19.
+Introduced in protocol 19 (Firebird 5.0.3).
 
 Each `op_inline_blob` -- `114` response contains a single blob.
 The response is sent as part of a stream of responses to <<wireprotocol-statements-execute>> (specifically `op_execute2`), `op_executeimmediate2` (not yet documented), <<wireprotocol-statements-fetch>>, and `op_fetch_scroll` (not yet documented).
@@ -1597,6 +1597,93 @@ Failure response: <<wireprotocol-responses-generic>> -- with an error in `p_resp
 
 It is possible to receive <<wireprotocol-responses-generic>> with an error in the status vector after one or more fetch responses.
 
+[#wireprotocol-statements-fetch-scroll]
+=== Fetch scroll
+
+Introduced in protocol 18 (Firebird 5.0).
+
+Fetches from a scrollable cursor.
+
+This message is an extended version of <<wireprotocol-statements-fetch>>.
+
+[float]
+===== Client
+
+`Int32` -- `p_operation`::
+Operation code (`op_fetch-scroll` -- `112`)
+
+`Int32` -- `p_sqldata_statement`::
+Statement handle
+
+`Buffer` -- `p_sqldata_blr`::
+Output parameters in BLR format
++
+Only needs to be sent on first fetch;
+subsequent fetches can send a zero-length buffer.
+
+`Int32` -- `p_sqldata_message_number`::
+Message number (always `0`)
+
+`Int32` -- `p_sqldata_messages`::
+Message count/fetch size (e.g. `200`)
++
+The server may decide to return fewer rows than requested, even if the end-of-cursor wasn't reached yet.
++
+Ignored for `p_sqldata_fetch_op` other than `fetch_next`, or if the statement is a `SELECT ... FOR UPDATE`;
+for those fetch operations or conditions, at most 1 row is fetched.
+
+`Int32` -- `p_sqldata_fetch_op`::
+Fetch operation
++
+Valid values (see also enum `P_FETCH` in `protocol.h`):
++
+--
+[horizontal]
+`fetch_next` -- `0`::
+Fetch next rows (same as using <<wireprotocol-statements-fetch>>)
+
+`fetch_prior` -- `1`::
+Fetch previous row
+
+`fetch_first` -- `2`::
+Fetch first row
+
+`fetch_last` -- `3`::
+Fetch last row
+
+`fetch_absolute` -- `4`::
+Fetch row by absolute position
++
+Negative values of `p_sqldata_fetch_pos` are from the end of the cursor (i.e. `-1` is the last row, `-2` the row before the last row, etc.)
+
+`fetch_relative` -- `5`::
+Fetch row by relative position
+--
++
+If the current cursor is _not_ a scrollable cursor, only `fetch_next` is accepted.
+
+`Int32` -- `p_sqldata_fetch_pos`::
+Requested position
++
+Ignored if `p_sqldata_fetch_op` is not `fetch_absolute` or `fetch_relative`.
+
+[CAUTION]
+====
+If combining `fetch_next` with a fetch size greater than `1` with other scroll operations, you may need to keep your own position accounting to ensure you scroll to the right row.
+====
+
+[float]
+===== Server
+
+Success response: one or more ( zero or more <<wireprotocol-responses-inline-blob>> ), <<wireprotocol-responses-fetch>>
+
+The <<wireprotocol-responses-inline-blob>> messages are only included in protocol 19 or higher, and only if the statement was executed with a non-zero value for `p_sqldata_inline_blob_size`, and if the row has blobs smaller than that size.
+See also <<wireprotocol-responses-fetch-sequence>>.
+
+Failure response: <<wireprotocol-responses-generic>> -- with an error in `p_resp_status_vector`
+
+It is possible to receive <<wireprotocol-responses-generic>> with an error in the status vector after one or more fetch responses.
+
 [[wireprotocol-statements-cursorname]]
 === Set cursor name
 
@@ -1638,6 +1725,38 @@ Statement handle
 
 `p_info_items`::
 Values of constants in Firebird's `inf_pub.h` starting with `isc_info_sql_`.
+
+[#ireprotocol-statements-cursor-info]
+
+Requests information on an open cursor of a statement handle.
+
+Uses the <<wireprotocol-requests-info>> message with:
+
+[horizontal]
+`p_operation`::
+`op_info_cursor` -- `113`
+
+`p_info_object`::
+Statement handle
+
+`p_info_items`::
+Values of constants in Firebird's `IResultSet` class in `IdlFbInterfaces.h` starting with `INF_`.
++
+Known items:
++
+--
+[horizontal]
+`INF_RECORD_COUNT` -- `10`::
+Cursor size (total number of records in scrollable cursor)
++
+If the cursor is not scrollable, the returned value is `-1` to indicate the value is unknown.
+--
+
+[CAUTION]
+====
+This request should only be sent after a fetch (<<wireprotocol-statements-fetch>> or <<wireprotocol-statements-fetch-scroll>>).
+Attempts to request cursor information between execute and the first fetch may result in SQLDA errors on fetch.
+====
 
 [[wireprotocol-blobs]]
 == Blobs
@@ -2568,6 +2687,8 @@ A text string, read or written as a `Buffer`, encoded in the connection characte
 |TBD
 |MR
 a|* Documented `op_inline_blob` (protocol 19) and updated execute and fetch documentation
+* Documented `op_fetch_scroll` (protocol 18)
+* Documented `op_info_cursor` (protocol 18)
 
 |0.17
 |17 May 2025
