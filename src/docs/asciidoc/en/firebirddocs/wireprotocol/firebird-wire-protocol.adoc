@@ -1,7 +1,7 @@
 [[wireprotocol]]
 = Firebird Wire Protocol
 Carlos Guzman Alvarez; Mark Rotteveel
-0.17, 17 May 2025
+0.18, TBD
 :doctype: book
 :sectnums:
 :sectanchors:
@@ -128,7 +128,21 @@ Protocol 16 was introduced in Firebird 4.0 and provides the following new featur
 Protocol 17 was introduced in Firebird 4.0.1 and provides the following new features:
 
 * <<wireprotocol-batches-sync>>
-* Batch information request (not yet documented)
+* <<wireprotocol-batch-info>>
+
+[#wireprotocol-version-18]
+=== Protocol 18
+
+Protocol 18 was introduced in Firebird 5.0 and provides the following new features:
+
+* Scrollable cursors (fetch scroll) (not yet documented)
+
+[#wireprotocol-version-19]
+=== Protocol 19
+
+Protocol 19 was introduced in Firebird 5.0.3 and provides the following new features:
+
+* Inline blobs (see <<wireprotocol-responses-inline-blob>>, <<wireprotocol-responses-fetch>>, <<wireprotocol-statements-execute>>, and <<wireprotocol-statements-fetch>>)
 
 [[wireprotocol-responses]]
 == Common responses
@@ -224,12 +238,16 @@ The row data is not in a buffer like described in <<wireprotocol-appendix-types>
 +
 You can also consider the row data not a part of the fetch response, but something that is sent *after* the fetch response.
 
-The success response to <<wireprotocol-statements-fetch>> is not a single of `op_fetch_response`, but a sequence of `op_fetch_response` and row data.
+The success response to <<wireprotocol-statements-fetch>> is not a single of `op_fetch_response`, but a sequence of `op_fetch_response` and row data, or -- since protocol 19 -- a sequence containing a sequence of 0 or more <<wireprotocol-responses-inline-blob>>, `op_fetch_response` and row data.
 That is:
 
+[#wireprotocol-responses-fetch-sequence]
+.Sequence of responses to a fetch
 ----
+0..n <op-inline_blob ...> -- protocol 19 and higher
 <op-fetch-response (status = 0, count = 1)>
 <row-data>
+0..n <op-inline_blob ...>  -- protocol 19 and higher
 <op-fetch-response (status = 0, count = 1)>
 <row-data>
 ...
@@ -239,7 +257,44 @@ else:
   <op-fetch-response (status = 0, count = 0)>
 ----
 
-Firebird may return fewer rows than requested in <<wireprotocol-statements-fetch>>.
+Firebird may return fewer rows than requested in <<wireprotocol-statements-fetch>>, even if end-of-cursor is not yet reached.
+
+[[wireprotocol-responses-inline-blob]]
+=== Inline blob response
+
+Introduced in protocol 19.
+
+Each `op_inline_blob` -- `114` response contains a single blob.
+The response is sent as part of a stream of responses to <<wireprotocol-statements-execute>> (specifically `op_execute2`), `op_executeimmediate2` (not yet documented), <<wireprotocol-statements-fetch>>, and `op_fetch_scroll` (not yet documented).
+
+`Int32` -- `p_operation`::
+Operation code
+
+If operation equals `op_inline_blob` -- `114`:
+
+`Int32` -- `p_tran_id`::
+Transaction handle
++
+The same transaction handle as used when executing the statement.
+
+`Int64` -- `p_blob_id`::
+Blob id
+
+`Buffer` -- `p_blob_info`::
+All blob info
++
+Same encoding as `p_resp_data` in response to a blob information request with all blob information items.
+
+`Buffer` -- `p_blob_data`::
+Segmented blob data
++
+Same encoding as `p_resp_data` in response to <<wireprotocol-blobs-getsegment>>).
+
+The transaction handle (`p_tran_id`) and blob id (`p_blob_id`) can -- for example -- be used as a key to look up inline blobs from a local -- attachment specific -- cache when the client wants to open a blob.
+Instead of remotely opening the blob and retrieving data or information from the server, the client can then serve the data from the inline blob.
+
+The server sends each blob of the row in the following <<wireprotocol-responses-fetch>> or <<wireprotocol-responses-sql>> as an inline blob, if it fits within the specified `p_sqldata_inline_blob_size` (including segment lengths).
+It is up to the client to decide if they want to cache the inline blob or discard it (e.g. if the cache is full).
 
 [[wireprotocol-responses-slice]]
 === Slice response
@@ -1474,14 +1529,12 @@ Cursor flags
 [float]
 ====== Additions in protocol 19
 
-`UInt32`-- `p_sqldata_inline_blob_size`::
+`UInt32` -- `p_sqldata_inline_blob_size`::
 Maximum inline blob size
 +
 A value of `0` disables inline blobs.
 The server may use a lower limit than requested.
 In the Firebird 5.0.3 and Firebird 6 implementation at the time of writing, the server has a maximum of 65535 bytes.
-+
-TODO: Describe `op_inline_blob` somewhere
 
 [float]
 ===== Server
@@ -1492,7 +1545,9 @@ For `op_execute` -- `63`:
 
 For `op_execute2` -- `76`:
 
-Success response: <<wireprotocol-responses-sql>> followed by <<wireprotocol-responses-generic>>
+Success response: ( zero or more <<wireprotocol-responses-inline-blob>> ), <<wireprotocol-responses-sql>> followed by <<wireprotocol-responses-generic>>
+
+The <<wireprotocol-responses-inline-blob>> messages are only included in protocol 19 or higher, and only if the statement was executed with a non-zero value for `p_sqldata_inline_blob_size`, and if the row has blobs smaller than that size.
 
 Failure response: only <<wireprotocol-responses-generic>>
 
@@ -1533,7 +1588,10 @@ The server may decide to return fewer rows than requested, even if the end-of-cu
 [float]
 ===== Server
 
-Success response: one or more <<wireprotocol-responses-fetch>>
+Success response: one or more ( zero or more <<wireprotocol-responses-inline-blob>> ), <<wireprotocol-responses-fetch>>
+
+The <<wireprotocol-responses-inline-blob>> messages are only included in protocol 19 or higher, and only if the statement was executed with a non-zero value for `p_sqldata_inline_blob_size`, and if the row has blobs smaller than that size.
+See also <<wireprotocol-responses-fetch-sequence>>.
 
 Failure response: <<wireprotocol-responses-generic>> -- with an error in `p_resp_status_vector`
 
@@ -2505,6 +2563,11 @@ A text string, read or written as a `Buffer`, encoded in the connection characte
 [%autowidth, width="100%", cols="4", options="header", frame="none", grid="none", role="revhistory"]
 |===
 4+|Revision History
+
+|0.18
+|TBD
+|MR
+a|* Documented `op_inline_blob` (protocol 19) and updated execute and fetch documentation
 
 |0.17
 |17 May 2025
