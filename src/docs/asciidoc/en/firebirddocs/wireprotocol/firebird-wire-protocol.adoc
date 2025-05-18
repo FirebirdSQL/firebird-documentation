@@ -194,7 +194,7 @@ It might also be advantageous to look at the sources of {net-provider-repo} or {
 [[wireprotocol-responses-sql]]
 === SQL response
 
-Success response to `op_execute2` (see <<wireprotocol-statements-execute>>) or `op_executeimmediate2` (not yet documented).
+Success response to `op_execute2` (see <<wireprotocol-statements-execute>>) or `op_exec_immediate2` (not yet documented).
 
 `Int32` -- `p_operation`::
 Operation code
@@ -205,7 +205,7 @@ If operation equals `op_sql_response` -- `78`:
 Count of rows following response (in practice, only `1` or `0`)
 
 Row data::
-The row data is not in a buffer like described in <<wireprotocol-appendix-types>>, but as a sequence (0..1) of data rows with a special format, see <<wireprotocol-reading-row-data>>.
+The row data is not in a buffer like described in <<wireprotocol-appendix-types>>, but as a sequence (0..1) of data rows with a special format, see <<wireprotocol-row-data>>.
 +
 You can also consider the row data not a part of the SQL response, but something that is sent *after* the SQL response.
 
@@ -234,7 +234,7 @@ A value of `0` indicates end-of-batch (fetch complete).
 Together with status `100`, it also means end-of-cursor, otherwise there are more rows available for a next fetch.
 
 Row data::
-The row data is not in a buffer like described in <<wireprotocol-appendix-types>>, but as a sequence (0..1) of data rows with a special format, see <<wireprotocol-reading-row-data>>.
+The row data is not in a buffer like described in <<wireprotocol-appendix-types>>, but as a sequence (0..1) of data rows with a special format, see <<wireprotocol-row-data>>.
 +
 You can also consider the row data not a part of the fetch response, but something that is sent *after* the fetch response.
 
@@ -265,7 +265,7 @@ Firebird may return fewer rows than requested in <<wireprotocol-statements-fetch
 Introduced in protocol 19 (Firebird 5.0.3).
 
 Each `op_inline_blob` -- `114` response contains a single blob.
-The response is sent as part of a stream of responses to <<wireprotocol-statements-execute>> (specifically `op_execute2`), `op_executeimmediate2` (not yet documented), <<wireprotocol-statements-fetch>>, and <<wireprotocol-statements-fetch-scroll>>.
+The response is sent as part of a stream of responses to <<wireprotocol-statements-execute>> (specifically `op_execute2`), `op_exec_immediate2` (not yet documented), <<wireprotocol-statements-fetch>>, and <<wireprotocol-statements-fetch-scroll>>.
 
 `Int32` -- `p_operation`::
 Operation code
@@ -1446,7 +1446,7 @@ The information can be requested together with <<wireprotocol-statements-describ
 Describe of input parameters of a query is done using the <<wireprotocol-statements-information,statement information request message>>
 
 .Example of requested information items
-* `isc_info_sql_select`
+* `isc_info_sql_bind`
 * `isc_info_sql_describe_vars`
 * `isc_info_sql_sqlda_seq`
 * `isc_info_sql_type`
@@ -2608,10 +2608,244 @@ Unused
 `Int32` -- `p_event_rid`::
 Local event id -- same id as used to <<wireprotocol-events-que-events,queue>> the event
 
-[[wireprotocol-reading-row-data]]
-== Reading row data
+[#wireprotocol-row-data]
+== Reading and writing row data [[wireprotocol-reading-row-data]]
 
-TODO: Processing row data
+For sending rows (on execute) and receiving rows (on execute (`op_execute2`/`op_exec_immediate2`) or fetch), there are two things the client needs:
+
+* The row BLR (Binary Language Representation)
++
+The client only needs to write row BLR, it does not need to read it.
+* The actual row data of a single row (or parameter)
++
+The client needs to read and write row data.
+
+[#wireprotocol-row-data-blr]
+=== Row BLR (Binary Language Representation)
+
+The row BLR is a description of how the client will send row data with parameters, or expects the server to send the row data.
+
+This BLR does not need to be identical to the `isc_info_sql_select` or `isc_info_sql_bind` description, but if you use other types, they must be convertible, and for parameters, lengths can only be _shorter_ than the length of the target type (or at least, longer lengths will result in a string truncation error if the actual value is longer).
+On the other hand, for output rows, describing a shorter length may result in truncation error if the actual value is longer.
+
+This can, for example, be used to let the user use a different datatype, and offload the conversion to the target datatype to the server.
+For `CHAR`/`BINARY` parameters, it can make sense -- to reduce the transfer size -- to send parameter values with their actual length, i.e. without padding with space (0x20) for non-binary, or NUL (0x00) for binary (including `CHAR(n) CHARACTER SET OCTETS`).
+However, special care must be taken for multibyte character sets like `UTF8`.
+
+The row BLR needs to be sent for:
+
+. <<wireprotocol-statements-execute,Execute statement>>
+.. for parameters: in `p_sqldata_blr` (if there are no parameters, an empty buffer suffices)
+.. for output row (`op_execute2`): in `p_sqldata_out_blr`
+. `op_exec_immediate2` (not yet documented)
+. <<wireprotocol-statements-fetch>> and <<wireprotocol-statements-fetch-scroll>>: in `p_sqldata_blr`
++
+The row BLR only needs to be sent for the first fetch after an execute.
+If sent on subsequent fetch, the server will ignore it (so changing the BLR between fetches has no effect).
+. <<wireprotocol-batches-create,Create batch>>: in `p_batch_blr`
++
+Describes the parameter row values added to the batch using <<wireprotocol-batches-msg>>.
+
+[#wireprotocol-row-data-blr-format]
+==== Row BLR format
+
+We'll describe the row format in terms of its <<wireprotocol-row-data-blr-envelope,envelope>>, individual <<wireprotocol-row-data-blr-parameter,parameters>>, and their <<wireprotocol-row-data-blr-type,types>>.
+
+Unless explicitly specified, values are 1 byte.
+
+The values of the `blr_` constants can be found in `blr.h` (in `[src/]include/firebird/impl/`).
+
+[float#wireprotocol-row-data-blr-envelope]
+===== Envelope
+
+[listing]
+----
+{ blr_version5 | blr_version4 } <1>
+blr_begin
+blr_message
+0 <2>
+<parameter-count> (Int16 litle endian)
+sequence of <parameter-description> <3>
+blr_end
+blr_eoc
+----
+
+<1> Use `blr_version5` for dialect 3, use `blr_version4` for dialect 1.
+
+<2> We're not sure of the meaning;
+possibly related to the value of `p_sqldata_message_number`/`p_sqldata_out_message_number`.
+
+<3> See <<wireprotocol-row-data-blr-parameter>>
+
+[float#wireprotocol-row-data-blr-parameter]
+==== Parameter description
+
+[listing]
+----
+<type-description> <1>
+blr_short <2>
+0 <3>
+----
+
+<1> See <<wireprotocol-row-data-blr-type>>
+
+<2> Null indicator
+
+<3> We're not sure, possibly "`end of parameter`"?
+
+[float#wireprotocol-row-data-blr-type]
+==== Type description
+
+The `SQL_{asterisk}` constants used below are defined in `sqlda_pub.h` (in `[src/]include/firebird/impl/`).
+These are the type values reported by `isc_info_sql_type` for the bind descriptions, with the null-bit cleared (i.e. `type-value & ~1`).
+
+[float#wireprotocol-row-data-blr-type-simple]
+===== Simple types
+
+For most types, the type description is a single byte:
+
+[listing]
+----
+<blr-type-code>
+----
+
+Where _blr-type-code_ is one of:
+
+[horizontal]
+`blr_double`:: `SQL_DOUBLE` (`DOUBLE PRECISION`)
+`blr_float`:: `SQL_FLOAT` (`FLOAT`)
+`blr_d_float`:: `SQL_D_FLOAT` (internal double precision type, not expected to surface in practice)
+`blr_sql_date`:: `SQL_TYPE_DATE` (`DATE`)
+`blr_sql_time`:: `SQL_TYPE_TIME` (`TIME`)
+`blr_timestamp`:: `SQL_TIMESTAMP` (`TIMESTAMP` or dialect 1 `DATE`)
+`blr_bool`:: `SQL_BOOLEAN` (`BOOLEAN`)
+`blr_dec64`:: `SQL_DEC16` (`DECIMAL(16)`)
+`blr_dec128`:: `SQL_DEC34` (`DECIMAL(34)`)
+`blr_timestamp_tz`:: `SQL_TIMESTAMP_TZ` (`TIMESTAMP WITH TIME ZONE`)
+`blr_sql_time_tz`:: `SQL_TIME_TZ` (`TIME WITH TIME ZONE`)
+`blr_ex_timestamp_tz`:: `SQL_TIMESTAMP_TZ_EX` (`EXTENDED TIMESTAMP WITH TIME ZONE` -- special bind-only variant of `TIMESTAMP WITH TIME ZONE` configurable with `SET BIND` or `isc_dpb_set_bind`)
+`blr_ex_time_tz`:: `SQL_TIME_TZ_EX` (`EXTENDED TIME WITH TIME ZONE` -- special bind-only variant of `TIME WITH TIME ZONE` configurable with `SET BIND` or `isc_dpb_set_bind`)
+
+[float#wireprotocol-row-data-blr-type-fixed]
+===== Fixed point numerical types
+
+The fixed point numerical data types (including their parent integer types) are described as:
+
+[listing]
+----
+<blr-type-code>
+<scale>
+----
+
+Where _scale_ is `0` for integer types or `NUMERIC(p[,s])`/`DECIMAL(p[,s])` with `s` absent or `s = 0`.
+For non-zero `s`, _scale_ is `-s`.
+This is the value reported for `isc_info_sql_scale`.
+
+Where _blr-type-code_ is one of:
+
+[horizontal]
+`blr_short`:: `SQL_SHORT` (`SMALLINT`, or `NUMERIC(p[,s])` with `++1 <= p <= 4++`)
+`blr_long`:: `SQL_LONG` (`INTEGER`, `NUMERIC(p[,s])` with `++4 < p <= 9++`, or `DECIMAL(p[,s])` with `++1 < p <= 9++`)
+`blr_int64`:: `SQL_INT64` (`BIGINT`, or `NUMERIC(p[,s])`/`DECIMAL(p[,s])` with `++9 < p <= 18++`)
+`blr_int128`:: `SQL_INT128` (`INT128`, or `NUMERIC(p[,s])`/`DECIMAL(p[,s])` with `++18 < p <= 38++`)
+
+[float#wireprotocol-row-data-blr-type-char]
+===== Character/binary string types
+
+The current way to generate BLR for character/binary string types is:
+
+----
+<blr-type-code>
+<character-set-id> <1> <2>
+<collation-id>     <1> <3>
+<length> (Int16 little-endian) <4>
+----
+
+<1> An alternative interpretation, instead of 1 byte _character-set-id_ and 1 byte _collation-id_, is an Int16 little-endian with the value reported for `isc_info_sql_sub_type` (which for character/binary string types happens to be the character set id and collation id).
+
+<2> As far as we're aware, you can also use this to specify a different character set than the character set of the target/source type, and the server will convert for you.
+You may need to adjust _length_ accordingly if these character sets have different bytes per character. +
+We haven't verified if this actually works, so test it first.
+
+<3> The collation-id might be ignored by the server, or alternatively it might be advisable to set to `0` (e.g Jaybird does this), we're not entirely sure about this.
+
+<4> For `blr_varying2` this is the maximum length in bytes (excluding the length prefix).
+For `blr_text2` this is the actual length.
+
+Where _blr-type-code_ is one of:
+
+[horizontal]
+`blr_varying2`:: `SQL_VARYING` (`VARCHAR`/`VARBINARY`)
+`blr_text2`:: `SQL_TEXT` (`CHAR`/`BINARY`)
+
+As far as we know, all Firebird versions should support this encoding.
+
+An alternative -- "`legacy`" -- encoding is:
+
+[listing]
+----
+<blr-type-code>
+<length> (Int16 little-endian)
+----
+
+Where _blr-type-code_ is one of:
+
+[horizontal]
+`blr_varying`:: `SQL_VARYING` (`VARCHAR`/`VARBINARY`)
+`blr_text`:: `SQL_TEXT` (`CHAR`/`BINARY`)
+
+[float#wireprotocol-row-data-blr-type-blob]
+===== Blob types
+
+Used for `SQL_BLOB`.
+This type description only applies to Firebird 2.5 and higher.
+When connecting to an older Firebird version, use the type description of <<wireprotocol-row-data-blr-type-array>>.
+
+[listing]
+----
+blr_blob2
+<subtype> (Int16 little-endian)
+<character-set-id> <1> <2>
+<collation-id>     <1> <3>
+----
+<1> An alternative interpretation, instead of 1 byte _character-set-id_ and 1 byte _collation-id_, is an Int16 little-endian with the value reported for `isc_info_sql_scale` (which for `BLOB SUB_TYPE TEXT` happens to be the character set id and collation id).
+
+<2> As far as we're aware, you can also use this to specify a different character set than the character set of the target/source type, and the server will convert for you.
+You may need to adjust _length_ accordingly if these character sets have different bytes per character. +
+We haven't verified if this actually works, so test it first.
+
+<3> The collation-id might be ignored by the server, or alternatively it might be advisable to set to `0` (e.g Jaybird does this), we're not entirely sure about this.
+
+[float#wireprotocol-row-data-blr-type-array]
+===== Array types
+
+This is used for arrays (either `SQL_QUAD` or `SQL_ARRAY`), and for blobs (`SQL_BLOB`) with Firebird 2.1 and earlier.
+
+[listing]
+----
+blr_quad
+<scale> <1>
+----
+<1> The value reported for `isc_info_sql_scale` (meaning unclear?). +
+Firebird code only sets _scale_ to this value for `SQL_QUAD`, and sets it to `0` for `SQL_ARRAY` and `SQL_BLOB`.
+
+[float#wireprotocol-row-data-blr-type-null]
+===== Null type
+
+The null type, `SQL_NULL`, is only used for parameters (e.g. `? IS [NOT] NULL`).
+As far as we know, you could use any type, but the following description as a `CHAR(0)` is the most efficient, because you'll send no data at all, and only an Int16 null-indicator in protocol 10 - 12 or a single bit in the null-bitset in protocol 13 and higher.
+
+[listing]
+----
+blr_text
+0
+0
+----
+
+[#wireprotocol-row-data-format]
+=== Row data format
+
+// TODO Consider if we also need to provide details specifically about reading or writing data
 
 :sectnums!:
 
@@ -2690,6 +2924,7 @@ A text string, read or written as a `Buffer`, encoded in the connection characte
 a|* Documented `op_inline_blob` (protocol 19) and updated execute and fetch documentation
 * Documented `op_fetch_scroll` (protocol 18)
 * Documented `op_info_cursor` (protocol 18)
+* Documented row BLR
 
 |0.17
 |17 May 2025
