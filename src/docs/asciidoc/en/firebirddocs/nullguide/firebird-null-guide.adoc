@@ -2085,6 +2085,18 @@ etc. -- see <<nullguide-add-check-not-null-field>>.
 ==== Removing a `NOT NULL` constraint
 (((NOT NULL,remove)))
 
+In Firebird 3.0 and higher, you can drop a `NOT NULL` constraint from a table using:
+
+[source]
+----
+alter table Adventures alter ID drop not null;
+----
+
+If the `ID` column is based on a domain which also has a `NOT NULL` constraint, the column will still be constrained.
+You will need to drop the `NOT NULL` constraint from the domain as well to make the column really nullable, see the next section.
+
+For Firebird 2.5 and earlier, dropping the `NOT NULL` constraint is more involved.
+
 If you gave the `NOT NULL` constraint a name when you created it, you can simply drop it:
 
 [source]
@@ -2109,15 +2121,13 @@ where  rc.rdb$constraint_type   = 'NOT NULL'
        and cc.rdb$trigger_name  = '<FieldName>'
 ----
 
-Don't break your head over some of the table and field names in this statement;
-they are illogical but correct.
-Make sure to uppercase the names of your table and field if they were defined case-insensitively.
+Make sure to uppercase the names of your table and field if they were defined case-insensitively (that is, as a regular identifier).
 Otherwise, match the case exactly but don't enclose the names in double-quotes like you would do in a regular query.
 Also don't include the angle brackets (`<>`). Once you have the constraint name, you can drop it just like in the previous example.
 
 [TIP]
 ====
-If the above statement returns an empty set and you are sure that you've correctly filled in the table and field names (including case!), and the constraint did not come from a domain either (this is discussed in the next sections), it may be that a third-party tool has made the column `NOT NULL` by setting a flag in a system table.
+If the above statement returns an empty set, and you are sure that you've correctly filled in the table and field names (including case!), and the constraint did not come from a domain either (this is discussed in the next sections), it may be that a third-party tool has made the column `NOT NULL` by setting a flag in a system table.
 In that case it's probably best to remove it again with the same tool.
 If that is not an option, check the field's `NULL` flag with:
 
@@ -2155,7 +2165,7 @@ However, before you can _insert_ ``NULL``s into the column, you must commit your
 
 If the `NOT NULL` constraint came with a domain, it is not registered directly with the column.
 This means you can't `DROP` it from the column either.
-Instead, change the column's type to a nullable domain or built-in data type:
+You can either drop it from the domain as well -- Firebird 3.0 and higher only -- or change the column's type to a nullable domain or built-in data type:
 
 [source]
 ----
@@ -2244,7 +2254,19 @@ You must close all connections and reconnect before you can insert values that w
 [[nullguide-change-domain-notnull]]
 === Altering a domain's `NOT NULL` setting[[d0e25188]]
 
-Once a domain is created, Firebird doesn't allow you to add or remove a `NOT NULL` constraint (`DROP CONSTRAINT` will only drop a `CHECK`).
+In Firebird 3.0 and higher, you can drop the `NOT NULL` constraint from a domain using:
+
+[source]
+----
+alter domain MyDomain drop not null;
+----
+
+[CAUTION]
+====
+Dropping the `NOT NULL` constraint from the domain affects all columns based on that domain, if they don't have an explicit `NOT NULL` constraint of their own.
+====
+
+Firebird 2.5 and earlier don't allow you to add or remove a `NOT NULL` constraint from an existing domain (`DROP CONSTRAINT` will only drop a `CHECK`).
 If you want to change a domain-wide `NOT NULL` setting, the official procedure is:
 
 . Create a new domain with the desired characteristics.
@@ -2253,7 +2275,7 @@ If you want to change a domain-wide `NOT NULL` setting, the official procedure i
 
 This is fine when it only concerns a few columns, but what if there are dozens or even hundreds?
 It is possible to change the setting by going directly to the system table.
-Be aware however that Firebird does _not_ recommend or support this type of operation, nor is it guaranteed to keep working in future versions.
+Be aware however that Firebird does _not_ recommend or support this type of operation, and it is disallowed in Firebird 3.0 and higher.
 That being said, it's a relatively simple operation and if properly executed it shouldn't cause you any problems.
 
 So here's the SQL, but remember: at your own risk!
@@ -2270,7 +2292,7 @@ To remove a `NOT NULL` constraint, use `0` or `NULL`.
 Write the domain name in all-caps if it was created case-insensitively;
 otherwise, match the case exactly.
 Don't use double-quotes and don't include the '```<>```'.
-Also note that, even when DDL autocommit is on (which is the default in `isql` and many other clients), this statement won't be autocommitted because technically it's not DDL.
+Also note that, even when DDL autocommit is on (which is the default in `isql` and many other clients), this statement won't be auto-committed because technically it's not DDL.
 So don't forget to commit!
 
 If you have set the flag to `1`, a subsequent `SHOW DOMAIN` will immediately report the domain as being `NOT NULL`.
@@ -2284,7 +2306,7 @@ If you have changed the flag from `1` to `0` or `NULL` -- making the domain null
 But you still can't insert ``NULL``s in the columns, and any present ``NULL``s are still shown as zeroes (in most clients).
 Close all connections and reconnect to straighten everything out.
 
-Lastly, please be warned again that this type of fiddling with the system tables is not recommended or supported by Firebird, and not guaranteed to keep working in future versions.
+Lastly, please be warned again that this type of fiddling with the system tables is not recommended or supported by Firebird, and no longer works in Firebird 3.0 and higher.
 If the number of columns based on the domain is limited, it's better to switch them over to another domain or built-in type and then drop the old domain.
 
 [[nullguide-testing]]
@@ -2757,6 +2779,7 @@ The exact file history is recorded in the firebird-documentation git repository;
 |TBD
 |MR
 a|* Reordered revision history so most recent revision is at the top
+* Document Firebird 3.0 ability to drop not null constraints in _Making non-nullable columns nullable again_
 
 |1.2
 |30 Jun 2020
