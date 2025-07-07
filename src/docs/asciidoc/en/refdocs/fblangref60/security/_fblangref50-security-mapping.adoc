@@ -1,0 +1,359 @@
+[[fblangref50-security-mapping]]
+= Mapping of Users to Objects
+
+Now Firebird support multiple security databases, new problems arise that could not occur with a single, global security database.
+Clusters of databases using the same security database are effectively separated.
+Mappings provide the means to achieve the same effect when multiple databases are using their own security databases.
+Some cases require control for limited interaction between such clusters.
+For example:
+
+* when `EXECUTE STATEMENT ON EXTERNAL DATA SOURCE` requires data exchange between clusters
+* when server-wide SYSDBA access to databases is needed from other clusters, using services.
+* On Windows, due to support for Trusted User authentication: to map Windows users to a Firebird user and/or role.
+An example is the need for a `ROLE` granted to a Windows group to be assigned automatically to members of that group.
+
+The single solution for all such cases is *mapping* the login information assigned to a user when it connects to a Firebird server to internal security objects in a database -- `CURRENT_USER` and `CURRENT_ROLE`.
+
+[[fblangref50-security-mapping-rule]]
+== The Mapping Rule
+
+The mapping rule consists of four pieces of information:
+
+. mapping scope
+-- whether the mapping is local to the current database or whether its effect is to be global, affecting all databases in the cluster, including security databases
+. mapping name
+-- an SQL identifier, since mappings are objects in a database, like any other
+. the object *FROM* which the mapping maps.
+It consists of four items:
+** The authentication source
+*** plugin name *or*
+*** the product of a mapping in another database *or*
+*** use of server-wide authentication *or*
+*** any method
+** The name of the database where authentication succeeded
+** The name of the object from which mapping is performed
+** The *type* of that name -- username, role, or OS group -- depending upon the plugin that added that name during authentication.
++
+Any item is accepted but only *type* is required.
+. the object *TO* which the mapping maps.
+It consists of two items:
+** The name of the object *TO* which mapping is performed
+** The *type*, for which only `USER` or `ROLE` is valid
+
+[[fblangref50-security-mapping-create]]
+== `CREATE MAPPING`
+
+Creates a mapping of a security object
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE [GLOBAL] MAPPING _name_
+  USING
+    { PLUGIN _plugin_name_ [IN _database_]
+    | ANY PLUGIN [IN _database_ | SERVERWIDE]
+    | MAPPING [IN _database_] | '*' [IN _database_] }
+  FROM {ANY _type_ | _type_ _from_name_}
+  TO {USER | ROLE} [_to_name_]
+----
+
+[[fblangref50-security-mapping-tbl-createmapping]]
+.`CREATE MAPPING` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|name
+|Mapping name
+The maximum length is 63 characters.
+Must be unique among all mapping names in the context (local or `GLOBAL`).
+
+|plugin_name
+|Authentication plugin name
+
+|database
+|Name of the database that authenticated against
+
+|type
+|The type of object to be mapped.
+Possible types are plugin-specific.
+
+|from_name
+|The name of the object to be mapped
+
+|to_name
+|The name of the user or role to map to
+|===
+
+The `CREATE MAPPING` statement creates a mapping of security objects (e.g. users, groups, roles) of one or more authentication plugins to internal security objects -- `CURRENT_USER` and `CURRENT_ROLE`.
+
+If the `GLOBAL` clause is present, then the mapping will be applied not only for the current database, but for all databases in the same cluster, including security databases.
+
+[WARNING]
+====
+There can be global and local mappings with the same name.
+They are distinct objects.
+====
+
+[NOTE]
+====
+Global mapping works best if a Firebird 3.0 or higher version database is used as the security database.
+If you plan to use another database for this purpose -- using your own provider, for example -- then you should create a table in it named `RDB$MAP`, with the same structure as `RDB$MAP` in a Firebird 3.0 or higher database and with SYSDBA-only write access.
+====
+
+The `USING` clause describes the mapping source.
+It has a complex set of options:
+
+* an explicit plugin name (`PLUGIN __plugin_name__`) means it applies only for that plugin
+* it can use any available plugin (`ANY PLUGIN`);
+although not if the source is the product of a previous mapping
+* it can be made to work only with server-wide plugins (`SERVERWIDE`)
+* it can be made to work only with previous mapping results (`MAPPING`)
+* you can omit to use of a specific method by using the asterisk (`{asterisk}`) argument
+* it can specify the name of the database that defined the mapping for the `FROM` object (`IN __database__`)
++
+[NOTE]
+====
+This argument is not valid for mapping server-wide authentication.
+====
+
+The `FROM` clause describes the object to map.
+The `FROM` clause has a mandatory argument, the _type_ of the object named.
+It has the following options:
+
+* When mapping names from plugins, _type_ is defined by the plugin
+* When mapping the product of a previous mapping, _type_ can be only `USER` or `ROLE`
+* If an explicit _from_name_ is provided, it will be taken into account by this mapping
+* Use the `ANY` keyword to work with any name of the given type.
+
+The `TO` clause specifies the user or role that is the result of the mapping.
+The _to_name_ is optional.
+If it is not specified, then the original name of the mapped object will be used.
+
+For roles, the role defined by a mapping rule is only applied when the user does not explicitly specify a role on connect.
+The mapped role can be assumed later in the session using <<fblangref50-management-role-set-trusted,`SET TRUSTED ROLE`>>, even when the mapped role is not explicitly granted to the user.
+
+[[fblangref50-security-mapping-create-who]]
+=== Who Can Create a Mapping
+
+The `CREATE MAPPING` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* The database owner -- if the mapping is local
+* Users with the `CHANGE_MAPPING_RULES` system privilege -- if the mapping is local
+
+[[fblangref50-security-mapping-create-exmpl]]
+=== `CREATE MAPPING` examples
+
+. Enable use of Windows trusted authentication in all databases that use the current security database:
++
+[source]
+----
+CREATE GLOBAL MAPPING TRUSTED_AUTH
+  USING PLUGIN WIN_SSPI
+  FROM ANY USER
+  TO USER;
+----
+. Enable RDB$ADMIN access for windows admins in the current database:
++
+[source]
+----
+CREATE MAPPING WIN_ADMINS
+  USING PLUGIN WIN_SSPI
+  FROM Predefined_Group
+  DOMAIN_ANY_RID_ADMINS
+  TO ROLE RDB$ADMIN;
+----
++
+[NOTE]
+====
+The group `DOMAIN_ANY_RID_ADMINS` does not exist in Windows, but such a name would be added by the `Win_Sspi` plugin to provide exact backwards compatibility.
+====
+. Enable a particular user from another database to access the current database with another name:
++
+[source]
+----
+CREATE MAPPING FROM_RT
+  USING PLUGIN SRP IN "rt"
+  FROM USER U1 TO USER U2;
+----
++
+[IMPORTANT]
+====
+Database names or aliases will need to be enclosed in double quotes on operating systems that have case-sensitive file names.
+====
+. Enable the server's SYSDBA (from the main security database) to access the current database.
+(Assume that the database is using a non-default security database):
++
+[source]
+----
+CREATE MAPPING DEF_SYSDBA
+  USING PLUGIN SRP IN "security.db"
+  FROM USER SYSDBA
+  TO USER;
+----
+. Ensure users who logged in using the legacy authentication plugin do not have too many privileges:
++
+[source]
+----
+CREATE MAPPING LEGACY_2_GUEST
+  USING PLUGIN legacy_auth
+  FROM ANY USER
+  TO USER GUEST;
+----
+
+.See also
+<<fblangref50-security-mapping-alter>>, <<fblangref50-security-mapping-createoralter>>, <<fblangref50-security-mapping-drop>>
+
+[[fblangref50-security-mapping-alter]]
+== `ALTER MAPPING`
+
+Alters a mapping of a security object
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+ALTER [GLOBAL] MAPPING _name_
+  USING
+    { PLUGIN _plugin_name_ [IN _database_]
+    | ANY PLUGIN [IN _database_ | SERVERWIDE]
+    | MAPPING [IN _database_] | '*' [IN _database_] }
+  FROM {ANY _type_ | _type_ _from_name_}
+  TO {USER | ROLE} [_to_name_]
+----
+
+For details on the options, see <<fblangref50-security-mapping-create>>.
+
+The `ALTER MAPPING` statement allows you to modify any of the existing mapping options, but a local mapping cannot be changed to `GLOBAL` or vice versa.
+
+[IMPORTANT]
+====
+Global and local mappings of the same name are different objects.
+====
+
+[[fblangref50-security-mapping-alter-who]]
+=== Who Can Alter a Mapping
+
+The `ALTER MAPPING` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* The database owner -- if the mapping is local
+* Users with the `CHANGE_MAPPING_RULES` system privilege -- if the mapping is local
+
+[[fblangref50-security-mapping-alter-exmpl]]
+=== `ALTER MAPPING` examples
+
+.Alter mapping
+[source]
+----
+ALTER MAPPING FROM_RT
+  USING PLUGIN SRP IN "rt"
+  FROM USER U1 TO USER U3;
+----
+
+.See also
+<<fblangref50-security-mapping-create>>, <<fblangref50-security-mapping-createoralter>>, <<fblangref50-security-mapping-drop>>
+
+[[fblangref50-security-mapping-createoralter]]
+== `CREATE OR ALTER MAPPING`
+
+Creates a mapping of a security object if it doesn't exist, or alters a mapping
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+CREATE OR ALTER [GLOBAL] MAPPING _name_
+  USING
+    { PLUGIN _plugin_name_ [IN _database_]
+    | ANY PLUGIN [IN _database_ | SERVERWIDE]
+    | MAPPING [IN _database_] | '*' [IN _database_] }
+  FROM {ANY _type_ | _type_ _from_name_}
+  TO {USER | ROLE} [_to_name_]
+----
+
+For details on the options, see <<fblangref50-security-mapping-create>>.
+
+The `CREATE OR ALTER MAPPING` statement creates a new or modifies an existing mapping.
+
+[IMPORTANT]
+====
+Global and local mappings of the same name are different objects.
+====
+
+[[fblangref50-security-mapping-createoralter-exmpl]]
+=== `CREATE OR ALTER MAPPING` examples
+
+.Creating or altering a mapping
+[source]
+----
+CREATE OR ALTER MAPPING FROM_RT
+  USING PLUGIN SRP IN "rt"
+  FROM USER U1 TO USER U4;
+----
+
+.See also
+<<fblangref50-security-mapping-create>>, <<fblangref50-security-mapping-alter>>, <<fblangref50-security-mapping-drop>>
+
+[[fblangref50-security-mapping-drop]]
+== `DROP MAPPING`
+
+Drops a mapping of a security object
+
+.Available in
+DSQL
+
+.Syntax
+[listing,subs=+quotes]
+----
+DROP [GLOBAL] MAPPING _name_
+----
+
+[[fblangref50-security-mapping-tbl-dropmapping]]
+.`DROP MAPPING` Statement Parameter
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|name
+|Mapping name
+|===
+
+The `DROP MAPPING` statement removes an existing mapping.
+If `GLOBAL` is specified, then a global mapping will be removed.
+
+[IMPORTANT]
+====
+Global and local mappings of the same name are different objects.
+====
+
+[[fblangref50-security-mapping-drop-who]]
+=== Who Can Drop a Mapping
+
+The `DROP MAPPING` statement can be executed by:
+
+* <<fblangref50-security-administrators,Administrators>>
+* The database owner -- if the mapping is local
+* Users with the `CHANGE_MAPPING_RULES` system privilege -- if the mapping is local
+
+[[fblangref50-security-mapping-drop-exmpl]]
+=== `DROP MAPPING` examples
+
+.Alter mapping
+[source]
+----
+DROP MAPPING FROM_RT;
+----
+
+.See also
+<<fblangref50-security-mapping-create>>

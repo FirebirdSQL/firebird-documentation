@@ -1,0 +1,540 @@
+[[fblangref50-sys-pckg]]
+= System Packages
+
+System packages provide utility stored functions and stored functions.
+
+.List of System Packages
+<<fblangref50-sys-pckg-blobutil>>::
+Utilities for blob manipulation
+
+<<fblangref50-sys-pckg-profiler>>::
+Profiler
+
+<<fblangref50-sys-pckg-timezoneutil>>::
+Time zone utilities
+
+[[fblangref50-sys-pckg-blobutil]]
+== `RDB$BLOB_UTIL`
+
+Package of functions and procedures for blob manipulation
+
+[[fblangref50-sys-pckg-blob-iswritable]]
+=== Function `IS_WRITABLE`
+
+`RDB$BLOB_UTIL.IS_WRITABLE` returns `TRUE` when a BLOB is suitable for data appending using <<fblangref50-scalarfuncs-blob-append,`BLOB_APPEND`>> without copying.
+
+.Input parameter
+* `BLOB` type `BLOB NOT NULL`
+
+Return type: `BOOLEAN NOT NULL`.
+
+[[fblangref50-sys-pckg-blob-newblob]]
+=== Function `NEW_BLOB`
+
+`RDB$BLOB_UTIL.NEW_BLOB` creates a new BLOB SUB_TYPE BINARY.
+It returns a BLOB suitable for data appending, similar to <<fblangref50-scalarfuncs-blob-append,`BLOB_APPEND`>>.
+
+The advantage over `BLOB_APPEND` is that it's possible to set custom `SEGMENTED` and `TEMP_STORAGE` options.
+
+`BLOB_APPEND` always creates BLOBs in temporary storage, which may not always be the best approach if the created BLOB is going to be stored in a permanent table, as this will require a copy operation.
+
+The BLOB returned from this function, even when `TEMP_STORAGE = FALSE`, may be used with `BLOB_APPEND` for appending data.
+
+.Input parameters
+* `SEGMENTED` type `BOOLEAN NOT NULL`
+* `TEMP_STORAGE` type `BOOLEAN NOT NULL`
+
+Return type: `BLOB SUB_TYPE BINARY NOT NULL`.
+
+[[fblangref50-sys-pckg-blob-openblob]]
+=== Function `OPEN_BLOB`
+
+`RDB$BLOB_UTIL.OPEN_BLOB` opens an existing BLOB for reading.
+It returns a handle (an integer bound to the transaction) suitable for use with other functions of this package, like <<fblangref50-sys-pckg-blob-seek,`SEEK`>>, <<fblangref50-sys-pckg-blob-readdata,`READ_DATA`>> and <<fblangref50-sys-pckg-blob-closehandle,`CLOSE_HANDLE`>>.
+
+Handles which are not explicitly closed are closed automatically when the transaction ends.
+
+.Input parameter
+* `BLOB` type `BLOB NOT NULL`
+
+Return type: `INTEGER NOT NULL`.
+
+[[fblangref50-sys-pckg-blob-readdata]]
+=== Function `READ_DATA`
+
+`RDB$BLOB_UTIL.READ_DATA` reads chunks of data of a BLOB handle opened with <<fblangref50-sys-pckg-blob-openblob,`RDB$BLOB_UTIL.OPEN_BLOB`>>.
+When the BLOB is fully read and there is no more data, it returns `NULL`.
+
+If `LENGTH` is passed with a positive number, it returns a VARBINARY with its maximum length.
+
+If `LENGTH` is `NULL` it returns a segment of the BLOB with a maximum length of 32765.
+
+.Input parameters
+* `HANDLE` type `INTEGER NOT NULL`
+* `LENGTH` type `INTEGER`
+
+Return type: `VARBINARY(32765)`.
+
+[[fblangref50-sys-pckg-blob-seek]]
+=== Function `SEEK`
+
+`RDB$BLOB_UTIL.SEEK` sets the position for the next <<fblangref50-sys-pckg-blob-readdata,`READ_DATA`>>, it returns the new position.
+
+`MODE` may be:
+
+[horizontal]
+`0`:: from the start
+`1`:: from current position
+`2`:: from end.
+
+When `MODE` is `2`, `OFFSET` should be zero or negative.
+
+.Input parameters
+* `HANDLE` type `INTEGER NOT NULL`
+* `MODE` type `INTEGER NOT NULL`
+* `OFFSET` type `INTEGER NOT NULL`
+
+Return type: `INTEGER NOT NULL`.
+
+`SEEK` only works on stream blobs.
+Attempting to seek on a segmented blob results in error "`invalid BLOB type for operation`".
+
+[[fblangref50-sys-pckg-blob-cancelblob]]
+=== Procedure `CANCEL_BLOB`
+
+`RDB$BLOB_UTIL.CANCEL_BLOB` immediately releases a temporary BLOB, like one created with <<fblangref50-scalarfuncs-blob-append,`BLOB_APPEND`>>.
+
+If the same BLOB is used after cancel, an "`invalid blob id`" error will be raised.
+
+.Input parameter
+* `BLOB` type `BLOB`
+
+[[fblangref50-sys-pckg-blob-closehandle]]
+=== Procedure `CLOSE_HANDLE`
+
+`RDB$BLOB_UTIL.CLOSE_HANDLE` closes a BLOB handle opened with <<fblangref50-sys-pckg-blob-openblob,`RDB$BLOB_UTIL.OPEN_BLOB`>>.
+
+Handles which are not explicitly closed are closed automatically when the transaction ends.
+
+.Input parameter
+* `HANDLE` type `INTEGER NOT NULL`
+
+[[fblangref50-sys-pckg-blob-exmpl]]
+=== Examples
+
+.Create a BLOB in temporary space and return it in `EXECUTE BLOCK`
+[source]
+----
+execute block returns (b blob)
+as
+begin
+    -- Create a BLOB handle in the temporary space.
+    b = rdb$blob_util.new_blob(false, true);
+
+    -- Add chunks of data.
+    b = blob_append(b, '12345');
+    b = blob_append(b, '67');
+
+    suspend;
+end
+----
+
+.Open a BLOB and return chunks of it with `EXECUTE BLOCK`
+[source]
+----
+execute block returns (s varchar(10))
+as
+    declare b blob = '1234567';
+    declare bhandle integer;
+begin
+    -- Open the BLOB and get a BLOB handle.
+    bhandle = rdb$blob_util.open_blob(b);
+
+    -- Get chunks of data as string and return.
+
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Here EOF is found, so it returns NULL.
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Close the BLOB handle.
+    execute procedure rdb$blob_util.close_handle(bhandle);
+end
+----
+
+.Seek in a blob
+[source]
+----
+set term !;
+
+execute block returns (s varchar(10))
+as
+    declare b blob;
+    declare bhandle integer;
+begin
+    -- Create a stream BLOB handle.
+    b = rdb$blob_util.new_blob(false, true);
+
+    -- Add data.
+    b = blob_append(b, '0123456789');
+
+    -- Open the BLOB.
+    bhandle = rdb$blob_util.open_blob(b);
+
+    -- Seek to 5 since the start.
+    rdb$blob_util.seek(bhandle, 0, 5);
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Seek to 2 since the start.
+    rdb$blob_util.seek(bhandle, 0, 2);
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Advance 2.
+    rdb$blob_util.seek(bhandle, 1, 2);
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+
+    -- Seek to -1 since the end.
+    rdb$blob_util.seek(bhandle, 2, -1);
+    s = rdb$blob_util.read_data(bhandle, 3);
+    suspend;
+end!
+
+set term ;!
+----
+
+.Check if blobs are writable
+[source]
+----
+create table t(b blob);
+
+set term !;
+
+execute block returns (bool boolean)
+as
+    declare b blob;
+begin
+    b = blob_append(null, 'writable');
+    bool = rdb$blob_util.is_writable(b);
+    suspend;
+
+    insert into t (b) values ('not writable') returning b into b;
+    bool = rdb$blob_util.is_writable(b);
+    suspend;
+end!
+
+set term ;!
+----
+
+[[fblangref50-sys-pckg-profiler]]
+== `RDB$PROFILER`
+
+A package with functions and procedures to run and control the profiler.
+
+These profiler controls are standard, but the actual profiler is a plugin.
+The profiler used depends on the setting of `DefaultProfilerPlugin` in `firebird.conf` or `databases.conf`, or the `PLUGIN_NAME` parameter of `START_SESSION`.
+
+Firebird 5.0 comes with a profiler plugin called _Default_Profiler_.
+
+Users are allowed to profile their own connections.
+Profiling connections from other users requires the `PROFILE_ANY_ATTACHMENT` <<fblangref50-security-sys-privs,system privilege>>.
+
+[[fblangref50-sys-pckg-prof-startsession]]
+=== Function `START_SESSION`
+
+`RDB$PROFILER.START_SESSION` starts a new profiler session, makes it the current session (of the given `ATTACHMENT_ID`) and returns its identifier.
+
+If `FLUSH_INTERVAL` is different from `NULL`, auto-flush is set up in the same way as manually calling <<fblangref50-sys-pckg-prof-setflushinterval,`RDB$PROFILER.SET_FLUSH_INTERVAL`>>.
+
+If `PLUGIN_NAME` is `NULL` (the default), it uses the database configuration `DefaultProfilerPlugin`.
+
+`PLUGIN_OPTIONS` are plugin specific options and currently should be `NULL` for the `Default_Profiler` plugin.
+
+.Input parameters
+* `DESCRIPTION` type `VARCHAR(255) CHARACTER SET UTF8 default NULL`
+* `FLUSH_INTERVAL` type `INTEGER default NULL`
+* `ATTACHMENT_ID` type `BIGINT NOT NULL default CURRENT_CONNECTION`
+* `PLUGIN_NAME` type `VARCHAR(255) CHARACTER SET UTF8 default NULL`
+* `PLUGIN_OPTIONS` type `VARCHAR(255) CHARACTER SET UTF8 default NULL`
+
+Return type: `BIGINT NOT NULL`.
+
+[[fblangref50-sys-pckg-prof-cancelsession]]
+=== Procedure `CANCEL_SESSION`
+
+`RDB$PROFILER.CANCEL_SESSION` cancels the current profiler session (of the given `ATTACHMENT_ID`).
+
+All session data present in the profiler plugin is discarded and will not be flushed.
+
+Data already flushed is not deleted automatically.
+
+.Input parameter
+* `ATTACHMENT_ID` type `BIGINT NOT NULL default CURRENT_CONNECTION`
+
+[[fblangref50-sys-pckg-prof-discard]]
+=== Procedure `DISCARD`
+
+`RDB$PROFILER.DISCARD` removes all sessions (of the given `ATTACHMENT_ID`) from memory, without flushing them.
+
+If there is an active session, it is cancelled.
+
+.Input parameter
+* `ATTACHMENT_ID` type `BIGINT NOT NULL default CURRENT_CONNECTION`
+
+[[fblangref50-sys-pckg-prof-finishsession]]
+=== Procedure `FINISH_SESSION`
+
+`RDB$PROFILER.FINISH_SESSION` finishes the current profiler session (of the given `ATTACHMENT_ID`).
+
+If `FLUSH` is `TRUE`, the snapshot tables are updated with data of the finished session (and old finished sessions not yet present in the snapshot), otherwise data remains only in memory for later update.
+
+Calling `RDB$PROFILER.FINISH_SESSION(TRUE)` has the same semantics of calling `RDB$PROFILER.FINISH_SESSION(FALSE)` followed by <<fblangref50-sys-pckg-prof-flush,`RDB$PROFILER.FLUSH`>> (using the same `ATTACHMENT_ID`).
+
+.Input parameters
+* `FLUSH` type `BOOLEAN NOT NULL default TRUE`
+* `ATTACHMENT_ID` type `BIGINT NOT NULL default CURRENT_CONNECTION`
+
+[[fblangref50-sys-pckg-prof-flush]]
+=== Procedure `FLUSH`
+
+`RDB$PROFILER.FLUSH` updates the snapshot tables with data from the profile sessions (of the given `ATTACHMENT_ID`) in memory.
+
+After flushing, the data is stored in tables <<fblangref50-appx07-profsessions,`PLG$PROF_SESSIONS`>>, <<fblangref50-appx07-profstatements,`PLG$PROF_STATEMENTS`>>, <<fblangref50-appx07-profrecordsources,`PLG$PROF_RECORD_SOURCES`>>, <<fblangref50-appx07-profrequests,`PLG$PROF_REQUESTS`>>, <<fblangref50-appx07-profpsqlstats,`PLG$PROF_PSQL_STATS`>> and <<fblangref50-appx07-profrecordsourcestats,`PLG$PROF_RECORD_SOURCE_STATS`>> and may be read and analyzed by the user.
+
+Data is updated using an autonomous transaction, so if the procedure is called in a snapshot transaction, data will not be directly readable in the same transaction.
+
+Once flush happens, finished sessions are removed from memory.
+
+.Input parameter
+* `ATTACHMENT_ID` type `BIGINT NOT NULL default CURRENT_CONNECTION`
+
+[[fblangref50-sys-pckg-prof-pausesession]]
+=== Procedure `PAUSE_SESSION`
+
+`RDB$PROFILER.PAUSE_SESSION` pauses the current profiler session (of the given `ATTACHMENT_ID`), so the next executed statements statistics are not collected.
+
+If `FLUSH` is `TRUE`, the snapshot tables are updated with data up to the current moment, otherwise data remains only in memory for later update.
+
+Calling `RDB$PROFILER.PAUSE_SESSION(TRUE)` has the same semantics as calling `RDB$PROFILER.PAUSE_SESSION(FALSE)` followed by <<fblangref50-sys-pckg-prof-flush,`RDB$PROFILER.FLUSH`>> (using the same `ATTACHMENT_ID`).
+
+.Input parameters
+* `FLUSH` type `BOOLEAN NOT NULL default FALSE`
+* `ATTACHMENT_ID` type `BIGINT NOT NULL default CURRENT_CONNECTION`
+
+[[fblangref50-sys-pckg-prof-resumesession]]
+=== Procedure `RESUME_SESSION`
+
+`RDB$PROFILER.RESUME_SESSION` resumes the current profiler session (of the given `ATTACHMENT_ID`), if it was paused, so the next executed statements statistics are collected again.
+
+.Input parameter
+* `ATTACHMENT_ID` type `BIGINT NOT NULL default CURRENT_CONNECTION`
+
+[[fblangref50-sys-pckg-prof-setflushinterval]]
+=== Procedure `SET_FLUSH_INTERVAL`
+
+`RDB$PROFILER.SET_FLUSH_INTERVAL` turns periodic auto-flush on (when `FLUSH_INTERVAL` is greater than 0) or off (when `FLUSH_INTERVAL` is equal to 0).
+
+`FLUSH_INTERVAL` is interpreted as number of seconds.
+
+.Input parameters
+* `FLUSH_INTERVAL` type `INTEGER NOT NULL`
+* `ATTACHMENT_ID` type `BIGINT NOT NULL default CURRENT_CONNECTION`
+
+[[fblangref50-sys-pckg-prof-exmpl]]
+=== Example
+
+Below is a sample profile session and queries for data analysis.
+
+. Preparation -- create table and routines that will be analyzed
++
+[source]
+----
+create table tab (
+    id integer not null,
+    val integer not null
+);
+
+set term !;
+
+create or alter function mult(p1 integer, p2 integer) returns integer
+as
+begin
+    return p1 * p2;
+end!
+
+create or alter procedure ins
+as
+    declare n integer = 1;
+begin
+    while (n <= 1000)
+    do
+    begin
+        if (mod(n, 2) = 1) then
+            insert into tab values (:n, mult(:n, 2));
+        n = n + 1;
+    end
+end!
+
+set term ;!
+----
+
+. Start profiling
++
+[source]
+----
+select rdb$profiler.start_session('Profile Session 1') from rdb$database;
+
+set term !;
+
+execute block
+as
+begin
+    execute procedure ins;
+    delete from tab;
+end!
+
+set term ;!
+
+execute procedure rdb$profiler.finish_session(true);
+
+execute procedure ins;
+
+select rdb$profiler.start_session('Profile Session 2') from rdb$database;
+
+select mod(id, 5),
+       sum(val)
+  from tab
+  where id <= 50
+  group by mod(id, 5)
+  order by sum(val);
+
+execute procedure rdb$profiler.finish_session(true);
+----
+
+. Data analysis
++
+[source]
+----
+set transaction read committed;
+
+select * from plg$prof_sessions;
+
+select * from plg$prof_psql_stats_view;
+
+select * from plg$prof_record_source_stats_view;
+
+select preq.*
+  from plg$prof_requests preq
+  join plg$prof_sessions pses
+    on pses.profile_id = preq.profile_id and
+       pses.description = 'Profile Session 1';
+
+select pstat.*
+  from plg$prof_psql_stats pstat
+  join plg$prof_sessions pses
+    on pses.profile_id = pstat.profile_id and
+       pses.description = 'Profile Session 1'
+  order by pstat.profile_id,
+           pstat.request_id,
+           pstat.line_num,
+           pstat.column_num;
+
+select pstat.*
+  from plg$prof_record_source_stats pstat
+  join plg$prof_sessions pses
+    on pses.profile_id = pstat.profile_id and
+       pses.description = 'Profile Session 2'
+  order by pstat.profile_id,
+           pstat.request_id,
+           pstat.cursor_id,
+           pstat.record_source_id;
+----
+
+[[fblangref50-sys-pckg-timezoneutil]]
+== `RDB$TIME_ZONE_UTIL`
+
+A package of time zone utility functions and procedures.
+
+[[fblangref50-sys-pckg-tz-dbversion]]
+=== Function `DATABASE_VERSION`
+
+`RDB$TIME_ZONE_UTIL.DATABASE_VERSION` returns the version of the time zone database.
+
+
+Return type: `VARCHAR(10) CHARACTER SET ASCII`.
+
+.Example
+[source]
+----
+select rdb$time_zone_util.database_version()
+from rdb$database;
+----
+
+Returns:
+
+[source]
+----
+DATABASE_VERSION
+================
+2023c
+----
+
+[[fblangref50-sys-pckg-tz-transitions]]
+=== Procedure `TRANSITIONS`
+
+`RDB$TIME_ZONE_UTIL.TRANSITIONS` returns the set of rules between the start and end timestamps for a named time zone.
+
+.Input parameters
+* `RDB$TIME_ZONE_NAME` type `CHAR(63)`
+* `RDB$FROM_TIMESTAMP` type `TIMESTAMP WITH TIME ZONE`
+* `RDB$TO_TIMESTAMP` type `TIMESTAMP WITH TIME ZONE`
+
+Output parameters:
+
+`RDB$START_TIMESTAMP`::
+type `TIMESTAMP WITH TIME ZONE` -- The start timestamp of the transition
+
+`RDB$END_TIMESTAMP`::
+type `TIMESTAMP WITH TIME ZONE` -- The end timestamp of the transition
+
+`RDB$ZONE_OFFSET`::
+type `SMALLINT` -- The zone's offset, in minutes
+
+`RDB$DST_OFFSET`::
+type `SMALLINT` -- The zone's DST offset, in minutes
+
+`RDB$EFFECTIVE_OFFSET`::
+type `SMALLINT` -- Effective offset (`ZONE_OFFSET` + `DST_OFFSET`)
+
+.Example
+[source]
+----
+select *
+  from rdb$time_zone_util.transitions(
+    'America/Sao_Paulo',
+    timestamp '2017-01-01',
+    timestamp '2019-01-01');
+----
+
+Returns (`RDB$` prefix left off for brevity):
+
+[listing]
+----
+             START_TIMESTAMP                END_TIMESTAMP ZONE_OFFSET DST_OFFSET EFFECTIVE_OFFSET
+============================ ============================ =========== ========== ================
+2016-10-16 03:00:00.0000 GMT 2017-02-19 01:59:59.9999 GMT       -180        60             -120
+2017-02-19 02:00:00.0000 GMT 2017-10-15 02:59:59.9999 GMT       -180         0             -180
+2017-10-15 03:00:00.0000 GMT 2018-02-18 01:59:59.9999 GMT       -180        60             -120
+2018-02-18 02:00:00.0000 GMT 2018-10-21 02:59:59.9999 GMT       -180         0             -180
+2018-10-21 03:00:00.0000 GMT 2019-02-17 01:59:59.9999 GMT       -180        60             -120
+----

@@ -1,0 +1,281 @@
+[[fblangref50-security-revoking]]
+= Statements for Revoking Privileges
+
+A `REVOKE` statement is used for revoking privileges -- including roles -- from users and other database objects.
+
+[[fblangref50-security-revoke]]
+== `REVOKE`
+
+Revokes privileges or role assignments
+
+.Available in
+DSQL, ESQL
+
+.Syntax (revoking privileges)
+[listing,subs="+quotes,macros"]
+----
+REVOKE [GRANT OPTION FOR] <privileges>
+  FROM <grantee_list>
+  [{GRANTED BY | AS} [USER] _grantor_]
+
+<privileges> ::=
+  !! See <<fblangref50-security-grant-privsyntax,`GRANT` syntax>> !!
+----
+
+.Syntax (revoking roles)
+[listing,subs="+quotes,macros"]
+----
+REVOKE [ADMIN OPTION FOR] <role_granted_list>
+  FROM <role_grantee_list>
+  [{GRANTED BY | AS} [USER] _grantor_]
+
+<role_granted_list> ::=
+  !! See <<fblangref50-security-grant-rolesyntax,`GRANT` syntax>> !!
+
+<role_grantee_list> ::=
+  !! See <<fblangref50-security-grant-rolesyntax,`GRANT` syntax>> !!
+----
+
+.Syntax (revoking all)
+[listing,subs="+quotes,macros"]
+----
+REVOKE ALL ON ALL FROM <grantee_list>
+
+<grantee_list> ::=
+  !! See <<fblangref50-security-grant-privsyntax,`GRANT` syntax>> !!
+----
+
+[[fblangref50-security-tbl-revoke]]
+.`REVOKE` Statement Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|grantor
+|The grantor user on whose behalf the privilege(s) are being revoked
+|===
+
+The `REVOKE` statement revokes privileges that were granted using the `GRANT` statement from users, roles, and other database objects.
+See <<fblangref50-security-grant,`GRANT`>> for detailed descriptions of the various types of privileges.
+
+Only the user who granted the privilege can revoke it.
+
+[[fblangref50-security-revoke-default]]
+=== The `DEFAULT` Clause
+
+When the `DEFAULT` clause is specified, the role itself is not revoked, only its `DEFAULT` property is removed without revoking the role itself.
+
+[[fblangref50-security-revoke-from]]
+=== The `FROM` Clause
+
+The `FROM` clause specifies a list of users, roles and other database objects that will have the enumerated privileges revoked.
+The optional `USER` keyword in the `FROM` clause allow you to specify exactly which type is to have the privilege revoked.
+If a `USER` (or `ROLE`) keyword is not specified, the server first checks for a role with this name and, if there is no such role, the privileges are revoked from the user with that name without further checking.
+
+[TIP]
+====
+* Although the `USER` keyword is optional, it is advisable to use them to avoid ambiguity with roles.
+* The `REVOKE` statement does not check for the existence of the user from which the privileges are being revoked.
+* When revoking a privilege from a database object other than `USER` or `ROLE`, you must specify its object type
+====
+
+.Revoking Privileges from user `PUBLIC`
+[IMPORTANT]
+====
+Privileges that were granted to the special user named `PUBLIC` must be revoked from the user `PUBLIC`.
+User `PUBLIC` provides a way to grant privileges to all users at once, but it is not "`a group of users`".
+====
+
+[[fblangref50-security-revoke-grantoption]]
+=== Revoking the `GRANT OPTION`
+
+The optional `GRANT OPTION FOR` clause revokes the user's privilege to grant the specified privileges to other users, roles, or database objects (as previously granted with the `WITH GRANT OPTION`).
+It does not revoke the specified privilege itself.
+
+[[fblangref50-security-revoke-role]]
+=== Removing the Privilege to One or More Roles
+
+One usage of the `REVOKE` statement is to remove roles that were assigned to a user, or a group of users, by a `GRANT` statement.
+In the case of multiple roles and/or multiple grantees, the `REVOKE` verb is followed by the list of roles that will be removed from the list of users specified after the `FROM` clause.
+
+The optional `ADMIN OPTION FOR` clause provides the means to revoke the grantee's "`administrator`" privilege, the ability to assign the same role to other users, without revoking the grantee's privilege to the role.
+
+Multiple roles and grantees can be processed in a single statement.
+
+[[fblangref50-security-revoke-exgrantby]]
+=== Revoking Privileges That Were `GRANTED BY`
+
+A privilege that has been granted using the `GRANTED BY` clause is internally attributed explicitly to the grantor designated by that original `GRANT` statement.
+Only that user can revoke the granted privilege.
+Using the `GRANTED BY` clause you can revoke privileges as if you are the specified user.
+To revoke a privilege with `GRANTED BY`, the current user must be logged in either with full administrative privileges, or as the user designated as _grantor_ by that `GRANTED BY` clause.
+
+[NOTE]
+====
+Not even the owner of a role can use `GRANTED BY` unless they have administrative privileges.
+====
+
+The non-standard `AS` clause is supported as a synonym of the `GRANTED BY` clause to simplify migration from other database systems.
+
+[[fblangref50-security-revoke-allonall]]
+=== Revoking `ALL ON ALL`
+
+The `REVOKE ALL ON ALL` statement allows a user to revoke all privileges (including roles) on all object from one or more users, roles or other database objects.
+It is a quick way to "`clear`" privileges when access to the database must be blocked for a particular user or role.
+
+When the current user is logged in with full <<fblangref50-security-administrators,administrator>> privileges in the database, the `REVOKE ALL ON ALL` will remove all privileges, no matter who granted them.
+Otherwise, only the privileges granted by the current user are removed.
+
+[NOTE]
+====
+The `GRANTED BY` clause is not supported with `ALL ON ALL`.
+====
+
+[[fblangref50-security-revoke-exmpl]]
+=== Examples using `REVOKE`
+
+. Revoking the privileges for selecting and inserting into the table (or view) `SALES`
++
+[source]
+----
+REVOKE SELECT, INSERT ON TABLE SALES
+  FROM USER ALEX;
+----
+. Revoking the privilege for selecting from the `CUSTOMER` table from the `MANAGER` and `ENGINEER` roles and from the user `IVAN`:
++
+[source]
+----
+REVOKE SELECT ON TABLE CUSTOMER
+  FROM ROLE MANAGER, ROLE ENGINEER, USER IVAN;
+----
+. Revoking from the `ADMINISTRATOR` role the privilege to grant any privileges on the `CUSTOMER` table to other users or roles:
++
+[source]
+----
+REVOKE GRANT OPTION FOR ALL ON TABLE CUSTOMER
+  FROM ROLE ADMINISTRATOR;
+----
+. Revoking the privilege for selecting from the `COUNTRY` table and the privilege to reference the `NAME` column of the `COUNTRY` table from any user, via the special user `PUBLIC`:
++
+[source]
+----
+REVOKE SELECT, REFERENCES (NAME) ON TABLE COUNTRY
+  FROM PUBLIC;
+----
+. Revoking the privilege for selecting form the `EMPLOYEE` table from the user `IVAN`, that was granted by the user `ALEX`:
++
+[source]
+----
+REVOKE SELECT ON TABLE EMPLOYEE
+  FROM USER IVAN GRANTED BY ALEX;
+----
+. Revoking the privilege for updating the `FIRST_NAME` and `LAST_NAME` columns of the `EMPLOYEE` table from the user `IVAN`:
++
+[source]
+----
+REVOKE UPDATE (FIRST_NAME, LAST_NAME) ON TABLE EMPLOYEE
+  FROM USER IVAN;
+----
+. Revoking the privilege for inserting records into the `EMPLOYEE_PROJECT` table from the `ADD_EMP_PROJ` procedure:
++
+[source]
+----
+REVOKE INSERT ON EMPLOYEE_PROJECT
+  FROM PROCEDURE ADD_EMP_PROJ;
+----
+. Revoking the privilege for executing the procedure `ADD_EMP_PROJ` from the `MANAGER` role:
++
+[source]
+----
+REVOKE EXECUTE ON PROCEDURE ADD_EMP_PROJ
+  FROM ROLE MANAGER;
+----
+. Revoking the privilege to grant the `EXECUTE` privilege for the function `GET_BEGIN_DATE` to other users from the role `MANAGER`:
++
+[source]
+----
+REVOKE GRANT OPTION FOR EXECUTE
+  ON FUNCTION GET_BEGIN_DATE
+  FROM ROLE MANAGER;
+----
+. Revoking the `EXECUTE` privilege on the package `DATE_UTILS` from user `ALEX`:
++
+[source]
+----
+REVOKE EXECUTE ON PACKAGE DATE_UTILS
+  FROM USER ALEX;
+----
+. Revoking the `USAGE` privilege on the sequence `GEN_AGE` from the role `MANAGER`:
++
+[source]
+----
+REVOKE USAGE ON SEQUENCE GEN_AGE
+  FROM ROLE MANAGER;
+----
+. Revoking the `USAGE` privilege on the sequence `GEN_AGE` from the trigger `TR_AGE_BI`:
++
+[source]
+----
+REVOKE USAGE ON SEQUENCE GEN_AGE
+  FROM TRIGGER TR_AGE_BI;
+----
+. Revoking the `USAGE` privilege on the exception `E_ACCESS_DENIED` from the package `PKG_BILL`:
++
+[source]
+----
+REVOKE USAGE ON EXCEPTION E_ACCESS_DENIED
+  FROM PACKAGE PKG_BILL;
+----
+. Revoking the privilege to create tables from user `JOE`:
++
+[source]
+----
+REVOKE CREATE TABLE
+  FROM USER Joe;
+----
+. Revoking the privilege to alter any procedure from user `JOE`:
++
+[source]
+----
+REVOKE ALTER ANY PROCEDURE
+  FROM USER Joe;
+----
+. Revoking the privilege to create databases from user `SUPERUSER`:
++
+[source]
+----
+REVOKE CREATE DATABASE
+  FROM USER Superuser;
+----
+. Revoking the `DIRECTOR` and `MANAGER` roles from the user `IVAN`:
++
+[source]
+----
+REVOKE DIRECTOR, MANAGER FROM USER IVAN;
+----
+. Revoke from the user `ALEX` the privilege to grant the `MANAGER` role to other users:
++
+[source]
+----
+REVOKE ADMIN OPTION FOR MANAGER FROM USER ALEX;
+----
+. Revoking all privileges (including roles) on all objects from the user `IVAN`:
++
+[source]
+----
+REVOKE ALL ON ALL
+  FROM USER IVAN;
+----
++
+After this statement is executed by an administrator, the user `IVAN` will have no privileges whatsoever, except those granted through `PUBLIC`.
+. Revoking the `DEFAULT` property of the `DIRECTOR` role from user `ALEX`, while the role itself remains granted:
++
+[source]
+----
+REVOKE DEFAULT DIRECTOR
+  FROM USER ALEX;
+----
+
+.See also
+<<fblangref50-security-grant,`GRANT`>>
