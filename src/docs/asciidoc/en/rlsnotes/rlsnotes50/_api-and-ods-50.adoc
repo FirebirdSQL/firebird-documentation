@@ -34,7 +34,7 @@ System tables added in ODS 13.1:
 [[rnfb50-apiods-api]]
 == Application Programming Interfaces
 
-The wire protocol version for the Firebird 5.0 API is 18.
+The wire protocol version for the Firebird 5.0 API is 18 (version has been raised to 19 in v5.0.3, see <<rnfb50-apiods-inline-blobs, Inline blobs transmission in the wire protocol>> below in this chapter).
 Additions and changes are described in the sections below.
 
 [[rnfb50-apiods-api-ext]]
@@ -104,3 +104,54 @@ Example of use of new parameter in _fbsvcmgr_ utility (login and password were l
 ----
 fbsvcmgr -action_repair -rpr_upgrade_db <dbname>
 ----
+
+[[rnfb50-apiods-inline-blobs]]
+== Inline blobs transmission in the wire protocol
+
+Firebird 5.0.3 introduces protocol version 19, which provides a significant performance improvement for small blobs. This is achieved by sending small blobs inline during the response to a cursor fetch, removing the need to explicitly open and request the blobs one by one. This reduces a number of roundtrips required to get the blob data and leads to a better performance, especially in high latency networks.
+
+Blob metadata and data is sent using new type of packet `op_inline_blob` and new structure `P_INLINE_BLOB`. The `op_inline_blob` packet is sent before corresponding `op_sql_response` (in the case of response to `op_execute2` or `op_exec_immediate2` requests), or `op_fetch_response` (response to the `op_fetch` request). There could be as many `op_inline_blob` packets as the number of blob fields in output format.
+
+Blobs with the total size less or equal to 64KB are sent inline (NULL blobs are not transmitted). Blobs are sent as a whole, i.e. the current implementation doesn't support transmitting just a part of blob. 
+
+Contents of `op_inline_blob` packets is cached by the remote provider in order to serve requests for data in that blobs without network access. Any cached blob is bound to the transaction object and will be released (what happens first):
+
+* at transaction end, or
+* when user opens the blob with non-empty BPB, or
+* user opens the blob with empty BPB and then closes it
+
+New API methods were added to support this improvement:
+
+[source]
+----
+interface Attachment
+...
+	// Blob caching by client
+	uint getMaxBlobCacheSize(Status status);
+	void setMaxBlobCacheSize(Status status, uint size);
+
+	// Inline blob transfer
+	uint getMaxInlineBlobSize(Status status);
+	void setMaxInlineBlobSize(Status status, uint size);
+
+interface Statement
+...
+	// Inline blob transfer
+	uint getMaxInlineBlobSize(Status status);
+	void setMaxInlineBlobSize(Status status, uint size);
+----
+
+All methods above are implemented by both _Remote_ and _Engine_ providers.
+
+Engine provider sets `isc_wish_list` error in status and returns zero, when appropriate.
+Remote provider checks the protocol version and gets/sets internal object data (no network roundtrip) or sets `isc_wish_list` error in status and returns zero, when appropriate.
+
+`Attachment::setMaxInlineBlobSize()` sets default value for inline blob size. This value is used by `Attachment::execute()` and `Attachment::openCursor()`.
+
+Also, this value is assigned to the new `Statement` instance created by `Attachment::prepare()`. It can be changed for the particular statement using `Statement::setMaxInlineBlobSize()` but it should be done before call of `Statement::execute()` or `Statement::openCursor()`.
+
+Default value for inline blob size value is 16KB. To disable inline blob transfer, set inline blob size to zero. The upper limit is 64KB.
+
+The value of inline blob size is transferred within `op_execute`, `op_execute2` and `op_exec_immediate2` packets for supported protocol versions only.
+
+The size of the client blob cache is limited. Default size is 10MB and can be changed using `Attachment::setMaxBlobCacheSize()`. There is no upper or lower limit for this value. The limit change is not applied immediately, i.e. if new limit is less than currently used size - nothing happens.
