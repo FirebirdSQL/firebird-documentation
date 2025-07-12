@@ -21,8 +21,8 @@ NOTE: Creating chunked output is experimental.
    Firebird 5.0 Language Reference
    ```
    docker run --rm `
-    -v D:\Development\firebird-documentation\build\docs\chunk:/output `
-    -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
+    -v C:\Dev\fb\firebird-documentation\build\docs\chunk:/output `
+    -v C:\Dev\fb\firebird-documentation\build\docs\asciidoc\docbook:/input `
     docbook-xslt `
     /input/en/refdocs/fblangref50/firebird-50-language-reference.xml `
     chunk-output-base-uri=/output/en/refdocs/fblangref50/ `
@@ -36,8 +36,8 @@ NOTE: Creating chunked output is experimental.
    Firebird 4.0 Language Reference
    ```
    docker run --rm `
-    -v D:\Development\firebird-documentation\build\docs\chunk:/output `
-    -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
+    -v C:\Dev\fb\firebird-documentation\build\docs\chunk:/output `
+    -v C:\Dev\fb\firebird-documentation\build\docs\asciidoc\docbook:/input `
     docbook-xslt `
     /input/en/refdocs/fblangref40/firebird-40-language-reference.xml `
     chunk-output-base-uri=/output/en/refdocs/fblangref40/ `
@@ -51,8 +51,8 @@ NOTE: Creating chunked output is experimental.
    Firebird 3.0 Language Reference
    ```
    docker run --rm `
-    -v D:\Development\firebird-documentation\build\docs\chunk:/output `
-    -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
+    -v C:\Dev\fb\firebird-documentation\build\docs\chunk:/output `
+    -v C:\Dev\fb\firebird-documentation\build\docs\asciidoc\docbook:/input `
     docbook-xslt `
     /input/en/refdocs/fblangref30/firebird-30-language-reference.xml `
     chunk-output-base-uri=/output/en/refdocs/fblangref30/ `
@@ -66,8 +66,8 @@ NOTE: Creating chunked output is experimental.
    Firebird 2.5 Language Reference
    ```
    docker run --rm `
-    -v D:\Development\firebird-documentation\build\docs\chunk:/output `
-    -v D:\Development\firebird-documentation\build\docs\asciidoc\docbook:/input `
+    -v C:\Dev\fb\firebird-documentation\build\docs\chunk:/output `
+    -v C:\Dev\fb\firebird-documentation\build\docs\asciidoc\docbook:/input `
     docbook-xslt `
     /input/en/refdocs/fblangref25/firebird-25-language-reference.xml `
     chunk-output-base-uri=/output/en/refdocs/fblangref25/ `
