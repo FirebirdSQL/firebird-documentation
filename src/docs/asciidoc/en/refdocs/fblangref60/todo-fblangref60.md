@@ -18,6 +18,6 @@ Please note that these are things we came across or thought of while working on 
 - Document `CURRENT_SCHEMA`
 - Document scope specifier
 - Document `CALL` syntax
-- Document cast-format syntax
 - Document `IF [NOT] EXISTS` DDL clause (is it available for everything?)
 - User-defined functions can no longer override built-in functions, see if this needs to be accounted for somewhere
+- Document `UNLIST`

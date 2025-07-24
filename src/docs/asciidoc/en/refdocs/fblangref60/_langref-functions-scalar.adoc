@@ -3151,7 +3151,7 @@ As specified by _target_type_
 .Syntax
 [listing,subs="+quotes,macros"]
 ----
-CAST (<expression> AS <target_type>)
+CAST (<expression> AS <target_type> [ FORMAT _cast_template_ ])
 
 <target_type> ::= <domain_or_non_array_type> | <array_datatype>
 
@@ -3174,10 +3174,16 @@ CAST (<expression> AS <target_type>)
 
 |sql_datatype
 |SQL data type
+
+|cast_template
+|datetime format string
+
 |===
 
 `CAST` converts an expression to the desired data type or domain.
 If the conversion is not possible, an error is raised.
+
+The `FORMAT` clause is only allowed when converting between datetime and string types.
 
 [#langref-scalarfuncs-shortcast]
 ==== "`Shorthand`" Syntax
@@ -3334,6 +3340,213 @@ If these ``CAST``s occur in PSQL modules, their invalidation may be detected.
 See the note <<langref-appx01-supp-rdb-validblr,[ref]_The RDB$VALID_BLR field_>>, in Appendix A.
 ====
 
+[#langref-scalarfuncs-cast-format]
+==== Formatting and Parsing Datetime Values
+
+The `FORMAT` clause serves two purposes:
+
+. Converting a datetime value to a string
+. Parsing a string value to a datetime value
+
+The `cast_template` of the `FORMAT` clause specifies how the datetime should be converted to string, or how the string should be parsed to a datetime.
+
+The `cast_template` must be a string literal, and has the following syntax:
+
+
+[#langref-scalarfuncs-cast-format-tbl-vars]
+.Cast Template Variables
+[cols="<1m,<4", options="header",stripes="none"]
+|===
+|Format Pattern
+|Description
+
+|YEAR
+|Year (1 - 9999)
+
+|YYYY
+|Last 4 digits of year (0001 - 9999)
+
+|YYY
+|Last 3 digits of year (000 - 999)
+
+|YY
+|Last 2 digits of year (00 - 99)
+
+|Y
+|Last digit of year (0 - 9)
+
+|RR / RRRR
+a|Round Year (further information below) +
+Only string to datetime
+
+|Q
+a|Quarter of the year (1 - 4) +
+Only datetime to string
+
+|MM
+|Month (01 - 12)
+
+|MON
+|Short month name (e.g. `Apr`)
+
+|MONTH
+|Full month name (e.g. `APRIL`)
+
+|RM
+|Roman number of the month (`I` - `XII`)
+
+|WW
+a|Week of the year (`01` - `53`) +
+Only datetime to string
++
+Exercise caution when combining with year.
+For example, 2023-01-01 is week 52 2022, but there is no week-based year template variable, and ``'WW YYYY'`` renders `52 2023`!
+// TODO Is this always the ISO week, or does it depend on locale?
+
+|W
+a|Week of the month (`1` - `5`) +
+Only datetime to string
++
+Week 1 starts at day 1, week 2 at day 8, week 3 at day 15, week 4 for at day 22 and week 5 at day 29.
+
+|D
+a|Day of the week (`1` - `7`) +
+Only datetime to string
++
+`1` is Sunday, `7` is `Saturday`
+
+|DAY
+a|Full name of the day (e.g. `MONDAY`) +
+Only datetime to string
+
+|DY
+|Short name of the day (e.g. `Mon`)
+
+|DD
+|Day of the month (`01` - `31`)
+
+|DDD
+a|Day of the Year (`001` - `366`) +
+Only datetime to string
+
+|J
+|Julian Day (number of days since January 1, 4712 BC)
+
+|HH / HH12
+|Hour of the day (`01` - `12`) without period (for period, also specify `A.M.` or `P.M.`)
+
+|HH24
+|Hour of the day (`00` - `23`)
+
+|MI
+|Minutes (`00` - `59`)
+
+|SS
+|Seconds (`00` - `59`)
+
+|SSSSS
+|Seconds since midnight (`0` - `86399`)
+
+|FF1 - FF9
+a|Fractional seconds with the specified accuracy. +
+When converting from string to datetime, only `FF1` - `FF4` are supported.
++
+For `FF5` - `FF9`, digits 5 - 9 are _always_ `0`.
+
+|A.M. / P.M.
+a|Period for 12 hours time. +
+Either can be used, and will parse `A.M.` and `P.M.`, or render `A.M.` or `P.M.` depending on the actual time.
+
+|TZH
+|Time zone in hours (`-14` - `14`)
+
+|TZM
+|Time zone in minutes (`00` - `59`)
+
+|TZR
+|Time zone name or time zone displacement (same as `TZH:TZM`)
+
+|===
+
+Most of these template variables are defined by the SQL Standard, but some are non-standard extensions.
+
+The template variables can be separated with the following separators (called delimiters in the SQL Standard):
+
+[#langref-scalarfuncs-cast-format-tbl-sep]
+.Cast Template Separators
+[cols="<m", options="header",stripes="none"]
+|===
+|Separator
+
+|-
+|++.++
+|/
+|,
+|;
+|:
+|<space>
+
+|===
+
+It is possible to insert raw text into a format string with double quotes: `... FORMAT '"Today is" DAY'` -> `Today is MONDAY`.
+To render `"` in output, escape it with `\`, i.e. use `\"`, and to render `\` use `\\`.
+
+Example:
+
+[listing]
+----
+SELECT CAST(CURRENT_TIMESTAMP AS VARCHAR(45)
+  FORMAT 'DD.MM.YEAR HH24:MI:SS "is" J "Julian day"')
+FROM RDB$DATABASE;
+=========================
+14.6.2023 15:41:29 is 2460110 Julian day
+----
+
+The format is case-insensitive, so `YYYY-MM` is the same as `yyyy-mm`.
+
+Patterns can be used without any separators:
+
+[listing]
+----
+SELECT CAST(CURRENT_TIMESTAMP AS VARCHAR(50)
+  FORMAT 'YEARMMDD HH24MISS')
+FROM RDB$DATABASE;
+=========================
+20230719 161757
+----
+
+However, be careful with patterns with repeating characters, for example `DDDDD` will be interpreted as `DDD` + `DD`.
+
+[#langref-scalarfuncs-cast-format-to-dt]
+===== Converting from String to Datetime
+
+When converting from string to datetime, additional rules and limitations apply:
+
+* If the target type has a date component, and year, month or day are not set by the pattern, the missing parts will get their values from the current date
+// TODO What about boundaries, e.g cast('31' as date format 'DD') and the current month has only 30 days?
+* If the target type has a time component, and hours, minutes, seconds, or fractions are not set by the pattern, the missing parts will be set to `0`
+* Behavior of `RR` (two-digit Round Year):
+** If the specified two-digit year is 00 to 49, then
+*** If the last two digits of the current year are 00 to 49, then the returned year has the same first two digits as the current year.
+*** If the last two digits of the current year are 50 to 99, then the first 2 digits of the returned year are 1 greater than the first 2 digits of the current year.
+** If the specified two-digit year is 50 to 99, then
+*** If the last two digits of the current year are 00 to 49, then the first 2 digits of the returned year are 1 less than the first 2 digits of the current year.
+*** If the last two digits of the current year are 50 to 99, then the returned year has the same first two digits as the current year.
+- Behavior of `RRRR` (4-digit Round Year): Accepts either 4-digit or 2-digit input.
+If 2-digit, provides the same return as `RR`.
+If you do not want this functionality, then enter the 4-digit year.
+
+Example:
+
+[listing]
+----
+SELECT CAST('2000.12.08 12:35:30.5000' AS TIMESTAMP
+  FORMAT 'YEAR.MM.DD HH24:MI:SS.FF4')
+FROM RDB$DATABASE;
+=====================
+2000-12-08 12:35:30.5000
+----
+
 [#langref-scalarfuncs-cast-exmpl]
 ==== Cast Examples
 
@@ -3341,7 +3554,7 @@ A full-syntax cast:
 
 [source]
 ----
-select cast ('12' || '-June-' || '1959' as date) from rdb$database
+select cast ('12-June-1959' as date) from rdb$database
 ----
 
 A shorthand string-to-date cast:
@@ -3366,6 +3579,16 @@ The cast below cannot be dropped, otherwise the engine would find itself with an
 [source]
 ----
 select cast('today' as date) - 7 from rdb$database
+----
+
+Render a timestamp in ISO 8601 format:
+
+[source]
+----
+select cast(localtimestamp as char(24)
+  format 'YYYY-MM-DD"T"HH24:MI:SS.FF4')
+from rdb$database
+-- 2025-07-24T11:18:56.9930
 ----
 
 [#langref-functions-bitwise]
