@@ -13,8 +13,6 @@ Please note that these are things we came across or thought of while working on 
 - Add schema-qualification to syntax
 - Add examples in DDL `langref-ddl-schema`
 - Add and/or revise examples to include schemas
-- Document `SET SEARCH_PATH TO`
-- Document `CURRENT_SCHEMA`
 - Document scope specifier
 - Document `CALL` syntax
 - Document `IF [NOT] EXISTS` DDL clause (is it available for everything?)
