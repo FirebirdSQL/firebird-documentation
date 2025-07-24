@@ -1,7 +1,7 @@
 [#langref-ddl-database]
 = `DATABASE`
 
-This section describes how to create a database, connect to an existing database, alter the file structure of a database and how to drop a database.
+This section describes how to create a database, connect to an existing database, alter configuration of a database and how to drop a database.
 It also shows two methods to back up a database and how to switch the database to the "`copy-safe`" mode for performing an external backup safely.
 
 [#langref-ddl-db-create]
@@ -24,14 +24,13 @@ CREATE DATABASE <filespec>
     USER _username_
   | PASSWORD '_password_'
   | ROLE _rolename_
+  | OWNER _owner_
   | PAGE_SIZE [=] _size_
-  | LENGTH [=] _num_ [PAGE[S]]
   | SET NAMES '_charset_'
 
 <db_config_option> ::=
     DEFAULT CHARACTER SET _default_charset_
       [COLLATION _collation_] -- _not supported in ESQL_
-  | <sec_file>
   | DIFFERENCE FILE '_diff_file_' -- _not supported in ESQL_
 
 <filespec> ::= "'" [_server_spec_]{_filepath_ | _db_alias_} "'"
@@ -41,14 +40,9 @@ CREATE DATABASE <filespec>
   | <protocol>://[_host_[:{_port_ | _service_}]/]
 
 <protocol> ::= inet | inet4 | inet6 | xnet
-
-<sec_file> ::=
-  FILE '_filepath_'
-  [LENGTH [=] _num_ [PAGE[S]]
-  [STARTING [AT [PAGE]] _pagenum_]
 ----
 
-Each _db_initial_option_ and _db_config_option_ can occur at most once, except _sec_file_, which can occur zero or more times.
+Each _db_initial_option_ and _db_config_option_ can occur at most once.
 
 [#langref-ddl-tbl-createdatabase]
 .`CREATE DATABASE` Statement Parameters
@@ -58,7 +52,7 @@ Each _db_initial_option_ and _db_config_option_ can occur at most once, except _
 ^| Description
 
 |filespec
-|File specification for primary database file
+|File specification of the database file
 
 |server_spec
 |Remote server specification.
@@ -84,7 +78,7 @@ The file name must be specified according to the rules of the platform file syst
 Must match the parameter value of _RemoteServiceName_ in `firebird.conf` file)
 
 |username
-|Username of the owner of the new database.
+|Username creating the new database.
 The maximum length is 63 characters.
 The username can optionally be enclosed in single or double quotes.
 When a username is enclosed in double quotes, it is case-sensitive following the rules for quoted identifiers.
@@ -102,13 +96,17 @@ The role name can be enclosed in single or double quotes.
 When the role name is enclosed in double quotes, it is case-sensitive following the rules for quoted identifiers.
 When enclosed in single quotes, it behaves as if the value was specified without quotes.
 
+|owner
+|Optional username of the owner of the new database.
+The maximum length is 63 characters.
+The username can optionally be enclosed in single or double quotes.
+When a username is enclosed in double quotes, it is case-sensitive following the rules for quoted identifiers.
+When enclosed in single quotes, it behaves as if the value was specified without quotes.
+
 |size
 |Page size for the database, in bytes.
-Possible values are 4096, 8192, 16384 and 32768.
+Possible values are 8192, 16384 and 32768.
 The default page size is 8192.
-
-|num
-|Maximum size of the primary database file, or a secondary file, in pages
 
 |charset
 |Specifies the character set of the connection available to a client connecting after the database is successfully created.
@@ -120,30 +118,15 @@ Single quotes are required.
 |collation
 |Default collation for the default character set
 
-|sec_file
-|File specification for a secondary file
-
-|pagenum
-|Starting page number for a secondary database file
-
 |diff_file
 |File path and name for DIFFERENCE files (.delta files) for backup mode
 |===
 
 The `CREATE DATABASE` statement creates a new database.
 
-A database consists of one or more files.
-The first (main) file is called the _primary file_, subsequent files are called _secondary file(s)_.
+A database consists of one file, this is sometimes called the _primary file_.
 
-.Multi-file Databases
-[NOTE]
-====
-Nowadays, multi-file databases are considered an anachronism.
-It made sense to use multi-file databases on old file systems where the size of any file is limited.
-For instance, you could not create a file larger than 4 GB on FAT32.
-====
-
-The primary file specification is the name of the database file and its extension with the full path to it according to the rules of the OS platform file system being used.
+The file specification is the name of the database file and its extension with the full path to it according to the rules of the OS platform file system being used.
 The database file must not exist at the moment the database is being created.
 If it does exist, you will get an error message, and the database will not be created.
 
@@ -192,7 +175,7 @@ The following values can be specified as the protocol:
 inet:: TCP/IP (first tries to connect using the IPv6 protocol, if it fails, then IPv4)
 inet4:: TCP/IP v4
 inet6:: TCP/IP v6
-xnet:: local protocol (does not include a host, port and service name)
+xnet:: (Windows-only) local protocol (does not include a host, port and service name)
 
 [listing,subs=+quotes]
 ----
@@ -205,31 +188,29 @@ xnet:: local protocol (does not include a host, port and service name)
 `USER` and `PASSWORD`::
 The username and the password of an existing user in the security database (`{secdb}` or whatever is configured in the _SecurityDatabase_ configuration).
 You do not have to specify the username and password if the `ISC_USER` and `ISC_PASSWORD` environment variables are set.
-The user specified in the process of creating the database will be its owner.
+The user creating the database will become its owner, _if_ the `OWNER` clause is not specified.
 This will be important when considering database and object privileges.
 
 `ROLE`::
 The name of the role (usually `RDB$ADMIN`), which will be taken into account when creating the database.
 The role must be assigned to the user in the applicable security database.
 
+`OWNER`::
+The owner of the database.
+If this clause is not specified, the user creating the database will become its owner.
+This user does not have to exist.
+
 `PAGE_SIZE`::
 The desired database page size.
-This size will be set for the primary file and all secondary files of the database.
-If you specify the database page size less than 4,096, it will be automatically rounded up to 4,096.
-Other values not equal to either 4,096, 8,192, 16,384 or 32,768 will be changed to the closest smaller supported value.
+If you specify the database page size less than 8,192, it will be automatically rounded up to 8,192.
+Other values not equal to either 8,192, 16,384 or 32,768 will be changed to the closest smaller supported value.
 If the database page size is not specified, the default value of 8,192 is used.
 +
 .Bigger Isn't Always Better.
 [NOTE]
 ====
-Larger page sizes can fit more records on a single page, have wider indexes, and more indexes, but they will also waste more space for blobs (compare the wasted space of a 3KB blob on page size 4096 with one on 32768: +/- 1KB vs +/- 29KB), and increase memory consumption of the page cache.
+Larger page sizes can fit more records on a single page, have wider indexes, and more indexes, but they will also waste more space for blobs (compare the wasted space of a 3KB blob on page size 8192 with one on 32768: +/- 5KB vs +/- 29KB), and increase memory consumption of the page cache.
 ====
-
-`LENGTH`::
-The maximum size of the primary or secondary database file, in pages.
-When a database is created, its primary and secondary files will occupy the minimum number of pages necessary to store the system data, regardless of the value specified in the `LENGTH` clause.
-The `LENGTH` value does not affect the size of the only (or last, in a multi-file database) file.
-The file will keep increasing its size automatically when necessary.
 
 `SET NAMES`::
 The character set of the connection available after the database is successfully created.
@@ -242,10 +223,6 @@ Character sets are used for `CHAR`, `VARCHAR` and `BLOB SUB_TYPE TEXT` data type
 The character set `NONE` is used by default.
 It is also possible to specify the default `COLLATION` for the default character set, making that collation the default for the default character set.
 The default will be used for the entire database except where an alternative character set, with or without a specified collation, is used explicitly for a field, domain, variable, cast expression, etc.
-
-`STARTING AT`::
-The database page number at which the next secondary database file should start.
-When the previous file is fully filled with data according to the specified page number, the system will start adding new data to the next database file.
 
 `DIFFERENCE FILE`::
 The path and name for the file delta that stores any mutations to the database file after it has been switched to the "`copy-safe`" mode by the `ALTER DATABASE BEGIN BACKUP` statement.
@@ -268,7 +245,7 @@ The `CREATE DATABASE` statement can be executed by:
 [#langref-ddl-db-createdbexamples]
 === Examples Using `CREATE DATABASE`
 
-. Creating a database in Windows, located on disk D with a page size of 4,096.
+. Creating a database in Windows, located on disk D with a page size of 16,384.
 The owner of the database will be the user _wizard_.
 The database will be in Dialect 1, and will use `WIN1251` as its default character set.
 +
@@ -277,10 +254,10 @@ The database will be in Dialect 1, and will use `WIN1251` as its default charact
 SET SQL DIALECT 1;
 CREATE DATABASE 'D:\test.fdb'
 USER 'wizard' PASSWORD 'player'
-PAGE_SIZE = 4096 DEFAULT CHARACTER SET WIN1251;
+PAGE_SIZE = 16384 DEFAULT CHARACTER SET WIN1251;
 ----
 . Creating a database in the Linux operating system with a page size of 8,192 (default).
-The owner of the database will be the user _wizard_.
+The owner of the database will be the user _WIZARD_.
 The database will be in Dialect 3 and will use `UTF8` as its default character set, with `UNICODE_CI_AI` as the default collation.
 +
 [source]
@@ -291,7 +268,7 @@ DEFAULT CHARACTER SET UTF8 COLLATION UNICODE_CI_AI;
 ----
 . Creating a database on the remote server "`baseserver`" with the path specified in the alias "`test`" that has been defined previously in the file `databases.conf`.
 The TCP/IP protocol is used.
-The owner of the database will be the user _wizard_.
+The owner of the database will be the user _WIZARD_.
 The database will be in Dialect 3 and will use `UTF8` as its default character set.
 +
 [source]
@@ -300,41 +277,14 @@ CREATE DATABASE 'baseserver:test'
 USER 'wizard' PASSWORD 'player'
 DEFAULT CHARACTER SET UTF8;
 ----
-. Creating a database in Dialect 3 with `UTF8` as its default character set.
-The primary file will contain up to 10,000 pages with a page size of 8,192.
-As soon as the primary file has reached the maximum number of pages, Firebird will start allocating pages to the secondary file `test.fdb2`.
-If that file is filled up to its maximum as well, `test.fdb3` becomes the recipient of all new page allocations.
-As the last file, it has no page limit imposed on it by Firebird.
-New allocations will continue for as long as the file system allows it or until the storage device runs out of free space.
-If a `LENGTH` parameter were supplied for this last file, it would be ignored.
+. Creating a database and specifying an alternative owner.
+The owner of the database will be the user _ALEX_.
 +
 [source]
 ----
-SET SQL DIALECT 3;
-CREATE DATABASE 'baseserver:D:\test.fdb'
-USER 'wizard' PASSWORD 'player'
-PAGE_SIZE = 8192
-DEFAULT CHARACTER SET UTF8
-FILE 'D:\test.fdb2'
-STARTING AT PAGE 10001
-FILE 'D:\test.fdb3'
-STARTING AT PAGE 20001;
-----
-. Creating a database in Dialect 3 with `UTF8` as its default character set.
-The primary file will contain up to 10,000 pages with a page size of 8,192.
-As far as file size and the use of secondary files are concerned, this database will behave exactly like the one in the previous example.
-+
-[source]
-----
-SET SQL DIALECT 3;
-CREATE DATABASE 'baseserver:D:\test.fdb'
-USER 'wizard' PASSWORD 'player'
-PAGE_SIZE = 8192
-LENGTH 10000 PAGES
-DEFAULT CHARACTER SET UTF8
-FILE 'D:\test.fdb2'
-FILE 'D:\test.fdb3'
-STARTING AT PAGE 20001;
+CREATE DATABASE 'baseserver:test'
+USER wizard PASSWORD 'player' OWNER alex
+DEFAULT CHARACTER SET UTF8;
 ----
 
 .See also
@@ -354,8 +304,7 @@ DSQL, ESQL -- limited feature set
 ALTER DATABASE <alter_db_option> [<alter_db_option> ...]
 
 <alter_db_option> :==
-    <add_sec_clause>
-  | {ADD DIFFERENCE FILE '_diff_file_' | DROP DIFFERENCE FILE}
+    {ADD DIFFERENCE FILE '_diff_file_' | DROP DIFFERENCE FILE}
   | {BEGIN | END} BACKUP
   | SET DEFAULT CHARACTER SET _charset_
   | {ENCRYPT WITH _plugin_name_ [KEY _key_name_] | DECRYPT}
@@ -366,33 +315,10 @@ ALTER DATABASE <alter_db_option> [<alter_db_option> ...]
   | INCLUDE <pub_table_filter> TO PUBLICATION
   | EXCLUDE <pub_table_filter> FROM PUBLICATION
 
-<add_sec_clause> ::= ADD <sec_file> [<sec_file> ...]
-
-<sec_file> ::=
-  FILE '_filepath_'
-  [STARTING [AT [PAGE]] _pagenum_]
-  [LENGTH [=] _num_ [PAGE[S]]
-
 <pub_table_filter> ::=
     ALL
   | TABLE _table_name_ [, _table_name_ ...]
 ----
-
-[NOTE]
-====
-Multiple files can be added in one `ADD` clause:
-
-[source]
-----
-ALTER DATABASE
-  ADD FILE x LENGTH 8000
-    FILE y LENGTH 8000
-    FILE z
-----
-
-Multiple occurrences of _add_sec_clause_ (`ADD FILE` clauses) are allowed;
-an `ADD FILE` clause that adds multiple files (as in the example above) can be mixed with others that add only one file.
-====
 
 [#langref-ddl-tbl-alterdatabase]
 .`ALTER DATABASE` Statement Parameters
@@ -400,21 +326,6 @@ an `ADD FILE` clause that adds multiple files (as in the example above) can be m
 |===
 ^| Parameter
 ^| Description
-
-|add_sec_clause
-|Adding a secondary database file
-
-|sec_file
-|File specification for secondary file
-
-|filepath
-|Full path and file name of the delta file or secondary database file
-
-|pagenum
-|Page number from which the secondary database file is to start
-
-|num
-|Maximum size of the secondary file in pages
 
 |diff_file
 |File path and name of the .delta file (difference file)
@@ -441,9 +352,13 @@ must be greater than or equal to 0 (zero)
 
 The `ALTER DATABASE` statement can:
 
-* add secondary files to a database
 * switch a single-file database into and out of the "`copy-safe`" mode (DSQL only)
 * set or unset the path and name of the delta file for physical backups (DSQL only)
+* change the default character set
+* encrypt or decrypt the database
+* configure the _linger_ setting
+* configure default SQL Security behaviour
+* configure replication
 
 [#langref-ddl-db-alter-who]
 === Who Can Alter the Database
@@ -455,11 +370,6 @@ The `ALTER DATABASE` statement can be executed by:
 
 [#langref-ddl-db-alterdbopts]
 === Parameters for `ALTER DATABASE`
-
-`ADD (FILE)`::
-Adds secondary files to the database.
-It is necessary to specify the full path to the file and the name of the secondary file.
-The description for the secondary file is similar to the one given for the `CREATE DATABASE` statement.
 
 `ADD DIFFERENCE FILE`::
 Specifies the path and name of the difference file (or, delta file) that stores any mutations to the database whenever it is switched to the "`copy-safe`" mode.
@@ -495,9 +405,6 @@ Once the `END BACKUP` process starts, the conditions no longer exist for creatin
 +
 [WARNING]
 ====
-Use of `BEGIN BACKUP` and `END BACKUP` and copying the database files with filesystem tools, is _not safe_ with multi-file databases!
-Use this method only on single-file databases.
-
 Making a safe backup with the _gbak_ utility remains possible at all times, although it is not recommended running _gbak_ while the database is in _LOCKED_ or _MERGE_ state.
 ====
 
@@ -583,15 +490,6 @@ If the `INCLUDE ALL TO PUBLICATION` clause is used, all tables created afterward
 [#langref-ddl-db-alter-example]
 === Examples of `ALTER DATABASE` Usage
 
-. Adding a secondary file to the database.
-As soon as 30000 pages are filled in the previous primary or secondary file, the Firebird engine will start adding data to the secondary file `test4.fdb`.
-+
-[source]
-----
-ALTER DATABASE
-  ADD FILE 'D:\test4.fdb'
-    STARTING AT PAGE 30001;
-----
 . Specifying the path and name of the delta file:
 +
 [source]
@@ -668,7 +566,7 @@ DROP DATABASE
 
 The `DROP DATABASE` statement deletes the current database.
 Before deleting a database, you have to connect to it.
-The statement deletes the primary file, all secondary files and all <<langref-ddl-shadow,shadow files>>.
+The statement deletes the primary file and all <<langref-ddl-shadow,shadow files>>.
 
 [#langref-ddl-db-drop-who]
 === Who Can Drop a Database

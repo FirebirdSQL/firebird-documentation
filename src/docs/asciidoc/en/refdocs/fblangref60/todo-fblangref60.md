@@ -8,12 +8,11 @@ Please note that these are things we came across or thought of while working on 
 - Revise all "Who Can \<action> On \<object>" sections to account for schema-based privileges
 - Document revised grant/revoke syntax
 - Add `RDB$SCHEMA_NAME` and similar columns to all relevant system tables
-- Add `RDB$SCHEMAS` system table (see if there are nay others)
+- Add `RDB$SCHEMAS` system table (see if there are any others)
 - Add `RDB$SQL` package
 - Add schema-qualification to syntax
 - Add examples in DDL `langref-ddl-schema`
 - Add and/or revise examples to include schemas
-- Remove multi-file database syntax and descriptions
 - Document `SET SEARCH_PATH TO`
 - Document `CURRENT_SCHEMA`
 - Document scope specifier
