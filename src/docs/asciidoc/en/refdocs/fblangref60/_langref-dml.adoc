@@ -425,7 +425,7 @@ This section focuses on single-source selects.
 <<langref-dml-select-joins,Joins>> are discussed in a following section.
 
 .Syntax
-[listing,subs=+quotes]
+[listing#langref-dml-select-from-syntax,subs=+quotes]
 ----
 SELECT
   ...
@@ -440,9 +440,20 @@ SELECT
   | <parenthesized-joined-table>
 
 <table-or-query-name> ::=
-    _table-name_
+    <table-name>
   | _query-name_
-  | \[__package-name__.]_procedure-name_ [(<procedure-args>)]
+  | <selectable-procedure>
+
+<table-name> ::= [ _schema-name_ <period> ] _table-name_
+
+<selectable-procedure> ::=
+  [ <routine-location> <period> ] _procedure-name_ [(<procedure-args>)]
+
+<routine-location> ::=
+    _schema-name_
+  | [ _schema-name_ <period> ] _package-name_
+  | _package-name_ '%' PACKAGE
+  | _schema-name_ '%' SCHEMA
 
 <procedure-args> ::= <value-expression [, <value-expression> ...]
 
@@ -466,6 +477,9 @@ SELECT
 
 |query-name
 |Name of a CTE
+
+|schema-name
+|Name of a schema containing the table, package or procedure
 
 |package-name
 |Name of a package
@@ -622,6 +636,19 @@ select
   number,
   (select name from contestants c where c.number = get_winners.number)
 from get_winners('#34517', 'AMS')
+----
+
+If there are schemas and packages with the same name, and procedures in those schemas and packages with the same name, it is possible that a reference to a procedure is ambiguous.
+In that case, the "`scope specifier`" can be used to resolve the ambiguity:
+
+[source]
+----
+-- Call GET_RESULT in schema PROCESSING
+select * from processing%schema.get_result(81834);
+-- Call GET_RESULT in package PROCESSING (from search path)
+select * from processing%package.get_result(81834);
+-- Or qualify the package with its schema
+select * from warehouse.processing.get_result(81834);
 ----
 
 .See also
@@ -950,7 +977,7 @@ There are several types (`INNER`, `OUTER`) and classes (qualified, natural, etc.
 Since joins can be chained, the datasets involved in a join may themselves be joined sets.
 
 .Syntax
-[listing,subs=+quotes]
+[listing,subs="+quotes,macros"]
 ----
 SELECT
    ...
@@ -965,18 +992,14 @@ SELECT
   | <parenthesized-joined-table>
 
 <table-or-query-name> ::=
-    _table-name_
-  | _query-name_
-  | \[__package-name__.]_procedure-name_ [(<procedure-args>)]
+  !! See <<langref-dml-select-from,general `FROM` clause syntax>> !!
 
-<procedure-args> ::= <value-expression [, <value-expression> ...]
+<derived-table> ::= (<query-expression>)
 
 <correlation-or-recognition> ::=
   [AS] _correlation-name_ [(<column-name-list>)]
 
 <column-name-list> ::= _column-name_ [, _column-name_ ...]
-
-<derived-table> ::= (<query-expression>)
 
 <parenthesized-joined-table> ::=
     (<parenthesized-joined-table)
@@ -1008,26 +1031,11 @@ SELECT
 ^| Argument
 ^| Description
 
-|table-name
-|Name of a table or view
-
-|query-name
-|Name of a CTE
-
-|package-name
-|Name of a package
-
-|procedure-name
-|Name of a selectable stored procedure
-
-|procedure-args
-|Selectable stored procedure input parameter(s)
-
 |derived-table
 |Derived table query expression
 
-|correlation-name
-|The alias of a data source (table, view, procedure, CTE, derived table)
+|column-name-list
+|List of aliases of the columns of a derived table, or the list of columns used for an equi-join
 
 |column-name
 |Name or alias for a column in a relation, CTE or derived table
@@ -1035,8 +1043,6 @@ SELECT
 |search-condition
 |Join condition (criterion)
 
-|column-name-list
-|List of aliases of the columns of a derived table, or the list of columns used for an equi-join
 |===
 
 [#langref-dml-select-joins-types]
@@ -3884,9 +3890,20 @@ The syntax below does not include the PSQL `SELECT ... INTO` syntax, which is es
   | <parenthesized-joined-table>
 
 <table-or-query-name> ::=
-    _table-name_
+    <table-name>
   | _query-name_
-  | \[__package-name__.]_procedure-name_ [(<procedure-args>)]
+  | <selectable-procedure>
+
+<table-name> ::= [ _schema-name_ <period> ] _table-name_
+
+<selectable-procedure> ::=
+  [ <routine-location> <period> ] _procedure-name_ [(<procedure-args>)]
+
+<routine-location> ::=
+    _schema-name_
+  | [ _schema-name_ <period> ] _package-name_
+  | _package-name_ '%' PACKAGE
+  | _schema-name_ '%' SCHEMA
 
 <procedure-args> ::= <value-expression [, <value-expression> ...]
 
@@ -3986,7 +4003,7 @@ Inserts rows of data into a table or updatable view
 .Syntax
 [listing,subs="+quotes,attributes"]
 ----
-INSERT INTO _target_
+INSERT INTO [ _schema-name_ <period> ] _target_
   { DEFAULT VALUES
   | [(<column_list>)] [<override_opt>] <value-source> }
   [RETURNING <returning_list> [INTO <variables>]]
@@ -4010,7 +4027,7 @@ INSERT INTO _target_
 
 <return_expression> ::=
     <value-expression>
-  | [_target_.{endsb}__col_name__
+  | [_target_ <period> {endsb} __col_name__
 
 <value-expression> ::=
     <literal>
@@ -4027,6 +4044,9 @@ INSERT INTO _target_
 |===
 ^| Argument
 ^| Description
+
+|schema-name
+|The schema containing the table _target_
 
 |target
 |The name of the table or view to which a new row, or batch of rows, should be added
@@ -4071,7 +4091,7 @@ Those columns should be excluded from both the _column_list_ and the `VALUES` li
 === `INSERT ... VALUES`
 
 The `VALUES` list must provide a value for every column in the column list, in the same order and of the correct type.
-The column list need not specify every column in the target but, if the column list is absent, the engine requires a value for every column in the table or view (computed columns excluded).
+The column list need not specify every column in the target, but, if the column list is absent, the engine requires a value for every column in the table or view (computed columns excluded).
 
 The expression `DEFAULT` allows a column to be specified in the column list, but instructs Firebird to use the default value (either `NULL` or the value specified in the `DEFAULT` clause of the column definition).
 For identity columns, specifying `DEFAULT` will generate the identity value.
@@ -4277,7 +4297,7 @@ Updates existing rows in tables and updatable views
 .Syntax
 [listing,subs="+quotes,attributes"]
 ----
-UPDATE _target_ [[AS] _alias_]
+UPDATE [ _schema-name_ <period> ] _target_ [[AS] _alias_]
   SET _col_name_ = <upd_value> [, _col_name_ = <upd_value> ...]
   [WHERE {<search-conditions> | CURRENT OF _cursorname_}]
   [PLAN <plan_items>]
@@ -4315,6 +4335,9 @@ UPDATE _target_ [[AS] _alias_]
 |===
 ^| Argument
 ^| Description
+
+|schema-name
+|The schema containing the table _target_
 
 |target
 |The name of the table or view where the records are updated
@@ -4584,7 +4607,7 @@ Updates existing rows in a table or updatable view, or -- if it does not exist -
 [listing,subs="+quotes,attributes"]
 ----
 UPDATE OR INSERT INTO
-  _target_ [(<column_list>)]
+  [ _schema-name_ <period> ] _target_ [(<column_list>)]
   [<override_opt>]
   VALUES (<value_list>)
   [MATCHING (<column_list>)]
@@ -4629,8 +4652,11 @@ UPDATE OR INSERT INTO
 ^| Argument
 ^| Description
 
+|schema-name
+|The schema containing the table _target_
+
 |target
-|The name of the table or view where the record(s) is to be updated or a new record inserted
+|The name of the table or view where the records are to be updated or a new record inserted
 
 |col_name
 |Name of a column in the table or view
@@ -4711,7 +4737,7 @@ Deletes rows from a table or updatable view
 [listing,subs="+quotes,attributes"]
 ----
 DELETE
-  FROM _target_ [[AS] _alias_]
+  FROM [ _schema-name_ <period> ] _target_ [[AS] _alias_]
   [WHERE {<search-conditions> | CURRENT OF _cursorname_}]
   [PLAN <plan_items>]
   [ORDER BY <sort_items>]
@@ -4745,6 +4771,9 @@ DELETE
 |===
 ^| Argument
 ^| Description
+
+|schema-name
+|The schema containing the table _target_
 
 |target
 |The name of the table or view from which the records are to be deleted
@@ -4981,7 +5010,8 @@ Merges data from a source set into a target table or updatable view
 .Syntax
 [listing,subs="+quotes,attributes"]
 ----
-MERGE INTO _target_ [[AS] _target_alias_]
+MERGE
+  INTO [ _schema-name_ <period> ] _target_ [[AS] _target_alias_]
   USING <table-reference>
   ON <join_condition>
   <merge_when> [<merge_when> ...]
@@ -5056,6 +5086,9 @@ MERGE INTO _target_ [[AS] _target_alias_]
 |===
 ^| Argument
 ^| Description
+
+|schema-name
+|The schema containing the table _target_
 
 |target
 |Name of target relation (table or updatable view)
@@ -5267,11 +5300,14 @@ WHEN MATCHED THEN
 Executes a stored procedure
 
 .Syntax
-[listing,subs="+quotes,attributes"]
+[listing,subs="+quotes,attributes,macros"]
 ----
-EXECUTE PROCEDURE _procname_
+EXECUTE PROCEDURE [<routine-location> <period> ] _procname_
    [{ <inparam-list | ( <inparam-list> ) }]
    [RETURNING_VALUES { <outvar-list> | ( <outvar-list ) }]
+
+<routine-location> ::=
+  !! See <<langref-dml-select-from-syntax,Select `FROM` syntax>> !!
 
 <inparam-list> ::=
   <inparam> [, <inparam> ...]
@@ -5289,11 +5325,14 @@ EXECUTE PROCEDURE _procname_
 ^| Argument
 ^| Description
 
+|routine-location
+|Schema and/or package of the procedure (optional)
+
 |procname
 |Name of the stored procedure
 
 |inparam
-|An expression evaluating to the declared data type of an input parameter
+|An expression evaluating to the declared data type of the input parameter
 
 |varname
 |A PSQL variable to receive the return value
@@ -5349,6 +5388,9 @@ EXECUTE PROCEDURE MakeFullName
   ('Mr./Mrs. ' || FirstName, MiddleName, upper(LastName))
   RETURNING_VALUES (FullName);
 ----
+
+.See also
+<<langref-dml-select>>
 
 [#langref-dml-execblock]
 == `EXECUTE BLOCK`
