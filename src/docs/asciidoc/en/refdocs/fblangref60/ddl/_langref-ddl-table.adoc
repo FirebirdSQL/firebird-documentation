@@ -24,7 +24,8 @@ DSQL, ESQL
 .Syntax
 [listing,subs="+quotes,macros"]
 ----
-CREATE [GLOBAL TEMPORARY] TABLE _tablename_
+CREATE [GLOBAL TEMPORARY] TABLE
+  [_tbl-schema_ <period>] _tablename_
   [EXTERNAL [FILE] '_filespec_']
   (<col_def> [, {<col_def> | <tconstraint>} ...])
   [{<table_attrs> | <gtt_table_attrs>}]
@@ -35,17 +36,19 @@ CREATE [GLOBAL TEMPORARY] TABLE _tablename_
   | <identity_col_def>
 
 <regular_col_def> ::=
-  _colname_ {<datatype> | _domainname_}
+  _colname_
+  {<datatype> | [_dom-schema_ <period>] _domainname_}
   [DEFAULT {<literal> | NULL | <context_var>}]
   [<col_constraint> ...]
-  [COLLATE _collation_name_]
+  [COLLATE [_col-schema_ <period>] _collation_name_]
 
 <computed_col_def> ::=
   _colname_ [<datatype>]
   {COMPUTED [BY] | GENERATED ALWAYS AS} (<expression>)
 
 <identity_col_def> ::=
-  _colname_ {<datatype> | _domainname_}
+  _colname_
+  {<datatype> | [_dom-schema_ <period>] _domainname_}
   GENERATED {ALWAYS | BY DEFAULT} AS IDENTITY
   [(<identity_col_option>...)]
   [<col_constraint> ...]
@@ -70,7 +73,7 @@ CREATE [GLOBAL TEMPORARY] TABLE _tablename_
   [CONSTRAINT _constr_name_]
     { PRIMARY KEY [<using_index>]
     | UNIQUE      [<using_index>]
-    | REFERENCES _other_table_ [(_colname_)]
+    | REFERENCES [_other-schema_ <period>] _other_table_ [(_colname_)]
         [ON DELETE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
         [ON UPDATE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
         [<using_index>]
@@ -82,7 +85,7 @@ CREATE [GLOBAL TEMPORARY] TABLE _tablename_
     { PRIMARY KEY (<col_list>) [<using_index>]
     | UNIQUE      (<col_list>) [<using_index>]
     | FOREIGN KEY (<col_list>)
-        REFERENCES _other_table_ [(<col_list>)]
+        REFERENCES [_other-schema_ <period>] _other_table_ [(<col_list>)]
         [ON DELETE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
         [ON UPDATE {NO ACTION | CASCADE | SET DEFAULT | SET NULL}]
         [<using_index>]
@@ -121,16 +124,19 @@ CREATE [GLOBAL TEMPORARY] TABLE _tablename_
   | <context_var>
   | <expression>
   | NULL
-  | NEXT VALUE FOR _genname_
-  | GEN_ID(_genname_, <val>)
+  | NEXT VALUE FOR [_seq-schema_ <period>] _seq-name_
+  | GEN_ID([_seq-schema_ <period>] _seq-name_, <val>)
   | CAST(<val> AS <cast_type>)
-  | (<select_one>)
-  | _func_([<val> [, <val> ...]])
+  | [<routine-location> <period>] _func_([<val> [, <val> ...]])
+  | _builtin-func_([<val> [, <val> ...]])
 
 <cast_type> ::= <domain_or_non_array_type> | <array_datatype>
 
 <domain_or_non_array_type> ::=
   !! See <<langref-datatypes-syntax-scalar-syntax,Scalar Data Types Syntax>> !!
+
+<routine-location> ::=
+  !! see <<langref-dml-select-from-syntax,Select `FROM` syntax>> !!
 
 <table_attrs> ::= <table_attr> [<table_attr> ...]
 
@@ -154,13 +160,17 @@ CREATE [GLOBAL TEMPORARY] TABLE _tablename_
 ^| Parameter
 ^| Description
 
+|tbl-schema
+|Schema of the table.
+If not specified, the table will be created in the current schema.
+
 |tablename
 |Name (identifier) for the table.
-The maximum length is 63 characters and must be unique in the database.
+The maximum length is 63 characters and must be unique in the schema.
 
 |filespec
 |File specification (only for external tables).
-Full file name and path, enclosed in single quotes, correct for the local file system and located on a storage device that is physically connected to Firebird's host computer.
+Full filename and path, enclosed in single quotes, correct for the local file system and located on a storage device that is physically connected to Firebird's host computer.
 
 |colname
 |Name (identifier) for a column in the table.
@@ -177,6 +187,10 @@ The maximum length is 63 characters and must be unique in the table.
 
 |datatype
 |SQL data type
+
+|dom-schema
+|Schema of _domain_name_.
+If not specified, the domain will be located on the search path.
 
 |domain_name
 |Domain name
@@ -195,6 +209,10 @@ zero (`0`) is not allowed.
 |The name (identifier) of a constraint.
 The maximum length is 63 characters.
 
+|other-schema
+|Schema of _other_table_
+If not specified, the table will be located on the search path.
+
 |other_table
 |The name of the table referenced by the foreign key constraint
 
@@ -209,6 +227,10 @@ The maximum length is 63 characters.
 
 |check_condition
 |The condition applied to a CHECK constraint, that will resolve as either true, false or `NULL`
+
+|col-schema
+|Schema of _collation_.
+If not specified, the collation will be located on the search path.
 
 |collation
 |Collation
@@ -225,17 +247,28 @@ The maximum length is 63 characters.
 |expression
 |An expression resolving to a value that is allowed in the given context
 
-|genname
+|seq-schema
+|Schema of _seq-name_.
+If not specified, the sequence will be located on the search path.
+
+|seq-name
 |Sequence (generator) name
 
+|routine-location
+|Schema and/or package of _func_.
+If not fully specified, the function or its package will be located on the search path.
+
 |func
-|Internal function or UDF
+|User-defined function (PSQL function, UDF, UDR)
+
+|builtin-func
+|Builtin function
 |===
 
 The `CREATE TABLE` statement creates a new table.
-Its name must be unique among the names of all tables, views, and stored procedures in the database.
+Its name must be unique among the names of all tables, views, and stored procedures in the schema.
 
-A table must contain at least one column that is not computed, and the names of columns must be unique in the table.
+A table must contain at least one column that is not computed, and the names of columns must be unique within the table.
 
 A column must have either an explicit _SQL data type_, the name of a _domain_ whose attributes will be copied for the column, or be defined as `COMPUTED BY` an expression (a _calculated field_).
 
@@ -245,10 +278,10 @@ A table may have any number of table constraints, including none.
 === Character Columns
 
 You can use the `CHARACTER SET` clause to specify the character set for the `CHAR`, `VARCHAR` and `BLOB` (text subtype) types.
-If the character set is not specified, the default character set of the database -- at time of the creation of the column -- will be used.
+If the character set is not specified, the default character set of the schema, or -- if not specified on the schema -- of the database -- at time of the creation of the column -- will be used.
 
-If the database has no default character set, the `NONE` character set is applied.
-Data in any encoding can be added to such a column, but it is not possible to add this data to a column with a different encoding.
+If neither the schema nor the database have a default character set, the `NONE` character set is applied.
+Data in any encoding can be added to such a column, but it is not possible to assign the data to a column with a different encoding.
 No transliteration is performed between the source and destination encodings, which may result in errors.
 
 The optional `COLLATE` clause allows you to specify the collation for character data types, including `BLOB SUB_TYPE TEXT`.
@@ -264,7 +297,7 @@ The default value will also be used in `UPDATE` when `DEFAULT` is used instead o
 The default value can be a literal of a compatible type, a context variable that is type-compatible with the data type of the column, or `NULL`, if the column allows it.
 If no default value is explicitly specified, `NULL` is implied.
 
-An expression cannot be used as a default value.
+Other expressions cannot be used as a default value.
 
 [#langref-ddl-tbl-domainbased]
 === Domain-based Columns
@@ -295,7 +328,7 @@ Allowed types are `SMALLINT`, `INTEGER`, `BIGINT`, `NUMERIC(__p__[,0])` and `DEC
 * An identity column cannot have a `DEFAULT` or `COMPUTED` value.
 * An identity column can be altered to become a regular column.
 * A regular column cannot be altered to become an identity column.
-* Identity columns are implicitly `NOT NULL` (non-nullable), and cannot be made nullable.
+* Identity columns are implicitly `NOT NULL`, and cannot be made nullable.
 * Uniqueness is not enforced automatically.
 A `UNIQUE` or `PRIMARY KEY` constraint is required to guarantee uniqueness.
 * The use of other methods of generating key values for identity columns, e.g. by trigger-generator code or by allowing users to change or add them, is discouraged to avoid unexpected key violations.
@@ -312,7 +345,7 @@ this generates the identity value as normal.
 . the <<langref-dml-insert-overriding,`OVERRIDING SYSTEM VALUE`>> clause is specified in the `INSERT` statement;
 this allows a user value to be inserted;
 . the <<langref-dml-insert-overriding,`OVERRIDING USER VALUE`>> clause is specified in the `INSERT` statement;
-this allows a user specified value to be ignored (though in general it makes more sense to not include the column in the `INSERT`).
+this allows a user-provided value to be ignored (though in general it makes more sense to not include the column in the `INSERT`).
 
 [#langref-ddl-tbl-identity-default]
 ==== `GENERATED BY DEFAULT`
@@ -335,6 +368,8 @@ The optional `INCREMENT` clause allows you to specify another non-zero step valu
 ====
 The SQL standard specifies that if `INCREMENT` is specified with a negative value, and `START WITH` is not specified, that the first value generated should be the maximum of the column type (e.g. 2^31^ - 1 for `INTEGER`).
 Instead, Firebird will start at `1`.
+
+This may change in a future Firebird version.
 ====
 
 [#langref-ddl-tbl-computedby]
@@ -351,8 +386,8 @@ In a query that selects a computed column, the expression is evaluated for each 
 
 [TIP]
 ====
-Instead of a computed column, in some cases it makes sense to use a regular column whose value is calculated in triggers for adding and updating data.
-It may reduce the performance of inserting/updating records, but it will increase the performance of data selection.
+Instead of a computed column, it can makes sense to use a regular column whose value is calculated in triggers for adding and updating data.
+This may reduce the performance of inserting/updating records, but it can increase the performance of data selection.
 ====
 
 [#langref-ddl-tbl-array]
@@ -397,7 +432,7 @@ The system automatically creates the corresponding index for a primary key (`PRI
 [#langref-ddl-tbl-constraints-names]
 ==== Names for Constraints and Their Indexes
 
-Constraints and their indexes are named automatically if no name was specified using the `CONSTRAINT` clause:
+Constraints and their indexes are named automatically if no name is specified using the `CONSTRAINT` clause:
 
 * The constraint name has the form `++INTEG_++__n__`, where _n_ represents one or more digits
 * The index name has the form `RDB$PRIMARY__n__` (for a primary key index), `RDB$FOREIGN__n__` (for a foreign key index) or `RDB$__n__` (for a unique key index).
@@ -407,7 +442,7 @@ Constraints and their indexes are named automatically if no name was specified u
 
 A constraint can be named explicitly if the `CONSTRAINT` clause is used for its definition.
 By default, the constraint index will have the same name as the constraint.
-If a different name is wanted for the constraint index, a `USING` clause can be included.
+A different name for the constraint index can be specified with the `USING` clause.
 
 [#langref-ddl-tbl-constraints-using]
 ===== The `USING` Clause
@@ -449,8 +484,10 @@ For `UNIQUE` keys that span multiple columns, the logic is a little complicated:
 The rules for uniqueness can be summarised thus:
 
 [quote]
+____
 In principle, all nulls are considered distinct.
 However, if two rows have exactly the same key columns filled with non-null values, the `NULL` columns are ignored and the uniqueness is determined on the non-null columns as though they constituted the entire key.
+____
 
 .Illustration
 [source]
@@ -562,7 +599,7 @@ CREATE TABLE PLACES (
 ==== `NOT NULL` Constraint
 
 In Firebird, columns are nullable by default.
-The `NOT NULL` constraint specifies that the column cannot take `NULL` in place of a value.
+The `NOT NULL` constraint specifies that the column does not accept `NULL` in place of a value.
 
 A `NOT NULL` constraint can only be defined as a column constraint, not as a table constraint.
 
@@ -570,7 +607,7 @@ A `NOT NULL` constraint can only be defined as a column constraint, not as a tab
 === `SQL SECURITY` Clause
 
 The `SQL SECURITY` clause specifies the security context for executing functions referenced in computed columns, and check constraints, and the default context used for triggers fired for this table.
-When SQL Security is not specified, the default value of the database is applied at runtime.
+When SQL Security is not specified, the default value of the schema is applied at runtime.
 
 See also _<<langref-security-sql-security,SQL Security>>_ in chapter _Security_.
 
@@ -745,7 +782,8 @@ The metadata of a GTT can be modified or removed using `ALTER TABLE` and `DROP T
 .Syntax
 [listing,subs=+quotes]
 ----
-CREATE GLOBAL TEMPORARY TABLE _tablename_
+CREATE GLOBAL TEMPORARY TABLE
+  [_tbl-schema_ <period>] _tablename_
   (<column_def> [, {<column_def> | <table_constraint>} ...])
   [<gtt_table_attrs>]
 
@@ -949,7 +987,7 @@ DSQL, ESQL
 .Syntax
 [listing,subs="+quotes,attributes,macros"]
 ----
-ALTER TABLE _tablename_
+ALTER TABLE [_tbl-schema_ <period>] _tablename_
   <operation> [, <operation> ...]
 
 <operation> ::=
@@ -970,7 +1008,7 @@ ALTER TABLE _tablename_
   | <identity_col_mod>
 
 <regular_col_mod> ::=
-    TYPE {<datatype> | _domainname_}
+    TYPE {<datatype> | [_dom-schema_ <period>] _domainname_}
   | SET DEFAULT {<literal> | NULL | <context_var>}
   | DROP DEFAULT
   | {SET | DROP} NOT NULL
@@ -997,16 +1035,24 @@ ALTER TABLE _tablename_
 ^| Parameter
 ^| Description
 
+|tbl-schema
+|Schema of the table.
+If not specified, the table will be located on the search path.
+
 |tablename
-|Name (identifier) of the table
+|Name of the table
 
 |operation
 |One of the available operations altering the structure of the table
 
 |colname
-|Name (identifier) for a column in the table.
+|Name for a column in the table.
 The maximum length is 63 characters.
 Must be unique in the table.
+
+|dom-schema
+|Schema of _domain_name_.
+If not specified, the domain will be located on the search path.
 
 |domain_name
 |Domain name
@@ -1019,17 +1065,11 @@ Must be unique in the table.
 |newpos
 |The new column position (an integer between 1 and the number of columns in the table)
 
-|other_table
-|The name of the table referenced by the foreign key constraint
-
 |literal
 |A literal value that is allowed in the given context
 
 |context_var
 |A context variable whose type is allowed in the given context
-
-|check_condition
-|The condition of a `CHECK` constraint that will be satisfied if it evaluates to TRUE or UNKNOWN/NULL
 
 |restart_value
 |The first value of the identity column after restart
@@ -1225,7 +1265,7 @@ It is not possible to change a regular column to an identity column.
 === Changing SQL Security
 
 Using the `ALTER SQL SECURITY` or `DROP SQL SECURITY` clauses, it is possible to change or drop the SQL Security property of a table.
-After dropping SQL Security, the default value of the database is applied at runtime.
+After dropping SQL Security, the default value of the schema is applied at runtime.
 
 If the SQL Security property is changed for a table, triggers that do not have an explicit SQL Security property will not see the effect of the change until the next time the trigger is loaded into the metadata cache.
 
@@ -1320,7 +1360,7 @@ DSQL, ESQL
 .Syntax
 [listing,subs=+quotes]
 ----
-DROP TABLE _tablename_
+DROP TABLE [_tbl-schema_ <period>] _tablename_
 ----
 
 [#langref-ddl-tbl-droptbl]
@@ -1329,6 +1369,10 @@ DROP TABLE _tablename_
 |===
 ^| Parameter
 ^| Description
+
+|tbl-schema
+|Schema of the table.
+If not specified, the table will be located on the search path.
 
 |tablename
 |Name (identifier) of the table
@@ -1371,7 +1415,8 @@ DSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-RECREATE [GLOBAL TEMPORARY] TABLE _tablename_
+RECREATE [GLOBAL TEMPORARY] TABLE
+  [_tbl-schema_ <period>] _tablename_
   [EXTERNAL [FILE] '_filespec_']
   (<col_def> [, {<col_def> | <tconstraint>} ...])
   [{<table_attrs> | <gtt_table_attrs>}]

@@ -29,7 +29,7 @@ The following object types are always contained in a schema (or, schema-bound):
 * Collations
 * Packages
 
-The following object types are not contained in a schema (or, schema-less):
+The following object types are not contained in a schema (or, schemaless):
 
 * Users
 * Roles
@@ -40,10 +40,30 @@ The following object types are not contained in a schema (or, schema-less):
 Initially, a Firebird database has two schemas:
 
 [horizontal]
-`PUBLIC`:: schema for user objects
-`SYSTEM`:: schema for system objects (the `RDB${asterisk}`, `MON${asterisk}`, and other system provided tables, views and packages)
+`SYSTEM`::
+The schema for system objects (the `RDB${asterisk}`, `MON${asterisk}`, and other system-provided tables, views and packages).
++
+The `SYSTEM` schema is protected and cannot be dropped.
 
-The `PUBLIC` schema can be dropped.
+`PUBLIC`::
+A schema for user objects.
++
+The `PUBLIC` schema is just like any other user-created schema, and can be dropped.
++
+`PUBLIC` has no special meaning other than:
++
+--
+* it is created by default in a new database
+* when restoring a database from earlier Firebird versions, all user objects are created in `PUBLIC`
+* it is listed in the default search path -- even if it does not exist
+--
+
+[NOTE]
+====
+When describing the syntax in various chapters and sections of this Language Reference, we sometimes take shortcuts.
+
+For example, character sets have a schema, but that schema is always `SYSTEM`, so in some syntax production we will use `[SYSTEM <period>] _charset_` instead of the formally more correct `[_cs-schema_ <period>] _charset_` and declaring what _cs-schema_ is.
+====
 
 [#langref-ddl-schema-create]
 == `CREATE SCHEMA`
@@ -56,9 +76,9 @@ DSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-CREATE [IF NOT EXISTS] SCHEMA _schema_name_
-    [DEFAULT CHARACTER SET _default_charset_]
-    [DEFAULT SQL SECURITY {DEFINER | INVOKER}]
+CREATE [IF NOT EXISTS] SCHEMA _schema-name_
+  [DEFAULT CHARACTER SET [SYSTEM <period>] _default_charset_]
+  [DEFAULT SQL SECURITY {DEFINER | INVOKER}]
 ----
 
 [#langref-ddl-schema-tbl-createparam]
@@ -68,18 +88,21 @@ CREATE [IF NOT EXISTS] SCHEMA _schema_name_
 ^| Parameter
 ^| Description
 
-|schema_name
+|schema-name
 |Schema name.
 The maximum length is 63 characters.
 
 |default_charset
 |Specifies the default character set for string data types created inside this schema.
 If not specified, it inherits the default database character set.
+The character set can optionally be qualified with a schema;
+only `SYSTEM` has character sets.
 |===
 
 The `CREATE SCHEMA` statement creates a new schema.
 
-Newly created schemas grant `USAGE` permission only to their owners.
+Initially, only the schema owner receives the `USAGE` permission.
+For other users or roles, it must be explicitly granted.
 
 [#langref-ddl-schema-createopts]
 === Optional Clauses for `CREATE SCHEMA`
@@ -91,8 +114,9 @@ If the schema already exists, no changes will be performed.
 The default character set for creating data structures of string data types.
 Character sets are used for `CHAR`, `VARCHAR` and `BLOB SUB_TYPE TEXT` data types.
 The default character set of the database is used by default.
-//TODO Also valid for schema? :: It is also possible to specify the default `COLLATION` for the default character set, making that collation the default for the default character set.
 The default will be used for objects created in the schema except where an alternative character set, with or without a specified collation, is used explicitly for a field, domain, variable, cast expression, etc.
++
+The character set name can optionally be qualified with the `SYSTEM` schemafootnote:schema_default_charset_schema[Specifying another schema is syntactically allowed, but will always result in a "`__not defined__`" error as character sets only exist in `SYSTEM`.].
 
 `SET DEFAULT SQL SECURITY`::
 Specifies the default `SQL SECURITY` option to apply at runtime for objects in the schema without the SQL Security property set.
@@ -121,11 +145,11 @@ DSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-ALTER SCHEMA _schema_name_
-    <alter_schema_option>...
+ALTER SCHEMA _schema-name_
+  <alter_schema_option>...
 
 <alter_schema_option> ::=
-    SET DEFAULT CHARACTER SET _default_charset_
+    SET DEFAULT CHARACTER SET [SYSTEM <period>] _default-charset_
   | SET DEFAULT SQL SECURITY {DEFINER | INVOKER}
   | DROP DEFAULT CHARACTER SET
   | DROP DEFAULT SQL SECURITY
@@ -138,12 +162,13 @@ ALTER SCHEMA _schema_name_
 ^| Parameter
 ^| Description
 
-|schema_name
-|Schema name.
-The maximum length is 63 characters.
+|schema-name
+|Schema name
 
-|default_charset
-|Specifies the default character set for string data types created inside this schema.
+|default-charset
+|The default character set for string data types created inside this schema.
+The character set can optionally be qualified with a schema;
+only `SYSTEM` has character sets.
 |===
 
 The `ALTER SCHEMA` statement changes the configuration of a schema.
@@ -151,10 +176,12 @@ The `ALTER SCHEMA` statement changes the configuration of a schema.
 [#langref-ddl-schema-altopts]
 === Optional Clauses of `ALTER SCHEMA`
 
-An `ALTER SCHEMA` statement needs one or more of these clauses
+An `ALTER SCHEMA` statement needs one or more of these clauses:
 
 `SET DEFAULT CHARACTER SET`::
 Alters the default character set for creating data structures of string data types.
++
+The character set name can optionally be qualified with the `SYSTEM` schemafootnote:schema_default_charset_schema[Specifying another schema is syntactically allowed, but will always result in a "`__not defined__`" error as character sets only exist in `SYSTEM`.].
 
 `DROP DEFAULT CHARACTER SET`::
 Drops the default character set of the schema, inheriting the default character set of the database.
@@ -189,7 +216,7 @@ DSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-DROP [IF EXISTS] SCHEMA _schema_name_
+DROP [IF EXISTS] SCHEMA _schema-name_
 ----
 
 [#langref-ddl-schema-tbl-dropparam]
@@ -199,14 +226,13 @@ DROP [IF EXISTS] SCHEMA _schema_name_
 ^| Parameter
 ^| Description
 
-|schema_name
-|Schema name.
-The maximum length is 63 characters.
+|schema-name
+|Schema name
 |===
 
 Drops the schema.
 Currently, only empty schemas can be dropped.
-In the future, a `CASCADE` sub-clause will be introduced, allowing schemas to be dropped along with all their contained objects.
+In the future, we expect a `CASCADE` sub-clause to be introduced, allowing schemas to be dropped along with all their contained objects.
 
 [#langref-ddl-schema-dropopts]
 === Optional Clauses for `DROP SCHEMA`
@@ -238,9 +264,9 @@ DSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-CREATE OR ALTER SCHEMA _schema_name_
-    [DEFAULT CHARACTER SET _default_charset_]
-    [DEFAULT SQL SECURITY {DEFINER | INVOKER}]
+CREATE OR ALTER SCHEMA _schema-name_
+  [DEFAULT CHARACTER SET [SYSTEM <period>] _default-charset_]
+  [DEFAULT SQL SECURITY {DEFINER | INVOKER}]
 ----
 
 If the schema does not exist, creates it as if executing the equivalent <<langref-ddl-schema-create>>.
@@ -262,9 +288,9 @@ DSQL
 .Syntax
 [listing,subs=+quotes]
 ----
-RECREATE SCHEMA _schema_name_
-    [DEFAULT CHARACTER SET _default_charset_]
-    [DEFAULT SQL SECURITY {DEFINER | INVOKER}]
+RECREATE SCHEMA _schema-name_
+  [DEFAULT CHARACTER SET [SYSTEM <period>] _default-charset_]
+  [DEFAULT SQL SECURITY {DEFINER | INVOKER}]
 ----
 
 If the schema already exists, drops it as if executing <<langref-ddl-schema-drop>>.
