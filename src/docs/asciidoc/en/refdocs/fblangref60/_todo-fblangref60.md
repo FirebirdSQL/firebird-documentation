@@ -22,3 +22,4 @@ Please note that these are things we came across or thought of while working on 
 - Document `UNLIST`
 - Document `GREATEST`/`LEAST`
 - Document range-based `FOR`
+- Document `ACTIVE`/`INACTIVE` for `CREATE INDEX`
