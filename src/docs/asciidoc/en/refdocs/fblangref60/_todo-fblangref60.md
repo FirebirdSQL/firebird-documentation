@@ -17,7 +17,6 @@ Please note that these are things we came across or thought of while working on 
   - Add examples in DDL `langref-ddl-schema`
 - Document scope specifier (done in select, may need its own section?)
 - Document `CALL` syntax
-- Document `IF [NOT] EXISTS` DDL clause (is it available for everything?)
 - User-defined functions can no longer override built-in functions, see if this needs to be accounted for somewhere
 - Document `UNLIST`
 - Document `GREATEST`/`LEAST`

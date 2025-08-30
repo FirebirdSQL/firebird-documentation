@@ -24,7 +24,7 @@ DSQL, ESQL
 .Syntax
 [listing,subs="+quotes,macros"]
 ----
-CREATE [GLOBAL TEMPORARY] TABLE
+CREATE [GLOBAL TEMPORARY] TABLE [IF NOT EXISTS]
   [_tbl-schema_ <period>] _tablename_
   [EXTERNAL [FILE] '_filespec_']
   (<col_def> [, {<col_def> | <tconstraint>} ...])
@@ -80,8 +80,9 @@ CREATE [GLOBAL TEMPORARY] TABLE
     | CHECK (<check_condition>)
     | NOT NULL }
 
-<tconstraint> ::=
-  [CONSTRAINT _constr_name_]
+<tconstraint> ::= [CONSTRAINT _constr_name_] <table-constraint>
+
+<table-constraint> ::=
     { PRIMARY KEY (<col_list>) [<using_index>]
     | UNIQUE      (<col_list>) [<using_index>]
     | FOREIGN KEY (<col_list>)
@@ -267,6 +268,8 @@ If not fully specified, the function or its package will be located on the searc
 
 The `CREATE TABLE` statement creates a new table.
 Its name must be unique among the names of all tables, views, and stored procedures in the schema.
+
+When `IF NOT EXISTS` is specified, the statement will not raise an error if the table already exists.
 
 A table must contain at least one column that is not computed, and the names of columns must be unique within the table.
 
@@ -991,10 +994,11 @@ ALTER TABLE [_tbl-schema_ <period>] _tablename_
   <operation> [, <operation> ...]
 
 <operation> ::=
-    ADD <col_def>
-  | ADD <tconstraint>
-  | DROP _colname_
-  | DROP CONSTRAINT _constr_name_
+    ADD [IF NOT EXISTS] <col_def>
+  | ADD [CONSTRAINT [IF NOT EXISTS] _constr_name_]
+      <table-constraint>
+  | DROP [IF EXISTS] _colname_
+  | DROP CONSTRAINT [IF EXISTS] _constr_name_
   | ALTER [COLUMN] _colname_ <col_mod>
   | ALTER SQL SECURITY {INVOKER | DEFINER}
   | DROP SQL SECURITY
@@ -1096,30 +1100,54 @@ Once the counter reaches this limit, you will not be able to make any further ch
 You need to back up and restore the database using the _gbak_ utility.
 
 [#langref-ddl-tbl-altradd]
-=== The `ADD` Clause
+=== The `ADD` Clause (Column)
 
-With the `ADD` clause you can add a new column or a new table constraint.
-The syntax for defining the column and the syntax of defining the table constraint correspond with those described for <<langref-ddl-tbl-create>> statement.
+The `ADD` clause defines a new column.
+For table constraints, see <<langref-ddl-tbl-altradd-constraint>>.
+
+When `IF NOT EXISTS` is specified and the column already exists, it will not raise an error and ignore this clause.
+
+The syntax for defining the column is described for <<langref-ddl-tbl-create>>.
 
 .Effect on Version Count
 * Each time a new column is added, the metadata change counter is increased by one
-* Adding a new table constraint does not increase the metadata change counter
 
 .Points to Be Aware of
 [CAUTION]
 ====
 . Adding a column with a `NOT NULL` constraint without a `DEFAULT` value will fail if the table has existing rows.
 When adding a non-nullable column, it is recommended either to set a default value for it, or to create it as nullable, update the column in existing rows with a non-null value, and then add a `NOT NULL` constraint.
-. When a new `CHECK` constraint is added, existing data is not tested for compliance.
-Prior testing of existing data against the new `CHECK` expression is recommended.
 . Although adding an identity column is supported, this will only succeed if the table is empty.
 Adding an identity column will fail if the table has one or more rows.
+====
+
+[#langref-ddl-tbl-altradd-constraint]
+=== The `ADD` Clause (Constraint)
+
+The `ADD` clause defines a -- optionally named -- table constraint.
+For columns, see <<langref-ddl-tbl-altradd>>.
+
+For named constraints only, when `IF NOT EXISTS` is specified and the constraint already exists, it will not raise an error and ignore this clause.
+
+The syntax for defining the table constraint is described for <<langref-ddl-tbl-create>>.
+
+.Effect on Version Count
+* Adding a new table constraint does not increase the metadata change counter
+
+.Points to Be Aware of
+[CAUTION]
+====
+When a new `CHECK` constraint is added, existing data is not tested for compliance.
+Prior testing of existing data against the new `CHECK` expression is recommended.
 ====
 
 [#langref-ddl-tbl-altrdropcol]
 === The `DROP` Clause
 
 The `DROP __colname__` clause deletes the specified column from the table.
+
+When `IF EXISTS` is specified and the column does not exist, it will not raise an error and ignore this clause.
+
 An attempt to drop a column will fail if anything references it.
 Consider the following items as sources of potential dependencies:
 
@@ -1135,6 +1163,8 @@ Consider the following items as sources of potential dependencies:
 === The `DROP CONSTRAINT` Clause
 
 The `DROP CONSTRAINT` clause deletes the specified column-level or table-level constraint.
+
+When `IF EXISTS` is specified and the constraint does not exist, it will not raise an error and ignore this clause.
 
 A `PRIMARY KEY` or `UNIQUE` key constraint cannot be deleted if it is referenced by a `FOREIGN KEY` constraint in another table.
 It will be necessary to drop that `FOREIGN KEY` constraint before attempting to drop the `PRIMARY KEY` or `UNIQUE` key constraint it references.
@@ -1360,7 +1390,8 @@ DSQL, ESQL
 .Syntax
 [listing,subs=+quotes]
 ----
-DROP TABLE [_tbl-schema_ <period>] _tablename_
+DROP TABLE [IF EXISTS]
+  [_tbl-schema_ <period>] _tablename_
 ----
 
 [#langref-ddl-tbl-droptbl]
@@ -1380,6 +1411,8 @@ If not specified, the table will be located on the search path.
 
 The `DROP TABLE` statement drops (deletes) an existing table.
 If the table has dependencies, the `DROP TABLE` statement will fail with an error.
+
+When `IF EXISTS` is specified, the statement will not raise an error if the table does not exist.
 
 When a table is dropped, all its triggers and indexes will be deleted as well.
 
