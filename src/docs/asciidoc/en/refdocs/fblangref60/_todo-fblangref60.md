@@ -19,5 +19,4 @@ Please note that these are things we came across or thought of while working on 
 - Document `CALL` syntax
 - User-defined functions can no longer override built-in functions, see if this needs to be accounted for somewhere
 - Document `UNLIST`
-- Document `GREATEST`/`LEAST`
 - Document range-based `FOR`
