@@ -1576,7 +1576,7 @@ S
 ----
 
 .See also
-<<langref-psql-ifthen>>, <<langref-psql-break>>, <<langref-psql-leave>>, <<langref-psql-continue>>, <<langref-psql-exit>>, <<langref-psql-forselect>>, <<langref-psql-forexec>>
+<<langref-psql-ifthen>>, <<langref-psql-break>>, <<langref-psql-leave>>, <<langref-psql-continue>>, <<langref-psql-exit>>, <<langref-psql-forselect>>, <<langref-psql-forexec>>, <<langref-psql-range-for>>
 
 [#langref-psql-break]
 === `BREAK`
@@ -1595,9 +1595,11 @@ BEGIN
 END
 
 <loop_stmt> ::=
-    FOR <select_stmt> INTO <var_list> DO
+  { FOR <select_stmt> INTO <var_list> DO
   | FOR EXECUTE STATEMENT ... INTO <var_list> DO
-  | WHILE (<condition>)} DO
+  | FOR _variable_ = <initial_value>
+    {TO | DOWNTO} <final_value> [BY <step_value>] DO
+  | WHILE (<condition>) DO }
 ----
 
 [#langref-psql-tbl-break]
@@ -1642,9 +1644,11 @@ BEGIN
 END
 
 <loop_stmt> ::=
-    FOR <select_stmt> INTO <var_list> DO
+  { FOR <select_stmt> INTO <var_list> DO
   | FOR EXECUTE STATEMENT ... INTO <var_list> DO
-  | WHILE (<condition>)} DO
+  | FOR _variable_ = <initial_value>
+    {TO | DOWNTO} <final_value> [BY <step_value>] DO
+  | WHILE (<condition>) DO }
 ----
 
 [#langref-psql-tbl-leave]
@@ -1740,9 +1744,11 @@ BEGIN
 END
 
 <loop_stmt> ::=
-    FOR <select_stmt> INTO <var_list> DO
-  | FOR EXECUTE STATEMENT ... INTO <var_list> DO
-  | WHILE (<condition>)} DO
+  { FOR <select_stmt> INTO <var_list> DO
+  | FOR EXECUTE STATEMENT ... INTO <var_list>
+  | FOR _variable_ = <initial_value>
+    {TO | DOWNTO} <final_value> [BY <step_value>] DO
+  | WHILE (<condition>) DO }
 ----
 
 [#langref-psql-tbl-continue]
@@ -2360,7 +2366,7 @@ END
 ----
 
 .See also
-<<langref-psql-declare-cursor>>, <<langref-psql-break>>, <<langref-psql-leave>>, <<langref-psql-continue>>, <<langref-psql-exit>>, <<langref-dml-select,`SELECT`>>, <<langref-dml-update,`UPDATE`>>, <<langref-dml-delete,`DELETE`>>
+<<langref-psql-declare-cursor>>, <<langref-psql-forexec>>, <<langref-psql-range-for>>, <<langref-psql-break>>, <<langref-psql-leave>>, <<langref-psql-continue>>, <<langref-psql-exit>>, <<langref-dml-select,`SELECT`>>, <<langref-dml-update,`UPDATE`>>, <<langref-dml-delete,`DELETE`>>
 
 [#langref-psql-forexec]
 === `FOR EXECUTE STATEMENT`
@@ -2422,7 +2428,165 @@ END
 ----
 
 .See also
-<<langref-psql-execstmt>>, <<langref-psql-break>>, <<langref-psql-leave>>, <<langref-psql-continue>>
+<<langref-psql-execstmt>>, <<langref-psql-forselect>>, <<langref-psql-break>>, <<langref-psql-leave>>, <<langref-psql-continue>>
+
+[#langref-psql-range-for]
+=== Range-based `FOR`
+
+Range-based for, or "`for loop`"
+
+.Syntax
+[listing,subs=+quotes]
+----
+[__label__:]
+FOR _variable_ = <initial_value>
+  {TO | DOWNTO} <final_value> [BY <step_value>]
+  DO <compound_statement>
+----
+
+[#langref-psql-tbl-range-for]
+.`FOR` Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Description
+
+|label
+|Optional label for `LEAVE` and `CONTINUE`.
+Follows the rules for identifiers.
+
+|variable
+|A previously declared variable or parameter of an exact numeric type for the current iteration value.
+
+|initial_value
+|Initial or start value of iteration.
+Expression of an exact numeric type.
+
+|final_value
+|Final or stop value of iteration.
+Expression of an exact numeric type.
+
+|step_value
+|Step value (positive, non-zero).
+Expression of an exact numeric type.
+Defaults to `1` if not specified.
+
+|===
+
+The range-based `FOR` statement iterates over a range of numeric values.
+The iteration is performed in increasing order with the `TO` clause, or in decreasing order with the `DOWNTO` clause.
+
+[#langref-psql-range-for-exe]
+==== Execution
+
+* _initial_value_ is evaluated and assigned to _variable_.
+If `NULL`, the loop exits immediately.
+* _final_value_ is evaluated and assigned to a temporary variable.
+If `NULL`, the loop exits immediately.
+* _step_value_ (or its default value `1`) is evaluated and assigned to a temporary variable.
+If `NULL`, the loop exits immediately.
+If zero or negative, an error is raised.
+* Loop starts:
+** If not the first iteration:
+*** If _variable_ is `NULL`, the loop exits.
+*** _variable_ is incremented (`TO`) or decremented (`DOWNTO`) by the cached _step_value_.
+*** _variable_ is compared to the cached _final_value_ -- less than or equal (`++<=++`) for `TO` or greater than or equal (`++>=++`) for `DOWNTO` -- and if false, the loop exits.
+** The body (_compound_statement_) of the loop is executed.
+** Loop continues to the next iteration.
+
+Notes on the loop body:
+
+* <<langref-psql-break>> or <<langref-psql-leave>> exits the loop
+* <<langref-psql-continue>> skips the remainder of the loop body and starts the next iteration
+* _variable_ can be modified by the loop body
+
+[#langref-psql-range-for-exmpl]
+==== Range-based `FOR` Examples
+
+[source]
+----
+execute block returns (out integer)
+as
+begin
+  for out = 1 to 3 do
+    suspend;
+end
+
+/* Result:
+1
+2
+3
+*/
+----
+
+[source]
+----
+execute block returns (out integer)
+as
+begin
+  for out = 9 downto 7 do
+    suspend;
+end
+
+/* Result:
+9
+8
+7
+*/
+----
+
+[source]
+----
+execute block returns (out integer)
+as
+begin
+  for out = 5 to 3 do
+    suspend;
+end
+
+/* Result:
+*/
+----
+
+[source]
+----
+execute block returns (out numeric(5,2))
+as
+begin
+  for out = 9 downto 7 by 0.5 do
+    suspend;
+end
+
+/* Result:
+9.00
+8.50
+8.00
+7.50
+7.00
+*/
+----
+
+[source]
+----
+execute block
+as
+  declare i integer;
+begin
+  for i = 1 to 10 do
+  begin
+    insert into table1 values (i);
+    insert into table2 values (i);
+  end
+end
+
+/* Result:
+10 records inserted into table1
+10 records inserted into table2
+*/
+----
+
+.See also
+<<langref-psql-break>>, <<langref-psql-leave>>, <<langref-psql-continue>>
 
 [#langref-psql-open]
 === `OPEN`
