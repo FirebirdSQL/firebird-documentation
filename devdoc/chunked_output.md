@@ -77,3 +77,18 @@ NOTE: Creating chunked output is experimental.
     -- `
     "-xsl:/input/custom.xsl"      
    ```
+   
+   Firebird Configuration Reference
+   ```
+   docker run --rm `
+    -v C:\Dev\fb\firebird-documentation\build\docs\chunk:/output `
+    -v C:\Dev\fb\firebird-documentation\build\docs\asciidoc\docbook:/input `
+    docbook-xslt `
+    /input/en/refdocs/fbconf/firebird-configuration-reference.xml `
+    chunk-output-base-uri=/output/en/refdocs/fbconf/ `
+    chunk=firebird-configuration-reference.html `
+    resource-base-uri=../../../ `
+    --resources:/output `
+    -- `
+    "-xsl:/input/custom.xsl"      
+   ```
