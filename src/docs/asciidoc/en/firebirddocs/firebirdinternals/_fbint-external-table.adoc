@@ -1,0 +1,467 @@
+[#fbint-external-table]
+= External Table Format
+
+Firebird external tables allow you to read row data from and write them to files separate from the database.
+External tables use a _binary_ format.
+
+The _binary_ format of external table files is similar to the in-memory image of row data, and row data on a <<fbint-page-5>> _after_ RLE decompression, but without a <<fbint-exttbl-null-bitmap,null bitmap>>.
+
+By using *only* `CHAR(_n_)` with *one* _single-byte_ character set for all columns, and an extra `CHAR(1)` or `CHAR(2)` column for a linebreak, the external table file format can also be treated as a _fixed-width text_ format.
+However, using any other datatype, or mixing multiple character sets, or using a variable-length character set like `UTF8` will break any assumptions for _fixed-width text_, and make the format truly binary.
+
+This chapter describes the format of the external table file and individual datatypes.
+
+See section https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref50-ddl-table.html#fblangref50-ddl-tbl-create[`CREATE TABLE`] and specifically its subsection https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref50-ddl-table.html#fblangref50-ddl-tbl-external[External Tables] in the _Firebird 5.0 Language Reference_ for additional information.
+
+[WARNING]
+====
+The external table file format has been stable for the past two decades or so, except for additions of new datatypes.
+However, it is effectively an internal implementation detail: the in-memory image of a row.
+As such, it could change in future Firebird versions.
+
+In addition, it is possible that our description in this chapter makes assumptions about things like alignment and datatype sizes that do not hold on all platforms (CPU architecture, OS, and/or compiler).
+====
+
+[#fbint-exttbl-general]
+== General Binary Format
+
+The binary format is row-oriented, without explicit separators for columns or rows (except <<fbint-exttbl-align,alignment>> of column values).
+The format and length of the row is determined by its definition in DDL.
+
+The following section describe some important aspects of the format.
+
+[#fbint-exttbl-endian]
+=== Endianness
+
+The column data for all datatypes except `CHAR` and `BOOLEAN` is endian-sensitive.
+For example, for a Firebird server running on x86-64 (AMD64), the format is little-endian.
+
+When writing to or reading from an external table file, it is important to use the right https://en.wikipedia.org/wiki/Endianness[endianness^] of the Firebird server.
+The commonly used platforms for Firebird are all little-endian (though we recommend to double-check in case of aarch64 builds distributed by third-parties).
+
+Some datatypes are compound datatypes (e.g. compare C/C++ structs).
+The endianness is per element of such a compound datatype, not over the whole datatype.
+That is, endianness does not change the order of components, only the byte order within a component.
+
+[#fbint-exttbl-rowpos]
+=== Row Format and Virtual Position
+
+The row format of an external table file has some complications that need extra attention when reading or writing a row _if_ you use datatypes other than `CHAR`:
+
+* The <<fbint-exttbl-null-bitmap,null bitmap>> is not written in the file, but the length of the null bitmap needs to be accounted for in the virtual position in the row
+* Columns must be <<fbint-exttbl-align,aligned>>, based on the virtual position in the row, depending on the datatype
+* The <<fbint-exttbl-align,alignment>> of the first column must not be written to the file, but must be accounted for in the virtual position in the row.
+
+We're using the term _virtual position in the row_ to reflect it is not the actual position relative to the start of the row in the file on disk.
+In essence, it is the position in the in-memory image of the row, including a prefix that is not written to the external table file.
+
+[#fbint-exttbl-null-bitmap]
+==== Null Bitmap
+
+The in-memory image of a row has a null bitmap, which is used to determine which rows are `NULL`.
+Columns in an external table cannot be `NULL`, and the null bitmap of a row is not written in the external table.
+
+Unfortunately, the length of the null bitmap *must* be accounted for in the virtual position in the row for purposes of determining the <<fbint-exttbl-align,alignment>> of columns.
+
+The length of the null bitmap is 4 bytes per 32 columns.
+It can be calculated as [.nowrap]`4 * (1 + (_column-count_ - 1) / 32)`.
+This means that 1-32 columns are 4 bytes, 33-64 columns are 8 bytes, and so on.
+
+[#fbint-exttbl-align]
+==== Alignment
+
+Except for `CHAR` and `BOOLEAN`, all datatypes need to be aligned so they start at a multiple of 2, 4, or 8 bytes from the virtual start of the row.
+In an alternative interpretation, `CHAR` and `BOOLEAN` have an alignment of 1, which means they are always aligned.
+
+A column should be aligned by writing `0x00` bytes until alignment is achieved.
+The number of bytes to write can be determined using [.nowrap]`_alignment_ - (_virtual-position_ % _alignment_)`, if the result is [.nowrap]`(0, _alignment_)` (or, [.nowrap]`0 < _result_ < _alignment_`).
+
+The alignment of the first column *must not* be written to disk, but it *must* be accounted for in the virtual position in the row.
+
+In our descriptions of the datatypes in the following section, <<fbint-exttbl-datatype>>, we will note the alignment for datatypes.
+
+[WARNING]
+====
+It is possible that the alignment depends on the platform (CPU architecture, OS, and/or compiler) of the Firebird build.
+As far as we're aware, all platforms built by the Firebird project use the same alignments.
+
+It is possible different alignments are used in Firebird builds of third-parties.
+====
+
+[#fbint-exttbl-datatype]
+== Datatype Formats
+
+The following sections describe the encoding of the various datatypes available for external tables.
+
+Datatypes like `BLOB` and arrays are not supported in external tables.
+
+[#fbint-exttbl-string]
+=== String and Binary Datatypes
+
+[#fbint-exttbl-char]
+==== `CHAR`
+
+.Length
+_n_ * _bpc_ bytes
+
+.Where
+[horizontal.compact]
+_n_:: number of characters (the _n_ in `CHAR(_n_)`)
+_bpc_:: maximum number of bytes per character of the character set
+
+.Alignment
+1 byte (no alignment)
+
+If the actual value is shorter than the column length in bytes, it must be padded with a padding byte.
+The padding byte is 0x20 (SPACE) for most character sets.
+For character set `OCTETS` (or type <<fbint-exttbl-binary>>), the padding byte is 0x00 (NUL).
+
+See appendix https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref50-appx08-charsets.html#fblangref50-appx08-charsets[Character Sets and Collations] of the _Firebird 5.0 Language Reference_ for maximum number of bytes per character of a character set.
+
+[discrete#fbint-exttbl-char-vlcs]
+===== Variable Length Character Sets
+
+When writing data in a variable-length character sets like `UTF8` ([.nowrap]`_bpc_ = 4`) and `UNICODE_FSS` ([.nowrap]`_bpc_ = 3`), Unicode codepoints (characters) take 1-4 or -- `UNICODE_FSS` -- 1-3 bytes.
+The number of Unicode codepoints (characters) must not exceed _n_.
+The remaining bytes written *must* be the padding byte 0x20 (SPACE).
+Failure to do so will raise a string truncation error when Firebird reads the row.
+
+In Firebird 3.0 and older, this restriction does not apply to `UNICODE_FSS`.
+In those versions, `UNICODE_FSS` is only limited by the byte length ([.nowrap]`3*_n_`), not the character length _n_.
+
+As an example, a `CHAR(4) CHARACTER SET UTF8` has a length of 4*4 = 16 bytes, while a `CHAR(5) CHARACTER SET UTF8` has a length of 5*4 = 20 bytes, and with value `ABCD` they are written as (in hex):
+
+.Example of `ABCD` in `CHAR(4) CHARACTER SET UTF8`
+[listing]
+----
+41 42 43 44 20 20 20 20 20 20 20 20 20 20 20 20
+----
+
+.Example of `ABCD` in `CHAR(5) CHARACTER SET UTF8`
+[listing]
+----
+41 42 43 44 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20
+----
+
+These padding bytes are one of the reasons why RLE compression is so important when rows are stored on a <<fbint-page-5,data page>>.
+
+[#fbint-exttbl-binary]
+==== `BINARY`
+
+.Length
+_n_ bytes
+
+.Where
+[horizontal.compact]
+_n_:: number of characters (the _n_ in `BINARY(_n_)`)
+
+.Alignment
+1 byte (no alignment)
+
+Given `BINARY(_n_)` is an alias for `CHAR(_n_) CHARACTER SET OCTETS`, the column format is the same as <<fbint-exttbl-char>>, with a _bpc_ of 1 and a padding byte of 0x00 (NUL).
+
+[#fbint-exttbl-varchar]
+==== `VARCHAR`
+
+.Length
+2 + _n_ * _bpc_ bytes
+
+.Where
+[horizontal.compact]
+_n_:: number of characters (the _n_ in `VARCHAR(_n_)`)
+_bpc_:: maximum number of bytes per character of the character set
+
+.Alignment
+2 bytes
+
+A `VARCHAR(_n_)` is a compound datatype, consisting of a 16-bit integer (a <<fbint-exttbl-smallint>>) with the actual data length in bytes, followed by [.nowrap]`_n_ * _bpc_` of string data.
+Even if the actual data length is shorter, you must always write the maximum byte length.
+
+The string data part is essentially the same as for <<fbint-exttbl-char>>, except the padding up to the maximum byte length should be done with 0x00 (NUL), not 0x20 (SPACE).
+The section on <<fbint-exttbl-char-vlcs>> also applies for `VARCHAR`.
+
+Storage-wise, `VARCHAR(_n_)` requires two bytes (plus up to 1 byte for alignment) more than an equivalent `CHAR(_n_)`.
+The benefit compared to `CHAR` is that the value retains its actual length when queried from the external table;
+the value read is not padded with spaces -- or 0x00 (NUL) in case of character set `OCTETS`/`VARBINARY(_n_)` -- up to _n_ characters.
+
+.Example of `ABCD` in `CHAR(5) CHARACTER SET ASCII`
+----
+04 00 41 42 43 44 00
+----
+
+.Example of `ABCD` in `CHAR(5) CHARACTER SET UTF8`
+----
+04 00 41 42 43 44 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+----
+
+See appendix https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref50-appx08-charsets.html#fblangref50-appx08-charsets[Character Sets and Collations] of the _Firebird 5.0 Language Reference_ for maximum number of bytes per character of a character set.
+
+[#fbint-exttbl-varbinary]
+==== `VARBINARY`
+
+.Length
+2 + _n_ bytes
+
+.Where
+[horizontal.compact]
+_n_:: number of characters (the _n_ in `VARBINARY(_n_)`)
+
+.Alignment
+2 bytes
+
+Given `VARBINARY(_n_)` is an alias for `VARCHAR(_n_) CHARACTER SET OCTETS`, the column format is the same as <<fbint-exttbl-varchar>>, with a _bpc_ of 1.
+
+[#fbint-exttbl-integral]
+=== Integral Datatypes
+
+[#fbint-exttbl-smallint]
+==== `SMALLINT`
+
+.Length
+2 bytes (16 bits)
+
+.Alignment
+2 bytes
+
+[#fbint-exttbl-integer]
+==== `INTEGER`
+
+.Length
+4 bytes (32 bits)
+
+.Alignment
+4 bytes
+
+[#fbint-exttbl-bigint]
+==== `BIGINT`
+
+.Length
+8 bytes (64 bits)
+
+.Alignment
+8 bytes
+
+[#fbint-exttbl-int128]
+==== `INT128`
+
+.Length
+16 bytes (128 bits)
+
+.Alignment
+8 bytes
+
+[#fbint-exttbl-fixed-point]
+=== Fixed-Point Datatypes
+
+The format of the fixed-point types <<fbint-exttbl-numeric>> and <<fbint-exttbl-decimal>> is the same as that of the <<fbint-exttbl-integral,integral type>> used as the backing type.
+The value written is the unscaled value.
+
+[#fbint-exttbl-numeric]
+==== `NUMERIC`
+
+For [.nowrap]`NUMERIC[(_p_[,_s_])]`, the defaults if not specified are `_p_ = 9` and `_s_ = 0` (equivalent to <<fbint-exttbl-integer>>).
+
+.Length
+Varies, determined by backing integral type
+
+.Alignment
+Varies, determined by backing integral type
+
+The following integral types are used to write the unscaled value ([.nowrap]`_numeric-value_ * 10^s^` truncated to whole numbers):
+
+[horizontal.compact]
+[.nowrap]`_p_ ++<= 4++`:: <<fbint-exttbl-smallint>>
+[.nowrap]`4 < _p_ ++<= 9++`:: <<fbint-exttbl-integer>>
+[.nowrap]`9 < _p_ ++<= 18++`:: <<fbint-exttbl-bigint>>footnote:num18-dialect-1[For dialect 1, <<fbint-exttbl-double>>].
+[.nowrap]`9 < _p_ ++<= 38++`:: <<fbint-exttbl-int128>>
+
+[#fbint-exttbl-decimal]
+==== `DECIMAL`
+
+For [.nowrap]`DECIMAL[(_p_[,_s_])]`, the defaults if not specified are `_p_ = 9` and `_s_ = 0` (equivalent to <<fbint-exttbl-integer>>).
+
+.Length
+Varies, determined by backing integral type
+
+.Alignment
+Varies, determined by backing integral type
+
+The following integral types are used to write the unscaled value ([.nowrap]`_decimal-value_ * 10^s^` truncated to whole numbers):
+
+[horizontal.compact]
+[.nowrap]`_p_ ++<= 9++`:: <<fbint-exttbl-integer>>
+[.nowrap]`9 < _p_ ++<= 18++`:: <<fbint-exttbl-bigint>>footnote:num18-dialect-1[].
+[.nowrap]`9 < _p_ ++<= 38++`:: <<fbint-exttbl-int128>>
+
+[#fbint-exttbl-bin-float]
+=== Approximate Floating-Point Datatypes
+
+[#fbint-exttbl-float]
+==== `FLOAT`
+
+.Length
+4 bytes (32 bits)
+
+.Alignment
+4 bytes
+
+The format is IEEE 754 https://en.wikipedia.org/wiki/Single-precision_floating-point_format[`binary32`^], a.k.a. _single precision_.
+This applies to `FLOAT`, `REAL`, and `FLOAT(_bin_prec_)` with [.nowrap]`++1 <=++ _bin_prec_ ++<= 24++` (Firebird 4.0 or higher).
+
+`REAL` and `FLOAT(_bin_prec_)` with [.nowrap]`++1 <=++ _bin_prec_ ++<= 24++` are aliases for `FLOAT` without precision.
+
+[#fbint-exttbl-double]
+==== `DOUBLE PRECISION`
+
+.Length
+8 bytes (64 bits)
+
+.Alignment
+8 bytes
+
+The format is IEEE 754 https://en.wikipedia.org/wiki/Double-precision_floating-point_format[`binary64`^], a.k.a. _double precision_.
+This applies to `DOUBLE PRECISION`, and `FLOAT(_bin_prec_)` with [.nowrap]`++25 <=++ _bin_prec_ ++<= 53++` (Firebird 4.0 or higher).
+
+`FLOAT(_bin_prec_)` with [.nowrap]`++25 <=++ _bin_prec_ ++<= 53++` is an alias for `DOUBLE PRECISION`.
+
+[#fbint-exttbl-dec-float-type]
+=== Decimal Floating-Point Types
+
+[#fbint-exttbl-decfloat]
+==== `DECFLOAT`
+
+For `DECFLOAT[(_dec_prec_)]`, the default if not specified is [.nowrap]`_dec_prec_ = 34`;
+possible values for _dec_prec_ are `16` or `34`
+
+.Length
+[horizontal.compact]
+[.nowrap]`_dec_prec_ = 16`:: 8 bytes
+[.nowrap]`_dec_prec_ = 34`:: 16 bytes
+
+.Alignment
+8
+
+The encoding of these datatypes is too complex to describe here, so we defer to the off-site resources linked below.
+
+The format is:
+
+[horizontal.compact]
+[.nowrap]`dec_prec = 16`::
+IEEE 754 https://en.wikipedia.org/wiki/Decimal64_floating-point_format[`decimal64`^]
+[.nowrap]`dec_prec = 34`::
+IEEE 754 https://en.wikipedia.org/wiki/Decimal128_floating-point_format[`decimal128`^]
+
+More information on these datatypes can be found on https://speleotrove.com/decimal/[General Decimal Arithmetic^].
+For a specification of the encoding of these types, see https://speleotrove.com/decimal/decbits.html[Decimal Arithmetic Encodings^], or -- we assume -- the https://ieeexplore.ieee.org/document/8766229[IEEE 754 standard^].
+
+Firebird uses https://speleotrove.com/decimal/decnumber.html[The decNumber Library^] for encoding and decoding `decimal64` and `decimal128` (see also https://github.com/dnotq/decNumber[^]).
+
+A Java implementation of the `decimal64` and `decimal128` encoding (written by Mark Rotteveel, the author of this chapter), can be found on https://github.com/FirebirdSQL/decimal-java[^].
+This library is used by https://firebirdsql.org/en/jdbc-driver/[Jaybird (the Firebird JDBC driver)].
+
+[#fbint-exttbl-datetime]
+=== Date and Time Datatypes
+
+[#fbint-exttbl-date]
+==== `DATE`
+
+.Length
+4 bytes
+
+.Alignment
+4 bytes
+
+The date is a https://en.wikipedia.org/wiki/Julian_day[Modified Julian Date^] encoded as a 32-bit signed integer.
+The Modified Julian Date is calculated as the number of days since November 17, 1858 (1858-11-17).
+
+Effectively, a `DATE` is handled the same as <<fbint-exttbl-integer>>.
+
+[#fbint-exttbl-time]
+==== `TIME [WITHOUT TIME ZONE]`
+
+.Length
+4 bytes
+
+.Alignment
+4 bytes
+
+The time is the number of 100 microseconds since midnight encoded as a 32-bit integer.
+
+Effectively, a `TIME` is handled the same as <<fbint-exttbl-integer>>.
+
+[#fbint-exttbl-timetz]
+==== `TIME WITH TIME ZONE`
+
+.Length
+8 bytes
+
+.Alignment
+8 bytes
+
+The time is the number of 100 microseconds since midnight UTC (offset 00:00) encoded as a 32-bit integer,
+and a 16-bit unsigned integer value for the time zone offset _or_ id of the named zone (see <<fbint-exttbl-tz-encoding>>).
+The remaining two bytes are unused and should be 0x00 (NUL)footnote:tz-padding[Firebird may write non-zero values into those two bytes].
+
+As correct derivation of the time in a named zones requires a date, Firebird applies the time zone rules for the date 2020-01-01.
+
+Effectively, a `TIME WITH TIME ZONE` is a <<fbint-exttbl-time>> at offset +00:00 (UTC), followed by time zone information that can be used to determine the time in the specified offset or named zone.
+
+[discrete#fbint-exttbl-tz-encoding]
+===== Time zone encoding
+
+The 16-bit unsigned integer value with the time zone information is either:
+
+`0 -- 2878`::
+Time zone offset
++
+This is the number of minutes starting at offset -23:59 up to offset +23:59footnote:[When parsing datetime literals, Firebird only accepts -14:00 -- +14:00]footnote:[In practice, real time zones have offsets in the range -12:00 to +14:00 (https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/time/ZoneOffset.html[source^])].
+This means that offset +00:00 (UTC) is `1439`.
+`2979 -- 65535`::
+Time zone id of the named time zone.
++
+The range starts at 65535 (GMT) counting down -- in Firebird 5.0.3 with its default 2025b time zone database, the lowest id is 64898 (America/Coyhaique).
++
+Time zone ids are stable;
+an id will not change to a different zone, but new ICU time zone database versions may add new time zones.
+
+You can map a time zone id to the named zone using the table https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref-appx04-timezones.html[`RDB$TIME_ZONES`].
+The procedure https://firebirdsql.org/file/documentation/chunk/en/refdocs/fblangref50/fblangref50-sys-pckg-timezoneutil.html#fblangref50-sys-pckg-tz-transitions[`RDB$TIME_ZONE_UTIL.TRANSITIONS`] can be used to find the applicable offset.
+
+[#fbint-exttbl-timestamp]
+==== `TIMESTAMP [WITHOUT TIME ZONE]`
+
+.Length
+8 bytes
+
+.Alignment
+8 bytes
+
+`TIMESTAMP [WITHOUT TIME ZONE]` is a compound datatype consisting of -- in order -- <<fbint-exttbl-date>> and <<fbint-exttbl-time>>.
+
+[#fbint-exttbl-timestamptz]
+==== `TIMESTAMP WITH TIME ZONE`
+
+.Length
+12 bytes
+
+.Alignment
+8 bytes
+
+`TIMESTAMP WITH TIME ZONE` is a compound datatype consisting of -- in order -- <<fbint-exttbl-timestamp>> with the datetime at offset +00:00 (UTC), a 16-bit unsigned integer for the time zone offset _or_ id of the named zone (see <<fbint-exttbl-tz-encoding>>).
+The remaining two bytes are unused and should be 0x00 (NUL)footnote:tz-padding[].
+
+Effectively, a `TIMESTAMP WITH TIME ZONE` is a <<fbint-exttbl-timestamp>> at offset +00:00 (UTC), followed by time zone information that can be used to determine the date and time in the specified offset or named zone.
+
+[#fbint-exttbl-other]
+=== Other Datatypes
+
+[#fbint-exttbl-boolean]
+==== `BOOLEAN`
+
+.Length
+1 byte
+
+.Alignment
+1 byte (no alignment)
+
+Either 0x00 for `FALSE`, or 0x01 for ``TRUE``footnote:[Firebird reads any non-zero value as `TRUE`, but only writes 0x01].
