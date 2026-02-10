@@ -465,3 +465,157 @@ Effectively, a `TIMESTAMP WITH TIME ZONE` is a <<fbint-exttbl-timestamp>> at off
 1 byte (no alignment)
 
 Either 0x00 for `FALSE`, or 0x01 for ``TRUE``footnote:[Firebird reads any non-zero value as `TRUE`, but only writes 0x01].
+
+[#fbint-exttbl-example]
+=== Examples
+
+The following examples are intended to illustrate alignment requirements.
+
+Say we define the following external table:
+
+[listing]
+----
+create table EXAMPLE_1 external 'example_1.dat' (
+  col_1 char(1) character set ASCII,
+  col_2 integer
+);
+----
+
+An `INTEGER` needs to be aligned at multiples of 4, and this results in the following row format:
+
+[listing]
+----
+/ virtual position
+\-> 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
+  + -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+00| XX XX XX XX 11 00 00 00 22 22 22 22
+--/ -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+/-------------> 00 01 02 03 04 05 06 07
+\ actual position on disk
+----
+
+Where:
+
+[horizontal.compact]
+`XX`:: Null-bitmap (not written)
+`11`:: Data for `col_1`
+`00`:: Padding bytes for alignment (written)
+`22`:: Data for `col_2`
+
+If instead we define `col_1` as `CHAR(4) CHARACTER SET ASCII`, the padding is absent:
+
+[listing]
+----
+/ virtual position
+\-> 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
+  + -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+00| XX XX XX XX 11 11 11 11 22 22 22 22
+--/ -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+/-------------> 00 01 02 03 04 05 06 07
+\ actual position on disk
+----
+
+With a `BIGINT` as the first column, we need to align it to start at virtual position 8:
+
+[listing]
+----
+create table EXAMPLE_2 external 'example_2.dat' (
+  col_1 BIGINT
+);
+----
+
+[listing]
+----
+/ virtual position
+\-> 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
+  + -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+00| XX XX XX XX YY YY YY YY 11 11 11 11 11 11 11 11
+--/ -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+/-------------------------> 00 01 02 03 04 05 06 07
+\ actual position on disk
+----
+
+Where:
+
+[horizontal.compact]
+`XX`:: Null-bitmap (not written)
+`YY`:: Padding for `col_1` (not written)
+`11`:: Data for `col_1`
+
+In the following two examples, we show the impact of the null-bitmap on alignment.
+
+[listing]
+----
+create table EXAMPLE_3 external 'example_3.dat' (
+  col_1 char(1) character set ASCII,
+  col_2 bigint
+);
+----
+
+This results in the following row format:
+
+[listing]
+----
+/ virtual position
+\-> 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
+  + -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+00| XX XX XX XX 11 00 00 00 22 22 22 22 22 22 22 22
+--/ -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+/-------------> 00 01 02 03 04 05 06 07 08 09 0A 0B
+\ actual position on disk
+----
+
+Where:
+
+[horizontal.compact]
+`XX`:: Null-bitmap (not written)
+`11`:: Data for `col_1`
+`00`:: Padding bytes for alignment (written)
+`22`:: Data for `col_2`
+
+If you define a similar table with 32 more rows, the null bitmap is 8 bytes:
+
+[listing]
+----
+create table EXAMPLE_4 external 'example_4.dat' (
+  col_1 char(1) character set ASCII,
+  col_2 bigint,
+  col_3 boolean,
+  ...
+  col_33 boolean
+);
+----
+
+This results in the following row format:
+
+[listing]
+----
+/ virtual position
+\-> 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F
+  + -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+00| XX XX XX XX XX XX XX XX 11 00 00 00 00 00 00 00
+10| 22 22 22 22 22 22 22 22 33 ..
+--/ -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+
+/-------------------------> 00 01 02 03 04 05 06 07
+|   08 09 0A 0B 0C 0D 0E 0F 10 ..
+\ actual position on disk
+----
+
+Where:
+
+[horizontal.compact]
+`XX`:: Null-bitmap (not written)
+`11`:: Data for `col_1`
+`00`:: Padding bytes for alignment (written)
+`22`:: Data for `col_2`
+`33`:: Data for `col_3`
+`..`:: Remaining columns left out
+
+As you can see, the padding between `col_1` and `col_2` is now 7 bytes, instead of the 3 bytes in the previous example, even though those initial columns have the same definition.
+The two columns now take up 16 bytes of space, instead of 12.
+This is the impact of the size of the unwritten null-bitmap on the virtual position and the alignment.
