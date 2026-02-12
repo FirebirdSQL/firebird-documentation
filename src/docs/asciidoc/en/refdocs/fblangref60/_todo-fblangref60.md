@@ -16,6 +16,12 @@ Please note that these are things we came across or thought of while working on 
   - Rework examples of plan outputs to account for schema-qualification in output
   - Add examples in DDL `langref-ddl-schema`
 - Document scope specifier (done in select, may need its own section?)
-- Document `CALL` syntax
 - User-defined functions can no longer override built-in functions, see if this needs to be accounted for somewhere
 - Document `UNLIST`
+- Default keyword in argument list
+  - https://github.com/FirebirdSQL/firebird/issues/7566
+  - https://github.com/FirebirdSQL/firebird/pull/7557
+  - https://github.com/FirebirdSQL/firebird/issues/7586
+  - ... possibly some other issues and pull requests
+- Call statement
+  - https://github.com/FirebirdSQL/firebird/issues/7587 (also has some relation with the previous item syntax-wise)
