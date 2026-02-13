@@ -1,0 +1,116 @@
+[#langref-table-valued-func]
+= Built-in Table-valued Functions
+
+Built-in table-valued functions are similar to selectable stored procedures.
+They accept scalar inputs and produce one or more rows as output.
+
+.Syntax
+----
+<built-in-table-function> ::=
+  <unlist-table-function> <correlation-or-recognition>
+----
+
+[#langref-tblvalfunc-general]
+== General Purpose Table-valued Functions
+
+[#langref-tblvalfunc-unlist]
+=== `UNLIST()`
+
+Splits a string into multiple rows with a single column
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+UNLIST ( _input_ [ , _separator_ ] [<unlist-type-conversion>] )
+  [AS] <correlation-name> [ ( <column-name> ) ]
+
+!! Elsewhere referenced as the more general rules:      !!
+!! <unlist-table-function> <correlation-or-recognition> !!
+
+<type-conversion> ::= RETURNING <domain_or_non_array_type>
+
+<domain_or_non_array_type> ::=
+  !! See <<langref-datatypes-syntax-scalar,Scalar Data Types Syntax>> !!
+----
+
+[#langref-tblvalfunc-tbl-unlist]
+.`UNLIST` Function Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|input
+|Expression of a string or blob type;
+input to be split.
+
+|separator
+a|Expression of a string or blob type;
+separator (delimiter) of the input.
+If not specified, `,` (comma) is used.
+
+Length cannot exceed 32KiB.
+
+|domain_or_non_array_type
+|Datatype of the output column.
+Behaves as if <<langref-scalarfuncs-cast>> is applied with the specified type.
+
+|correlation-name
+|Name of the derived table produced by `UNLIST` (required!)
+
+|column-name
+|Name of the column of the derived table.
+
+Depending on the use of the derived table, specifying the column-name may be required.
+If not specified, the column does not receive a name, but the column will have the alias `UNLIST` when used in a top-level `FROM` clause.
+
+|===
+
+The `UNLIST` function does the opposite of the aggregate function <<langref-aggfuncs-list>>: splitting a string into rows.
+
+When the `RETURNING` clause is not specified, the column of the table is of type `CHAR(32)` with the same character set as _input_.
+// TODO: Default datatype is under discussion, and should probably be VARCHAR
+
+.Ambiguity with stored procedures called `UNLIST`
+[WARNING]
+====
+`UNLIST` is not a reserved word, and this can result in ambiguity if a stored procedure `UNLIST` exists on the search path.
+Firebird will use the `UNLIST` built-in function for calls with one or two arguments *if* the correlation clause (`AS ...`) is present.
+For three or more arguments, it will call the stored procedure `UNLIST`.
+
+However, if you leave out the correlation clause, it will select from the procedure `UNLIST`, which might be unexpected.
+
+If you need to select from a selectable stored procedure `UNLIST` with one or two arguments *and* have to provide a correlation, then you need to qualify the procedure with its schema (e.g. `PUBLIC.UNLIST`).
+====
+
+[#langref-tblvalfunc-unlist-exmpl]
+==== `UNLIST` Examples
+
+[source]
+----
+select * from unlist('1,2,3,4,5') as U;
+
+-- Produce INTEGERs instead of CHAR
+select * from unlist('100:200:300:400:500', ':' RETURNING INT) AS U;
+
+select U.* from unlist('text1,text2,text3') as U;
+
+-- The second and third value produced start with a space
+select C0 from unlist('text1, text2, text3') as U(C0);
+
+select U.C0 from unlist('text1,text2,text3') as U(C0);
+
+select EMP_NO from EMPLOYEE
+where DEPT_NO in (select * from unlist('120,900') as depts);
+-- This does the same as DEPT_NO in ('120', '900')
+
+-- "Column unknown" error as no explict column-name is defined
+-- -> default alias UNLIST only exists on output
+select UNLIST from unlist('UNLIST,A,S,A') as A;
+
+-- "Procedure unknown" error as no correlation-name is defined
+select * from unlist('A,B,C')
+----
+
+.See also
+<<langref-aggfuncs-list>>
