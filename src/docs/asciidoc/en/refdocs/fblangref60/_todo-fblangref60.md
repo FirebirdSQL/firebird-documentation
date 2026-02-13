@@ -17,7 +17,8 @@ Please note that these are things we came across or thought of while working on 
   - Add examples in DDL `langref-ddl-schema`
 - Document scope specifier (done in select, may need its own section?)
 - User-defined functions can no longer override built-in functions, see if this needs to be accounted for somewhere
-- Document `UNLIST`
+- Document `IN UNLIST(...)`
+  - See https://github.com/FirebirdSQL/firebird/pull/8878 
 - Default keyword in argument list
   - https://github.com/FirebirdSQL/firebird/issues/7566
   - https://github.com/FirebirdSQL/firebird/pull/7557
