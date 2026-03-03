@@ -3517,9 +3517,8 @@ The `cast_template` of the `FORMAT` clause specifies how the datetime should be 
 
 The `cast_template` must be a string literal, and has the following syntax:
 
-
-[#langref-scalarfuncs-cast-format-tbl-vars]
-.Cast Template Variables
+[#langref-scalarfuncs-cast-format-tbl-fields]
+.Cast Template Fields
 [cols="<1m,<4", options="header",stripes="none"]
 |===
 |Format Pattern
@@ -3541,7 +3540,7 @@ The `cast_template` must be a string literal, and has the following syntax:
 |Last digit of year (0 - 9)
 
 |RR / RRRR
-a|Round Year (further information below) +
+a|Round Year (further information <<langref-scalarfuncs-cast-format-rr,below>>) +
 Only string to datetime
 
 |Q
@@ -3563,7 +3562,7 @@ Only datetime to string
 |WW
 a|Week of the year (`01` - `53`) +
 Only datetime to string
-+
+
 Exercise caution when combining with year.
 For example, 2023-01-01 is week 52 2022, but there is no week-based year template variable, and ``'WW YYYY'`` renders `52 2023`!
 // TODO Is this always the ISO week, or does it depend on locale?
@@ -3571,13 +3570,13 @@ For example, 2023-01-01 is week 52 2022, but there is no week-based year templat
 |W
 a|Week of the month (`1` - `5`) +
 Only datetime to string
-+
+
 Week 1 starts at day 1, week 2 at day 8, week 3 at day 15, week 4 for at day 22 and week 5 at day 29.
 
 |D
 a|Day of the week (`1` - `7`) +
 Only datetime to string
-+
+
 `1` is Sunday, `7` is `Saturday`
 
 |DAY
@@ -3598,7 +3597,9 @@ Only datetime to string
 |Julian Day (number of days since January 1, 4712 BC)
 
 |HH / HH12
-|Hour of the day (`01` - `12`) without period (for period, also specify `A.M.` or `P.M.`)
+a|Hour of the day (`01` - `12`) without AM/PM period
+
+When converting from string to datetime, specifying template-field `A.M.` or `P.M.` is required.
 
 |HH24
 |Hour of the day (`00` - `23`)
@@ -3615,11 +3616,11 @@ Only datetime to string
 |FF1 - FF9
 a|Fractional seconds with the specified accuracy. +
 When converting from string to datetime, only `FF1` - `FF4` are supported.
-+
+
 For `FF5` - `FF9`, digits 5 - 9 are _always_ `0`.
 
 |A.M. / P.M.
-a|Period for 12 hours time. +
+a|AM/PM period for 12 hours time. +
 Either can be used, and will parse `A.M.` and `P.M.`, or render `A.M.` or `P.M.` depending on the actual time.
 
 |TZH
@@ -3633,15 +3634,16 @@ Either can be used, and will parse `A.M.` and `P.M.`, or render `A.M.` or `P.M.`
 
 |===
 
-Most of these template variables are defined by the SQL Standard, but some are non-standard extensions.
+Most of these template fields are defined by the SQL Standard, but some are non-standard extensions.
+The template fields are case-insensitive, so `YYYY-MM` is the same as `yyyy-mm`.
 
-The template variables can be separated with the following separators (called delimiters in the SQL Standard):
+The template fields can be separated with the following delimiters:
 
-[#langref-scalarfuncs-cast-format-tbl-sep]
-.Cast Template Separators
+[#langref-scalarfuncs-cast-format-tbl-delim]
+.Cast Template Delimiters
 [cols="<m", options="header",stripes="none"]
 |===
-|Separator
+|Delimiter
 
 |-
 |++.++
@@ -3653,8 +3655,11 @@ The template variables can be separated with the following separators (called de
 
 |===
 
+Contrary to the SQL standard, a single quote (apostrophe) is not supported as a delimiter.
+// TODO Reopened https://github.com/FirebirdSQL/firebird/issues/2388 to report this, update above if needed
+
 It is possible to insert raw text into a format string with double quotes: `... FORMAT '"Today is" DAY'` -> `Today is MONDAY`.
-To render `"` in output, escape it with `\`, i.e. use `\"`, and to render `\` use `\\`.
+To render `"`, escape it with `\`, i.e. use `\"`, and to render `\`, use `\\`.
 
 Example:
 
@@ -3666,8 +3671,6 @@ FROM RDB$DATABASE;
 =========================
 14.6.2023 15:41:29 is 2460110 Julian day
 ----
-
-The format is case-insensitive, so `YYYY-MM` is the same as `yyyy-mm`.
 
 Patterns can be used without any separators:
 
@@ -3690,16 +3693,16 @@ When converting from string to datetime, additional rules and limitations apply:
 * If the target type has a date component, and year, month or day are not set by the pattern, the missing parts will get their values from the current date
 // TODO What about boundaries, e.g cast('31' as date format 'DD') and the current month has only 30 days?
 * If the target type has a time component, and hours, minutes, seconds, or fractions are not set by the pattern, the missing parts will be set to `0`
-* Behavior of `RR` (two-digit Round Year):
+* [[langref-scalarfuncs-cast-format-rr]]Behaviour of `RR` (two-digit Round Year):
 ** If the specified two-digit year is 00 to 49, then
 *** If the last two digits of the current year are 00 to 49, then the returned year has the same first two digits as the current year.
 *** If the last two digits of the current year are 50 to 99, then the first 2 digits of the returned year are 1 greater than the first 2 digits of the current year.
 ** If the specified two-digit year is 50 to 99, then
 *** If the last two digits of the current year are 00 to 49, then the first 2 digits of the returned year are 1 less than the first 2 digits of the current year.
 *** If the last two digits of the current year are 50 to 99, then the returned year has the same first two digits as the current year.
-- Behavior of `RRRR` (4-digit Round Year): Accepts either 4-digit or 2-digit input.
-If 2-digit, provides the same return as `RR`.
-If you do not want this functionality, then enter the 4-digit year.
+* Behaviour of `RRRR` (4-digit Round Year): Accepts either 4-digit or 2-digit input.
+If 2-digit, it provides the same result as `RR`.
+If you do not want this functionality, then enter a 4-digit year.
 
 Example:
 
