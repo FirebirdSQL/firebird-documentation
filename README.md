@@ -49,7 +49,7 @@ that has not been migrated to AsciiDoc. However, if you feel the need to build
 those documents, it might be an indication they need to be migrated. Please
 ask for guidance or help on the [firebird-devel list](https://groups.google.com/g/firebird-devel).
 
-If you have any questions, *first* get the [Docbuilding Howto](https://firebirdsql.org/file/documentation/html/en/firebirddocs/docbuildhowto/firebird-docbuilding-howto.html)
+If you have any questions, *first* get the [Docbuilding Howto](https://firebirdsql.org/file/documentation/html/en/firebirddocs/docbuildhowto/firebird-docbuilding-howto.html) and [Docwriting Guide](https://www.firebirdsql.org/file/documentation/html/en/firebirddocs/docwritehowto/firebird-docwriting-guide.html)
 at:
 
   https://firebirdsql.org/en/reference-manuals/
