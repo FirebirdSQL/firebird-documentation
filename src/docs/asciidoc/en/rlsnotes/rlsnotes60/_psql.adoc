@@ -4,6 +4,7 @@
 [#rnfb60-psql-links]
 .Quick Links
 * <<rnfb60-psql-decl-var-init>>
+* <<rnfb60-psql-range-for>>
 
 [#rnfb60-psql-decl-var-init]
 == `DECLARE VARIABLE` Initialiser Enhancements
@@ -20,14 +21,10 @@ In previous Firebird versions, only a subset of expressions could be used (the s
 DECLARE [VARIABLE] _varname_ <type> [{ = | DEFAULT } <value-expression>];
 ----
 
-[discrete]
-=== Notes
-
-Previously declared variables can be used in the initialiser expression of following variables.
-
-A variable initialiser may call subroutines, and these subroutines may read and write previously declared variables.
-
-A subroutine used in an initialiser may also write to variables declared after the one being initialised.
+.Notes
+* Previously declared variables can be used in the initialiser expression of following variables.
+* A variable initialiser may call subroutines, and these subroutines may read and write previously declared variables.
+* A subroutine used in an initialiser may also write to variables declared after the one being initialised.
 Their values will be overwritten when their initialisers are executed, even if they don't have explicit initialisers.
 
 [source]
@@ -75,4 +72,160 @@ as
     end
 begin
 end
+----
+
+[#rnfb60-psql-range-for]
+== Range-based `FOR` Statement
+Adriano dos Santos Fernandes
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/8498[#8498]
+
+The range-based `FOR` statement (or "`for loop`") iterates over a range of numeric values.
+
+.Syntax
+[listing,subs=+quotes]
+----
+[__label__:]
+FOR _variable_ = <initial_value>
+  {TO | DOWNTO} <final_value> [BY <step_value>]
+  DO <compound_statement>
+----
+
+.`FOR` Parameters
+[cols="<1,<3", options="header",stripes="none"]
+|===
+^| Argument
+^| Description
+
+|label
+|Optional label for `LEAVE` and `CONTINUE`.
+Follows the rules for identifiers.
+
+|variable
+|A previously declared variable or parameter of an exact numeric type for the current iteration value.
+
+|initial_value
+|Initial or start value of iteration.
+Expression of an exact numeric type.
+
+|final_value
+|Final or stop value of iteration.
+Expression of an exact numeric type.
+
+|step_value
+|Step value (positive, non-zero).
+Expression of an exact numeric type.
+Defaults to `1` if not specified.
+
+|===
+
+The iteration is performed in increasing order with the `TO` clause -- decreasing with the `DOWNTO` clause -- until the current value is greater than  -- less than for `DOWNTO` -- the _final_value_.
+
+[discrete]
+=== Execution
+
+* _initial_value_ is evaluated and assigned to _variable_.
+** If `NULL`, the loop exits immediately.
+* _final_value_ is evaluated and assigned to a temporary variable.
+** If `NULL`, the loop exits immediately.
+* _step_value_ (or its default value `1`) is evaluated and assigned to a temporary variable.
+** If `NULL`, the loop exits immediately.
+** If zero or negative, an error is raised.
+* Loop starts:
+** If not the first iteration:
+*** If _variable_ is `NULL`, the loop exits.
+*** _variable_ is incremented (`TO`) or decremented (`DOWNTO`) by the cached _step_value_.
+*** _variable_ is compared to the cached _final_value_ -- less than or equal (`++<=++`) for `TO` or greater than or equal (`++>=++`) for `DOWNTO` -- and if false, the loop exits.
+** The body (_compound_statement_) of the loop is executed.
+** Loop continues to the next iteration.
+
+Notes on the loop body:
+
+* `BREAK` or `LEAVE` exits the loop
+* `CONTINUE` skips the remainder of the loop body and starts the next iteration
+* _variable_ can be modified by the loop body
+
+[discrete]
+=== Examples
+
+[listing]
+----
+execute block returns (out integer)
+as
+begin
+  for out = 1 to 3 do
+    suspend;
+end
+
+/* Result:
+1
+2
+3
+*/
+----
+
+[listing]
+----
+execute block returns (out integer)
+as
+begin
+  for out = 9 downto 7 do
+    suspend;
+end
+
+/* Result:
+9
+8
+7
+*/
+----
+
+[listing]
+----
+execute block returns (out integer)
+as
+begin
+  for out = 5 to 3 do
+    suspend;
+end
+
+/* Result:
+*/
+----
+
+[listing]
+----
+execute block returns (out numeric(5,2))
+as
+begin
+  for out = 9 downto 7 by 0.5 do
+    suspend;
+end
+
+/* Result:
+9.00
+8.50
+8.00
+7.50
+7.00
+*/
+----
+
+[listing]
+----
+execute block
+as
+  declare i integer;
+begin
+  for i = 1 to 10 do
+  begin
+    insert into table1 values (i);
+    insert into table2 values (i);
+  end
+end
+
+/* Result:
+10 records inserted into table1
+10 records inserted into table2
+*/
 ----
