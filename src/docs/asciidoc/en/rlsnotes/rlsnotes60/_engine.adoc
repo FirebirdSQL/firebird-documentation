@@ -3,6 +3,7 @@
 
 [#rnfb60-engine-links]
 .Quick Links
+* <<rnfb60-engine-schema>>
 * <<rnfb60-engine-record-size>>
 * <<rnfb60-engine-sql-pkg>>
 * <<rnfb60-engine-valid-db>>
@@ -22,6 +23,261 @@ Tracker ticket: https://github.com/FirebirdSQL/firebird/[pull/]<issue>[#<issue>]
 <description>
 
 ////
+
+[#rnfb60-engine-schema]
+== Schemas
+Adriano dos Santos Fernandes
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/1113[#1113]
+
+Firebird 6.0 introduces support for schemas in the database.
+Schemas are not an optional feature, so every Firebird 6 database has at least a `SYSTEM` schema, reserved for Firebird system objects (`RDB${asterisk}` and `MON${asterisk}`).
+
+User objects live in different schemas, which may be the automatically created `PUBLIC` schema or user-defined ones.
+It is not allowed (except for indices) to create or modify objects in the `SYSTEM` schema.
+
+The following sections explain how schemas work in Firebird, how to use them, and what may differ when migrating a database from previous versions to Firebird 6.
+
+.See also
+* <<rnfb60-dml-schema>> in chapter _Data Manipulation Language (DML)_
+* <<rnfb60-msql-search-path>>
+* <<rnfb60-compat-schema>>
+
+[#rnfb60-engine-schema-why]
+=== Why Schemas?
+
+Schemas allow the logical grouping of database objects (such as tables, views, and indexes), providing a clear structure to the database.
+They are primarily used for two purposes:
+
+. <<rnfb60-engine-schema-org,Organization>>
+. <<rnfb60-engine-schema-iso,Isolation>>
+
+[#rnfb60-engine-schema-org]
+==== Schemas For Database Object Organization
+
+Schemas help in organizing database objects modularly, making the database easier to manage and maintain.
+By dividing the database into different schemas, developers and administrators can focus on specific areas, improving team scalability and reducing complexity.
+
+For example, the `SYSTEM` schema separates objects created by two distinct groups: the Firebird DBMS core team and Firebird users.
+Firebird users can organize objects in custom schemas like `FINANCE` and `MARKETPLACE`.
+
+[#rnfb60-engine-schema-iso]
+==== Schemas For Data Isolation
+
+In multi-tenant applications, schemas can provide data isolation for different clients or tenants.
+By assigning a unique schema to each tenant, tables and other objects can share the same names in different schemas, reducing data leakage risks and sometimes improving performance.
+At the same time, master data shared by all tenants can be defined once.
+Applications can set the schema search path for the current selected customer.
+
+This approach simplifies database management and scaling since each tenant's data is isolated, making maintenance, updates, and backups straightforward.
+Example schema names could be `CUSTOMER_1` and `CUSTOMER_2`.
+
+[#rnfb60-engine-schema-obj]
+=== Schema-less and Schema-bound Objects
+
+Database objects fall into two categories:
+
+. <<rnfb60-engine-schema-less-obj>>
+. <<rnfb60-engine-schema-bound-obj>>
+
+[#rnfb60-engine-schema-less-obj]
+==== Schemaless objects
+
+Schemaless objects exist outside schemas and function as before.
+The following object types are schemaless:
+
+* Users
+* Roles
+* Blob filters
+* Mappings and global mappings
+* Schemas
+
+[#rnfb60-engine-schema-bound-obj]
+==== Schema-bound Objects
+
+Schema-bound objects are always contained within a schema.
+The following object types are schema-bound:
+
+* Tables
+* Views
+* Triggers
+* Procedures
+* Exceptions
+* Domains
+* Indices
+* Character sets
+* Sequences / Generators
+* Functions
+* Collations
+* Packages
+
+Some objects are tightly coupled to their parent, like table-based triggers and indices depending on the table.
+For those object types, the child object always resides in the same schema as its parent.
+
+[#rnfb60-engine-schema-path]
+=== Search Path
+
+A Firebird session is started with an initial search path, a list of schemas used to resolve unqualified object names.
+By default, this path is set to `PUBLIC, SYSTEM`, but it can be customized using the `isc_dpb_search_path` parameter in the API.
+
+The initial search path serves as the basis for the current search path, which is actively used during object resolution.
+The current search path can be dynamically updated using the <<rnfb60-msql-search-path>> statement.
+If needed, you can reset the current search path to its initial configuration with the `ALTER SESSION RESET` statement.
+
+Nonexistent schemas can be included in the search path but are ignored during name resolution.
+
+If `SYSTEM` is not included in the schema list, it is automatically added as the last schema in the search path.
+This is done to avoid issues with queries using unqualified references to -- for example -- `RDB$DATABASE` and character sets.
+
+// TODO Make a separate section or an aside so it can be linked from elsewhere?
+
+The first valid schema (meaning, it exists) in the search path is referred to as the _current schema_
+Invalid schemas (i.e. they do not exist) are ignored.
+The _current schema_ can change dynamically without changing the search path, if the current schema is dropped, or if a schema is created that is listed earlier in the search path.
+The _current schema_ is exclusively used in some operations (see below).
+
+Binding unqualified objects to a schema typically occurs at _statement prepare time_.
+One exception is `EXECUTE STATEMENT`, which prepares the statement at _execution time_.
+Another exception is the `MAKE_DBKEY` function, when its first argument is an expression (not a simple literal), in which case the table resolution happens at _execution time_.
+
+Object names can now be explicitly qualified (or, fully qualified) with their schema, such as `SCHEMA_NAME.TABLE_NAME`, `SCHEMA_NAME.TABLE_NAME.COLUMN_NAME`, or `SCHEMA_NAME.PACKAGE_NAME.PROCEDURE_NAME`.
+However, specifying the schema is optional.
+When omitted, the search path is used to resolve unqualified names, and the behaviour depends on the context in which the name appears.
+
+For `CREATE`, `CREATE OR ALTER`, and `RECREATE` DDL statements, the system searches only the _current schema_ for an existing object, and the new object is created in this same schema.
+This rule also applies to `GRANT` and `REVOKE` statements for DDL operations without the `ON SCHEMA` subclause.
+If no _current schema_ is available (i.e., no valid schema other than `SYSTEM` exists in the search path), an error is raised.
+
+Examples using this rule:
+
+[source]
+----
+create table TABLE1 (ID integer);
+recreate table TABLE1 (ID integer);
+create or alter function F1 returns integer as begin end;
+grant create table to user USER1;
+----
+
+For `ALTER`, `DROP`, and others statements, Firebird searches for the specified object across all schemas in the search path.
+The reference is bound to the first matching object found.
+If no matching object exists in any schema, an error is raised.
+
+Examples using this rule:
+
+[source]
+----
+alter table TABLE1 add X integer;
+alter function FUNCTION1 returns integer as begin end;
+select * from TABLE1;
+----
+
+The behaviour of search paths differs between DML and DDL statements.
+
+For DML statements, the search path is used to locate all referenced unqualified objects.
+For example:
+
+[source]
+----
+insert into TABLE1 values (1);
+
+execute block returns (out DOMAIN1)
+as
+begin
+    select val from TABLE2 into out;
+end;
+----
+
+In this case, the search path is used to locate `TABLE1`, `DOMAIN1`, and `TABLE2`.
+
+For DDL statements, the search path operates similarly, but with a subtle difference.
+Once the object being created or modified is bound to a schema during statement preparation, the search path is implicitly and temporarily modified.
+This adjustment sets the search path to the schema of the object with `SYSTEM` added as the final schema in the path.
+
+[source]
+----
+create schema SCHEMA1;
+create schema SCHEMA2;
+
+create domain SCHEMA1.DOMAIN1 integer;
+
+-- DOMAIN1 is bound to SCHEMA1 even without it being in the search path,
+-- as the table being created is bound to SCHEMA1
+create table SCHEMA1.TABLE1 (id DOMAIN1);
+
+set search_path to SCHEMA2, SCHEMA1;
+-- Error: even if SCHEMA1 is in the search path, TABLE2 is bound to SCHEMA2,
+-- so DOMAIN1 is searched only in SCHEMA2 schema
+create table TABLE2 (id DOMAIN1);
+
+set search_path to SYSTEM;
+
+create procedure SCHEMA1.PROC1
+as
+begin
+    -- TABLE1 is bound to SCHEMA1 as PROC1
+    insert into TABLE1 values (1);
+end;
+----
+
+[#rnfb60-engine-schema-path-pkg]
+==== Resolving Between `PACKAGE.OBJECT` and `SCHEMA.OBJECT`
+
+The syntax `<name>.<name>` introduces an ambiguity between `<package>.<object>` and `<schema>.<object>` when referring to procedures and functions.
+See <<rnfb60-dml-schema-name-res>> for details.
+
+[#rnfb60-engine-schema-priv]
+=== Privileges
+
+Privileges for managing and using schema-bound objects are now influenced by the privileges assigned to schemas.
+
+A schema, like other database objects, has an owner.
+The schema owner can manage and use any object within the schema, including objects created by other users in that schema.
+
+To manipulate objects within a schema owned by another user, specific DDL privileges are required.
+While DDL privileges existed in previous versions, they are now more granular.
+For example:
+
+[source]
+----
+grant create table on schema SCHEMA1 to user USER1;
+grant alter any procedure on schema SCHEMA1 to PUBLIC;
+----
+
+The `ON SCHEMA __name__` clause is optional.
+If omitted, the _current schema_ is implicitly assumed.
+
+Previously, using an object required having specific privileges, such as `EXECUTE` or `USAGE`, granted for the object.
+Now, in addition to these object-level privileges, the `USAGE` privileges must also be granted for the schema containing the object.
+For example:
+
+[source]
+----
+-- Connected as USER1
+create schema SCHEMA1;
+create table SCHEMA1.TABLE1 (ID integer);
+
+grant usage on schema SCHEMA1 to user USER2;
+grant select on table SCHEMA1.TABLE1 to user USER2;
+----
+
+[#rnfb60-engine-schema-system]
+=== The `SYSTEM` Schema
+
+All system schema-bound objects (e.g. `RDB${asterisk}`, `MON${asterisk}`, character sets) are now created in a dedicated schema called `SYSTEM`.
+The `SYSTEM` schema has a default `USAGE` permission granted to `PUBLIC` and is automatically included in the search path.
+This ensures backward compatibility with previous Firebird versions.
+
+While the `SYSTEM` schema allows operations like index creation and manipulation of those indexes, it is otherwise locked for DDL changes.
+Modifying objects within the `SYSTEM` schema through DDL operations is strongly discouraged.
+
+[#rnfb60-engine-schema-public]
+=== The `PUBLIC` Schema
+
+A schema named `PUBLIC` is automatically created in new databases, with a default `USAGE` permission granted to `PUBLIC`.
+However, only the database or schema owner has default permissions to manipulate objects within this schema.
+
+Unlike the `SYSTEM` schema, the `PUBLIC` schema is not a system object and can be dropped by the database owner or by a user with the `DROP ANY SCHEMA` privilege.
+When restoring a Firebird 6 or later backup using `gbak`, and the `PUBLIC` schema was not present in the original database, the restored database will also not include it.
 
 [#rnfb60-engine-record-size]
 == Record Size Limit Increased To 1 MiB

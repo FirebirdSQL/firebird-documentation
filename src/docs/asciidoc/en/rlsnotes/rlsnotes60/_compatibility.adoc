@@ -10,16 +10,153 @@ To migrate the security database from Firebird 5.0 to Firebird 6.0, backup `secu
 Use _gbak_ locally (using an embedded connection) while Firebird Server is not running.
 
 [#rnfb60-compat-schema]
-== Schema's
+== Compatibility Issues Due to Schemas
 
-// TODO
+The introduction of schemas causes a number of incompatible changes.
+
+// TODO Does this (or some of this) belong in compatibility, or maybe elsewhere?
+
+[#rnfb60-compat-schema-error]
+=== Object Names in Error Messages
+
+Object names in error and informational messages are now consistently qualified and quoted within message parameters, even in dialect 1 databases.
+
+[listing]
+----
+SQL> create table TABLE1 (ID integer);
+SQL> create table TABLE1 (ID integer);
+Statement failed, SQLSTATE = 42S01
+unsuccessful metadata update
+-CREATE TABLE "PUBLIC"."TABLE1" failed
+-Table "PUBLIC"."TABLE1" already exists
+
+SQL> create schema "Weird ""Schema""";
+SQL> create schema "Weird ""Schema""";
+Statement failed, SQLSTATE = 42000
+unsuccessful metadata update
+-CREATE SCHEMA "Weird ""Schema""" failed
+-Schema "Weird ""Schema""" already exists
+----
+
+The `RDB$ERROR(EXCEPTION)` function now returns the fully qualified and quoted name of the exception as well.
+
+[#rnfb60-compat-schema-name]
+=== Object Name Parsing Outside SQL
+
+When working with object names in `isc_dpb_search_path`, `isc_dpb_lc_ctype`, `isc_dpb_set_db_charset` and `MAKE_DBKEY`, the names follow the same rules as in SQL.
+This means that names containing special characters or lowercase letters must be enclosed in quotes.
+
+With `isc_dpb_lc_ctype` and `isc_dpb_set_db_charset`, names not qualified with a schema are resolved using the `SYSTEM` schema.
+
+With `MAKE_DBKEY`, unqualified names are resolved using the current search path.
+In earlier versions, `MAKE_DBKEY` required an exact table name as its first parameter and did not support the use of double quotes for special characters.
+
+[#rnfb60-compat-schema-plan]
+=== Plan Output Changes
+
+See <<rnfb60-dml-schema-plan>>.
+
+[#rnfb60-compat-schema-gbak]
+=== Backup and Restore (_gbak_)
+
+[discrete]
+==== User Objects Restored in `PUBLIC`
+
+To use databases created in earlier Firebird versions with Firebird 6, you must restore a backup using the Firebird 6 `gbak` utility.
+In the restored database, all user objects will be placed in the `PUBLIC` schema.
+
+[discrete]
+==== Downgrade Compatibility
+
+Even Firebird 6 databases that do not use multiple user schemas (for example, a Firebird 5 database just migrated to Firebird 6 by `gbak`) may not be downgradable to **unmodified previous versions** of Firebird using `gbak`.
+This issue can occur if user objects reference system objects.
+
+The Firebird team plans to backport essential internal changes to Firebird 5 to enable such downgrades.
+It should then also be possible to downgrade databases with multiple user schemas, as long as objects with the same name do not exist in multiple schemas.
+
+This documentation will be updated once these changes are implemented.
+// TODO Were such changes already implemented?
+
+[#rnfb60-compat-schema-plugin]
+=== Plugin Object Migration To Separate Schemas
+
+Firebird includes several built-in plugins that create database objects.
+Prior to Firebird 6, these objects were only distinguished by their `PLG$` prefix.
+
+When restoring a pre-Firebird 6 backup, `gbak` automatically attempts to recreate these objects (and their data) in specific schemas -- `PLG$PROFILER`, `PLG$SRP`, and `PLG$LEGACY_SEC` -- while removing those located in the `PUBLIC` schema.
+
+This migration process may fail if user-defined objects reference these plugin objects.
+In that case, `gbak` will display a warning and halt the plugin schema migration process.
+
+In preparing for migration to Firebird 6, it is advisable to temporarily remove such dependencies, and add them back -- with the right schema names -- after migration.
+
+The sources of views, stored routines, etc, referencing such objects need to be updated to include their new schema names when making further changes.
+
+[#rnfb60-compat-schema-nodb]
+=== `SCHEMA` Is No Longer A Synonym For `DATABASE`
+
+In previous versions of Firebird, `SCHEMA` was a synonym for `DATABASE` in some DDL statements.
+That is no longer the case. Specifically:
+
+* `CREATE SCHEMA` is no longer an alias for `CREATE DATABASE`;
+it now creates a schema, not a database.
++
+As a consequence, `CREATE SCHEMA` can no longer be executed with `IAttachment::executeCreateDatabase` or `isc_create_database`.
+* `ALTER SCHEMA` is no longer an alias for `ALTER DATABASE`;
+it now alters a schema, not the current database.
+* `COMMENT ON SCHEMA` is no longer an alias for `COMMENT ON DATABASE`;
+it now adds a comment on a schema, not the current database.
+* In `GRANT`, `SCHEMA` was an alias for `DATABASE` for granting database DDL privileges;
+the keyword is now used to grant privileges on a schema.
+
+[#rnfb60-compat-schema-ddl-priv]
+=== Granting And Revoking DDL Privileges Is Per Schema
+
+In previous Firebird versions, all DDL privileges where granted database-wide.
+For <<rnfb60-engine-schema-bound-obj,schema-bound>> object types, they are now granted and revoked *per schema*.
+If no schema is specified explicitly, the _current schema_ is used.
+
+Use the `ON SCHEMA _name_` clause when revoking DDL privileges for schema-bound object types to specify the schema.
+
+See also <<rnfb60-sec-schema-ddl-priv>>
 
 [#rnfb60-compat-sql]
 == SQL
 
 Changes that may affect existing SQL code:
 
-// TODO
+[#rnfb60-compat-sql-schema]
+=== Schemas
+
+The introduction of schemas can affect behaviour in SQL.
+Most of its compatibility effects are detailed above in section <<rnfb60-compat-schema>>.
+
+[#rnfb60-compat-sql-schema-hide]
+==== User Objects Can Hide Unqualified System Objects
+
+It's now possible for a user to define an object (e.g. a table) in a user-defined schema with the same name as a system object.
+If that user-defined schema is on the search path _before_ `SYSTEM`, and queries reference the system object unqualified (without `SYSTEM` schema), the user-defined object will be used.
+This will effectively hide the system object.
+
+To prevent this, make sure system objects are fully-qualified in your queries.
+For example, use `SYSTEM.RDB$DATABASE`, not only `RDB$DATABASE`.
+
+[#rnfb60-compat-sql-func-override]
+=== Overriding Built-in Functions No Longer Possible
+
+In Firebird versions prior to 6, user-defined functions could override (hide) built-in functions that use standard syntax, such as `ABS` and `MOD`.
+This behaviour is no longer supported.
+
+Starting with Firebird 6, if a user-defined function shares a name with a built-in function, it must be called using a delimited identifier (quoted identifier), and/or qualified with its schema name.
+
+[#rnfb60-compat-sql-syspkg]
+=== System Packages And Built-in Functions
+
+Firebird includes system packages such as `RDB$TIME_ZONE_UTIL`, `RDB$PROFILER`, and others.
+These system packages are now located in the `SYSTEM` schema.
+
+In contrast, Firebird also provides built-in functions like `RDB$GET_CONTEXT`, `ABS`, and `DATEDIFF`, etc.
+Built-in functions are part of the actual SQL syntax, and not listed in the database metadata (`RDB$FUNCTIONS`) and neither require nor accept the `SYSTEM` schema for usage.
 
 [#rnfb60-compat-multi-db]
 == No Multi-file Database Support

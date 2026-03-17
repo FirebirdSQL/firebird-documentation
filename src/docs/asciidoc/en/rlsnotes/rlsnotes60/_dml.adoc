@@ -3,6 +3,8 @@
 
 [#rnfb60-dml-links]
 .Quick Links
+* <<rnfb60-dml-schema>>
+** <<rnfb60-dml-schema-current>>
 * <<rnfb60-dml-cast>>
 ** <<rnfb60-dml-cast-format>>
 ** <<rnfb60-dml-cast-collate>>
@@ -43,6 +45,201 @@ Tracker ticket: https://github.com/FirebirdSQL/firebird/[pull/]<issue>[#<issue>]
 ----
 
 ////
+
+[#rnfb60-dml-schema]
+== Changes to DML For Schema Support
+Adriano dos Santos Fernandes
+
+.See also
+* <<rnfb60-engine-schema>> in chapter _Changes in the Firebird Engine_
+* <<rnfb60-msql-search-path>>
+* <<rnfb60-compat-schema>>
+
+[#rnfb60-dml-schema-current]
+=== New Context Variable `CURRENT_SCHEMA`
+
+`CURRENT_SCHEMA` returns the name of the first valid schema (i.e. it exists) in the search path of the current session.
+If no valid user schema exists, it returns `SYSTEM`.
+In theory, it could return `NULL`, but as `SYSTEM` is always added to the search path, this should not happen in practice.
+
+.Example
+[source]
+----
+select CURRENT_SCHEMA from RDB$DATABASE;
+----
+
+[#rnfb60-dml-schema-context]
+=== Additions to `RDB$GET_CONTEXT()`
+
+Function `RDB$GET_CONTEXT()` received additional variables:
+
+[horizontal.compact]
+`DDL_TRIGGER`::
+`SCHEMA_NAME`
+
+`SYSTEM`::
+`CURRENT_SCHEMA`, `SEARCH_PATH`
+
+.See also
+* <<rnfb60-dml-context-system>>
+* <<rnfb60-dml-context-ddl-trigger>>
+
+[#rnfb60-dml-schema-field]
+=== Schema Qualification of Field Names
+
+Field names can now be qualified with the schema, in addition to aliases or table names.
+This includes cases where the schema is implicitly determined by the search path.
+It is also possible to qualify the table name with the schema and refer to the field using just the table name.
+For example:
+
+[source]
+----
+create schema SCHEMA1;
+
+create table SCHEMA1.TABLE1 (ID integer);
+
+set search_path to SCHEMA1;
+
+select TABLE1.ID from SCHEMA1.TABLE1;
+select SCHEMA1.TABLE1.ID from TABLE1;
+select SCHEMA1.TABLE1.ID from SCHEMA1.TABLE1;
+----
+
+If the same table name exists in multiple schemas, fields must be qualified with schema names or table aliases to avoid ambiguity.
+For example:
+
+[source]
+----
+create schema SCHEMA1;
+create schema SCHEMA2;
+
+create table SCHEMA1.TABLE1 (ID integer);
+create table SCHEMA2.TABLE1 (ID integer);
+
+select SCHEMA1.TABLE1.ID, SCHEMA2.TABLE1.ID
+from SCHEMA1.TABLE1, SCHEMA2.TABLE1;
+
+select S1.ID, S2.ID
+from SCHEMA1.TABLE1 S1, SCHEMA2.TABLE1 S2;
+----
+
+[#rnfb60-dml-schema-name-res]
+=== Name Resolution
+
+With the introduction of schemas, the syntax `_identifier_._identifier_` -- used for tables, views, procedures, and functions (both standalone and packaged) -- introduces ambiguity when resolving object names using the schema search path.
+The ambiguity arises between:
+
+- `_schema_._object_` (a schema and its object)
+- `_package_._object_` (a package and its object)
+
+This section focuses on name resolution rules for tables, views, procedures, and functions within queries and code blocks.
+
+[#rnfb60-dml-schema-name-res-scope]
+==== Scope specifier (`%`)
+
+To resolve these ambiguities, Firebird introduces a _scope specifier_, represented by the `%` symbol.
+The scope specifier allows unambiguous referencing of objects.
+
+.Syntax
+[listing,subs=+quotes]
+----
+_identifier_ % { SCHEMA | PACKAGE } . _identifier_
+----
+
+.Examples
+[source]
+----
+select *
+from PLG$PROFILER%schema.PLG$PROF_SESSIONS;
+
+execute procedure PLG$PROFILER%package.PAUSE_SESSION;
+
+call PLG$PROFILER%package.PAUSE_SESSION();
+
+select RDB$TIME_ZONE_UTIL%package.DATABASE_VERSION()
+from SYSTEM%schema.RDB$DATABASE;
+
+select *
+from RDB$TIME_ZONE_UTIL%package.TRANSITIONS(
+    'America/Sao_Paulo',
+    timestamp '2017-01-01', timestamp '2019-01-01');
+----
+
+[#rnfb60-dml-schema-name-res-rule]
+==== Detailed Name Resolution Rules
+
+Firebird resolves object names following a structured sequence of rules.
+Once an object is located, the resolution process halts, ensuring no ambiguity errors occur.
+
+`NAME1.NAME2.NAME3`::
+. Look for routine `NAME3` inside package `NAME2`, inside schema `NAME1`.
+
+`NAME1%schema.NAME2`::
+. Look for object `NAME2` inside schema `NAME1`.
+
+`NAME1%package.NAME2`::
+. Look for object `NAME2` inside a package `NAME1` using the schema search path.
+
+`NAME1.NAME2`::
+. If inside a package named `NAME1`, look for routine `NAME2` in the same package.
+. Look in schema `NAME1` for object `NAME2`.
+. Look for object `NAME2` inside a package `NAME1` using the schema search path.
+
+`NAME`::
+. If inside a routine, look for subroutine `NAME`.
+. If inside a package, look for routine `NAME` in the same package.
+. Look for object `NAME` using the schema search path.
+
+[NOTE]
+====
+Object resolution also depends on the context in which they are used.
+For example, in `select * from NAME1.NAME2`, `NAME2` could be a table, view, or procedure.
+However, in `execute procedure NAME1.NAME2`, `NAME2` must be a procedure.
+This distinction means that an `execute procedure` statement versus a `select` statement can resolve to different objects.
+====
+
+[#rnfb60-dml-schema-plan]
+=== Plans
+
+// TODO Does this belong in DML, or should it go to engine?
+
+Plans -- both legacy and detailed -- now include schema names in their output, resulting in slight changes to their format.
+
+For example, the query below:
+
+[source]
+----
+with q1 as (
+    select *
+        from t1
+),
+q2 as (
+    select *
+        from q1
+)
+select *
+    from q2 x;
+----
+
+Previously, this produced the following plans:
+
+[source]
+----
+PLAN (X Q1 T1 NATURAL)
+
+Select Expression
+    -> Table "T1" as "X Q1 T1" Full Scan
+----
+
+Now, the plans explicitly include the schema, and each name is quoted separately:
+
+[source]
+----
+PLAN ("X" "Q1" "PUBLIC"."T1" NATURAL)
+
+Select Expression
+    -> Table "PUBLIC"."T1" as "X" "Q1" "PUBLIC"."T1" Full Scan
+----
 
 [#rnfb60-dml-cast]
 == Changes to `CAST` Function
@@ -481,6 +678,9 @@ set term ;#
 
 The following variables were added to the `SYSTEM` context of `RDB$GET_CONTEXT`:
 
+`CURRENT_SCHEMA`::
+Current schema (same as <<rnfb60-dml-schema-current,CURRENT_SCHEMA>>)
+
 `PAGES_ALLOCATED`::
 Number of allocated database pages
 
@@ -489,6 +689,25 @@ Number of free (unused) database pages
 
 `PAGES_USED`::
 Number of used database pages
+
+`SEARCH_PATH`::
+Search path of the current session (including invalid (nonexistent) schemas).
++
+To get separate rows with schema names, you can use <<rnfb60-engine-sql-parse-unqualified-names>>:
++
+[source]
+----
+select NAME
+from SYSTEM.RDB$SQL.PARSE_UNQUALIFIED_NAMES(RDB$GET_CONTEXT('SYSTEM', 'SEARCH_PATH'))
+----
+
+[#rnfb60-dml-context-ddl-trigger]
+== New `DDL_TRIGGER` Variables in `RDB$GET_CONTEXT()`
+
+The following variables were added to the `DDL_TRIGGER` context of `RDB$GET_CONTEXT`:
+
+`SCHEMA_NAME`::
+Schema of the affected object within a DDL trigger.
 
 [#rnfb60-dml-built-in-functions]
 == New Expressions and Built-in Functions
