@@ -4,6 +4,7 @@
 [#rnfb60-engine-links]
 .Quick Links
 * <<rnfb60-engine-schema>>
+* <<rnfb60-engine-ltt>>
 * <<rnfb60-engine-record-size>>
 * <<rnfb60-engine-sql-pkg>>
 * <<rnfb60-engine-valid-db>>
@@ -279,6 +280,288 @@ However, only the database or schema owner has default permissions to manipulate
 
 Unlike the `SYSTEM` schema, the `PUBLIC` schema is not a system object and can be dropped by the database owner or by a user with the `DROP ANY SCHEMA` privilege.
 When restoring a Firebird 6 or later backup using `gbak`, and the `PUBLIC` schema was not present in the original database, the restored database will also not include it.
+
+[#rnfb60-engine-ltt]
+== Created Local Temporary Tables
+Adriano dos Santos Fernandes
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/issues/1095[#1095]
+
+Firebird 6.0 introduces support for SQL created Local Temporary Tables (LTT).
+Unlike Global Temporary Tables (GTT), which have permanent metadata stored in the system catalogue, Local Temporary Tables exist only within the connection that created them.
+The table definition is private to the creating connection and is automatically discarded when the connection ends.
+
+The data lifecycle depends on the `ON COMMIT` clause:
+
+* with `ON COMMIT DELETE ROWS` (the default), data is private to each transaction and deleted when the transaction ends;
+* with `ON COMMIT PRESERVE ROWS`, data is shared across all transactions in the connection and persists until the connection ends.
+
+[#rnfb60-engine-ltt-why]
+=== Why Local Temporary Tables?
+
+Local Temporary Tables are useful in scenarios where you need temporary storage without affecting the database metadata:
+
+Temporary storage in read-only databases::
+Since LTT definitions are not stored in the database, they can be created and used even when the database is read-only.
++
+Global Temporary Tables (GTTs), on the other hand, cannot be created in read-only databases because their creation requires metadata changes.
+Regarding usage (DML operations), only `ON DELETE ROWS` GTTs are allowed in a read-only database.
+
+Session-private definitions::
+Each connection can create its own temporary tables with the same names without conflicts.
+The table definitions are completely isolated between connections.
+
+Ad-hoc temporary storage::
+LTTs provide a quick way to create temporary storage during a session for intermediate results, data transformations, or other temporary processing needs without leaving any trace in the database after disconnection.
+
+[#rnfb60-engine-ltt-vs-gtt]
+=== Comparison with Global Temporary Tables
+
+[%header,cols="1h,1,1"]
+|===
+|Feature
+|GTT
+|LTT
+
+|Metadata storage
+|System tables (`RDB$RELATIONS`, etc.)
+|Connection memory only
+
+|Visibility of definition
+|All connections
+|Creating connection only
+
+|Persistence of definition
+|Permanent (until explicitly dropped)
+|Until connection ends
+
+|Creation in read-only DB
+|No
+|Yes
+
+|Usage in read-only DB
+|`ON DELETE ROWS` only
+|`ON COMMIT ROWS` / `ON DELETE ROWS`
+
+|Schema support
+|Yes
+|Yes
+
+|Indices
+|Full support
+|Basic support (no expression/partial indices)
+
+|DDL triggers
+|Fire on `CREATE`/`DROP`/`ALTER`
+|Do not fire
+
+|DML triggers
+|Supported
+|Not supported
+
+|Field level `NOT NULL`
+|Supported
+|Supported
+
+|PK, FK, check constraints
+|Supported
+|Not supported
+
+|Named constraints
+|Supported
+|Not supported
+
+|Explicit privileges
+|Supported
+|Not supported
+
+|===
+
+[#rnfb60-engine-ltt-syntax]
+=== Syntax
+
+For syntax, see <<rnfb60-ddl-ltt>>.
+
+[#rnfb60-engine-ltt-limits]
+=== Limitations
+
+Local Temporary Tables have the following restrictions:
+
+.Column restrictions
+`DEFAULT` values::
+Columns cannot have default values.
+
+`COMPUTED BY` columns::
+Computed columns are not supported.
+
+`IDENTITY` columns::
+Identity (auto-increment) columns are not supported.
+
+Array types::
+Array type columns are not supported.
+
+Domain changes::
+Columns can be defined using domains, but changes to the domain definition are not propagated to existing LTT columns.
+The column retains the domain's characteristics as they were at the time the column was created.
+
+.Constraint restrictions
+Primary key::
+Primary key constraints are not supported.
+
+Foreign key::
+Foreign key constraints are not supported.
+
+Check constraints::
+Check constraints are not supported.
+
+`NOT NULL` constraints::
+Only unnamed `NOT NULL` constraints are supported.
+
+.Index restrictions
+Expression-based indices::
+Indices based on expressions are not supported.
+
+Partial indices::
+Partial (filtered) indexes are not supported.
+
+.Other restrictions
+External file::
+LTTs cannot be linked to external files.
+
+`SQL SECURITY` clause::
+The `SQL SECURITY` clause is not applicable to LTTs.
+
+Maximum number of LTTs::
+The maximum number of active Local Temporary Tables per connection is 1024.
+
+Persistent metadata references::
+LTTs cannot be directly referenced in stored procedures, triggers, views, or other persistent database objects.
+Attempting to do so will raise an error.
+However, LTTs can be accessed via
+`EXECUTE STATEMENT` inside persistent objects, since the SQL text is parsed at runtime.
+
+[#rnfb60-engine-ltt-lifecycle]
+=== Data Lifecycle
+
+[float]
+==== `ON COMMIT DELETE ROWS`
+
+When a Local Temporary Table is created with `ON COMMIT DELETE ROWS` (the default), data is private to each transaction and automatically deleted when the transaction ends, whether by commit or rollback.
+Since Firebird supports multiple concurrent transactions within the same connection, each transaction has its own isolated view of the data.
+
+Similar to Global Temporary Tables, `COMMIT RETAINING` and `ROLLBACK RETAINING` preserve the data in LTTs with `ON COMMIT DELETE ROWS`.
+
+[source]
+----
+create local temporary table temp_work (id integer);
+
+insert into temp_work values (1);
+insert into temp_work values (2);
+select count(*) from temp_work;  -- Returns 2
+
+commit;
+
+select count(*) from temp_work;  -- Returns 0 (data was deleted)
+----
+
+[float]
+==== `ON COMMIT PRESERVE ROWS`
+
+When created with `ON COMMIT PRESERVE ROWS`, data persists across transaction boundaries and remains available until the connection ends.
+
+[source]
+----
+create local temporary table session_data (id integer) on commit preserve rows;
+
+insert into session_data values (1);
+commit;
+
+insert into session_data values (2);
+commit;
+
+select count(*) from session_data;  -- Returns 2 (data preserved across commits)
+----
+
+[#rnfb60-engine-ltt-ddl-tr]
+=== Transactional DDL
+
+DDL operations on Local Temporary Tables behave the same as DDL on persistent tables with respect to transactions.
+Changes to the table structure (`CREATE`, `ALTER`, `DROP`) are only made permanent when the transaction commits.
+If the transaction is rolled back, any LTT structural changes made within that transaction are undone.
+
+Savepoints are also supported.
+If a savepoint is rolled back, any LTT changes made after that savepoint are undone.
+
+[source]
+----
+set autoddl off;  -- ISQL feature
+
+create local temporary table t1 (id integer);
+
+savepoint sp1;
+
+alter table t1 add name varchar(50);
+
+rollback to savepoint sp1;
+
+-- The ALTER TABLE is undone; column 'name' does not exist
+----
+
+This applies to all DDL operations on LTTs.
+
+[#rnfb60-engine-ltt-schema]
+=== Schema Integration
+
+Local Temporary Tables are schema-bound objects, just like regular tables.
+They follow the same schema resolution rules:
+
+- When creating an LTT without a schema qualifier, it is created in the current schema (the first valid schema in the search path).
+- When referencing an LTT without a schema qualifier, the search path is used to resolve the name.
+- Index names for LTTs must be unique within the schema and cannot conflict with persistent index names.
+
+[source]
+----
+set search_path to my_schema;
+
+-- Creates LTT in my_schema
+create local temporary table temp_data (id integer);
+
+-- References my_schema.temp_data
+select * from temp_data;
+
+-- Explicit schema qualification
+create local temporary table other_schema.temp_work (x integer);
+----
+
+[#rnfb60-engine-ltt-mon]
+=== Monitoring
+
+Since Local Temporary Tables are private to the connection and not stored in the system catalogue, they are not visible in `RDB$RELATIONS` or `RDB$RELATION_FIELDS`.
+Instead, two new monitoring tables are provided to inspect LTTs in the database:
+
+* <<rnfb60-apiods-new-systabs-mon-ltt>>
+* <<rnfb60-apiods-new-systabs-mon-ltt-col>>
+
+.Example
+[source]
+----
+-- See all LTTs in the database
+select * from MON$LOCAL_TEMPORARY_TABLES;
+
+-- See fields of a specific LTT in the current connection
+select *
+    from MON$LOCAL_TEMPORARY_TABLE_COLUMNS
+    where MON$TABLE_NAME = 'TEMP_DATA' and MON$ATTACHMENT_ID = CURRENT_CONNECTION;
+----
+
+[#rnfb60-engine-ltt-impl-note]
+=== Implementation Notes
+
+Local Temporary Tables store their data and indexes in temporary files, similar to Global Temporary Tables.
+Each connection has its own temporary file space for LTT data.
+
+When a connection ends (either normally or due to an error), all Local Temporary Tables created by that connection are automatically discarded along with their data.
+No explicit clean-up is required.
 
 [#rnfb60-engine-record-size]
 == Record Size Limit Increased To 1 MiB
