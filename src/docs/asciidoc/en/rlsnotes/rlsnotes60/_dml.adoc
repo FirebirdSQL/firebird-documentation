@@ -19,6 +19,7 @@
 ** <<rnfb60-dml-multi-trim>>
 ** <<rnfb60-dml-greatest>>
 ** <<rnfb60-dml-least>>
+** <<rnfb60-dml-listagg>>
 
 ////
 Generic template:
@@ -1239,3 +1240,151 @@ LEAST (<expr> [{, <expr>}...])
 ----
 
 If one or more expressions resolve to `NULL`, `LEAST` returns `NULL`.
+
+[#rnfb60-dml-listagg]
+=== `LISTAGG` Aggregate Function
+Alex Chudaykin
+
+Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/8689[#8689]
+
+`LISTAGG` is a SQL standard (SQL:2016) aggregate function to concatenate values in a group, optionally with an order within that group.
+In its basic form, it's equivalent to the Firebird-specific function `LIST` of previous versions.
+For flexibility and backwards compatibility, `LIST` is now an alias for `LISTAGG`.
+
+// TODO Document <within-group-specification> in its own section, as it'll also be used for Hypothetical-Set Aggregate Functions and other Ordered-Set Aggregate Functions (see https://github.com/FirebirdSQL/firebird/issues/7632)?
+
+.Syntax
+[listing,subs=+quotes]
+----
+<listagg-set-function> ::=
+  { LISTAGG | LIST }
+    <left-paren>
+      [ ALL | DISTINCT ] <expr>
+      [ <comma> _listagg-separator_ ]
+      [ <listagg-overflow-clause> ]
+    <right-paren>
+    [ <within-group-specification> ]
+
+<listagg-overflow-clause> ::=
+  ON OVERFLOW <overflow-behavior>
+
+<overflow-behavior> ::=
+    ERROR
+  | TRUNCATE [ _listagg-truncation-filler_ ] <listagg-count-indication>
+
+<listagg-count-indication> ::=
+  WITH COUNT | WITHOUT COUNT
+
+<within-group-specification> ::=
+  WITHIN GROUP <left-paren> ORDER BY <sort-specification-list> <right-paren>
+----
+
+.`LISTAGG` Function Parameters
+[cols="<1m,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|expr
+|Expression (e.g. column reference) to concatenate.
+
+Contrary to the SQL standard, we accept expressions of any type that is convertible to string.
+
+|listagg-separator
+|String literal for the separator.
+Defaults to '```,```'.
+
+Contrary to the SQL standard, the specification of _listagg-separator_ is optional for backwards compatibility with `LIST`.
+
+|listagg-truncation-filler
+|Truncation filler on overflow.
+Defaults to '```++...++```'.
+
+|===
+
+The `OVERFLOW` clause is ignored as the return type is always a `BLOB`, so the result type is considered never to overflow.
+It's only provided for syntax compatibility with the SQL standard.
+
+.Examples
+[listing]
+----
+create table TEST_T (
+  COL1 integer, COL2 varchar(2), COL3 varchar(2), COL4 varchar(2),
+  COL5 boolean, COL6 varchar(2) character set WIN1251
+);
+commit;
+insert into TEST_T values (1, 'A', 'A', 'J', false, 'П');
+insert into TEST_T values (2, 'B', 'B', 'I', false, 'Д');
+insert into TEST_T values (3, 'C', 'A', 'L', true,  'Ж');
+insert into TEST_T values (4, 'D', 'B', 'K', true,  'Й');
+commit;
+
+select listagg(COL4)
+from TEST_T;
+-- J,I,L,K
+
+select
+  listagg(distinct COL4, ':')
+from TEST_T;
+-- I:J:K:L
+
+select
+  listagg(distinct COL3, '||')
+from TEST_T;
+-- A||B
+
+select
+  listagg(distinct COL3, ':') within group (order by COL3)
+from TEST_T;
+-- A:B
+
+select
+  listagg(distinct COL3, ':') within group (order by COL3 desc)
+from TEST_T;
+-- B:A
+
+select
+  listagg(ALL COL3, ':') within group (order by COL3)
+from TEST_T;
+-- A:A:B:B
+
+select
+  listagg(COL6, ':') within group (order by COL2 desc)
+from TEST_T;
+-- Й:Ж:Д:П
+
+select
+  listagg(COL4, ':' on overflow truncate '...' without count)
+    within group (order by COL3 asc)
+from TEST_T;
+-- J:L:I:K
+
+select
+  listagg(COL4, ':' on overflow truncate '...' with count)
+    within group (order by COL3 desc)
+from TEST_T;
+-- I:K:J:L
+
+select
+  listagg(COL3, ':' on overflow error) within group (order by COL6)
+from TEST_T;
+-- B:A:B:A
+
+INSERT INTO TEST_T values(5, 'E', NULL, NULL, NULL, NULL);
+INSERT INTO TEST_T values(6, 'F', 'C', 'N', true, 'К');
+
+select
+  listagg(COL2, ':') within group (order by COL3)
+from TEST_T;
+-- E:A:C:B:D:F
+
+select
+  listagg(COL2, ':') within group (order by COL3 nulls last)
+from TEST_T;
+-- A:C:B:D:F:E
+
+select
+  listagg(COL2, ':') within group (order by COL6 nulls first)
+from TEST_T;
+-- E:B:C:D:F:A
+----
