@@ -3519,7 +3519,7 @@ The `cast_template` must be a string literal, and has the following syntax:
 
 [#langref-scalarfuncs-cast-format-tbl-fields]
 .Cast Template Fields
-[cols="<1m,<4", options="header",stripes="none"]
+[cols="<1m,<4a", options="header",stripes="none"]
 |===
 |Format Pattern
 |Description
@@ -3651,12 +3651,10 @@ The template fields can be separated with the following delimiters:
 |,
 |;
 |:
+|'
 |<space>
 
 |===
-
-Contrary to the SQL standard, a single quote (apostrophe) is not supported as a delimiter.
-// TODO Reopened https://github.com/FirebirdSQL/firebird/issues/2388 to report this, update above if needed
 
 It is possible to insert raw text into a format string with double quotes: `... FORMAT '"Today is" DAY'` -> `Today is MONDAY`.
 To render `"`, escape it with `\`, i.e. use `\"`, and to render `\`, use `\\`.
@@ -3690,8 +3688,10 @@ However, be careful with patterns with repeating characters, for example `DDDDD`
 
 When converting from string to datetime, additional rules and limitations apply:
 
-* If the target type has a date component, and year, month or day are not set by the pattern, the missing parts will get their values from the current date
-// TODO What about boundaries, e.g cast('31' as date format 'DD') and the current month has only 30 days?
+* If the target type has a date component, and year, month or day are not set by the pattern, the missing parts will get their values from the current date.
++
+This results in an error if the date is not valid.
+For example, `cast('31' as date format 'DD')` works in months with 31 days, but produces error "`__conversion error from string "31"__`" in February, or months with only 30 days.
 * If the target type has a time component, and hours, minutes, seconds, or fractions are not set by the pattern, the missing parts will be set to `0`
 * [[langref-scalarfuncs-cast-format-rr]]Behaviour of `RR` (two-digit Round Year):
 ** If the specified two-digit year is 00 to 49, then
@@ -3715,6 +3715,19 @@ FROM RDB$DATABASE;
 2000-12-08 12:35:30.5000
 ----
 
+In datetime to string conversions, most template variables produce a fixed length (e.g. `HH24` produces two digits).
+However, in string to datetime conversions, those template variable are lenient and will also accept shorter values.
+For example, `HH24:MI` produces a string like `01:05`, but will consume both ``'01:05'`` and ``'1:5'`` (etc.) as the same value.
+
+The `FF__n__` format strings produce a value of _n_ digits, but will also consume shorter values.
+A shorter value is parsed as if the missing digits are trailing zeroes.
+For example, conversion with `HH24:MI:SS.FF4` for strings ``'23:12:05.4000'`` and ``'23:12:05.4'`` produce the same value.
+
+The pattern `YEAR` produces 1 - 4 digits, but can consume more digits (which then results in an out-of-range error).
+
+For patterns without delimiters, this behaviour may introduce ambiguity in parsing values and limit roundtrip behaviour.
+// TODO Is there actual ambiguity, or is that prevented by the greediness of parsing?
+
 [#langref-scalarfuncs-cast-exmpl]
 ==== Cast Examples
 
@@ -3725,7 +3738,7 @@ A full-syntax cast:
 select cast ('12-June-1959' as date) from rdb$database
 ----
 
-A shorthand string-to-date cast:
+A shorthand string-to-date cast (a.k.a. date literal):
 
 [source]
 ----
