@@ -12,8 +12,8 @@ The complete list of possible tokens in expressions follows.
 
 [#langref-dtyp-tbl-exprelements]
 .Description of Expression Elements
-Column name::
-Identifier of a column from a specified table used in evaluations or as a search condition.
+Column reference::
+Identifier or identifier chain of a column from a specified table used in evaluations or as a search condition.
 A column of the array type cannot be an element in an expression except when used with the <<langref-commons-isnotnull,`IS [NOT] NULL` predicate>>.
 
 Array element::
@@ -62,8 +62,8 @@ A member of an ordered group of one or more unnamed parameters passed to a store
 Subquery::
 A `SELECT` statement enclosed in parentheses that returns a single (scalar) value or, when used in existential predicates, a set of values
 
-Function identifier::
-The identifier of an internal, packaged, stored or external function in a function expression
+Function reference::
+The identifier or identifier chain of an internal, packaged, stored or external function in a function expression
 
 Type cast::
 An expression explicitly converting data of one data type to another using the <<langref-scalarfuncs-cast,`CAST` function>> (`CAST (<value> AS <datatype>)`).
@@ -78,7 +78,7 @@ Operations inside the parentheses are performed before operations outside them.
 When nested parentheses are used, the most deeply nested expressions are evaluated first and then the evaluations move outward through the levels of nesting.
 
 `COLLATE` clause::
-Clause applied to CHAR and VARCHAR types to specify the character-set-specific collation to use in string comparisons
+Clause applied to character types to specify the character-set-specific collation to use in string comparisons
 
 `NEXT VALUE FOR __sequence__`::
 Expression for obtaining the next value of a specified generator (sequence).
@@ -346,6 +346,8 @@ A Boolean literal is one of `TRUE`, `FALSE` or `UNKNOWN`.
 Formally, the SQL standard defines datetime literals as a prefix `DATE`, `TIME` and `TIMESTAMP` followed by a string literal with a datetime format.
 Historically, Firebird documentation has referred to these datetime literals as "`shorthand casts`".
 
+If you need to convert from a different format than listed below, use the `FORMAT` clause of <<langref-scalarfuncs-cast>>.
+
 Since Firebird 4.0, the use of <<langref-dtyp-tbl-datetimemnemonics,datetime mnemonics>> in datetime literals (e.g. `DATE 'TODAY'`) is no longer allowed.
 
 [CAUTION]
@@ -493,7 +495,7 @@ SQL operators comprise operators for comparing, calculating, evaluating and conc
 [#langref-commons-operpreced]
 ==== Operator Precedence
 
-SQL Operators are divided into four types.
+SQL operators are divided into four types.
 Each operator type has a _precedence_, a ranking that determines the order in which operators and the values obtained with their help are evaluated in an expression.
 The higher the precedence of the operator type is, the earlier it will be evaluated.
 Each operator has its own precedence within its type, that determines the order in which they are evaluated in an expression.
@@ -529,8 +531,31 @@ To force a different evaluation order, operations can be grouped by means of par
 [#langref-commons-concat]
 ==== Concatenation Operator
 
-The concatenation operator -- two pipe characters known as "`double pipe`" or '```||```' -- concatenates two character strings to form a single string.
-Character strings can be literals or values obtained from columns or other expressions.
+The concatenation operator -- two pipe characters known as "`double pipe`" or '```||```' -- concatenates two operands of any type convertible to string to form a single string.
+Operands can be literals or other expressions.
+
+.Syntax
+[listing,subs=+quotes]
+----
+_operand1_ || _operand2_
+----
+
+The type of the resulting expression is `BLOB` if one of the operands is `BLOB`, otherwise it's `VARCHAR(_n_)` with _n_ equal to the sum of the declared lengths of both operands.
+
+If an operand is not a string type, its length is an implementation-defined length sufficient to store any of its values.
+For example, an `INTEGER` is considered to have a length of 11, for minus-sign and 10 digits, so `1 || 2` is a `VARCHAR(22)`.
+
+The padding of a value of type `CHAR` is preserved during concatenation, so ``'A ' || 'B '`` is a `VARCHAR(4)` with value ``'A B '``.
+
+The character set is:
+
+. `OCTETS` if one of the operands is `BINARY` or `VARBINARY`, or has character set `OCTETS`
+. The character set of the first operand, if it is not `NONE`
+. Otherwise, the character set of the second operand
+
+A string literal -- without introducer -- has the connection character set as its character set, or `NONE` if no connection character set was specified.
+A binary string literal -- without introducer -- has `OCTETS` as its character set.
+A non-string value implicitly converted to string has `NONE` as its character set.
 
 .Example
 [source]
@@ -538,6 +563,10 @@ Character strings can be literals or values obtained from columns or other expre
 SELECT LAST_NAME || ', ' || FIRST_NAME AS FULL_NAME
 FROM EMPLOYEE
 ----
+
+.Compatibility Note
+In the SQL standard, string concatenation is only defined between character and binary string types.
+Firebird is more lenient, and will automatically convert any operand of `||` to string.
 
 .See also
 <<langref-scalarfuncs-blob-append,`BLOB_APPEND()`>>
@@ -659,7 +688,7 @@ IF (SALARY > 1400) THEN
 ^| Precedence
 
 |NOT
-|Negation of a search condition
+|Negation of a predicate
 |1
 
 |AND
@@ -690,12 +719,12 @@ IF (A < B OR (A > C AND A > D) AND NOT (C = D)) THEN ...
 NEXT VALUE FOR [_seq-schema_ <period>] _sequence-name_
 ----
 
-`NEXT VALUE FOR` returns the next value of a sequence.
+`NEXT VALUE FOR` increments a sequences, and returns the resulting value.
 _Sequence_ is the SQL-standard term for what is historically called a _generator_ in Firebird and its ancestor, InterBase.
 The `NEXT VALUE FOR` operator is equivalent to the legacy <<langref-scalarfuncs-gen-id,`GEN_ID (..., _increment_)` function>> with _increment_ the increment stored in the metadata of the sequence.
 It is the recommended syntax for retrieving the next sequence value.
 
-Unlike the `GEN_ID` function, the `NEXT VALUE FOR` expression does not take any parameters and thus provides no way to retrieve the _current value_ of a sequence, nor to step the next value by a different value than the _increment_ configured for the sequence.
+Unlike the `GEN_ID` function, the `NEXT VALUE FOR` expression does not accept an increment, so there is no way to retrieve the _current value_ of a sequence, nor to step the next value by a different value than the _increment_ configured for the sequence.
 `GEN_ID (..., <step value>)` is still needed for these tasks.
 A _step value_ of 0 returns the current sequence value.
 
@@ -737,7 +766,7 @@ select timestamp '2018-01-01 12:00 GMT' at local from rdb$database;
 [#langref-commons-conditional]
 === Conditional Expressions
 
-A conditional expression is one that returns different values according to how a certain condition is met.
+A conditional expression returns different values based on its defined conditions.
 It is composed by applying a conditional function construct, of which Firebird supports several.
 This section describes only one conditional expression construct: `CASE`.
 All other conditional expressions apply internal functions derived from `CASE` and are described in  <<langref-functions-conditional,Conditional Functions>>.
@@ -773,7 +802,7 @@ If there are no matches and no `ELSE` clause, `NULL` is returned.
 The matching works as the "```=```" operator.
 That is, if _test-expr_ is `NULL`, it does not match any _expr_, not even an expression that resolves to `NULL`.
 
-The returned result does not have to be a literal value: it might be a field or variable name, compound expression or `NULL` literal.
+The returned result does not have to be a literal value: it can be any form of expression.
 
 .Example
 [source]
@@ -810,7 +839,7 @@ The first expression to return `TRUE` determines the result.
 If no expressions return `TRUE`, _defaultresult_ from the optional `ELSE` clause is returned as the result.
 If no expressions return `TRUE` and there is no `ELSE` clause, the result will be `NULL`.
 
-As with the simple `CASE` construct, the result need not be a literal value: it might be a field or variable name, a compound expression, or be `NULL`.
+As with the simple `CASE` construct, the returned result does not have to be a literal value: it can be any form of expression.
 
 .Example
 [source]
