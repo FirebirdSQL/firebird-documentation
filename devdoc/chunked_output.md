@@ -10,13 +10,100 @@ NOTE: Creating chunked output is experimental.
    1. Regenerate the `.min.css` files (e.g. using DuckDuckGo, or your favourite minifier)
 2. Go to the docker directory and run
    ```
-   docker build -t docbook-xslt .
+   podman build -t docbook-xslt .
    ```
 3. Generate Docbook from Asciidoc (e.g. for Firebird 4.0 Language Reference):
    ```
    ./gradlew asciidocDocbook --baseName=refdocs --docId=fblangref40
    ```
-4. Generate chunked HTML from Docbook: (note: trial & error, work in progress; PowerShell syntax; paths based on my setup)
+4. Generate chunked HTML from Docbook: (note: trial & error, work in progress; Bash syntax)
+
+   When using Docker instead of Podman, the syntax is nearly identical, except remove
+   the `:U` after `-v ./build/docs/chunk:/output`. The `:U` option is needed for rootless
+   Podman to make sure the current user is assigned as the owner, so that Gradle's clean
+   can do its work.
+
+   Firebird 6.0 Language Reference
+   ```
+   podman run --rm \
+    -v ./build/docs/chunk:/output:U \
+    -v ./build/docs/asciidoc/docbook:/input \
+    --security-opt label=disable \
+    docbook-xslt \
+    /input/en/refdocs/fblangref60/firebird-60-language-reference.xml \
+    chunk-output-base-uri=/output/en/refdocs/fblangref60/ \
+    chunk=firebird-60-language-reference.html \
+    resource-base-uri=../../../ \
+    --resources:/output \
+    -- \
+    "-xsl:/input/custom.xsl"      
+   ``` 
+
+   Firebird 5.0 Language Reference
+   ```
+   podman run --rm \
+    -v ./build/docs/chunk:/output:U \
+    -v ./build/docs/asciidoc/docbook:/input \
+    --security-opt label=disable \
+    docbook-xslt \
+    /input/en/refdocs/fblangref50/firebird-50-language-reference.xml \
+    chunk-output-base-uri=/output/en/refdocs/fblangref50/ \
+    chunk=firebird-50-language-reference.html \
+    resource-base-uri=../../../ \
+    --resources:/output \
+    -- \
+    "-xsl:/input/custom.xsl"      
+   ```
+
+   Firebird 4.0 Language Reference
+   ```
+   podman run --rm \
+    -v ./build/docs/chunk:/output:U \
+    -v ./build/docs/asciidoc/docbook:/input \
+    --security-opt label=disable \
+    docbook-xslt \
+    /input/en/refdocs/fblangref40/firebird-40-language-reference.xml \
+    chunk-output-base-uri=/output/en/refdocs/fblangref40/ \
+    chunk=firebird-40-language-reference.html \
+    resource-base-uri=../../../ \
+    --resources:/output \
+    -- \
+    "-xsl:/input/custom.xsl"      
+   ```
+
+   Firebird 3.0 Language Reference
+   ```
+   podman run --rm \
+    -v ./build/docs/chunk:/output:U \
+    -v ./build/docs/asciidoc/docbook:/input \
+    --security-opt label=disable \
+    docbook-xslt \
+    /input/en/refdocs/fblangref30/firebird-30-language-reference.xml \
+    chunk-output-base-uri=/output/en/refdocs/fblangref30/ \
+    chunk=firebird-30-language-reference.html \
+    resource-base-uri=../../../ \
+    --resources:/output \
+    -- \
+    "-xsl:/input/custom.xsl"      
+   ```
+
+   Firebird 2.5 Language Reference
+   ```
+   podman run --rm \
+    -v ./build/docs/chunk:/output:U \
+    -v ./build/docs/asciidoc/docbook:/input \
+    --security-opt label=disable \
+    docbook-xslt \
+    /input/en/refdocs/fblangref25/firebird-25-language-reference.xml \
+    chunk-output-base-uri=/output/en/refdocs/fblangref25/ \
+    chunk=firebird-25-language-reference.html \
+    resource-base-uri=../../../ \
+    --resources:/output \
+    -- \
+    "-xsl:/input/custom.xsl"      
+   ```
+   
+5. Same but PowerShell syntax on Windows; paths based on my setup
 
    Firebird 5.0 Language Reference
    ```
