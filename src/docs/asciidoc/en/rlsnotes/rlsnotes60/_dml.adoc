@@ -19,6 +19,7 @@
 ** <<rnfb60-dml-multi-trim>>
 ** <<rnfb60-dml-greatest>>
 ** <<rnfb60-dml-least>>
+** <<rnfb60-dml-within-group>>
 ** <<rnfb60-dml-listagg>>
 
 ////
@@ -1247,6 +1248,27 @@ LEAST (<expr> [{, <expr>}...])
 
 If one or more expressions resolve to `NULL`, `LEAST` returns `NULL`.
 
+[#rnfb60-dml-within-group]
+=== `WITHIN GROUP` Clause For Aggregate Functions
+
+The `WITHIN GROUP` clause is used for a subset of aggregate function to define an order within the group for their operation or processing.
+
+.Syntax
+[listing,subs=+macros]
+----
+<within-group-specification> ::=
+  WITHIN GROUP '(' ORDER BY <sort-specification-list> ')'
+----
+
+.Functions supporting the `WITHIN GROUP` clause:
+* <<rnfb60-dml-listagg>>
+// TODO Document:
+// * Inverse distribution functions
+// ** `PERCENTILE_CONT`
+// ** `PERCENTILE_DISC`
+// TODO not yet implemented (may not arrive in FB 6?)
+// * Hypothetical set functions
+
 [#rnfb60-dml-listagg]
 === `LISTAGG` Aggregate Function
 Alex Chudaykin
@@ -1257,10 +1279,8 @@ Tracker ticket: https://github.com/FirebirdSQL/firebird/pull/8689[#8689]
 In its basic form, it's equivalent to the Firebird-specific function `LIST` of previous versions.
 For flexibility and backwards compatibility, `LIST` is now an alias for `LISTAGG`.
 
-// TODO Document <within-group-specification> in its own section, as it'll also be used for Hypothetical-Set Aggregate Functions and other Ordered-Set Aggregate Functions (see https://github.com/FirebirdSQL/firebird/issues/7632)?
-
 .Syntax
-[listing,subs=+quotes]
+[listing,subs="+quotes,macros"]
 ----
 <listagg-set-function> ::=
   { LISTAGG | LIST }
@@ -1282,7 +1302,7 @@ For flexibility and backwards compatibility, `LIST` is now an alias for `LISTAGG
   WITH COUNT | WITHOUT COUNT
 
 <within-group-specification> ::=
-  WITHIN GROUP <left-paren> ORDER BY <sort-specification-list> <right-paren>
+  !! See <<rnfb60-dml-within-group>> !!
 ----
 
 .`LISTAGG` Function Parameters
@@ -1294,13 +1314,9 @@ For flexibility and backwards compatibility, `LIST` is now an alias for `LISTAGG
 |expr
 |Expression (e.g. column reference) to concatenate.
 
-Contrary to the SQL standard, we accept expressions of any type that is convertible to string.
-
 |listagg-separator
 |String literal for the separator.
 Defaults to '```,```'.
-
-Contrary to the SQL standard, the specification of _listagg-separator_ is optional for backwards compatibility with `LIST`.
 
 |listagg-truncation-filler
 |Truncation filler on overflow.
@@ -1308,7 +1324,33 @@ Defaults to '```++...++```'.
 
 |===
 
-The `OVERFLOW` clause is ignored as the return type is always a `BLOB`, so the result type is considered never to overflow.
+`LISTAGG` is defined by the SQL standard.
+For backward compatibility with previous Firebird versions, `LIST` is now an alias for `LISTAGG`.
+Compared to the SQL standard, some clauses and arguments are optional so `LISTAGG` and `LIST` can share the same definition.
+
+* `ALL` (the default) results in all non-``NULL`` values being listed.
+With `DISTINCT`, duplicates are removed, except if _expr_ is a `BLOB`.
+* The optional _listagg-separator_ argument may be any expression convertible to string.
+This makes it possible to specify e.g. `ascii_char(13)` as a separator.
+* The _expr_ and _listagg-separator_ arguments support ``BLOB``s of any size and character set.
+* Non-string arguments are implicitly converted to strings before concatenation.
+* The result is a text `BLOB`, except when _expr_ is a `BLOB` of another subtype.
+* The order of concatenation of _expr_ is only defined when the `WITHIN GROUP` clause is specified.
+Otherwise, the order is undefined and depends on implementation details of the optimizer and the selected execution plan.
++
+[TIP]
+====
+In Firebird 5.0 and older, ordering the concatenation performed by `LIST` was -- sometimes -- possible by using an ordered derived table.
+We highly recommend replacing such brittle workarounds with the `WITHIN GROUP` clause.
+====
+
+.Deviations from the SQL standard definition of `LISTAGG`
+* _expr_ and _listagg-separator_ can be expressions of any type convertible to string.
++
+The SQL standard only accepts a string literal for _listagg-separator_.
+* _listagg-separator_ is optional, defaulting to a comma ('```,```'), for backward compatibility with `LIST`.
+* The `WITHIN GROUP` clause is optional, for backward compatibility with `LIST`.
+* The `OVERFLOW` clause is ignored as the return type is always a `BLOB`, so it's considered never to overflow.
 It's only provided for syntax compatibility with the SQL standard.
 
 .Examples
