@@ -28,12 +28,10 @@ Please note that these are things we came across or thought of while working on 
   - Also remove sentences like "Formally, the `COLLATE` clause is not part of the data type declaration"
 - Check if maximum record size is mentioned anywhere in the language reference to update from 64 KiB to 1 MiB (or maybe mention it somewhere if not)
   - See https://github.com/FirebirdSQL/firebird/pull/7332 
-- Document `WITHIN GROUP` (when merged)
+- Document hypothetical set functions (if implemented)
   - See https://github.com/FirebirdSQL/firebird/issues/7632
-- Document `LISTAGG` (probably best to wait for previous point)
-  - See https://github.com/FirebirdSQL/firebird/pull/8689
-- Document `PERCENTILE_CONT` and `PERCENTILE_DISC` (when merged)
-  - https://github.com/FirebirdSQL/firebird/pull/8807
+- Document `PERCENTILE_CONT` and `PERCENTILE_DISC`
+  - https://github.com/FirebirdSQL/firebird/pull/8946
 - Document local temporary tables
   - https://github.com/FirebirdSQL/firebird/issues/1095
 - Document `ALTER PACKAGE BODY`/`CREATE OR ALTER PACKAGE BODY`

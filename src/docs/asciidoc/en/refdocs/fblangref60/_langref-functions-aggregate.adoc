@@ -56,6 +56,30 @@ You can use more than one `FILTER` modifier in an aggregate query.
 You could, for example, use 12 filters on totals aggregating sales for a year to produce monthly figures for a pivot set.
 ====
 
+[#langref-aggfuncs-within-group]
+== `WITHIN GROUP` Clause for Aggregate Functions
+
+The `WITHIN GROUP` clause is used for a subset of aggregate function to define an order within the group for their operation or processing.
+
+.Syntax
+[listing,subs=+macros]
+----
+<within-group-specification> ::=
+  WITHIN GROUP '(' ORDER BY <sort-specification-list> ')'
+
+<sort-specification-list> ::=
+  !! See <<langref-dml-select-orderby-syntax,ORDER BY syntax>> !!
+----
+
+.Functions supporting the `WITHIN GROUP` clause:
+* <<langref-aggfuncs-listagg>>
+// TODO Document:
+// * Inverse distribution functions
+// ** `PERCENTILE_CONT`
+// ** `PERCENTILE_DISC`
+// TODO not yet implemented (may not arrive in FB 6?)
+// * Hypothetical set functions
+
 [#langref-aggfuncs-general]
 == General-purpose Aggregate Functions
 
@@ -239,73 +263,122 @@ GROUP BY dept_no
 [#langref-aggfuncs-list]
 === `LIST()`
 
+Since Firebird 6.0, `LIST()` is an alias for the SQL standard function <<langref-aggfuncs-listagg>>.
+
+[#langref-aggfuncs-listagg]
+=== `LISTAGG()`
+
 Concatenates values into a string list
 
 .Result type
 `BLOB`
 
 .Syntax
-[listing,subs=+quotes]
+[listing#langref-aggfuncs-listagg-syntax,subs="+quotes,macros"]
 ----
-LIST ([ALL | DISTINCT] <expr> [, _separator_ ])
+<listagg-set-function> ::=
+  { LISTAGG | LIST }
+    <left-paren>
+      [ ALL | DISTINCT ] <expr>
+      [ <comma> _listagg-separator_ ]
+      [ <listagg-overflow-clause> ]
+    <right-paren>
+    [ <within-group-specification> ]
+
+<listagg-overflow-clause> ::=
+  ON OVERFLOW <overflow-behavior>
+
+<overflow-behavior> ::=
+    ERROR
+  | TRUNCATE [ _listagg-truncation-filler_ ] <listagg-count-indication>
+
+<listagg-count-indication> ::=
+  WITH COUNT | WITHOUT COUNT
+
+<within-group-specification> ::=
+  !! See <<langref-aggfuncs-within-group>> !!
 ----
 
-[#langref-aggfuncs-tbl-list]
-.`LIST` Function Parameters
+[#langref-aggfuncs-tbl-listagg]
+.`LISTAGG` Function Parameters
 [cols="<1,<3", options="header",stripes="none"]
 |===
 ^| Parameter
 ^| Description
 
 |expr
-|Expression.
-It may contain a table column, a constant, a variable, an expression, a non-aggregate function or a UDF that returns the string data type or a `BLOB`.
-Fields of numeric and date/time types are converted to strings.
-Aggregate functions are not allowed as expressions.
+|Expression (e.g. column reference) to concatenate.
 
-|separator
-|Optional alternative separator, a string expression.
-Comma is the default separator
+Contrary to the SQL standard, we accept expressions of any type that is convertible to string.
+
+|listagg-separator
+|Expression for the separator.
+Defaults to '```,```'.
+
+|listagg-truncation-filler
+|Truncation filler on overflow.
+Defaults to '```++...++```'.
+
 |===
 
-`LIST` returns a string consisting of the non-``NULL`` argument values in the group, separated either by a comma or by a user-supplied separator.
-If there are no non-``NULL`` values (this includes the case where the group is empty), ``NULL`` is returned.
+`LISTAGG` returns a string consisting of the non-``NULL`` argument values in the group, separated either by a comma or by _listagg-separator_.
+If there are no non-``NULL`` values or if the group is empty, ``NULL`` is returned.
+
+`LISTAGG` is defined by the SQL standard.
+For backward compatibility with Firebird 5.0 and older, `LIST` is an alias for `LISTAGG`.
+Compared to the SQL standard, some clauses and arguments are optional so `LISTAGG` and `LIST` can share the same definition.
 
 * `ALL` (the default) results in all non-``NULL`` values being listed.
 With `DISTINCT`, duplicates are removed, except if _expr_ is a `BLOB`.
-* The optional _separator_ argument may be any string expression.
+* The optional _listagg-separator_ argument may be any expression convertible to string.
 This makes it possible to specify e.g. `ascii_char(13)` as a separator.
-* The _expr_ and _separator_ arguments support ``BLOB``s of any size and character set.
-* Datetime and numeric arguments are implicitly converted to strings before concatenation.
+* The _expr_ and _listagg-separator_ arguments support ``BLOB``s of any size and character set.
+* Non-string arguments are implicitly converted to strings before concatenation.
 * The result is a text `BLOB`, except when _expr_ is a `BLOB` of another subtype.
-* The ordering of the list values is undefined -- the order in which the strings are concatenated is determined by read order from the source set which, in tables, is not generally defined.
-If ordering is important, the source data can be pre-sorted using a derived table or similar.
+* The order of concatenation of _expr_ is only defined when the `WITHIN GROUP` clause is specified.
+Otherwise, the order is undefined and depends on implementation details of the optimizer and the selected execution plan.
 +
-[CAUTION]
+[TIP]
 ====
-This is a trick/workaround, and it depends on implementation details of the optimizer/execution order.
-This trick doesn't always work, and it is not guaranteed to work across versions.
-
-Some reports indicate this no longer works in Firebird 5.0, or only in more limited circumstances than in previous versions.
+In Firebird 5.0 and older, ordering the concatenation performed by `LIST` was -- sometimes -- possible by using an ordered derived table.
+We highly recommend replacing such brittle workarounds with the `WITHIN GROUP` clause.
 ====
 
-[#langref-aggfuncs-list-exmpl]
-==== `LIST` Examples
+.Deviations from the SQL standard definition of `LISTAGG`
+* _expr_ and _listagg-separator_ can be expressions of any type convertible to string.
++
+The SQL standard only accepts a string literal for _listagg-separator_.
+* _listagg-separator_ is optional, defaulting to a comma ('```,```'), for backward compatibility with `LIST`.
+* The `WITHIN GROUP` clause is optional, for backward compatibility with `LIST`.
+* The `OVERFLOW` clause is ignored as the return type is always a `BLOB`, so it's considered never to overflow.
+It's only provided for syntax compatibility with the SQL standard.
+
+[#langref-aggfuncs-listagg-exmpl]
+==== `LISTAGG` Examples
 
 . Retrieving the list, order undefined:
 +
 [source]
 ----
-SELECT LIST (display_name, '; ') FROM GR_WORK;
+select
+  listagg(DISPLAY_NAME, '; ')
+from GR_WORK;
 ----
-. Retrieving the list in alphabetical order, using a derived table:
+. Retrieving the list in alphabetical order:
 +
 [source]
 ----
-SELECT LIST (display_name, '; ')
-FROM (SELECT display_name
-      FROM GR_WORK
-      ORDER BY display_name);
+select
+  listagg(DISPLAY_NAME, '; ') within group (order by DISPLAY_NAME)
+from GR_WORK;
+----
+. Same as previous, but eliminate duplicates:
++
+[source]
+----
+select
+  listagg(distinct DISPLAY_NAME, '; ') within group (order by DISPLAY_NAME)
+from GR_WORK;
 ----
 
 .See also
