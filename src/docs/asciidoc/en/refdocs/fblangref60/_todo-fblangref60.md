@@ -30,8 +30,6 @@ Please note that these are things we came across or thought of while working on 
   - See https://github.com/FirebirdSQL/firebird/pull/7332 
 - Document hypothetical set functions (if implemented)
   - See https://github.com/FirebirdSQL/firebird/issues/7632
-- Document `PERCENTILE_CONT` and `PERCENTILE_DISC`
-  - https://github.com/FirebirdSQL/firebird/pull/8946
 - Document local temporary tables
   - https://github.com/FirebirdSQL/firebird/issues/1095
 - Document `ALTER PACKAGE BODY`/`CREATE OR ALTER PACKAGE BODY`

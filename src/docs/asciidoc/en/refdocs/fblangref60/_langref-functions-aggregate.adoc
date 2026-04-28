@@ -62,7 +62,7 @@ You could, for example, use 12 filters on totals aggregating sales for a year to
 The `WITHIN GROUP` clause is used for a subset of aggregate function to define an order within the group for their operation or processing.
 
 .Syntax
-[listing,subs=+macros]
+[listing#langref-aggfuncs-within-group-syntax,subs=+macros]
 ----
 <within-group-specification> ::=
   WITHIN GROUP '(' ORDER BY <sort-specification-list> ')'
@@ -71,12 +71,13 @@ The `WITHIN GROUP` clause is used for a subset of aggregate function to define a
   !! See <<langref-dml-select-orderby-syntax,ORDER BY syntax>> !!
 ----
 
+The <<langref-aggfuncs-inv-dist,inverse distribution functions>> only accept a single <<langref-dml-select-orderby-syntax,_sort-specification_>>.
+
 .Functions supporting the `WITHIN GROUP` clause:
 * <<langref-aggfuncs-listagg>>
-// TODO Document:
-// * Inverse distribution functions
-// ** `PERCENTILE_CONT`
-// ** `PERCENTILE_DISC`
+* <<langref-aggfuncs-inv-dist>>
+** <<langref-aggfuncs-perc-cont>>
+** <<langref-aggfuncs-perc-disc>>
 // TODO not yet implemented (may not arrive in FB 6?)
 // * Hypothetical set functions
 
@@ -380,7 +381,7 @@ from GR_WORK;
 ----
 
 .See also
-<<langref-dml-select,`SELECT`>>, <<langref-tblvalfunc-unlist>>
+<<langref-aggfuncs-within-group>>, <<langref-dml-select,`SELECT`>>, <<langref-tblvalfunc-unlist>>
 
 [#langref-aggfuncs-max]
 === `MAX()`
@@ -1408,6 +1409,185 @@ REGR_COUNT(<y>, <x>) * VAR_POP(<exprY>)
 
 .See also
 <<langref-aggfuncs-regr-count>>, <<langref-aggfuncs-var-pop>>
+
+[#langref-aggfuncs-inv-dist]
+== Inverse Distribution Functions
+
+[#langref-aggfuncs-perc-cont]
+=== `PERCENTILE_CONT()`
+
+`PERCENTILE_CONT` is an inverse distribution function that applies a continuous distribution.
+It takes a percentile value and a sort specification and returns an element from the set defined by the sort specification.
+``NULL``s are ignored in the calculation.
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+PERCENTILE_CONT( _percent_ ) <within-group-specification>
+
+<within-group-specification> ::=
+  !! See <<langref-aggfuncs-within-group-syntax>> !!
+----
+
+.`PERCENTILE_CONT` Function Parameters
+[#langref-aggfuncs-tbl-perc-cont,cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|percent
+|Expression for the percentile of the value to return.
+Must be between 0 and 1 (inclusive).
+Must be constant within the group or -- as a window function -- partition.
+
+|within-group-specification
+|Must have a single _sort-specification_, which must be of a numeric type to perform interpolation.
+
+|===
+
+The `PERCENTILE_CONT` function returns a value of type `DOUBLE PRECISION` or `DECFLOAT(34)` depending on the type of the argument in the _within-group-specification_.
+A value of type `DECFLOAT(34)` is returned if its `ORDER BY` contains an expression of type `INT128`, `NUMERIC(38, x)`, or `DECFLOAT(16 | 34)`, otherwise it returns `DOUBLE PRECISION`.
+
+The result of `PERCENTILE_CONT` is computed by linear interpolation between values after ordering.
+Using the percentile value _percent_ and the number of rows (_n_) in the group, you can compute the row number you are interested in after ordering the rows with respect to the sort specification.
+This row number (`RN`) is computed according to the formula `RN = (1 + (percent * (n - 1))`.
+
+The final result of the aggregate function is computed by linear interpolation between the values from rows at row numbers `CRN = ceiling(RN)` and `FRN = floor(RN)`.
+
+.Pseudo-code
+[listing]
+----
+function f(N) ::= value of expression from row at N
+
+if (CRN = FRN = RN) then
+  return f(RN)
+else
+  return (CRN - RN) * f(FRN) + (RN - FRN) * f(CRN)
+----
+
+[float]
+===== Example
+
+[source]
+----
+select
+  DEPT_NO,
+  SALARY,
+  percent_rank() over (partition by DEPT_NO order by SALARY) as "PERCENT_RANK",
+  percentile_cont(0.5) within group (order by SALARY)
+    over (partition by DEPT_NO) as MEDIAN_CONT
+from EMPLOYEE
+where DEPT_NO < 600
+order by 1, 2;
+----
+
+[listing]
+----
+DEPT_NO                SALARY            PERCENT_RANK             MEDIAN_CONT
+======= ===================== ======================= =======================
+000                  53793.00       0.000000000000000       133321.5000000000
+000                 212850.00       1.000000000000000       133321.5000000000
+100                  44000.00       0.000000000000000       77631.25000000000
+100                 111262.50       1.000000000000000       77631.25000000000
+110                  61637.81       0.000000000000000       65221.40500000000
+110                  68805.00       1.000000000000000       65221.40500000000
+115                6000000.00       0.000000000000000       6740000.000000000
+115                7480000.00       1.000000000000000       6740000.000000000
+120                  22935.00       0.000000000000000       33620.63000000000
+120                  33620.63      0.5000000000000000       33620.63000000000
+120                  39224.06      0.2500000000000000       33620.63000000000
+121                 110000.00       0.000000000000000       110000.0000000000
+123                  38500.00       0.000000000000000       38500.00000000000
+125                  33000.00       0.000000000000000       33000.00000000000
+130                  86292.94       0.000000000000000       94521.47000000000
+130                 102750.00       1.000000000000000       94521.47000000000
+140                 100914.00       0.000000000000000       100914.0000000000
+180                  42742.50       0.000000000000000       53688.75000000000
+180                  64635.00       1.000000000000000       53688.75000000000
+----
+
+.See also
+<<langref-aggfuncs-perc-disc>>, <<langref-aggfuncs-within-group>>
+
+[#langref-aggfuncs-perc-disc]
+=== `PERCENTILE_DISC()`
+
+`PERCENTILE_DISC` is an inverse distribution function that applies a discrete distribution.
+It takes a percentile value and a sort specification and returns an element from the set defined by the sort specification.
+``NULL``s are ignored in the calculation.
+
+.Syntax
+[listing,subs="+quotes,macros"]
+----
+PERCENTILE_DISC( _percent_ ) <within-group-specification>
+
+<within-group-specification> ::=
+  !! See <<langref-aggfuncs-within-group-syntax>> !!
+----
+
+.`PERCENTILE_DISC` Function Parameters
+[#langref-aggfuncs-tbl-perc-disc,cols="<1,<3", options="header",stripes="none"]
+|===
+^| Parameter
+^| Description
+
+|percent
+|Expression for the percentile of the value to return.
+Must be between 0 and 1 (inclusive).
+Must be constant within the group or -- as a window function -- partition.
+
+|within-group-specification
+|Must have a single _sort-specification_, of any type that can be sorted.
+
+|===
+
+The function `PERCENTILE_DISC` returns a value of the same type as the expression in `ORDER BY` of the _within-group-specification_.
+
+For a given percentile value _percent_, `PERCENTILE_DISC` sorts the values of the expression in the `ORDER BY` clause and returns the value with the smallest `CUME_DIST` value (with respect to the same sort specification) that is greater than or equal to _percent_.
+
+[float]
+===== Example
+
+[source]
+----
+select
+  DEPT_NO,
+  SALARY,
+  cume_dist() over (partition by DEPT_NO order by SALARY) as "CUME_DIST",
+  percentile_disc(0.5) within group (order by SALARY)
+    over (partition by DEPT_NO) as MEDIAN_DISC
+from EMPLOYEE
+where DEPT_NO < 600
+order by 1, 2;
+----
+
+[listing]
+----
+DEPT_NO                SALARY               CUME_DIST           MEDIAN_DISC
+======= ===================== ======================= =====================
+000                  53793.00      0.5000000000000000              53793.00
+000                 212850.00       1.000000000000000              53793.00
+100                  44000.00      0.5000000000000000              44000.00
+100                 111262.50       1.000000000000000              44000.00
+110                  61637.81      0.5000000000000000              61637.81
+110                  68805.00       1.000000000000000              61637.81
+115                6000000.00      0.5000000000000000            6000000.00
+115                7480000.00       1.000000000000000            6000000.00
+120                  22935.00      0.3333333333333333              33620.63
+120                  33620.63      0.6666666666666666              33620.63
+120                  39224.06       1.000000000000000              33620.63
+121                 110000.00       1.000000000000000             110000.00
+123                  38500.00       1.000000000000000              38500.00
+125                  33000.00       1.000000000000000              33000.00
+130                  86292.94      0.5000000000000000              86292.94
+130                 102750.00       1.000000000000000              86292.94
+140                 100914.00       1.000000000000000             100914.00
+180                  42742.50      0.5000000000000000              42742.50
+180                  64635.00       1.000000000000000              42742.50
+----
+
+.See also
+<<langref-aggfuncs-perc-cont>>, <<langref-aggfuncs-within-group>>
 
 [#langref-aggfuncs-bit]
 == Bitwise Aggregate Functions
