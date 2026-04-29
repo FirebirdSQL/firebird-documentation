@@ -12,6 +12,10 @@ NOTE: Creating chunked output is experimental.
    ```
    podman build -t docbook-xslt .
    ```
+   or
+   ```
+   docker build -t docbook-xslt .
+   ```
 3. Generate Docbook from Asciidoc (e.g. for Firebird 4.0 Language Reference):
    ```
    ./gradlew asciidocDocbook --baseName=refdocs --docId=fblangref40
