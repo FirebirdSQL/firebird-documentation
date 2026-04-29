@@ -1,4 +1,4 @@
-/* This is based on persistent-toc.js DocBook xslTNG version 2.7.1, https://xsltng.docbook.org */
+/* This is based on persistent-toc.js DocBook xslTNG version 2.7.7, https://xsltng.docbook.org */
 (function() {
   const ESC = 27;
   const SPACE = 32;
@@ -7,7 +7,7 @@
   let borderLeftColor = "white";
   let curpress = null;
   let searchListener = false;
-  let VERSION = "2.7.1";
+  let VERSION = "2.7.7";
   let PTOCID = "ptoc-data-file";
 
   const showToC = function(event) {
@@ -292,35 +292,38 @@
     };
   };
 
-  // Setting the border-left-style in CSS will put a thin border-colored
-  // stripe down the right hand side of the window. Here we get the color
-  // of that stripe and then remove it. We'll put it back when we
-  // expand the ToC.
-  borderLeftColor = window.getComputedStyle(toc)["border-left-color"];
-  toc.style["border-left"] = "none";
+  // All of this work is only necessary if there *is* a ToC.
+  // (This check assures that if you ask for a persistent-toc on a document
+  // that doesn't actually have any sections, you don't get an error from
+  // the code that attempts to construct it.)
+  if (toc) {
+    // Setting the border-left-style in CSS will put a thin border-colored
+    // stripe down the right hand side of the window. Here we get the color
+    // of that stripe and then remove it. We'll put it back when we
+    // expand the ToC.
+    borderLeftColor = window.getComputedStyle(toc)["border-left-color"];
+    toc.style["border-left"] = "none";
 
-  const tocOpenScript = document.querySelector("script.tocopen");
-  const tocOpen = document.querySelector("nav.tocopen");
-  tocOpen.innerHTML = tocOpenScript.innerHTML;
-  tocOpen.onclick = showToC;
+    const tocOpenScript = document.querySelector("script.tocopen");
+    const tocOpen = document.querySelector("nav.tocopen");
+    tocOpen.innerHTML = tocOpenScript.innerHTML;
+    tocOpen.onclick = showToC;
 
-  const tocScript = document.querySelector("script.toc");
-  toc.innerHTML = tocScript.innerHTML;
+    const tocScript = document.querySelector("script.toc");
+    toc.innerHTML = tocScript.innerHTML;
 
-  tocOpen.style.display = "inline";
-  /* N.B. these z-index changes "make sure" that the persistent ToC is visible
-     in the nav bar, but they also interact with the z-index of the nav bar. If
-     you're thinking of changing these, think of changing scss/media-screen.scss
-     as well. */
-  tocOpen.style.zIndex = 101;
-  toc.style.zIndex = 102;
+    // N.B. there are scss/media-screen.scss properties to set the display
+    // and z-index of tocOpen and toc because they interact with the nav bar.
+    // The properties are set in CSS, not explicitly here, so that they're
+    // easier for users to customize.
 
-  if (window.location.search === "?toc") {
-    showToC(null);
-  } else {
-    // If we're not going to jump immediately to the ToC,
-    // add the slide class for aesthetics if the user clicks
-    // on it.
-    toc.classList.add("slide");
+    if (window.location.search === "?toc") {
+      showToC(null);
+    } else {
+      // If we're not going to jump immediately to the ToC,
+      // add the slide class for aesthetics if the user clicks
+      // on it.
+      toc.classList.add("slide");
+    }
   }
 })();
