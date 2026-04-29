@@ -1,4 +1,4 @@
-/* This is based on persistent-toc.js DocBook xslTNG version 2.7.7, https://xsltng.docbook.org */
+/* This is based on persistent-toc.js DocBook xslTNG version 2.8.0, https://xsltng.docbook.org */
 (function() {
   const ESC = 27;
   const SPACE = 32;
@@ -7,7 +7,7 @@
   let borderLeftColor = "white";
   let curpress = null;
   let searchListener = false;
-  let VERSION = "2.7.7";
+  let VERSION = "2.8.0";
   let PTOCID = "ptoc-data-file";
 
   const showToC = function(event) {
