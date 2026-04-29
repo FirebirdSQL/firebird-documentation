@@ -1,8 +1,6 @@
 How to generate chunked output
 ------------------------------
 
-NOTE: Creating chunked output is experimental.
-
 1. Download and unzip latest docbook-xsltng from https://codeberg.org/DocBook/xslTNG/releases \
    When a new release is used, check if `css/firebird.css`, `css/firebird-toc.css` and 
    `js/firebird-persistent-toc.js` in `src/theme/dockbook5` need to be changed (e.g. by 
