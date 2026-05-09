@@ -15,6 +15,7 @@ Please note that these are things we came across or thought of while working on 
   - Rework examples of plan outputs to account for schema-qualification in output
   - Add examples in DDL `langref-ddl-schema`
 - Document scope specifier (done in select, may need its own section?)
+  - Partially done in structure (langref-structure-identifier-chains)
 - User-defined functions can no longer override built-in functions, see if this needs to be accounted for somewhere
 - Default keyword in argument list
   - https://github.com/FirebirdSQL/firebird/issues/7566
@@ -31,3 +32,4 @@ Please note that these are things we came across or thought of while working on 
   - https://github.com/FirebirdSQL/firebird/issues/1095
 - Document `ALTER PACKAGE BODY`/`CREATE OR ALTER PACKAGE BODY`
   - https://github.com/FirebirdSQL/firebird/pull/8309
+- References to `COLLATE` and collations need some additional reviewing
