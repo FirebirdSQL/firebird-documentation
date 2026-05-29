@@ -39,7 +39,7 @@ class DocumentationPlugin implements Plugin<Project> {
         project.apply(plugin: 'base')
 
         def extension = project.extensions.create(DOCUMENTATION_EXTENSION, DocConfigExtension, project.objects)
-        project.tasks.withType(DocConfigurable).whenTaskAdded { DocConfigurable docConfigurableTask ->
+        project.tasks.withType(DocConfigurable).configureEach { DocConfigurable docConfigurableTask ->
             log.debug("Configuring task {}", docConfigurableTask)
             docConfigurableTask.configureWith(extension)
         }
