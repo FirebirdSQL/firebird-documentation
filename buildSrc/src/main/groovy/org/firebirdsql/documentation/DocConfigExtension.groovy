@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2026 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package org.firebirdsql.documentation
 import org.firebirdsql.documentation.asciidoc.AsciidocConfig
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.model.ObjectFactory
-import org.gradle.api.provider.Property
 
 import groovy.transform.CompileStatic
 
@@ -27,25 +26,20 @@ import static groovy.lang.Closure.DELEGATE_FIRST
 @CompileStatic
 class DocConfigExtension {
 
-    final DirectoryProperty configRootDir
-    final DirectoryProperty styleDir
     final DirectoryProperty docRoot
     final DirectoryProperty outputRoot
-    final Property<String> defaultBaseName
     final AsciidocConfig asciidocConfig
 
     DocConfigExtension(ObjectFactory objectFactory) {
-        configRootDir = objectFactory.directoryProperty()
-        styleDir = objectFactory.directoryProperty()
         docRoot = objectFactory.directoryProperty()
         outputRoot = objectFactory.directoryProperty()
-        defaultBaseName = objectFactory.property(String)
         asciidocConfig = new AsciidocConfig(objectFactory)
         asciidocConfig.sourceDir.convention(docRoot.dir('asciidoc'))
         asciidocConfig.outputDir.convention(outputRoot.dir('asciidoc'))
     }
 
     void asciidocConfig(Closure cfg) {
+        println("***HERE***")
         Closure configurator = (Closure) cfg.clone()
         configurator.delegate = asciidocConfig
         configurator.resolveStrategy = DELEGATE_FIRST

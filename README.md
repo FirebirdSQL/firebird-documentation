@@ -44,10 +44,10 @@ To get more information on a task, use
 .\gradlew help --task=asciidocHtml [ Windows ]
 ```
 
-The `docbookHtml` and `docbookPdf` tasks are available to build documentation
-that has not been migrated to AsciiDoc. However, if you feel the need to build
-those documents, it might be an indication they need to be migrated. Please
-ask for guidance or help on the [firebird-devel list](https://groups.google.com/g/firebird-devel).
+The repository also contains DocBook 4 sources of some older, unmaintained,
+documentation. Building these directly is [no longer supported](devdoc/adr/2026-01-remove-docbook4-build-code.adoc).
+If you need to build those documents, it might be an indication they need to be
+migrated to AsciiDoc. Please ask for guidance or help on the [firebird-devel list](https://groups.google.com/g/firebird-devel).
 
 If you have any questions, *first* get the [Docbuilding Howto](https://firebirdsql.org/file/documentation/html/en/firebirddocs/docbuildhowto/firebird-docbuilding-howto.html) and [Docwriting Guide](https://www.firebirdsql.org/file/documentation/html/en/firebirddocs/docwritehowto/firebird-docwriting-guide.html)
 at:
