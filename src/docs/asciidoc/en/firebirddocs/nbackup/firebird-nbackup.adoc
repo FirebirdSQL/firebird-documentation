@@ -20,24 +20,28 @@ toc::[]
 [[nbackup-intro]]
 == Introduction
 
-[term]_Nbackup_ is a backup utility included in the Firebird download packages since version 2.0.
-It offers possibilities not present in [term]_gbak_ -- Firebird's pre-existing backup tool -- but doesn't replace the latter.
-Both programs have their strengths and weaknesses;
-they will likely coexist for some time to come.
+_Nbackup_ is a physical backup utility included with Firebird.
+It offers possibilities -- like incremental backup -- not present in _gbak_ -- Firebird's other backup tool.
+Both programs have their strengths and weaknesses, and are complementary.
 
 [[nbackup-overview]]
 == Nbackup features -- an overview
 
 With nbackup, you can perform two different kinds of tasks:
 
-. Making and restoring of both full and [term]_incremental_ backups.
-An [term]_incremental backup_ only contains the mutations since some specific previous backup. 
-This task can be performed only with Firebird command-line tool nbackup.
-. Locking the main database file, so you can subsequently back it up yourself with copying or backup tools of your own choice.
+. Making and restoring of -- both full and _incremental_ -- _physical_ backups.
++
+An _incremental backup_ only contains the mutations since some previous backup.
++
+A _physical backup_ stores the data pages as-is.
+. Locking the main database file, so content of the main database are stable until it's unlocked.
++
+You can subsequently back it up yourself with file copy or backup tools of your own choice.
++
 In this mode, nbackup doesn't back up anything;
-it just creates the conditions under which you can safely make the backup yourself.
+it just creates the conditions so you can safely make the backup yourself.
 There's a provision for restoring here, too. 
-Locking is necessary to make valid backups of Firebird databases inside virtual machines: without locking a database before backup of VM, the database file in the VM backup could be inconsistent. 
+Locking is necessary to make valid backups of Firebird databases inside virtual machines: without locking a database before backup or snapshot of a VM, the database file in the VM backup could be inconsistent.
 See <<nbackup-lock-virtual-machine>>.
 
 Both modes can operate on an active database, without hindering connected users.
@@ -48,20 +52,29 @@ In these respects nbackup doesn't differ from gbak.
 [[nbackup-advantages]]
 === Advantages of nbackup
 
-* _Both modes:_ high speed (as high as hardware and OS will allow), because nbackup doesn't look at the actual data.
-In backup mode the contents are written more or less blindly to the backup file.
-* _Backup/restore mode:_ time and disk space savings, because you don't need to make a full backup every time.
+Both modes::
+High speed (as high as hardware and OS will allow), because nbackup doesn't look at the actual data.
+In backup mode, the contents are written more or less blindly to the backup file.
+
+Backup/restore mode::
+Time and disk space savings, because you don't need to make a full backup every time.
 This can make a huge difference with databases in the gigabyte range.
-* _Lock/unlock mode:_ total freedom in your choice of backup, copy, and/or compression tools.
+
+Lock/unlock mode::
+Total freedom in your choice of backup, copy, and/or compression tools.
 
 [[nbackup-limitations]]
 === Limitations of nbackup
 
-* Nbackup will not sweep and compact your database the way gbak does (in a case of backup with subsequent restore).
+* Nbackup will not sweep the database during backup;
+it only copies physical data pages without interpreting or rewriting data on those pages.
+* Nbackup does not compact the database during restore;
+it only writes physical data pages as they appear in the backup file.
 * You can't change the database owner with an nbackup backup/restore cycle, like you can with gbak.
 * Nbackup can't make [term]_transportable backups_.
-A nbackup backup cannot be restored on an incompatible platform or under another server version.
-* At this moment, nbackup should not be used on multi-file databases.
+** A backup cannot be restored on an incompatible platform,
+** or under another server version (it cannot perform an ODS upgrade).
+* Nbackup should not be used on multi-file databases.
 * Nbackup itself can only back up local databases.
 However, in Firebird 2.5 and above its backup and restore tasks can also be performed remotely through the Services Manager.
 * Except when the Services Manager is used (in Firebird 2.5+) backing up with nbackup requires direct access to the database file.
@@ -91,116 +104,117 @@ The "`Short`" variant takes the same arguments as the long form, but these are l
 ^| Function
 ^| Added
 
-|-BACKUP {_level_ {vbar} _guid_} _database_ [_filename_]
-|-B
-|Make level-__level__ backup of database to file, since 4.0 _guid_ selects the most recent backup of a read-only standby database, and backs up all changes since that backup
+|-{wj}BACKUP {_level_ {vbar} _guid_} _database_ [_filename_]
+|-{wj}B
+a|Make backup of database to file. +
+First argument is either the backup _level_, or -- Firebird 4{plus} -- the _guid_ of the previous backup.
 |{nbsp}
 
-|-RESTORE _database_ [_filename_ ...]
-|-R
+|-{wj}RESTORE _database_ [_filename_ ...]
+|-{wj}R
 |Restore database from backup file(s)
 |{nbsp}
 
-|-LOCK _database_
-|-L
+|-{wj}LOCK _database_
+|-{wj}L
 |Lock database
 
 To unlock, use `-{wj}UNLOCK`.
 |{nbsp}
 
-|-UNLOCK _database_
-|-UN
+|-{wj}UNLOCK _database_
+|-{wj}UN
 |Unlock database and merge back changes.
 |3.0
 
-|-N _database_
+|-{wj}N _database_
 |{nbsp}
 |Unlock database and merge back changes (_deprecated_ since 3.0, use `-{wj}UNLOCK`).
 |{nbsp}
 
-|-FIXUP _database_
-|-F
+|-{wj}FIXUP _database_
+|-{wj}F
 |Forcibly unlock user-restored database.
 
 Changes are *not* merged back.
 |{nbsp}
 
-|-SIZE
-|-S
-|Give size in database pages (with `-{wj}LOCK`)
+|-{wj}SIZE
+|-{wj}S
+|Report database size in database pages (with `-{wj}LOCK`)
 |2.1
 
-|-NODBTRIGGERS
-|-NOD
+|-{wj}NODBTRIGGERS
+|-{wj}NOD
 |Suppress database triggers (with `-{wj}BACKUP`, `-{wj}LOCK`, `-{wj}UNLOCK`)
 |3.0
 
-|-T
+|-{wj}T
 |{nbsp}
 |Suppress database triggers (_deprecated_ since 3.0, use `-{wj}NODBTRIGGERS`)
 |2.1
 
-|-DIRECT {ON {vbar} OFF}
-|-D
+|-{wj}DIRECT {ON {vbar} OFF}
+|-{wj}D
 |Direct I/O on/off (with `-{wj}BACKUP`)
 |2.1.4
 
-|-INPLACE
-|-I
+|-{wj}INPLACE
+|-{wj}I
 |Restore incremental backup(s) to existing database (can corrupt database when used incorrectly);
 requires `-{wj}RESTORE`
 |4.0
 
-|-DECOMPRESS _command_
-|-DE
+|-{wj}DECOMPRESS _command_
+|-{wj}DE
 |Command to extract archives during restore;
 requires `-{wj}RESTORE`
 |3.0
 
-|-SEQUENCE
-|-SEQ
+|-{wj}SEQUENCE
+|-{wj}SEQ
 |Preserve original replication sequence;
 requires `-{wj}RESTORE`
 |4.0
 
-|-USER _username_
-|-U
+|-{wj}USER _username_
+|-{wj}U
 |Supply username (with `-{wj}BACKUP`, `-{wj}LOCK`, `-{wj}UNLOCK`)
 |{nbsp}
 
-|-ROLE _role_
-|-RO
+|-{wj}ROLE _role_
+|-{wj}RO
 |SQL role name (with `-{wj}BACKUP`, `-{wj}LOCK`, `-{wj}UNLOCK`)
 |3.0
 
-|-PASSWORD _password_
-|-P
+|-{wj}PASSWORD _password_
+|-{wj}P
 |Supply password (with `-{wj}BACKUP`, `-{wj}LOCK`, `-{wj}UNLOCK`)
 |{nbsp}
 
-|-FETCH_PASSWORD _filename_
-|-FE
+|-{wj}FETCH_PASSWORD _filename_
+|-{wj}FE
 |Fetch password from file (with `-{wj}BACKUP`, `-{wj}LOCK`, `-{wj}UNLOCK`)
 |2.5
 
-|-CLEAN_HISTORY
-|-CLEAN_HIST
+|-{wj}CLEAN_HISTORY
+|-{wj}CLEAN_HIST
 |Clean old records from backup history;
 requires `-{wj}KEEP` and `-{wj}BACKUP`
 |4.0.3
 
-|-KEEP _n_ {ROWS {vbar} DAYS}
-|-K _n_ {R {vbar} D}
+|-{wj}KEEP _n_ {ROWS {vbar} DAYS}
+|-{wj}K _n_ {R {vbar} D}
 |How many recent rows (or days back from today) should be kept in the history;
 requires `-{wj}CLEAN_HISTORY` and `-{wj}BACKUP`
 |4.0.3
 
-|-Z
+|-{wj}Z
 |{nbsp}
 |Version info (by itself or with `-{wj}BACKUP`, `-{wj}RESTORE`, `-{wj}LOCK`, `-{wj}UNLOCK`, `-{wj}FIXUP`)
 |2.5
 
-|-?
+|-{wj}?
 |{nbsp}
 |Help (switches off all other parameters)
 |2.5
@@ -217,28 +231,28 @@ The following table gives the details:
 ^| Function
 ^| Access
 
-|-BACKUP
+|-{wj}BACKUP
 |Backup
 |server + file
 
-|-RESTORE
+|-{wj}RESTORE
 |Restore
 |file
 
-|-LOCK
+|-{wj}LOCK
 |Lock
 |server
 
-|-UNLOCK
+|-{wj}UNLOCK
 |Unlock (undo `-{wj}L`)
 |server
 
-|-N
+|-{wj}N
 |Unlock (undo `-{wj}L`)
 |server
 
-|-FIXUP
-|Unlock after user restore
+|-{wj}FIXUP
+|Forcibly unlock after user restore
 |file
 |===
 
@@ -249,23 +263,15 @@ Where filesystem access is required (with `-{wj}BACKUP`, `-{wj}RESTORE` and `-{w
 Where filesystem access is required exclusively (with `-{wj}RESTORE` and `-{wj}FIXUP`), the user need not have a Firebird login and a running Firebird server need not be present.
 
 Please notice: The above table and text concern access to the _database_.
-Access to the backup file is -- obviously -- always on the filesystem level.
+Access to the backup file is always on the filesystem level.
 
 [[nbackup-backups]]
 == Making and restoring backups
 
-To begin with: `nbackup.exe` is located in the `bin` subdirectory of your Firebird folder.
+To begin with: `nbackup` is located in your Firebird folder.
 Typical locations are e.g. `C:\Program Files\Firebird\Firebird_3_0` or `C:\Program Files\Firebird\Firebird_2_0\bin` (Windows) or `/opt/firebird/bin` (Linux).
 Just like most of the tools that come with Firebird, nbackup has no graphical interface;
 you launch it from the command prompt or call it from within a batch file or application.
-
-[WARNING]
-====
-Under heavy-load circumstances in some environments, nbackup of Firebird 2.0.3 and below may cause problems that will lead to deadlocks or even corrupted databases.
-While these problems aren't common, they are serious enough to warrant upgrading to Firebird 2.0.4 or higher if you want to use nbackup comfortably.
-If it concerns large databases under Posix, the use of direct I/O may also make a difference.
-More about this in the section <<nbackup-backups-directio,[ref]_Direct I/O_>>.
-====
 
 [[nbackup-backups-full]]
 === Full backups
@@ -280,35 +286,37 @@ To make a full database backup, the command syntax is:
 nbackup [-USER _user_ -PASSWORD _password_] -BACKUP 0 _database_ [_backupfile_]
 ----
 
-For instance, assuming the database is located in  `C:\Data`, and  `nbackup.exe ` is in the search of path Windows:
+For instance, assuming the database is located in  `C:\Data`, and `nbackup.exe` is in the search path of Windows:
 
 [listing]
 ----
 C:\Data>nbackup -BACKUP 0 inventory.fdb inventory_1-Mar-2006.nbk
 ----
 
-Or, if Firebird (from version 2.5) is running on non-standard port, in this example, 3051:
+Or, if Firebird (from version 2.5) is running on a non-standard port, in this example, 3051:
 [listing]
 ----
 C:\Data>nbackup -BACKUP 0 localhost/3051:C:\Data\inventory.fdb C:\Data\inventory-level-0-Jul-2020.nbk -user SYSDBA -pass masterkey
 ----
 
-In Firebird 3.0 and higher, in a case of successful completing the backup, the nbackup will print the short statistics:
+On Firebird 3.0 and higher, specifying localhost may be required if you use SuperServer mode.
+Otherwise, nbackup may attempt to use an embedded connection to lock the database, and this can fail because in SuperServer mode, the server opens the database file with exclusive access.
+
+In Firebird 3.0 and higher, in a case of successful completing the backup, nbackup prints short statistics:
 ----
 time elapsed    0 sec
 page reads      307
 page writes     307
 ----
 
-.Comments
 [[nbackup-backups-comments]]
-* The [term]_backup level_ 0 indicates a full backup.
-Backup levels greater than 0 are used for incremental backups;
+* The _backup level_ 0 indicates a full backup.
+Backup levels greater than 0, or a GUID, are used for incremental backups;
 we'll discuss those later on.
 * Instead of a database filename you may also use an alias.
 * Instead of a backup filename you may also specify `stdout`.
 This will send the backup to standard output, from where you can redirect it to e.g. a tape archiver or a compression tool.
-* [[nbackup-backups-nologin]]The `-USER` and `-PASSWORD` parameters may be omitted if at least one of the following conditions is met:
+* [[nbackup-backups-nologin]]The `-{wj}USER` and `-{wj}PASSWORD` parameters may be omitted if at least one of the following conditions is met:
 +
 --
 ** The environment variables `ISC_USER` and `ISC_PASSWORD` have been set, either to `SYSDBA` or to the owner of the database.
@@ -321,21 +329,25 @@ In Firebird 2.1, this automatically gives you `SYSDBA` rights.
 In Firebird 2.5 and above, there is the additional condition that `AUTO ADMIN MAPPING` has been set in the database.
 --
 +
-For clarity and brevity, the `-USER` and `-PASSWORD` parameters are not used in the examples.
-* Starting with Firebird 2.5, instead of `-P __password__` (or `-PASSWORD __password__`) you may also use `-FE __filename__` (or `-FETCH_PASSWORD __filename__`).
+For clarity and brevity, the `-{wj}USER` and `-{wj}PASSWORD` parameters are not used in the examples.
+* Starting with Firebird 2.5, instead of  `-PASSWORD __password__`, you may also use `-FETCH_PASSWORD __filename__`.
 This will cause nbackup to fetch the password from the given file.
-With `-FE`, the password itself doesn't appear in the command and will thus be better shielded against people who might otherwise pick it up via the command history, the `w` command on Unix or from a script or batch-file.
-* In Firebird 3.0 and up, the firing of database triggers can be prevented by specifying the `-NODBTRIGGERS` option.
+With `-{wj}FETCH_PASSWORD`, the password itself doesn't appear in the command and will thus be better shielded against people who might otherwise pick it up via the command history, the `w` command on Unix or from a script or batch-file.
+* Firing of database triggers can be disabled by:
++
+--
+** In Firebird 3.0 and up, specifying the `-{wj}NODBTRIGGERS` option.
+** In Firebird 2.1 and up, specifying the `-{wj}T` option.
++
+The `-{wj}T` option was deprecated in Firebird 3.0 in favour of `-{wj}NODBTRIGGERS`.
+--
 For more information, see <<nbackup-backups-dbtriggers,[ref]_Suppressing database triggers_>>.
-* In Firebird 2.1 and up, the firing of database triggers can be prevented by specifying the `-T` option.
-For more information, see <<nbackup-backups-dbtriggers,[ref]_Suppressing database triggers_>>.
-The `-T` option was deprecated in Firebird 3.0 in favour of `-NODBTRIGGERS`.
-* Starting with Firebird 2.1.4, it is possible to force direct I/O on or off by specifying `-D ON` or `-D OFF`.
+* Starting with Firebird 2.1.4, it is possible to force direct I/O on or off by specifying `-{wj}D ON` or `-{wj}D OFF`.
 For details and background see <<nbackup-backups-directio,[ref]_Direct I/O_>>, elsewhere in this manual.
-* The different parameters (`-BACKUP`, `-USER` etc.) may occur in any order.
+* The different options (`-{wj}BACKUP`, `-{wj}USER` etc.) may occur in any order.
 Of course each parameter should be immediately followed by its own argument(s).
-In the case of `-BACKUP` there are three of them: backup level or guid, database, and backup file -- in that order!
-* If the `-B` parameter comes last, you _may_ leave out the name of the backup file.
+In the case of `-{wj}BACKUP` there are three of them: backup level or guid, database, and backup file -- in that order!
+* If the `-{wj}BACKUP` parameter comes last, you _may_ leave out the name of the backup file.
 In that case nbackup will compose a filename based on the database name, the backup level, and the current date and time.
 This can lead to a name clash (and a failed backup) if two backup commands of the same level are issued in the same minute.
 
@@ -351,14 +363,16 @@ This can lead to corruption and loss of data, despite the fact that nbackup will
 NOTE: What follows here is not necessary knowledge to use nbackup.
 It just gives a rough (and incomplete) impression of what happens under the hood during execution of `nbackup -BACKUP`:
 
-. First of all, the main database file is locked by changing an internal state flag.
-From this moment on, any and all mutations in the database are written to a temporary file -- the difference file or [term]_delta file_.
+. The main database file is locked by changing an internal state flag.
++
+From this moment on, mutations in the database are written to a temporary file -- the difference file or _delta file_.
 By default, the delta file is created in the same folder as a database file, with the additional extension `.delta`, for example: MyDatabase.fdb.delta
 . Then the actual backup is made.
 This isn't a straight file copy;
 restoring must be done by nbackup as well.
-. Upon completion of the backup, the contents of the delta file are integrated with the main database file.
-After that, the database is unlocked (flag goes back to "`normal`") and the delta is removed.
+. Upon completion of the backup,
+.. The contents of the delta file are integrated with the main database file.
+.. The database is unlocked (flag goes back to "`normal`") and the delta is removed.
 
 The functionality of steps 1 and 3 is provided by two new SQL statements: `ALTER DATABASE BEGIN BACKUP` and `ALTER DATABASE END BACKUP`.
 Contrary to what the names suggest, these statements do _not_ take care of making the actual backup;
@@ -382,19 +396,17 @@ For instance:
 C:\Data> nbackup -RESTORE inventory.fdb inventory_1-Mar-2006.nbk
 ----
 
-.Comments
 [[nbackup-restore-comments]]
 * You don't specify a level for a restore.
-* When restoring, the `-RESTORE` parameter _must_ come last, for reasons that will become clear later.
+* When restoring, the `-{wj}RESTORE` parameter _must_ come last, for reasons that will become clear later.
 * Instead of a database filename you may also use an alias.
 * If the specified database file already exists, the restore fails, and you get an error message.
-* Here too, you may omit the name of the backup file.
+* You may omit the name of the backup file.
 If you do, nbackup will prompt you for it.
-_(Attention! In Firebird 2.0.0 this "`interactive restore`" feature is broken, leaving you with an error message and a failed restore. Fixed in 2.0.1.)_
 * Restoring works purely on the filesystem level and can even be done without a Firebird server running.
-Any credentials supplied via the `-USER` and `-PASSWORD` parameters are ignored.
+Any credentials supplied via the `-{wj}USER` and `-{wj}PASSWORD` parameters are ignored.
 The same goes for passwords read from a file.
-However, nbackup _does_ try to read the password from the file if the `-FETCH_PASSWORD` parameter is present, and if an error occurs, the entire operation is abandoned.
+However, nbackup _does_ try to read the password from the file if the `-{wj}FETCH_PASSWORD` parameter is present, and if an error occurs, the entire operation is abandoned.
 
 [[nbackup-backups-incr]]
 === Incremental backups
@@ -403,7 +415,9 @@ However, nbackup _does_ try to read the password from the file if the `-FETCH_PA
 ==== Making incremental backups
 
 To make an incremental ("`differential`") backup, specify a backup level greater than 0.
-An incremental backup of level `N` always contains the database mutations since the most recent level `N-1` backup.
+An incremental backup of level `__N__` always contains the database mutations since the most recent level `__N__-1` backup.
+
+If instead of a level, a GUID is specified, all changes since the backup identified by the GUID are backed up.
 
 Examples:
 
@@ -478,9 +492,9 @@ Of course the line has been split here for layout reasons only -- in reality you
 
 .Comments (in addition to the <<nbackup-restore-comments,comments with restoring a full backup>>)
 
-* Because it is not known beforehand how many filenames will follow the `-RESTORE` switch (as we don't specify a level when restoring), nbackup considers all arguments after the `-RESTORE` to be names of backup files.
-It is for this reason that no other parameter may follow the list of filenames.
-* There is no formal limit to the number of backup levels, but in practice it will rarely make sense to go beyond 3 or 4.
+* Because it is not known beforehand how many filenames will follow the `-{wj}RESTORE` switch (as we don't specify a level when restoring), nbackup considers all arguments after the `-{wj}RESTORE` to be names of backup files.
+It is for this reason that no other options may follow the list of filenames.
+* There is no formal limit to the number of backup levels, but we think it will rarely make sense to go beyond 3 or 4.
 
 [[nbackup-backups-incr-nonfitting]]
 ===== Non-connecting links
@@ -501,29 +515,30 @@ if somewhere in the chain the links don't connect, the operation is cancelled, a
 
 Firebird databases need not be files;
 they can also be placed on a so-called [term]_raw device_, for instance a disk partition without a file system.
-The question of where the <<nbackup-backups-workings,delta>> has to be placed in such cases was at first overlooked during the development of `nbackup`.
-On Posix systems, if the database was located at e.g. `/dev/hdb5`, it could happen that the delta was created as `/dev/hdb5.delta`.
-In light of the nature and purpose of the `/dev` directory and its often limited available space, this is undesirable.
 
 As of Firebird 2.1, nbackup refuses to operate on raw-device databases unless an explicit location for the delta file has been set.
 The way to do this is discussed in <<nbackup-deltafile>>, later on in this manual.
+
+The question of where the <<nbackup-backups-workings,delta>> has to be placed for a database on a raw device was initially overlooked.
+On Posix systems, if the database was located at e.g. `/dev/hdb5`, the default delta would be created as `/dev/hdb5.delta`.
+In light of the nature and purpose of the `/dev` directory and its often limited available space, this is undesirable.
 
 [[nbackup-backups-dbtriggers]]
 === Suppressing database triggers (Firebird 2.1+)
 
 Firebird 2.1 introduced the concept of [term]_database triggers_.
-Certain types of these triggers can fire upon making or breaking a database connection.
+These triggers can fire upon opening or closing a database connection.
 As part of the backup process, nbackup opens a regular connection to the database (in some versions even more than once).
-To prevent database triggers from firing inadvertently, the `-T` or -- since Firebird 3.0 -- `-NODBTRIGGERS` switch can be used.
+To prevent database triggers from firing inadvertently, the `-{wj}T` or -- since Firebird 3.0 -- `-{wj}NODBTRIGGERS` switch can be used.
 
 [[nbackup-backups-directio]]
 === Direct I/O (Firebird 2.1.4+)
 
-Originally, nbackup used direct I/O only when making a backup under Windows NT (and successors like 2000, 2003 etc).
+Originally, nbackup used direct I/O only when making a backup under Windows.
 On all other OS'es, direct I/O was off.
 This caused problems on some Linux systems, so in versions 2.0.6 and 2.1.3 direct I/O was switched on under Linux as well.
 However, this turned out to be problematic for certain other Linux configurations.
-In 2.1.4 and 2.5 the original behaviour was restored, but this time as a default that was overridable by a newly added parameter: `-D`.
+In 2.1.4 and 2.5 the original behaviour was restored, but this time as a default that was overridable by a newly added parameter: `-{wj}D`.
 Its use is as follows:
 
 [source]
@@ -535,32 +550,35 @@ nbackup -B 0 mugs.fdb mugs.nbk -D off   -- direct I/O off
 Just like the option letters themselves, the arguments `ON` and `OFF` are case-insensitive.
 
 Direct I/O is only applied when making a backup, not during a restore.
-Under Windows it is realized by setting `FILE_FLAG_NO_BUFFERING`.
+Under Windows, this is realized by setting `FILE_FLAG_NO_BUFFERING`.
 On other systems, `O_DIRECT` and `POSIX_FADV_NOREUSE` are used.
 The latter two are sometimes unavailable;
 in such cases, they are (or one of them is) silently left out.
-Even if the user specified `-D on` explicitly, this doesn't lead to a warning or error message.
+Even if the user specified `-{wj}D on` explicitly, this doesn't lead to a warning or error message.
 
 [[nbackup-backups-inform-options]]
 === Informational options (Firebird 2.5+)
 
-Apart from the already mentioned `-FE` and `-D` parameters, Firebird 2.5 also saw the introduction of the following two:
+Since Firebird 2.5, nbackup also offers the following informational options:
 
-`-Z`::
+[horizontal.compact]
+`-{wj}Z`::
 Shows single-line version information.
-This option can be used independently, but also in combination with other parameters, such as `-B`, `-R`, `-L` etc.
++
+This option can be used independently, but also in combination with other parameters, such as `-{wj}BACKUP`, `-{wj}RESTORE`, `-{wj}LOCK`, etc.
 
-`-?`::
+`-{wj}?`::
 Shows a summary of nbackup's usage and command-line parameters.
-Attention: If this option is present, all the other parameters are ignored!
++
+If this option is present, all other options are ignored!
 
 [[nbackup-backups-remote]]
 === Backups on remote machines (Firebird 2.5+)
 
 Nbackup itself only operates on local databases.
 But in Firebird 2.5 and up, nbackup-type backups and restores can also be performed remotely via the Services Manager.
-For this, the program `fbsvcmgr.exe` on the local machine is used;
-it is located in the same folder as `nbackup.exe` and the other Firebird command-line tools.
+For this, the program `fbsvcmgr` on the local machine can be used;
+it is located in the same folder as `nbackup` and the other Firebird command-line tools.
 The first argument is always "```hostname:service_mgr```", with `hostname` being the name of the remote server.
 Other available parameters are:
 
@@ -612,14 +630,14 @@ The hyphens before the parameter names may be omitted, but especially with long 
 
 Comments:
 
-* The Services Manager always requires authentication, be it automatic (root under Posix, trusted under Windows) or explicit through the parameters `-user` and `-password`.
+* The Services Manager always requires authentication, be it automatic (root under Posix, trusted under Windows) or explicit through the parameters `-{wj}user` and `-{wj}password`.
 The environment variables `ISC_USER` and `ISC_PASSWORD` are not used.
 `AUTO ADMIN MAPPING` in the database has no effect when connecting remotely (though this may also depend on the configuration of the network).
 + 
 Note: When Windows trusted authentication is in effect, the account name of the user on the local machine is passed to the Services Manager on the remote machine.
 If the owner of the remote database is a Windows account (e.g. `FRODO\PAUL`) rather than a Firebird account, _and_ the Windows account name on the local machine is the same as the owner account name on the remote machine, the caller is acknowledged as the database owner and allowed to make a backup.
 This could pose a security risk, because even on local networks user `PAUL` on one machine is not necessarily the same person as user `PAUL` on another machine.
-* Restoring (`-action_nrest`) also requires authentication, but once verified the credentials are not used in any way.
+* Restoring (`-{wj}action_nrest`) also requires authentication, but once verified the credentials are not used in any way.
 Hence, the user need not be the database owner, `SYSDBA` or superuser.
 In the case of Windows trusted authentication, the user need not exist at all on the remote machine (where the database is located).
 + 
@@ -635,8 +653,8 @@ When used locally, `AUTO ADMIN MAPPING` has the intended effect;
 this is still true if you prepend `localhost:` or the name of the local machine.
 Local use of the Services Manager can be beneficial if you don't have filesystem access to the database and/or backup files, but the Firebird server process does.
 If you do have sufficient rights, then it's more practical to use nbackup itself, with its much shorter commands.
-* Specifying `-nbk_no_triggers` or `-nbk_direct` with `-action_nrest` leads to an error message.
-Nbackup itself is more lenient here: it simply ignores the `-T` and `-D` parameters if they are used in the wrong context.
+* Specifying `-{wj}nbk_no_triggers` or `-{wj}nbk_direct` with `-{wj}action_nrest` leads to an error message.
+Nbackup itself is more lenient here: it simply ignores the `-{wj}T` and `-{wj}D` parameters if they are used in the wrong context.
 * Instead of a database filename you may also use an alias.
 * Database path (or alias) length is limited to 255 characters.
 
@@ -646,9 +664,9 @@ Nbackup itself is more lenient here: it simply ignores the `-T` and `-D` paramet
 An nbackup-based incremental backup scheme could look like this:
 
 * Each month a full backup (level 0) is made;
-* Each week a level-1;
-* A level-2 backup daily;
-* A level-3 backup hourly.
+* Each week a level 1;
+* A level 2 backup daily;
+* A level 3 backup hourly.
 
 As long as all backups are preserved, you can restore the database to its state at any hour in the past.
 For each restore action, a maximum of four backup files is used.
@@ -657,9 +675,9 @@ In this case the levels 0 and 1 could be made at weekends, and level 2 at night.
 
 If you don't want to keep everything for eternity, you can add a deletion schedule:
 
-* Level-3 backups are deleted after 8 days;
-* Level-2s after a month;
-* Level-1s after six months;
+* Level 3 backups are deleted after 8 days;
+* Level 2s after a month;
+* Level 1s after six months;
 * Full backups after two years, but the first one of each year is kept.
 
 This is only an example of course.
@@ -677,11 +695,11 @@ If you have no craving for any of that: good luck in your work with nbackup!
 == Locking and unlocking
 
 If you prefer to use your own backup tools or just make a file copy, nbackup's lock-unlock mode comes into view.
-"`Locking`" means here that the main database file is frozen temporarily, not that no changes can be made to the database.
+Here, "`Locking`" means that the main database file is frozen temporarily, not that no changes can be made to the database.
 Just like in backup mode, mutations are directed to a temporary delta file;
-upon unlocking, the delta file is merged with the main file.
+upon unlocking, the delta file is merged into the main file.
 
-As a reminder: `nbackup.exe` is located in the `bin` subdirectory of your Firebird folder.
+As a reminder: `nbackup` is located in your Firebird folder.
 Typical locations are e.g. `C:\Program Files\Firebird\Firebird_3_0` or `C:\Program Files\Firebird\Firebird_2_0\bin` (Windows) or `/opt/firebird/bin` (Linux).
 There's no GUI;
 you launch it from the command prompt or call it from within a batch file or application.
@@ -691,80 +709,79 @@ you launch it from the command prompt or call it from within a batch file or app
 
 A typical session in which you make your own backup goes as follows:
 
-. Lock the database with the `-L` (lock) switch:
+. Lock the database with the `-{wj}LOCK` switch:
 +
 [listing,subs=+quotes]
 ----
-nbackup [-U _user_ -P _password_] -L _database_
+nbackup [-U _user_ -P _password_] -LOCK _database_
 ----
 . Now copy/backup/zip the database file to your heart's content, with your own choice of tools. A simple file copy is also possible.
-. Unlock the database with `-N` (uNlock), or -- since Firebird 3.0 -- `-UN`:
+. Unlock the database with `-UNLOCK`, or -- Firebird 2.5 and older -- `-N` (uNlock):
 +
 [listing,subs=+quotes]
 ----
-nbackup [-U _user_ -P _password_] -N _database_
+nbackup [-U _user_ -P _password_] -UNLOCK _database_
 ----
 
-The last command will also cause any mutations -- which have been written to the delta file -- to be merged into the main file.
+The last command will also cause any mutations -- written to the delta file -- to be merged into the main file.
 
 The backup you made contains the data as they were at the moment the database was locked, regardless how long the locked state has lasted, and regardless how long you may have waited before making the actual backup.
 
-Comments:
-
 * Instead of a database filename you may also specify an alias.
-* The `-U` and `-P` parameters may be omitted if the envars `ISC_USER` and `ISC_PASSWORD` are set, if you are root on a Posix system, or if trusted authentication under Windows permits it.
+* The `-{wj}USER` and `-{wj}PASSWORD` parameters may be omitted if the environment variables `ISC_USER` and `ISC_PASSWORD` are set, if you are root on a Posix system, or if trusted authentication under Windows permits it.
 For a detailed description see the <<nbackup-backups-nologin,comments under [ref]_Making full backups_>>.
-* Starting with Firebird 2.5, instead of `-P __password__` you may also use `-FE __filename__`.
-* Both `-L` and `-N` (`-UN`) make a regular connection to the database, so in Firebird 2.1 and above it may be wise to add the `-T` (or `-NODBTRIGGERS`) parameter (see <<nbackup-backups-dbtriggers,[ref]_Suppressing database triggers_>>).
-* If you're locking a raw-device database with Firebird 2.1 or above, the `-S` option can be very helpful;
+* Starting with Firebird 2.5, instead of `-{wj}PASSWORD __password__` you may also use `-{wj}FETCH_PASSWORD __filename__`.
+* Both `-{wj}LOCK` and `-{wj}UNLOCK` (`-N` in Firebird 2.5 and older) make a regular connection to the database, so in Firebird 2.1 and above it may be wise to add the `-{wj}NODBTRIGGERS` (`-T` in Firebird 2.5 and older) options (see <<nbackup-backups-dbtriggers,[ref]_Suppressing database triggers_>>).
+* If you're locking a raw-device database with Firebird 2.1 or above, the `-{wj}SIZE` option can be very helpful for determining the actual database size;
 see <<nbackup-lock-unlock-rawdevices>>.
-* You can optionally add `-Z` to have version information printed on the first line of the output.
+* You can optionally add `-{wj}Z` to have version information printed on the first line of the output.
 
 [WARNING]
 ====
 What goes for backup/restore also applies to the lock/unlock switches: do not use them on multi-file databases.
-Until things have changed, don't let nbackup loose on multi-file databases at all!
+Don't let nbackup loose on multi-file databases at all!
 ====
 
 [[nbackup-restore-and-fixup]]
-=== Restoring a backup made after "`nbackup -L`"
+=== Restoring a backup made after "`nbackup -{wj}LOCK`"
 
 A copy of a locked database is itself a locked database too, so you can't just copy it back and start using it.
-Should your original database get lost or damaged and the self-made copy needs to be restored (or should you wish to install the copy on another machine), proceed like this:
+Should your original database get lost or damaged, and the self-made copy needs to be restored, or you wish to use the copy on another machine, proceed like this:
 
 . Copy/restore/unzip the backed-up database file yourself with the necessary tools.
-. Now forcibly unlock the database, _not_ with the `-{wj}N` (or `-{wj}UN`) switch, but with `-{wj}F` (fixup):
+. Now forcibly unlock the database, with `-{wj}FIXUP`:
 +
 [listing,subs=+quotes]
 ----
-nbackup -F _database_
+nbackup -FIXUP _database_
 ----
 +
-Here too, you can optionally use an alias instead of a filename, and add `-Z` for version info.
+Here too, you can optionally use an alias instead of a filename, and add `-{wj}Z` for version info.
 Other options make no sense.
 
-Why are there two unlock switches, `-N`/`-UN` and `-F`?
+Why are there two unlock switches, `-{wj}UNLOCK` (`-{wj}N`) and `-{wj}FIXUP`?
 
-* `-N`/`-UN` first sees that any changes made since the locking by `-L` are merged into the main database file.
+* `-{wj}UNLOCK` first merges any changes recorded in the delta file into the main database file.
++
 After that, the database goes back into normal read/write mode and the temporary file is deleted.
-* `-F` only changes the state flag of the user-restored database to "`normal`".
+* `-{wj}FIXUP` only changes the state flag of the user-restored database to "`normal`".
 The delta file is *not* merged back.
 
 So you use:
 
-* `-N`/`-UN` after having _made_ a copy or backup yourself.
+* `-{wj}UNLOCK` after having _made_ a copy or backup yourself.
 +
-This unlocks/reverses the `-{wj}L` issued earlier and merges back any changes since the database was locked.
-* `-F` after having _restored_ such a copy or backup.
+This unlocks/reverses the `-{wj}LOCK` issued earlier and merges back any changes since the database was locked.
+* `-{wj}FIXUP` after having _restored_ such a copy or backup.
 +
 This unlocks the copy, and changes are *not* merged back.
 
-.Incorrect use of `-{wj}F`/`-{wj}FIXUP` can result in data-loss.
+.Incorrect use of `-{wj}FIXUP` can result in data-loss.
 [CAUTION]
 ====
 The term fixup is used because it doesn't attempt to merge the delta-file, but makes the minimum changes necessary to make the database file usable again.
 
-If you use `-{wj}F`/`-{wj}FIXUP` on a database that is in active use, any and all changes since it was locked *are lost*.
+If you use `-{wj}FIXUP` on a database that is in active use, all changes since it was locked *are lost*.
 ====
 
 [[nbackup-lock-unlock-extrainfo]]
@@ -775,26 +792,27 @@ If you use `-{wj}F`/`-{wj}FIXUP` on a database that is in active use, any and al
 This section doesn't contain any necessary knowledge, but provides some extra information which could deepen your understanding of the various switches.
 ====
 
-`nbackup [parameter] -L` does the following:
+`nbackup -{wj}LOCK` does the following:
 
 . Connect to the database;
 . Start a transaction;
-. Call `ALTER DATABASE BEGIN BACKUP` (this statement has been discussed in the <<nbackup-backups-workings,extra information on nbackup -B>>);
+. Call `ALTER DATABASE BEGIN BACKUP` (this statement has been discussed in the <<nbackup-backups-workings,extra information on `nbackup -{wj}BACKUP`>>);
 . Commit the transaction;
 . Disconnect from the database.
 
-`nbackup [parameter] -N` follows the same steps, but with "```... END BACKUP```" in step 3.
+`nbackup -{wj}UNLOCK` follows the same steps, but with "```ALTER DATABASE END BACKUP```" in step 3.
 
-`nbackup [parameter] -F` works as follows:
+`nbackup -{wj}FIXUP` works as follows:
 
 . The restored database file is opened;
 . Within the file, the state flag is changed from locked (`nbak_state_stalled`) to normal (`nbak_state_normal`);
+. Firebird 4+: unless `-SEQUENCE` is specified, the replication sequence is reset
 . The file is closed again.
 
 [NOTE]
 ====
-nbackup `-F` operates purely on file level and can therefore also be performed without a Firebird server running.
-Any credentials supplied via the `-U`, `-P` or `-FE` parameters are ignored, just as with nbackup `-R`.
+nbackup `-{wj}FIXUP` operates purely on file level and can therefore also be performed without a Firebird server running.
+Any credentials supplied via the `-{wj}USER`, `-{wj}PASSWORD` or `-{wj}FETCH_PASSWORD` options are ignored, just as with `-{wj}RESTORE`.
 ====
 
 [[nbackup-lock-unlock-rawdevices]]
@@ -806,32 +824,34 @@ For the procedure, see <<nbackup-deltafile>>, a little further down.
 
 There's also another problem if you lock and copy a raw device: you don't know the actual size of the database!
 The raw device may be 10 GB, but the database might only take up 200 MB of that space.
-To prevent having to copy the entire device just to be on the safe side -- possibly wasting huge amounts of time and space -- Firebird 2.1 has introduced a new parameter for nbackup: `-S`.
-This parameter is only valid in combination with `-L` and when it is present, nbackup writes the database size in pages to `stdout` after locking the database.
-Because the size is given in pages, it has to be multiplied by the database page size in order to get the actual number of bytes to be copied.
-Or, if you use the `dd` copy utility, you could specify the page size as `(i)bs` and the output of `nbackup -L -S` as `count`.
+To prevent having to copy the entire device just to be on the safe side -- possibly wasting huge amounts of time and space -- Firebird 2.1 has introduced a new parameter for nbackup: `-{wj}SIZE`.
+
+This parameter is only valid in combination with `-{wj}LOCK`.
+When it is present, nbackup writes the database size in pages to `stdout` after locking the database.
+Because the size is given in pages, it has to be multiplied by the database page size to get the actual number of bytes to be copied.
+Or, if you use the `dd` copy utility, you could specify the page size as `(i)bs` and the output of `nbackup -{wj}LOCK -{wj}SIZE` as `count`.
 
 [[nbackup-lock-virtual-machine]]
 === Locking/Unlocking database in case of Virtual Machines Backup
 
-Using Virtual Machines backup tools without preparing database for such type of backup can lead to the corrupted (i.e. useless) backup copy.
+Using Virtual Machines backup tools or snapshots without preparing database for such type of backup can lead to a corrupted (i.e. useless) backup copy.
 
-Firebird server intensively uses its own cache in RAM to speed up operations, and implements complex techniques to ensure database consistency at the every given moment.
+Firebird server intensively uses its own cache in RAM to speed up operations, and implements complex techniques to ensure database consistency at every given moment.
 Virtual Machine backup tools are not aware about Firebird's cache, and usually they do not consider database files as random-access files.
 
-As a result, when the virtual machine backup is done, the database file inside it will have the state as after a hard reset of VM, and very often such copy is not consistent (i.e. corrupted).
-The chance of such problem is higher when many active users are changing the database, or if there is active sweep process.
+As a result, when the virtual machine backup is done, the database file inside it will have the same state as after a hard reset of the VM, and very often such a copy is not consistent (i.e. corrupted).
+The chance of such problem is higher when many active users are changing the database, or if there is an active sweep process.
 
 Such inconsistent backups can occur in any virtualized environment, including public clouds.
 
-In order to create good Firebird database backup with VM backup tool, it is necessary to lock database file with nbackup before the VM backup, and unlock after it. 
-Usually VM backup tool allows executing custom pre- and post-backup scripts, where you can lock/unlock Firebird databases.
+To create good Firebird database backups with VM backup tools, it is necessary to lock database files with nbackup before the VM backup, and unlock it after.
+Usually VM backup tools support execution of custom pre- and post-backup scripts, where you can lock/unlock Firebird databases.
 
 [[nbackup-deltafile]]
 == Setting the delta file
 
 By default, the delta file lives in the same directory as the database itself.
-The file name is also the same, but with `.delta` appended.
+The default filename is the database filename with `.delta` appended.
 This is usually not a problem, but sometimes it is desirable or even necessary to change the location, e.g. when the database is stored on a raw device.
 Nbackup itself has no provision for setting the location;
 this must be done through SQL.
@@ -859,15 +879,12 @@ You can also specify a custom delta location while creating a new database:
 create database '_path-and-dbname_' difference file '_path-and-deltaname_'
 ----
 
-[NOTE]
-====
-* If you specify a bare file name with `[ADD] DIFFERENCE FILE`, the delta will likely _not_ be created in the same directory as the database, but in the current directory as seen from the server.
+* If you specify a bare filename with `[ADD] DIFFERENCE FILE`, the delta will likely _not_ be created in the same directory as the database, but in the current directory as seen from the server.
 On Windows this may be the system directory.
 The same logic applies to relative paths.
 * The entire directory path must already exist.
 Firebird doesn't attempt to create any missing directories.
 * If you want to change your custom delta specification, you must first `DROP` the old one and then `ADD` the new one.
-====
 
 [[nbackup-backuphistory]]
 == Backup history
@@ -903,7 +920,7 @@ The columns of `RDB$BACKUP_HISTORY` are:
 |Backup level
 
 |RDB$GUID
-|GUID of the backup (used to check dependencies between files)
+|GUID of the backup (used to check dependencies between files, and for GUID-based incremental backups)
 
 |RDB$SCN
 |Highest page marker in the backup
@@ -938,7 +955,7 @@ That can result in nbackup not knowing where to start a next backup, requiring y
 [[nbackup-background]]
 == Technical background information
 
-Nbackup performs a physical backup of the database pages by copying pages that have been modified since the last backup of the immediately preceding level.
+Nbackup performs a physical backup of the database pages by copying pages that have been modified since the last backup of the immediately preceding level, or since the specified backup GUID.
 A level `0` backup copies all pages, while a level `1` copies only those pages that have been modified after the most recent level `0`.
 To be able to find the modified pages, Firebird uses a marker that is called the [term]_SCN_ (short for page scan).
 This number is incremented at each backup state change.
@@ -957,7 +974,8 @@ The SCN of the database before the start of the backup is recorded together with
 The very first backup gets SCN `0`, the second `3`, etc.
 This number is independent of the level of the backup.
 The SCN is used to mark the pages of a database.
-So for example:
+
+So, for example:
 
 [cols="<1m,<4", frame="none", options="header",stripes="none",grid="none"]
 |===
@@ -1000,6 +1018,8 @@ The exact file history is recorded in the firebird-documentation git repository;
 |TBD
 |MR
 a|* Remove mention of incremental backup being broken in 2.1.0 and fixed in 2.1.1.
+* Removed warnings about issues in very old and now unsupported Firebird versions
+* Misc. copy editing and rephrasing
 
 |1.9
 |04 Jul 2025
