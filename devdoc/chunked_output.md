@@ -104,6 +104,21 @@ How to generate chunked output
     -- \
     "-xsl:/input/custom.xsl"      
    ```
+
+   Firebird Configuration Reference
+   ```
+   podman run --rm \
+    -v ./build/docs/chunk:/output:U \
+    -v ./build/docs/asciidoc/docbook:/input \
+    --security-opt label=disable \
+    docbook-xslt \
+    /input/en/refdocs/fbconf/firebird-configuration-reference.xml \
+    chunk-output-base-uri=/output/en/refdocs/fbconf/ \
+    chunk=firebird-configuration-reference.html \
+    resource-base-uri=../../../ \
+    --resources:/output \
+    -- \
+    "-xsl:/input/custom.xsl"      
    
 5. Same but PowerShell syntax on Windows; paths based on my setup
 
