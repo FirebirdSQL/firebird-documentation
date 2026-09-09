@@ -25,9 +25,20 @@ DSQL, ESQL
 ----
 CREATE [GLOBAL TEMPORARY] TABLE [IF NOT EXISTS]
   [_tbl-schema_ <period>] _tablename_
-  [EXTERNAL [FILE] '_filespec_']
-  (<col_def> [, {<col_def> | <tconstraint>} ...])
+  <table-contents-source>
   [{<table_attrs> | <gtt_table_attrs>}]
+
+<table-contents-source> ::=
+    [EXTERNAL [FILE] '_filespec_'] <table-element-list>
+  | <as-subquery-clause>
+
+<table-element-list> ::=
+  (<col_def> [, {<col_def> | <tconstraint>} ...])
+
+<as-subquery-clause> ::=
+  [ (_colname_ [, _colname_ ...]) ]
+  AS { (<query-expression>) | <query-expression> }
+  [WITH [NO] DATA]
 
 <col_def> ::=
     <regular_col_def>
@@ -614,6 +625,121 @@ The `NOT NULL` constraint specifies that the column does not accept `NULL` in pl
 
 A `NOT NULL` constraint can only be defined as a column constraint, not as a table constraint.
 
+[#langref-ddl-tbl-as-query]
+=== `CREATE TABLE ... AS <subquery>`
+
+The `CREATE TABLE ... AS <subquery>` statement can be used to define a table -- and optionally populate it -- based on a query expression.
+
+.`CREATE TABLE ... AS <subquery>` syntax fragment
+[listing,subs=+quotes]
+----
+CREATE [{GLOBAL | LOCAL} TEMPORARY] TABLE
+  [IF NOT EXISTS] [_tbl-schema_ <period>] _tablename_
+  <as-subquery-clause>
+  [{<table_attrs> | <gtt_table_attrs>}]
+
+<as-subquery-clause> ::=
+  [ (_colname_ [, _colname_ ...]) ]
+  AS { (<query-expression>) | <query-expression> }
+  [WITH [NO] DATA]
+----
+
+[NOTE]
+====
+The syntax supported by Firebird has two deviations from the SQL standard syntax:
+
+* the parentheses around the _query-expression_ are optional
+* the `WITH [NO] DATA` clause is optional, defaulting to `WITH DATA`
+====
+
+The table columns are derived from the query select list.
+If a column name list is specified, it must have the same number of columns as the query result.
+Otherwise, column names are taken from the query output names.
+Unnamed expressions must be explicitly aliased.
+
+[horizontal.compact]
+`WITH DATA`::
+(default) creates the table and inserts the query result into the newly created table, in the same transaction
+`WITH NO DATA`::
+creates only the table
+
+For global and local temporary tables, normal temporary-table data lifetime rules apply.
+Package temporary tables do not support this syntax.
+
+It's not possible to create an external table using the `CREATE TABLE ... AS <subquery>` syntax.
+
+[#langref-ddl-tbl-as-query-type]
+==== Derivation of Datatypes and Domains
+
+When a select list item is a direct reference to a source table or view column, the new column copies the source column's exact datatype instead of one derived only from the query result (which would lose information such as declared `NUMERIC`/`DECIMAL` precision).
+
+* If the source column is based on a named domain, the new column references that domain directly, as if it had been declared `_colname_ <domain>`.
+However, if the column appears in an outer join context -- where it is nullable -- and the domain is declared `NOT NULL`, the new column instead uses a copy of the domain's underlying type (preserving precision, scale, character set, collation, etc.) without referencing the original domain.
+* If the source column is based on an auto-generated (implicit) domain, its exact type (precision, scale, character set, collation, etc.) is copied.
+
+For any other select list item (e.g. an expression, including literals or aggregates), the new column's datatype is derived from the query result.
+
+[#langref-ddl-tbl-as-query-charset]
+===== Derivation of Character Sets
+
+For `CHAR` and `VARCHAR` columns not covered by the direct column-reference rule above, the database default character set is *not* used.
+The character set and collation of the new column are copied from the corresponding expression in the query.
+
+String literals use the connection character set, so columns created from string literals inherit the connection character set.
+
+[#langref-ddl-tbl-as-query-isql]
+==== ISQL behavior
+
+ISQL in AUTODDL mode (the default) uses separate transactions for DDL and DML statements.
+When `CREATE TABLE ... AS <subquery>` is executed with `WITH DATA`, the table creation and data population occur in the DDL transaction.
+
+For regular tables, the inserted rows are not visible to the DML transaction until the DDL transaction is committed.
+For temporary tables with `ON COMMIT DELETE ROWS`, this behaviour is even more surprising because the rows belong to the DDL transaction and are therefore not visible to the DML transaction at all.
+
+For example:
+
+[source]
+----
+SQL> CREATE TABLE T1 AS SELECT 1 A FROM RDB$DATABASE;
+SQL> SELECT * FROM T1;
+
+SQL> COMMIT;
+SQL> SELECT * FROM T1;
+
+           A
+============
+           1
+----
+
+With a temporary table:
+
+[listing]
+----
+SQL> CREATE GLOBAL TEMPORARY TABLE T1 AS SELECT 1 A FROM RDB$DATABASE;
+SQL> SELECT * FROM T1;
+
+SQL> COMMIT;
+SQL> SELECT * FROM T1;
+----
+
+The table exists, but no rows are returned because the data was inserted in the DDL transaction and is not visible to the DML transaction.
+
+To avoid this behaviour, disable AUTODDL before executing the statement:
+
+[listing]
+----
+SQL> SET AUTODDL OFF;
+
+SQL> CREATE GLOBAL TEMPORARY TABLE T1 AS SELECT 1 A FROM RDB$DATABASE;
+SQL> SELECT * FROM T1;
+
+           A
+============
+           1
+----
+
+When AUTODDL is disabled, table creation and data population occur in the current transaction, making the inserted rows immediately visible.
+
 [#langref-ddl-tbl-sql-security]
 === `SQL SECURITY` Clause
 
@@ -780,6 +906,23 @@ commit;
 connect 'localhost:/tmp/29.fdb' user us password 'pas';
 insert into tr values(2);
 ----
+. Creating tables from a query.
++
+[source]
+----
+CREATE LOCAL TEMPORARY TABLE tx_work AS
+  (SELECT emp_no, salary
+   FROM employee)
+  WITH NO DATA;
+
+CREATE TABLE high_salary AS
+  (WITH avg_salary AS (
+     SELECT AVG(salary) AS avg_salary
+     FROM employee)
+   SELECT e.emp_no, e.salary
+   FROM employee e, avg_salary a
+   WHERE e.salary > a.avg_salary);
+----
 
 [#langref-ddl-tbl-gtt]
 === Global Temporary Tables (GTT)
@@ -795,7 +938,7 @@ The metadata of a GTT can be modified or removed using `ALTER TABLE` and `DROP T
 ----
 CREATE GLOBAL TEMPORARY TABLE
   [_tbl-schema_ <period>] _tablename_
-  (<column_def> [, {<column_def> | <table_constraint>} ...])
+  <table-contents-source>
   [<gtt_table_attrs>]
 
 <gtt_table_attrs> ::= <gtt_table_attr> [gtt_table_attr> ...]
@@ -808,6 +951,7 @@ CREATE GLOBAL TEMPORARY TABLE
 .Syntax notes
 * `ON COMMIT DELETE ROWS` creates a transaction-level GTT (the default), `ON COMMIT PRESERVE ROWS` a connection-level GTT
 * The `EXTERNAL [FILE]` clause is not allowed in the definition of a global temporary table
+* When using <<langref-ddl-tbl-as-query,`CREATE GLOBAL TEMPORARY TABLE ... AS <subquery>`>> with `WITH DATA`, the table is only populated *once*, in the transaction that creates the table.
 
 GTTs are writable in read-only transactions.
 The effect is as follows:
@@ -880,6 +1024,17 @@ CREATE GLOBAL TEMPORARY TABLE MYTXGTT (
   TXT       VARCHAR(32),
   TS        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ON COMMIT DELETE ROWS;
+----
+. Creating a temporary table from a query.
++
+[source]
+----
+CREATE GLOBAL TEMPORARY TABLE session_report AS
+  (employee_number, salary)
+  SELECT emp_no, salary
+  FROM employee
+  WITH DATA
+  ON COMMIT PRESERVE ROWS;
 ----
 
 [#langref-ddl-tbl-external]
@@ -1461,8 +1616,7 @@ DSQL
 ----
 RECREATE [GLOBAL TEMPORARY] TABLE
   [_tbl-schema_ <period>] _tablename_
-  [EXTERNAL [FILE] '_filespec_']
-  (<col_def> [, {<col_def> | <tconstraint>} ...])
+  <table-contents-source>
   [{<table_attrs> | <gtt_table_attrs>}]
 ----
 
